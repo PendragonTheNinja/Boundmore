@@ -1,0 +1,59 @@
+[workspace]
+resolver = "3"
+members = [
+    "crates/bm-core",
+    "crates/bm-worldgen",
+    "crates/bm-mesh",
+    "crates/bm-protocol",
+    "crates/bm-net",
+    "crates/bm-server",
+    "crates/bm-client",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.85"
+license = "UNLICENSED"
+publish = false
+
+[workspace.dependencies]
+bm-core = { path = "crates/bm-core" }
+bm-worldgen = { path = "crates/bm-worldgen" }
+bm-mesh = { path = "crates/bm-mesh" }
+bm-protocol = { path = "crates/bm-protocol" }
+bm-net = { path = "crates/bm-net" }
+
+anyhow = "1"
+bytemuck = { version = "1", features = ["derive"] }
+crossbeam-channel = "0.5"
+glam = { version = "0.34", features = ["serde", "bytemuck"] }
+libm = "0.2"
+lz4_flex = { version = "0.14", default-features = false, features = ["safe-encode", "safe-decode", "std"] }
+pollster = "1"
+postcard = { version = "1", features = ["use-std"] }
+quinn = { version = "0.11", default-features = false, features = ["runtime-tokio", "rustls-ring", "log"] }
+rand = "0.9"
+rayon = "1"
+rcgen = "0.14"
+redb = "4"
+rustls = { version = "0.23", default-features = false, features = ["ring", "std", "logging", "tls12"] }
+serde = { version = "1", features = ["derive"] }
+thiserror = "2"
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync", "time", "net"] }
+toml = "0.9"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+wgpu = "30"
+winit = "0.30"
+
+# Debug builds of a voxel game are unplayably slow; optimise dependencies even in dev.
+[profile.dev.package."*"]
+opt-level = 3
+
+[profile.dev]
+opt-level = 1
+
+[profile.release]
+lto = "thin"
+codegen-units = 1

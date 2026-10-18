@@ -1,0 +1,15 @@
+[package]
+name = "bm-mesh"
+description = "Chunk meshing: greedy, ambient occlusion, opaque and translucent passes. Headless."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+bm-core.workspace = true
+bytemuck.workspace = true
+
+[dev-dependencies]
+rand.workspace = true

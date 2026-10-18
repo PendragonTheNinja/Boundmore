@@ -1,0 +1,4 @@
+[package]
+name = "bm-server"
+version.workspace = true
+edition.workspace = true

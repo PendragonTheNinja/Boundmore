@@ -1,0 +1,12 @@
+[package]
+name = "bm-worldgen"
+description = "Deterministic planet generation. Runs on the server only (ADR-0003)."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+bm-core.workspace = true
+serde.workspace = true

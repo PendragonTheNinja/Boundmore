@@ -1,0 +1,194 @@
+# Block catalogue. The server loads this file and sends it to every client in the
+# handshake, so a client can never disagree with the server about what a block id
+# means. Order matters only in that `air` must be first (id 0); every other
+# reference to a block is by name.
+#
+# Fields
+#   name        unique, used by worldgen and saves
+#   color       base colour, sRGB 0-255 (placeholder until the texture pass)
+#   solid       physical: collision, targeting, breaking
+#   opaque      visual: hides faces behind it, casts ambient occlusion
+#   translucent drawn in the blended pass (water, glass)
+#   breakable   false for the world floor
+#   placeable   may appear in the build hotbar
+#   hardness    seconds to break by hand (0 = instant)
+
+[[block]]
+name = "air"
+color = [0, 0, 0]
+solid = false
+opaque = false
+translucent = false
+breakable = false
+placeable = false
+hardness = 0.0
+
+[[block]]
+name = "bedrock"
+color = [38, 34, 44]
+solid = true
+opaque = true
+translucent = false
+breakable = false
+placeable = false
+hardness = 0.0
+
+[[block]]
+name = "stone"
+color = [118, 116, 122]
+solid = true
+opaque = true
+translucent = false
+breakable = true
+placeable = true
+hardness = 0.6
+
+[[block]]
+name = "deep_stone"
+color = [82, 78, 92]
+solid = true
+opaque = true
+translucent = false
+breakable = true
+placeable = true
+hardness = 0.9
+
+[[block]]
+name = "soil"
+color = [112, 82, 58]
+solid = true
+opaque = true
+translucent = false
+breakable = true
+placeable = true
+hardness = 0.3
+
+[[block]]
+name = "turf"
+color = [92, 156, 74]
+solid = true
+opaque = true
+translucent = false
+breakable = true
+placeable = true
+hardness = 0.3
+
+[[block]]
+name = "sand"
+color = [214, 196, 142]
+solid = true
+opaque = true
+translucent = false
+breakable = true
+placeable = true
+hardness = 0.25
+
+[[block]]
+name = "gravel"
+color = [136, 128, 122]
+solid = true
+opaque = true
+translucent = false
+breakable = true
+placeable = true
+hardness = 0.35
+
+[[block]]
+name = "snow"
+color = [236, 242, 248]
+solid = true
+opaque = true
+translucent = false
+breakable = true
+placeable = true
+hardness = 0.2
+
+[[block]]
+name = "water"
+color = [52, 104, 186]
+solid = false
+opaque = false
+translucent = true
+breakable = false
+placeable = false
+hardness = 0.0
+
+[[block]]
+name = "trunk"
+color = [104, 74, 48]
+solid = true
+opaque = true
+translucent = false
+breakable = true
+placeable = true
+hardness = 0.5
+
+[[block]]
+name = "foliage"
+color = [58, 124, 64]
+solid = true
+opaque = true
+translucent = false
+breakable = true
+placeable = true
+hardness = 0.1
+
+[[block]]
+name = "coal_seam"
+color = [52, 50, 54]
+solid = true
+opaque = true
+translucent = false
+breakable = true
+placeable = false
+hardness = 0.8
+
+[[block]]
+name = "copper_vein"
+color = [184, 112, 72]
+solid = true
+opaque = true
+translucent = false
+breakable = true
+placeable = false
+hardness = 1.0
+
+[[block]]
+name = "glow_crystal"
+color = [150, 230, 255]
+solid = true
+opaque = true
+translucent = false
+breakable = true
+placeable = true
+hardness = 0.7
+
+[[block]]
+name = "timber"
+color = [176, 134, 86]
+solid = true
+opaque = true
+translucent = false
+breakable = true
+placeable = true
+hardness = 0.4
+
+[[block]]
+name = "brick"
+color = [164, 82, 66]
+solid = true
+opaque = true
+translucent = false
+breakable = true
+placeable = true
+hardness = 0.7
+
+[[block]]
+name = "glass"
+color = [200, 228, 236]
+solid = true
+opaque = false
+translucent = true
+breakable = true
+placeable = true
+hardness = 0.2
