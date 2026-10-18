@@ -13,7 +13,7 @@ Every value here was chosen as a sensible starting point, not measured from Boun
 | Ground acceleration | 55 blocks/s² (full speed in about 0.14 s) | Is starting and stopping instant or eased? |
 | Air control | 14 blocks/s² | How much can you steer mid-jump? |
 | Swim speed | 3.2 blocks/s | |
-| Player size | 0.6 wide, 1.8 tall, eyes at 1.62 | Through how small a gap can you walk? Crouch? |
+| Player size | 0.6 wide, collides 1.9 tall, drawn 2.0, eyes at 1.75 | **Set by Nathan (2026-10-18):** two blocks tall; nobody fits under less than two blocks. Height sliders in Boundless are visual only |
 | Reach | 7 blocks (`ServerConfig::reach`) | How far away can you break a block? |
 
 ## World (`bm-server/src/config.rs`, `bm-worldgen`)

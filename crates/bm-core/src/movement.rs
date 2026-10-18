@@ -59,9 +59,12 @@ impl Default for MoveConfig {
             water_gravity_scale: 0.2,
             water_drag: 3.5,
             max_fall_speed: 55.0,
+            // Nathan, 2026-10-18: a character reads as two blocks tall, and
+            // no character fits under anything lower than two blocks. 1.9
+            // passes a 2-block gap with room to spare and never a 1.5 one.
             half_width: 0.3,
-            height: 1.8,
-            eye_height: 1.62,
+            height: 1.9,
+            eye_height: 1.75,
         }
     }
 }
@@ -398,6 +401,35 @@ mod tests {
             &w,
         );
         assert!((s.pos.x - (8.0 - 0.3)).abs() < 1e-9, "{}", s.pos.x);
+    }
+
+    #[test]
+    fn fits_a_two_block_tunnel_but_not_a_one_block_one() {
+        let walk_into = |roof_y: i64| {
+            let mut w = world();
+            for x in 8..20 {
+                w.solid.insert(BlockPos::new(x, roof_y, 5));
+            }
+            let mut s = PlayerState {
+                pos: DVec3::new(5.5, 10.0, 5.5),
+                on_ground: true,
+                ..Default::default()
+            };
+            let (yaw, _) = PlayerInput::from_angles(std::f64::consts::FRAC_PI_2, 0.0);
+            run(
+                &mut s,
+                PlayerInput {
+                    forward: 1,
+                    yaw,
+                    ..Default::default()
+                },
+                120,
+                &w,
+            );
+            s.pos.x
+        };
+        assert!(walk_into(12) > 12.0, "a 2-block tunnel is passable");
+        assert!(walk_into(11) < 8.0, "a 1-block tunnel is not");
     }
 
     #[test]

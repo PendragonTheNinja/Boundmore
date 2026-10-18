@@ -22,6 +22,7 @@ const MOUSE_SENSITIVITY: f64 = 0.0022;
 /// Seconds between repeated breaks or places while a button is held.
 const EDIT_REPEAT: f64 = 0.22;
 const MAX_TICKS_PER_FRAME: u32 = 8;
+const PLAYER_VISUAL_HEIGHT: f32 = 2.0;
 
 pub struct Options {
     pub connect: ConnectOptions,
@@ -342,9 +343,10 @@ impl App {
             .into_iter()
             .map(|(id, smp)| {
                 let pos = shape.nearest_lap(eye, smp.pos);
+                // Drawn two blocks tall, a touch above the collision box.
                 let half = Vec3::new(
                     s.movement.half_width as f32,
-                    s.movement.height as f32 / 2.0,
+                    PLAYER_VISUAL_HEIGHT / 2.0,
                     s.movement.half_width as f32,
                 );
                 let centre = (pos - eye).as_vec3() + Vec3::new(0.0, half.y, 0.0);
