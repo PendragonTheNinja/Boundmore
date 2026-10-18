@@ -15,8 +15,13 @@ fn vs_sky(@builtin(vertex_index) i: u32) -> SkyOut {
     return out;
 }
 
-fn hash2(p: vec2<f32>) -> f32 {
-    return fract(sin(dot(p, vec2<f32>(127.1, 311.7))) * 43758.5453);
+// Three pseudo-random values in 0..1 for a grid cell.
+fn hash3f(p: vec3<f32>) -> vec3<f32> {
+    var q = vec3<u32>(vec3<i32>(p) + vec3<i32>(1000));
+    q = q * vec3<u32>(1597334673u, 3812015801u, 2798796415u);
+    let n = (q.x ^ q.y ^ q.z) * 1597334673u;
+    let m = vec3<u32>(n, n * 16807u, n * 48271u);
+    return vec3<f32>(m >> vec3<u32>(8u)) / 16777216.0;
 }
 
 @fragment
@@ -36,15 +41,26 @@ fn fs_sky(in: SkyOut) -> @location(0) vec4<f32> {
     let moon = smoothstep(0.99935, 0.99965, dm);
     c = mix(c, vec3<f32>(0.78, 0.82, 0.95), moon * (1.0 - g.sun_dir.w * 0.8));
 
-    // Stars on a direction grid, fading in at dusk, never below the horizon.
+    // Stars: one candidate per cell of a 3D grid around the camera, each a
+    // point of fixed angular size at a jittered spot in its cell. A grid on
+    // the sphere's latitude and longitude would crowd them at the zenith.
     let stars = g.params.w;
-    if (stars > 0.0 && dir.y > 0.0) {
-        let cell = floor(vec2<f32>(atan2(dir.z, dir.x) * 180.0, dir.y * 260.0));
-        let h = hash2(cell);
-        if (h > 0.9965) {
-            let twinkle = 0.6 + 0.4 * sin(g.params.z * (2.0 + h * 5.0) + h * 40.0);
-            c += vec3<f32>(0.9, 0.92, 1.0) * stars * twinkle * (h - 0.9965) * 220.0 * clamp(dir.y * 4.0, 0.0, 1.0);
+    if (stars > 0.0 && dir.y > -0.05) {
+        let scaled = dir * 60.0;
+        let base = floor(scaled);
+        var best = 0.0;
+        for (var i = 0; i < 8; i++) {
+            let cell = base + vec3<f32>(f32(i & 1), f32((i >> 1) & 1), f32((i >> 2) & 1));
+            let h = hash3f(cell);
+            if (h.x > 0.92) {
+                let star_dir = normalize(cell + h.yzx * 0.8 + 0.1);
+                let d = 1.0 - dot(dir, star_dir);
+                let size = 0.0000035 + h.y * 0.000006;
+                let twinkle = 0.75 + 0.25 * sin(g.params.z * (1.5 + h.z * 3.0) + h.x * 50.0);
+                best = max(best, smoothstep(size, 0.0, d) * twinkle * (0.4 + 0.6 * h.z));
+            }
         }
+        c += vec3<f32>(0.92, 0.94, 1.0) * best * stars * clamp(dir.y * 6.0 + 0.3, 0.0, 1.0);
     }
     return vec4<f32>(c, 1.0);
 }

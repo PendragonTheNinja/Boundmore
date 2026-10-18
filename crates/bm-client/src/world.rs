@@ -216,6 +216,20 @@ impl ClientWorld {
         self.mesher.dirty.len()
     }
 
+    /// Whether the chunks a player at `feet` could touch in the next moments
+    /// are resident.
+    pub fn has_chunks_around(&self, feet: glam::DVec3) -> bool {
+        let c = BlockPos::containing(feet.x, feet.y, feet.z).chunk();
+        (-1..=1).all(|dy| {
+            (-1..=1).all(|dz| {
+                (-1..=1).all(|dx| {
+                    let n = c.offset(dx, dy, dz);
+                    !self.shape.contains_chunk_y(n.y) || self.chunks.contains_key(&self.shape.wrap_chunk(n))
+                })
+            })
+        })
+    }
+
     fn neighbourhood_complete(&self, p: ChunkPos) -> bool {
         for dy in -1..=1 {
             for dz in -1..=1 {

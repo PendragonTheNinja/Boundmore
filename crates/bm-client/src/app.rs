@@ -281,6 +281,12 @@ impl App {
         // Fixed-rate simulation, decoupled from frame rate. Keeps ticking when
         // the window is hidden, so the server keeps receiving inputs.
         self.accumulator += dt;
+        // Until the chunks around us arrive they read as solid here but not
+        // on the server, and every tick would be a misprediction. Wait; the
+        // server simulates us only on our inputs, so it waits too.
+        if !s.world.has_chunks_around(s.me.state.pos) {
+            self.accumulator = 0.0;
+        }
         let mut ticks = 0;
         while self.accumulator >= TICK_DT && ticks < MAX_TICKS_PER_FRAME {
             self.accumulator -= TICK_DT;
@@ -333,6 +339,7 @@ impl App {
                     s.world.predict_edit(s.edit_seq, hit.block, BlockId::AIR);
                     net.send(ClientMsg::Edit {
                         seq: s.edit_seq,
+                        at: s.me.seq,
                         pos: hit.block,
                         action: EditAction::Break,
                     });
@@ -365,6 +372,7 @@ impl App {
                 s.world.predict_edit(s.edit_seq, at, block);
                 net.send(ClientMsg::Edit {
                     seq: s.edit_seq,
+                    at: s.me.seq,
                     pos: at,
                     action: EditAction::Place(block),
                 });

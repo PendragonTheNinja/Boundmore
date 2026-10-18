@@ -19,7 +19,7 @@ use bm_core::{BlockDef, BlockId, BlockPos, ChunkPos, DayCycle, MoveConfig, Plane
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
 
 /// Bump on any change to a message below. Client and server must match.
-pub const PROTOCOL_VERSION: u32 = 3;
+pub const PROTOCOL_VERSION: u32 = 4;
 
 /// QUIC application protocol name; also refuses non-Boundmore peers early.
 pub const ALPN: &[u8] = b"boundmore/1";
@@ -45,8 +45,13 @@ pub enum ClientMsg {
     StartBreak {
         pos: BlockPos,
     },
+    /// `at` is the input sequence the edit follows: the server applies it
+    /// right after simulating that input, exactly where the client's
+    /// prediction put it, so both judge "is a player in the way" on the same
+    /// body position.
     Edit {
         seq: u32,
+        at: u32,
         pos: BlockPos,
         action: EditAction,
     },

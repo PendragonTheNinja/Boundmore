@@ -16,7 +16,7 @@ use bm_protocol::{ClientMsg, EditAction, PLAYERS_PER_SNAPSHOT, RemotePlayer, Ser
 use bm_worldgen::Generator;
 use crossbeam_channel::{Receiver, Sender};
 use glam::DVec3;
-use std::collections::{BTreeMap, HashMap, HashSet};
+use std::collections::{BTreeMap, HashMap, HashSet, VecDeque};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant};
@@ -40,6 +40,9 @@ const MAX_PENDING_LOADS: usize = 512;
 /// Edits per second, and the burst allowed.
 const EDIT_RATE: f64 = 12.0;
 const EDIT_BURST: f64 = 24.0;
+/// How far ahead of the simulated inputs an edit may be tagged (2 s).
+const MAX_EDIT_LEAD: u32 = 120;
+const MAX_QUEUED_EDITS: usize = 64;
 /// A break may arrive this much sooner than the block's hardness, in seconds
 /// plus a fraction of the hardness, to absorb network jitter between the
 /// player's StartBreak and Break.
@@ -61,6 +64,8 @@ struct Player {
     edit_tokens: f64,
     /// The block being held for breaking, and the tick the hold began.
     mining: Option<(BlockPos, u64)>,
+    /// Edits waiting for the input they follow: (at, seq, pos, action).
+    edits: VecDeque<(u32, u32, BlockPos, EditAction)>,
 }
 
 pub struct Game {
@@ -205,7 +210,19 @@ impl Game {
                 }
             }
             Event::Msg { id, msg } => match msg {
-                ClientMsg::Edit { seq, pos, action } => self.edit(id, seq, pos, action),
+                ClientMsg::Edit { seq, at, pos, action } => {
+                    if let Some(p) = self.players.get_mut(&id) {
+                        if at <= p.last_seq {
+                            // Late (its input was already simulated, e.g. a
+                            // lost input was repeated): apply now.
+                            self.edit(id, seq, pos, action);
+                        } else if at > p.last_seq + MAX_EDIT_LEAD || p.edits.len() >= MAX_QUEUED_EDITS {
+                            self.edit_refused(id, seq, pos, "edit too far ahead of movement");
+                        } else {
+                            p.edits.push_back((at, seq, pos, action));
+                        }
+                    }
+                }
                 ClientMsg::StartBreak { pos } => {
                     let canon = self.world.shape.wrap_block(pos);
                     let tick = self.tick;
@@ -300,6 +317,7 @@ impl Game {
                 center: None,
                 edit_tokens: EDIT_BURST,
                 mining: None,
+                edits: VecDeque::new(),
             },
         );
     }
@@ -320,10 +338,21 @@ impl Game {
     /// time on average (ADR-0004).
     fn simulate(&mut self) {
         let shape = self.world.shape;
-        for p in self.players.values_mut() {
-            p.edit_tokens = (p.edit_tokens + EDIT_RATE * TICK_DT).min(EDIT_BURST);
-            p.bank = (p.bank + 1.0).min(INPUT_BANK);
-            while p.bank >= 1.0 {
+        let ids: Vec<u32> = self.players.keys().copied().collect();
+        for id in ids {
+            {
+                let p = self.players.get_mut(&id).expect("present");
+                p.edit_tokens = (p.edit_tokens + EDIT_RATE * TICK_DT).min(EDIT_BURST);
+                p.bank = (p.bank + 1.0).min(INPUT_BANK);
+            }
+            loop {
+                // Edits tagged with an input already simulated happen now,
+                // before the next input moves the player.
+                self.apply_due_edits(id);
+                let p = self.players.get_mut(&id).expect("present");
+                if p.bank < 1.0 {
+                    break;
+                }
                 let Some((&seq, _)) = p.pending.first_key_value() else {
                     break;
                 };
@@ -339,6 +368,19 @@ impl Game {
                 p.last_seq += 1;
                 p.last_input = input;
                 p.bank -= 1.0;
+            }
+        }
+    }
+
+    fn apply_due_edits(&mut self, id: u32) {
+        loop {
+            let Some(p) = self.players.get_mut(&id) else { return };
+            match p.edits.front() {
+                Some(&(at, ..)) if at <= p.last_seq => {
+                    let (_, seq, pos, action) = p.edits.pop_front().expect("present");
+                    self.edit(id, seq, pos, action);
+                }
+                _ => return,
             }
         }
     }
@@ -490,37 +532,39 @@ impl Game {
     }
 
     fn edit(&mut self, id: u32, seq: u32, pos: BlockPos, action: EditAction) {
-        let verdict = self.check_edit(id, pos, action);
-        let Some(p) = self.players.get_mut(&id) else { return };
-        match verdict {
-            Ok(new) => {
-                self.world.set_block(pos, new);
-                self.stats.edits += 1;
-                let canon = self.world.shape.wrap_block(pos);
-                p.out.send(&ServerMsg::EditResult {
-                    seq,
-                    pos,
-                    block: new,
-                    accepted: true,
-                });
-                let chunk = canon.chunk();
-                for (oid, o) in &self.players {
-                    if *oid != id && o.sent.contains(&chunk) {
-                        o.out.send(&ServerMsg::BlockChanged { pos: canon, block: new });
-                    }
-                }
+        let new = match self.check_edit(id, pos, action) {
+            Ok(new) => new,
+            Err(why) => return self.edit_refused(id, seq, pos, why),
+        };
+        let Some(p) = self.players.get(&id) else { return };
+        p.out.send(&ServerMsg::EditResult {
+            seq,
+            pos,
+            block: new,
+            accepted: true,
+        });
+        self.world.set_block(pos, new);
+        self.stats.edits += 1;
+        let canon = self.world.shape.wrap_block(pos);
+        let chunk = canon.chunk();
+        for (oid, o) in &self.players {
+            if *oid != id && o.sent.contains(&chunk) {
+                o.out.send(&ServerMsg::BlockChanged { pos: canon, block: new });
             }
-            Err(why) => {
-                self.stats.refused_edits += 1;
-                tracing::debug!("refused edit from #{id} at {pos:?}: {why}");
-                let actual = self.world.block(pos).unwrap_or(BlockId::AIR);
-                p.out.send(&ServerMsg::EditResult {
-                    seq,
-                    pos,
-                    block: actual,
-                    accepted: false,
-                });
-            }
+        }
+    }
+
+    fn edit_refused(&mut self, id: u32, seq: u32, pos: BlockPos, why: &str) {
+        self.stats.refused_edits += 1;
+        tracing::debug!("refused edit from #{id} at {pos:?}: {why}");
+        let actual = self.world.block(pos).unwrap_or(BlockId::AIR);
+        if let Some(p) = self.players.get(&id) {
+            p.out.send(&ServerMsg::EditResult {
+                seq,
+                pos,
+                block: actual,
+                accepted: false,
+            });
         }
     }
 

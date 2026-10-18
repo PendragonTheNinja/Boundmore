@@ -150,9 +150,17 @@ impl TestClient {
     }
 
     async fn edit(&mut self, seq: u32, pos: BlockPos, action: EditAction) -> (bool, BlockId) {
-        write_msg(&mut self.send, &ClientMsg::Edit { seq, pos, action })
-            .await
-            .unwrap();
+        write_msg(
+            &mut self.send,
+            &ClientMsg::Edit {
+                seq,
+                at: self.seq,
+                pos,
+                action,
+            },
+        )
+        .await
+        .unwrap();
         match self
             .until(|m| matches!(m, ServerMsg::EditResult { seq: s, .. } if *s == seq))
             .await
