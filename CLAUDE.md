@@ -62,9 +62,24 @@ DISPLAY=:99 import -window root shot.png
 ```
 Drive it with `xdotool` (`windowfocus --sync`, then plain `keydown`/`click`, not `--window`). Frame rates there mean nothing; correctness and pictures do. Nathan's machine is the authority on performance and feel. Stop processes with `pkill -x boundmore`, never `pkill -f` (it matches your own shell).
 
+## Starting a session (do this first, every time)
+
+1. `git -C <clone> fetch origin && git -C <clone> status`; work from `origin/main`. If what Nathan describes is not on `main`, ask before building on a guess.
+2. Read, in order: this file, `docs/README.md` (the docs index), the milestone spec marked *in progress* in `docs/milestones/`, and its **Status** section, which lists exactly what is done and what is next.
+3. Run the verification commands below and confirm the expected test count before changing anything.
+4. Check CI on the last commit (`https://api.github.com/repos/PendragonTheNinja/Boundmore/actions/runs?per_page=1`); a red `main` is the first job.
+
+## Working with Nathan (agreed 2026-10-18)
+
+- **Work in large batches, not one step at a time.** Nathan tests when a major piece lands, not after every change. Keep building, verify everything you can yourself (tests, the headless run below, screenshots), push in task-sized commits, and tell him when something is worth playing. Ask only when a decision is genuinely his (feel, art, what players want).
+- **Parallel agents are welcome** where work splits cleanly (separate crates or modules, each in its own git worktree). Merge, re-verify, push.
+- **He plays Boundless; his reports about how it felt are ground truth.** Record each such decision in `docs/feel.md` or the relevant spec with the date.
+- **Art direction:** Boundless's bright, painterly high fantasy, crossed with Hytale's chunky stylised charm, in Boundmore's own textures (`docs/art-direction.md`). Nathan is not an artist: Claude produces the textures (procedurally, `tools/bm-texgen`), and the pipeline must also accept hand-made or AI-generated replacements dropped into `assets/textures/`.
+- **Player size:** two blocks tall; nothing fits under less than two blocks (2026-10-18).
+
 ## Workflow
 
-- Nathan works on **native Windows (PowerShell)**: give commands that work there.
+- Nathan works on **native Windows (PowerShell)**: give commands that work there. How to run the game is in `README.md`.
 - Specs before code: each milestone gets `docs/milestones/NN-name.md` (goal, acceptance, non-goals) before it is built, and a status section kept current.
 - Significant decisions get an ADR in `docs/decisions/`; accepted ADRs are not edited, they are superseded.
 - A fix ships with a test that failed before it.
@@ -73,5 +88,6 @@ Drive it with `xdotool` (`windowfocus --sync`, then plain `keydown`/`click`, not
 
 ## Status
 
-- **Milestone 1, Foundation: done** (2026-10-18). See `docs/milestones/01-foundation.md` for what shipped, what was verified and how, and the known gaps.
-- **Next:** milestone 2, the first Boundless loop, outlined in `docs/roadmap.md`. Its spec has not been written; write it with Nathan first.
+- **Milestone 1, Foundation: done** (2026-10-18). `docs/milestones/01-foundation.md`.
+- **Milestone 2, A World Worth Looking At: in progress.** `docs/milestones/02-a-world-worth-looking-at.md`; its Status section is the live checklist.
+- Update this section and the milestone's Status section at the end of every working session.
