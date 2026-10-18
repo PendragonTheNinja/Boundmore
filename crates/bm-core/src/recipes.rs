@@ -1,0 +1,163 @@
+//! Recipes: data in `assets/recipes.toml`, referring to items by name.
+
+use crate::block::Station;
+use crate::inventory::Inventory;
+use crate::items::{ItemError, ItemId, ItemRegistry};
+use serde::{Deserialize, Serialize};
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct Recipe {
+    pub output: ItemId,
+    pub output_count: u16,
+    pub inputs: Vec<(ItemId, u16)>,
+    pub station: Station,
+    /// Seconds per craft at a station (hand recipes are instant).
+    pub seconds: f32,
+}
+
+impl Recipe {
+    /// Whether `times` crafts' inputs are all present.
+    pub fn affordable(&self, inv: &Inventory, times: u16) -> bool {
+        self.inputs
+            .iter()
+            .all(|(item, n)| inv.count(*item) >= *n as u32 * times as u32)
+    }
+}
+
+#[derive(Debug, thiserror::Error)]
+pub enum RecipeError {
+    #[error("recipe catalogue is not valid TOML: {0}")]
+    Parse(#[from] toml::de::Error),
+    #[error("recipe for `{0}`: {1}")]
+    Item(String, ItemError),
+    #[error("recipe for `{0}` has no inputs or makes nothing")]
+    Empty(String),
+}
+
+#[derive(Deserialize)]
+struct RecipeFile {
+    #[serde(default)]
+    recipe: Vec<RecipeEntry>,
+}
+
+#[derive(Deserialize)]
+struct RecipeEntry {
+    output: String,
+    #[serde(default = "one")]
+    count: u16,
+    inputs: Vec<(String, u16)>,
+    #[serde(default = "hand")]
+    station: Station,
+    #[serde(default)]
+    seconds: f32,
+}
+
+fn one() -> u16 {
+    1
+}
+
+fn hand() -> Station {
+    Station::Hand
+}
+
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct RecipeBook {
+    pub recipes: Vec<Recipe>,
+}
+
+impl RecipeBook {
+    pub fn from_toml(source: &str, items: &ItemRegistry) -> Result<Self, RecipeError> {
+        let file: RecipeFile = toml::from_str(source)?;
+        let mut recipes = Vec::new();
+        for e in file.recipe {
+            let id = |n: &str| items.id(n).map_err(|err| RecipeError::Item(e.output.clone(), err));
+            let output = id(&e.output)?;
+            let inputs = e
+                .inputs
+                .iter()
+                .map(|(n, c)| Ok((id(n)?, *c)))
+                .collect::<Result<Vec<_>, RecipeError>>()?;
+            if inputs.is_empty() || e.count == 0 || inputs.iter().any(|(_, c)| *c == 0) {
+                return Err(RecipeError::Empty(e.output));
+            }
+            recipes.push(Recipe {
+                output,
+                output_count: e.count,
+                inputs,
+                station: e.station,
+                seconds: if e.station == Station::Hand {
+                    0.0
+                } else {
+                    e.seconds.max(0.0)
+                },
+            });
+        }
+        Ok(Self { recipes })
+    }
+
+    pub fn builtin(items: &ItemRegistry) -> Self {
+        Self::from_toml(include_str!("../../../assets/recipes.toml"), items).expect("assets/recipes.toml is valid")
+    }
+
+    pub fn get(&self, index: u16) -> Option<&Recipe> {
+        self.recipes.get(index as usize)
+    }
+
+    /// Recipes made at `station`, with their indices.
+    pub fn at(&self, station: Station) -> impl Iterator<Item = (u16, &Recipe)> {
+        self.recipes
+            .iter()
+            .enumerate()
+            .filter(move |(_, r)| r.station == station)
+            .map(|(i, r)| (i as u16, r))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::block::BlockRegistry;
+
+    #[test]
+    fn builtin_recipes_load_and_reach_copper_tools() {
+        let blocks = BlockRegistry::builtin();
+        let items = ItemRegistry::builtin(&blocks);
+        let book = RecipeBook::builtin(&items);
+        let makes = |name: &str| {
+            let id = items.id(name).unwrap();
+            book.recipes
+                .iter()
+                .find(|r| r.output == id)
+                .unwrap_or_else(|| panic!("no recipe for {name}"))
+        };
+        assert_eq!(makes("timber").station, Station::Hand);
+        assert_eq!(makes("workbench").station, Station::Hand);
+        assert_eq!(makes("stone_hammer").station, Station::Workbench);
+        assert_eq!(makes("copper_ingot").station, Station::Furnace);
+        assert!(makes("copper_ingot").seconds > 0.0);
+        assert_eq!(makes("copper_hammer").station, Station::Workbench);
+        assert!(makes("claim_stone").inputs.len() >= 2);
+    }
+
+    #[test]
+    fn affordability_counts_every_input() {
+        let blocks = BlockRegistry::builtin();
+        let items = ItemRegistry::builtin(&blocks);
+        let book = RecipeBook::builtin(&items);
+        let timber = items.id("timber").unwrap();
+        let r = book.recipes.iter().find(|r| r.output == timber).unwrap();
+        let mut inv = Inventory::default();
+        assert!(!r.affordable(&inv, 1));
+        inv.add(&items, items.id("trunk").unwrap(), 2);
+        assert!(r.affordable(&inv, 2));
+        assert!(!r.affordable(&inv, 3));
+    }
+
+    #[test]
+    fn unknown_items_are_refused() {
+        let blocks = BlockRegistry::builtin();
+        let items = ItemRegistry::builtin(&blocks);
+        let src = "[[recipe]]\noutput = \"unobtainium\"\ninputs = [[\"stone\", 1]]\n";
+        assert!(matches!(RecipeBook::from_toml(src, &items), Err(RecipeError::Item(..))));
+    }
+}

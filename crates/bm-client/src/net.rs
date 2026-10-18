@@ -45,8 +45,14 @@ impl Net {
 }
 
 pub struct ConnectOptions {
-    pub server: SocketAddr,
+    /// `host:port`, resolved on the network thread so the window never
+    /// waits on DNS.
+    pub server: String,
     pub name: String,
+    /// Kept only for the handshake; never written anywhere.
+    pub password: String,
+    /// Create the account rather than log in to it.
+    pub register: bool,
     pub cert: PathBuf,
 }
 
@@ -92,13 +98,20 @@ async fn session(
         )
     })?;
     let endpoint = bm_net::client_endpoint(&cert.into())?;
-    let conn: Connection = bm_net::connect(&endpoint, opts.server).await?;
+    let addr: SocketAddr = tokio::net::lookup_host(opts.server.as_str())
+        .await
+        .map_err(|e| anyhow::anyhow!("cannot find the server {}: {e}", opts.server))?
+        .next()
+        .ok_or_else(|| anyhow::anyhow!("the server {} has no address", opts.server))?;
+    let conn: Connection = bm_net::connect(&endpoint, addr).await?;
     let (mut send, mut recv) = conn.open_bi().await?;
     write_msg(
         &mut send,
         &ClientMsg::Hello {
             protocol: PROTOCOL_VERSION,
             name: opts.name,
+            password: opts.password,
+            register: opts.register,
         },
     )
     .await?;
@@ -155,4 +168,39 @@ async fn session(
     // Let the close reach the server, but never hang on a dead link.
     let _ = tokio::time::timeout(std::time::Duration::from_secs(1), endpoint.wait_idle()).await;
     Ok(reason)
+}
+
+/// Where the game's messages go: a real server, or the offline demo.
+pub enum Link {
+    Net(Net),
+    Demo(Box<crate::demo::Demo>),
+}
+
+impl Link {
+    pub fn send(&mut self, msg: ClientMsg) {
+        match self {
+            Link::Net(n) => n.send(msg),
+            Link::Demo(d) => d.send(msg),
+        }
+    }
+
+    pub fn send_datagram(&self, d: ClientDatagram) {
+        if let Link::Net(n) = self {
+            n.send_datagram(d);
+        }
+    }
+
+    pub fn poll(&mut self) -> Vec<NetEvent> {
+        match self {
+            Link::Net(n) => n.events.try_iter().collect(),
+            Link::Demo(d) => d.poll(),
+        }
+    }
+
+    pub fn rtt_ms(&self) -> f64 {
+        match self {
+            Link::Net(n) => n.rtt_ms(),
+            Link::Demo(_) => 0.0,
+        }
+    }
 }

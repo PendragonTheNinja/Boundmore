@@ -10,7 +10,6 @@
 //!   one instance record per visible chunk carrying its offset and origin.
 
 use crate::textures::{self, TextureSet};
-use crate::ui::UiVertex;
 use bm_core::{BlockPos, BlockRegistry, CHUNK_SIZE, ChunkPos, PlanetShape};
 use bm_mesh::{ChunkMesh, Vertex};
 use glam::{DVec3, Mat4, Vec3, Vec4};
@@ -51,7 +50,6 @@ macro_rules! shader_source {
 const TERRAIN_WGSL: &str = shader_source!("terrain.wgsl");
 const SIMPLE_WGSL: &str = shader_source!("simple.wgsl");
 const SKY_WGSL: &str = shader_source!("sky.wgsl");
-const UI_WGSL: &str = shader_source!("ui.wgsl");
 
 fn shader(device: &wgpu::Device, label: &str, source: &'static str) -> wgpu::ShaderModule {
     device.create_shader_module(wgpu::ShaderModuleDescriptor {
@@ -74,6 +72,16 @@ struct OverlayVertex {
     uv: [f32; 2],
     layer: u32,
 }
+
+/// A line end, camera-relative, with its colour (linear RGBA).
+#[repr(C)]
+#[derive(Clone, Copy, Debug, PartialEq, bytemuck::Pod, bytemuck::Zeroable)]
+pub struct LineVertex {
+    pub pos: [f32; 3],
+    pub color: [f32; 4],
+}
+
+const HIGHLIGHT: [f32; 4] = [0.05, 0.05, 0.07, 0.9];
 
 #[repr(C)]
 #[derive(Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
@@ -119,10 +127,22 @@ pub struct Scene<'a> {
     pub highlight: Option<BlockPos>,
     /// The block being broken and how far along (0 to 1), for the cracks.
     pub breaking: Option<(BlockPos, f32)>,
-    /// HUD triangles in pixels, drawn over everything.
-    pub ui: &'a [UiVertex],
+    /// Line pairs drawn where they are not hidden (claim outlines).
+    pub lines: &'a [LineVertex],
+    /// Line pairs drawn through everything (claim outlines seen faintly
+    /// through terrain).
+    pub xray_lines: &'a [LineVertex],
+    /// The menus and HUD, drawn last over everything.
+    pub ui: Option<EguiFrame<'a>>,
     pub fog_end: f32,
     pub time: f32,
+}
+
+/// One frame of egui output, tessellated.
+pub struct EguiFrame<'a> {
+    pub primitives: &'a [egui::ClippedPrimitive],
+    pub textures: &'a egui::TexturesDelta,
+    pub pixels_per_point: f32,
 }
 
 #[derive(Default, Clone, Copy)]
@@ -144,13 +164,12 @@ pub struct Renderer {
     terrain_translucent: wgpu::RenderPipeline,
     box_pipeline: wgpu::RenderPipeline,
     line_pipeline: wgpu::RenderPipeline,
+    xray_line_pipeline: wgpu::RenderPipeline,
     cross_pipeline: wgpu::RenderPipeline,
     sky_pipeline: wgpu::RenderPipeline,
     overlay_pipeline: wgpu::RenderPipeline,
     overlay: wgpu::Buffer,
-    ui_pipeline: wgpu::RenderPipeline,
-    ui_buffer: wgpu::Buffer,
-    ui_capacity: usize,
+    egui: egui_wgpu::Renderer,
     crack_base: Option<u32>,
     bind_layout: wgpu::BindGroupLayout,
     faces: wgpu::Buffer,
@@ -165,6 +184,7 @@ pub struct Renderer {
     box_instances: wgpu::Buffer,
     box_capacity: usize,
     lines: wgpu::Buffer,
+    line_capacity: usize,
     pub stats: FrameStats,
 }
 
@@ -300,7 +320,6 @@ impl Renderer {
         let terrain = shader(&device, "terrain", TERRAIN_WGSL);
         let simple = shader(&device, "simple", SIMPLE_WGSL);
         let sky_module = shader(&device, "sky", SKY_WGSL);
-        let ui_module = shader(&device, "ui", UI_WGSL);
 
         let chunk_buffers = [
             Some(wgpu::VertexBufferLayout {
@@ -415,9 +434,9 @@ impl Renderer {
             &opaque_target,
         );
         let line_buffers = [Some(wgpu::VertexBufferLayout {
-            array_stride: 12,
+            array_stride: std::mem::size_of::<LineVertex>() as u64,
             step_mode: wgpu::VertexStepMode::Vertex,
-            attributes: &wgpu::vertex_attr_array![0 => Float32x3],
+            attributes: &wgpu::vertex_attr_array![0 => Float32x3, 1 => Float32x4],
         })];
         let line_pipeline = pipeline(
             "lines",
@@ -428,6 +447,17 @@ impl Renderer {
             LineList,
             None,
             Some(depth_state(false, GreaterEqual)),
+            &blend_target,
+        );
+        let xray_line_pipeline = pipeline(
+            "lines through terrain",
+            &simple,
+            "vs_line",
+            "fs_line",
+            &line_buffers,
+            LineList,
+            None,
+            Some(depth_state(false, Always)),
             &blend_target,
         );
         let cross_pipeline = pipeline(
@@ -472,27 +502,12 @@ impl Renderer {
             &blend_target,
         );
 
-        let ui_buffers = [Some(wgpu::VertexBufferLayout {
-            array_stride: std::mem::size_of::<UiVertex>() as u64,
-            step_mode: wgpu::VertexStepMode::Vertex,
-            attributes: &wgpu::vertex_attr_array![0 => Float32x2, 1 => Float32x2, 2 => Uint32, 3 => Float32x4],
-        })];
-        let ui_pipeline = pipeline(
-            "ui",
-            &ui_module,
-            "vs_ui",
-            "fs_ui",
-            &ui_buffers,
-            TriangleList,
-            None,
-            Some(depth_state(false, Always)),
-            &blend_target,
-        );
+        // Menus and HUD: egui, drawn in its own pass over the finished frame.
+        let egui = egui_wgpu::Renderer::new(&device, format, egui_wgpu::RendererOptions::default());
 
         let (box_vertices, box_indices) = cube(&device);
         let quad_capacity = 1 << 16;
         let overlay = make_vertex_buffer(&device, "overlay", 36 * std::mem::size_of::<OverlayVertex>());
-        let ui_buffer = make_vertex_buffer(&device, "ui", 4096 * std::mem::size_of::<UiVertex>());
         let mut r = Self {
             quad_indices: make_quad_indices(&device, quad_capacity),
             quad_capacity,
@@ -500,7 +515,8 @@ impl Renderer {
             instance_capacity: 4096,
             box_instances: make_vertex_buffer(&device, "box instances", 256 * std::mem::size_of::<BoxInstance>()),
             box_capacity: 256,
-            lines: make_vertex_buffer(&device, "lines", 24 * 12),
+            lines: make_vertex_buffer(&device, "lines", 1024 * std::mem::size_of::<LineVertex>()),
+            line_capacity: 1024,
             box_vertices,
             box_indices,
             surface,
@@ -515,13 +531,12 @@ impl Renderer {
             terrain_translucent,
             box_pipeline,
             line_pipeline,
+            xray_line_pipeline,
             cross_pipeline,
             sky_pipeline,
             overlay_pipeline,
             overlay,
-            ui_pipeline,
-            ui_buffer,
-            ui_capacity: 4096,
+            egui,
             crack_base: None,
             bind_layout: layout,
             faces,
@@ -612,12 +627,9 @@ impl Renderer {
         self.chunks.remove(&pos);
     }
 
-    pub fn width(&self) -> u32 {
-        self.config.width
-    }
-
-    pub fn height(&self) -> u32 {
-        self.config.height
+    /// Drops every chunk mesh (leaving one session for another).
+    pub fn clear_chunks(&mut self) {
+        self.chunks.clear();
     }
 
     pub fn chunk_meshes(&self) -> usize {
@@ -705,12 +717,29 @@ impl Renderer {
         self.queue
             .write_buffer(&self.box_instances, 0, bytemuck::cast_slice(scene.boxes));
 
-        let highlight = scene.highlight.map(|b| {
+        // One line buffer: the highlight, then the outlines, then the x-ray.
+        let mut lines: Vec<LineVertex> = Vec::new();
+        if let Some(b) = scene.highlight {
             let corner = DVec3::new(b.x as f64, b.y as f64, b.z as f64);
             let rel = (scene.shape.nearest_lap(cam.eye, corner) - cam.eye).as_vec3();
-            let verts = cube_edges(rel - Vec3::splat(0.002), Vec3::splat(1.004));
-            self.queue.write_buffer(&self.lines, 0, bytemuck::cast_slice(&verts));
-        });
+            let edges = cube_edges(rel - Vec3::splat(0.002), Vec3::splat(1.004));
+            lines.extend(edges.iter().map(|p| LineVertex {
+                pos: *p,
+                color: HIGHLIGHT,
+            }));
+        }
+        let shown = lines.len() as u32 + scene.lines.len() as u32;
+        lines.extend_from_slice(scene.lines);
+        lines.extend_from_slice(scene.xray_lines);
+        if lines.len() > self.line_capacity {
+            self.line_capacity = lines.len().next_power_of_two();
+            self.lines = make_vertex_buffer(
+                &self.device,
+                "lines",
+                self.line_capacity * std::mem::size_of::<LineVertex>(),
+            );
+        }
+        self.queue.write_buffer(&self.lines, 0, bytemuck::cast_slice(&lines));
 
         let cracks = match (scene.breaking, self.crack_base) {
             (Some((b, progress)), Some(base)) => {
@@ -724,16 +753,24 @@ impl Renderer {
             _ => false,
         };
 
-        if scene.ui.len() > self.ui_capacity {
-            self.ui_capacity = scene.ui.len().next_power_of_two();
-            self.ui_buffer = make_vertex_buffer(&self.device, "ui", self.ui_capacity * std::mem::size_of::<UiVertex>());
-        }
-        self.queue
-            .write_buffer(&self.ui_buffer, 0, bytemuck::cast_slice(scene.ui));
-
         let mut encoder = self
             .device
             .create_command_encoder(&wgpu::CommandEncoderDescriptor { label: Some("frame") });
+        let screen = egui_wgpu::ScreenDescriptor {
+            size_in_pixels: [self.config.width, self.config.height],
+            pixels_per_point: scene.ui.as_ref().map(|u| u.pixels_per_point).unwrap_or(1.0),
+        };
+        let mut egui_commands = Vec::new();
+        if let Some(ui) = &scene.ui {
+            for (id, deltas) in &ui.textures.set {
+                for delta in deltas {
+                    self.egui.update_texture(&self.device, &self.queue, *id, delta);
+                }
+            }
+            egui_commands = self
+                .egui
+                .update_buffers(&self.device, &self.queue, &mut encoder, ui.primitives, &screen);
+        }
         let mut stats = FrameStats::default();
         {
             let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
@@ -806,20 +843,45 @@ impl Renderer {
                 pass.set_vertex_buffer(0, self.overlay.slice(..));
                 pass.draw(0..36, 0..1);
             }
-            if highlight.is_some() {
+            if shown > 0 {
                 pass.set_pipeline(&self.line_pipeline);
                 pass.set_vertex_buffer(0, self.lines.slice(..));
-                pass.draw(0..24, 0..1);
+                pass.draw(0..shown, 0..1);
+            }
+            if lines.len() as u32 > shown {
+                pass.set_pipeline(&self.xray_line_pipeline);
+                pass.set_vertex_buffer(0, self.lines.slice(..));
+                pass.draw(shown..lines.len() as u32, 0..1);
             }
             pass.set_pipeline(&self.cross_pipeline);
             pass.draw(0..12, 0..1);
-            if !scene.ui.is_empty() {
-                pass.set_pipeline(&self.ui_pipeline);
-                pass.set_vertex_buffer(0, self.ui_buffer.slice(..));
-                pass.draw(0..scene.ui.len() as u32, 0..1);
+        }
+        if let Some(ui) = &scene.ui {
+            let pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                label: Some("egui"),
+                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                    view: &view,
+                    depth_slice: None,
+                    resolve_target: None,
+                    ops: wgpu::Operations {
+                        load: wgpu::LoadOp::Load,
+                        store: wgpu::StoreOp::Store,
+                    },
+                })],
+                depth_stencil_attachment: None,
+                timestamp_writes: None,
+                occlusion_query_set: None,
+                multiview_mask: None,
+            });
+            self.egui.render(&mut pass.forget_lifetime(), ui.primitives, &screen);
+        }
+        egui_commands.push(encoder.finish());
+        self.queue.submit(egui_commands);
+        if let Some(ui) = &scene.ui {
+            for id in &ui.textures.free {
+                self.egui.free_texture(id);
             }
         }
-        self.queue.submit([encoder.finish()]);
         self.queue.present(frame);
         self.stats = stats;
     }
@@ -1142,12 +1204,7 @@ mod tests {
 
     #[test]
     fn shaders_validate() {
-        for (name, src) in [
-            ("terrain", TERRAIN_WGSL),
-            ("simple", SIMPLE_WGSL),
-            ("sky", SKY_WGSL),
-            ("ui", UI_WGSL),
-        ] {
+        for (name, src) in [("terrain", TERRAIN_WGSL), ("simple", SIMPLE_WGSL), ("sky", SKY_WGSL)] {
             let module =
                 naga::front::wgsl::parse_str(src).unwrap_or_else(|e| panic!("{name}: {}", e.emit_to_string(src)));
             naga::valid::Validator::new(naga::valid::ValidationFlags::all(), naga::valid::Capabilities::all())
@@ -1161,5 +1218,6 @@ mod tests {
         assert_eq!(std::mem::size_of::<Globals>(), 64 * 2 + 16 * 6);
         assert_eq!(std::mem::size_of::<ChunkInstance>(), 24);
         assert_eq!(std::mem::size_of::<Vertex>(), 8);
+        assert_eq!(std::mem::size_of::<LineVertex>(), 28);
     }
 }

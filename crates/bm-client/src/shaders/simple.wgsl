@@ -1,4 +1,4 @@
-// Players, the block highlight and the crosshair: small things drawn with
+// Players, lines (the block highlight, claim outlines) and the crosshair: small things drawn with
 // plain positions.
 
 
@@ -32,16 +32,24 @@ fn fs_box(in: BoxOut) -> @location(0) vec4<f32> {
     return vec4<f32>(in.color, 1.0);
 }
 
-// ---- lines (block highlight), camera-relative positions ----
+// ---- lines (block highlight, claim outlines), camera-relative positions ----
+
+struct LineOut {
+    @builtin(position) clip: vec4<f32>,
+    @location(0) color: vec4<f32>,
+};
 
 @vertex
-fn vs_line(@location(0) pos: vec3<f32>) -> @builtin(position) vec4<f32> {
-    return g.view_proj * vec4<f32>(pos, 1.0);
+fn vs_line(@location(0) pos: vec3<f32>, @location(1) color: vec4<f32>) -> LineOut {
+    var out: LineOut;
+    out.clip = g.view_proj * vec4<f32>(pos, 1.0);
+    out.color = color;
+    return out;
 }
 
 @fragment
-fn fs_line() -> @location(0) vec4<f32> {
-    return vec4<f32>(0.05, 0.05, 0.07, 0.9);
+fn fs_line(in: LineOut) -> @location(0) vec4<f32> {
+    return in.color;
 }
 
 // ---- crosshair, generated from the vertex index ----

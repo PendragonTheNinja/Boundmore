@@ -52,7 +52,7 @@ cargo clippy --workspace --all-targets -- -D warnings
 cargo test --workspace
 ```
 
-Expected test counts (M2, 2026-10-18): bm-core 48, bm-worldgen 13, bm-mesh 12, bm-protocol 5, bm-server 2 unit + 2 end-to-end, bm-client 20, bm-texgen 4 (106 in all). CI (`.github/workflows/ci.yml`) runs the same on Linux and builds on Windows.
+Expected test counts (M3, 2026-10-18): bm-core 62, bm-worldgen 13, bm-mesh 12, bm-protocol 6, bm-server 15 unit + 8 end-to-end, bm-client 35, bm-texgen 5 (156 in all). CI (`.github/workflows/ci.yml`) runs the same on Linux and builds on Windows.
 
 **Load test:** run a server, then `cargo run --release -p bm-server --example bots -- --count 50 --prefix Load`. Watch the server's 30-second report for slow ticks.
 
@@ -60,9 +60,10 @@ Expected test counts (M2, 2026-10-18): bm-core 48, bm-worldgen 13, bm-mesh 12, b
 ```
 apt-get install -y xvfb mesa-vulkan-drivers libvulkan1 libxkbcommon-x11-0 xdotool imagemagick
 Xvfb :99 -screen 0 1280x720x24 &
-DISPLAY=:99 VK_ICD_FILENAMES=/usr/share/vulkan/icd.d/lvp_icd.json WGPU_BACKEND=vulkan target/release/boundmore --name Tester --cert data/server.cert.der &
+DISPLAY=:99 VK_ICD_FILENAMES=/usr/share/vulkan/icd.d/lvp_icd.json WGPU_BACKEND=vulkan target/release/boundmore --name Tester --password testerpass1 --register --cert data/server.cert.der &
 DISPLAY=:99 import -window root shot.png
 ```
+`--name` with `--password` skips the login screen (drop `--register` once the account exists). `--demo-ui login|hud|inventory|crafting|station|claims` opens a menu on an offline test patch, no server needed.
 Drive it with `xdotool` (`windowfocus --sync`, then plain `keydown`/`click`, not `--window`; to break, `mousedown 1`, wait the block's hardness, `mouseup 1`). `BOUNDMORE_TIME=0.77` (0 midnight, 0.5 noon) previews a time of day; `--assets DIR` points at another texture set. Frame rates there mean nothing; correctness and pictures do. Nathan's machine is the authority on performance and feel. Stop processes with `pkill -x boundmore`, never `pkill -f` (it matches your own shell).
 
 ## Starting a session (do this first, every time)
@@ -92,5 +93,7 @@ Drive it with `xdotool` (`windowfocus --sync`, then plain `keydown`/`click`, not
 ## Status
 
 - **Milestone 1, Foundation: done** (2026-10-18). `docs/milestones/01-foundation.md`.
-- **Milestone 2, A World Worth Looking At: in progress.** `docs/milestones/02-a-world-worth-looking-at.md`; its Status section is the live checklist.
+- **Milestone 2, A World Worth Looking At: built** (2026-10-18), play-tested by Nathan (breaking, water fixed). `docs/milestones/02-a-world-worth-looking-at.md`.
+- **Milestone 3, Gather, Craft, Claim: built, awaiting Nathan's play-test.** `docs/milestones/03-gather-craft-claim.md`; its Status section is the live checklist.
+- **Design research:** `docs/research/boundless-forum-feedback.md` (what Boundless players liked and disliked). Read it before designing any Boundless system. Decided from it so far: no beacon fuel; a claim lapses only after 6 months without a visit, and its contents go back to the owner (2026-10-18).
 - Update this section and the milestone's Status section at the end of every working session.

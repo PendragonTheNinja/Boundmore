@@ -1,17 +1,20 @@
 //! Boundmore's procedural texture painter.
 //!
 //! Paints every block texture the catalogue names (`assets/blocks.toml`),
-//! their variants, the crack overlays, a review contact sheet and an
+//! their variants, the crack overlays, an icon for every item that is not a
+//! block (`assets/items.toml`), a review contact sheet, an icon sheet and an
 //! in-context preview. Deterministic: the same build writes the same bytes.
 //! The look is set by `docs/art-direction.md`.
 
 pub mod canvas;
 pub mod color;
+pub mod icons;
 pub mod materials;
 pub mod noise;
 pub mod overlay;
 pub mod preview;
 pub mod sheet;
+pub mod stations;
 pub mod tex;
 
 use tex::Tex;
@@ -88,6 +91,35 @@ pub fn families() -> Result<Vec<Family>, String> {
         .collect()
 }
 
+/// The icon every non-block item in the built-in catalogue shows, in
+/// catalogue order, without repeats (`icon` in `assets/items.toml`, else the
+/// item's name).
+pub fn icon_names() -> Vec<String> {
+    let blocks = bm_core::BlockRegistry::builtin();
+    let items = bm_core::ItemRegistry::builtin(&blocks);
+    let mut names: Vec<String> = Vec::new();
+    for def in items.defs().iter().filter(|d| d.block().is_none()) {
+        let name = def.icon.clone().unwrap_or_else(|| def.name.clone());
+        if !names.contains(&name) {
+            names.push(name);
+        }
+    }
+    names
+}
+
+/// Paints every item icon. An error names any icon the catalogue wants that
+/// no painter knows.
+pub fn item_icons() -> Result<Vec<(String, Tex)>, String> {
+    icon_names()
+        .into_iter()
+        .map(|name| {
+            let tex = icons::paint_icon(&name)
+                .ok_or_else(|| format!("the item catalogue names icon `{name}` but bm-texgen has no painter for it"))?;
+            Ok((name, tex))
+        })
+        .collect()
+}
+
 /// Looks a family up by name.
 pub fn find<'a>(families: &'a [Family], name: &str) -> &'a Family {
     families
@@ -121,6 +153,38 @@ mod tests {
         }
         for name in VARIED {
             assert_eq!(find(&fams, name).faces.len(), 1 + VARIANTS as usize, "{name} variants");
+        }
+        // Every item that is not a block gets an icon.
+        let icons = item_icons().expect("every icon has a painter");
+        let items = bm_core::ItemRegistry::builtin(&registry);
+        for def in items.defs().iter().filter(|d| d.block().is_none()) {
+            let want = def.icon.as_deref().unwrap_or(&def.name);
+            assert!(
+                icons.iter().any(|(n, _)| n == want),
+                "item `{}` icon `{want}` is not painted",
+                def.name
+            );
+        }
+        assert!(!icons.is_empty(), "the catalogue has non-block items");
+    }
+
+    #[test]
+    fn icons_are_32_by_32_on_clear_ground_and_deterministic() {
+        let a = item_icons().unwrap();
+        let b = item_icons().unwrap();
+        for ((name, icon), (_, again)) in a.iter().zip(&b) {
+            assert_eq!(icon, again, "icon {name} differs between runs");
+            assert_eq!(to_image(icon).dimensions(), (32, 32), "{name}");
+            // The corners are background, and the sprite is a solid shape.
+            for (x, y) in [(0, 0), (31, 0), (0, 31), (31, 31)] {
+                assert_eq!(icon.get(x, y).a, 0.0, "icon {name} corner ({x}, {y}) is not clear");
+            }
+            assert!(
+                icon.px.iter().all(|p| p.a == 0.0 || p.a == 1.0),
+                "icon {name} has partial alpha"
+            );
+            let filled = icon.px.iter().filter(|p| p.a > 0.0).count();
+            assert!(filled > 150, "icon {name} covers only {filled} pixels");
         }
     }
 
