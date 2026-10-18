@@ -34,7 +34,9 @@ impl Inventory {
 
     /// Slots changed by an operation, so the server can tell the client.
     fn changed(before: &Inventory, after: &Inventory) -> Vec<usize> {
-        (0..after.slots.len()).filter(|&i| before.slots.get(i) != after.slots.get(i)).collect()
+        (0..after.slots.len())
+            .filter(|&i| before.slots.get(i) != after.slots.get(i))
+            .collect()
     }
 
     pub fn count(&self, item: ItemId) -> u32 {

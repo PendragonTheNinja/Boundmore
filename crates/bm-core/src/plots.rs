@@ -22,7 +22,11 @@ impl PlotPos {
     /// The plot holding a block. Wraps with the planet.
     pub fn of(p: BlockPos, shape: PlanetShape) -> Self {
         let p = shape.wrap_block(p);
-        Self::new((p.x >> PLOT_BITS) as i32, (p.y >> PLOT_BITS) as i32, (p.z >> PLOT_BITS) as i32)
+        Self::new(
+            (p.x >> PLOT_BITS) as i32,
+            (p.y >> PLOT_BITS) as i32,
+            (p.z >> PLOT_BITS) as i32,
+        )
     }
 
     pub fn wrap(self, shape: PlanetShape) -> Self {
