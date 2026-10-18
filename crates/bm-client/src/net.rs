@@ -152,6 +152,7 @@ async fn session(
     datagrams.abort();
     writer.abort();
     conn.close(0u32.into(), b"bye");
-    endpoint.wait_idle().await;
+    // Let the close reach the server, but never hang on a dead link.
+    let _ = tokio::time::timeout(std::time::Duration::from_secs(1), endpoint.wait_idle()).await;
     Ok(reason)
 }
