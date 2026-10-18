@@ -1,18 +1,28 @@
 //! The client application: window events, the fixed-rate simulation, and the
-//! glue between network, world, prediction and renderer.
+//! glue between network, world, prediction, menus and renderer.
 
-use crate::net::{self, ConnectOptions, Net, NetEvent};
+use crate::claims::{Claims, outline};
+use crate::icons::icon_for;
+use crate::items::Items;
+use crate::menus::{self, CraftingView, Drag, Hud, ItemIcons, LiveStation, LoginForm, Menu, Notices, UiAction};
+use crate::net::{self, ConnectOptions, Link, NetEvent};
 use crate::predict::{Predictor, RemoteSample, Remotes};
-use crate::render::{BoxInstance, Camera, Renderer, Scene};
+use crate::render::{BoxInstance, Camera, EguiFrame, LineVertex, Renderer, Scene};
+use crate::settings::Settings;
 use crate::sky::Sky;
 use crate::textures::TextureSet;
-use crate::ui::{Hotbar, Icon, UiBuilder};
 use crate::world::ClientWorld;
 use bm_core::movement::{MoveConfig, PlayerInput};
-use bm_core::{BlockId, BlockPos, BlockRegistry, Chunk, DayCycle, PlanetShape, RayHit, TICK_DT, raycast};
-use bm_protocol::{ClientDatagram, ClientMsg, EditAction, INPUT_REDUNDANCY, ServerDatagram, ServerMsg};
+use bm_core::{
+    BlockId, BlockPos, BlockRegistry, Chunk, DayCycle, HOTBAR_SLOTS, ItemId, PlanetShape, PlotPos, RayHit, TICK_DT,
+    raycast,
+};
+use bm_protocol::{
+    ClientDatagram, ClientMsg, EditAction, INPUT_REDUNDANCY, MIN_PASSWORD_LEN, ServerDatagram, ServerMsg,
+};
 use glam::{DVec3, Vec3};
 use std::collections::HashSet;
+use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Instant;
 use winit::application::ApplicationHandler;
@@ -26,17 +36,47 @@ const MOUSE_SENSITIVITY: f64 = 0.0022;
 const PLACE_REPEAT: f64 = 0.22;
 const MAX_TICKS_PER_FRAME: u32 = 8;
 const PLAYER_VISUAL_HEIGHT: f32 = 2.0;
+/// Claim mode aims this far at terrain, and this far into open air.
+const CLAIM_AIM: f64 = 48.0;
+const CLAIM_AIM_AIR: f64 = 10.0;
+/// Claims with a plot this close (horizontally, blocks) are outlined.
+const CLAIM_DRAW_RADIUS: f64 = 128.0;
+/// Outline colours, linear RGBA.
+const OWN_LINE: [f32; 4] = [1.0, 0.55, 0.10, 0.95];
+const OTHER_LINE: [f32; 4] = [0.95, 0.10, 0.06, 0.95];
+const TARGET_LINE: [f32; 4] = [0.95, 0.95, 0.88, 1.0];
+const XRAY_ALPHA: f32 = 0.22;
 
 pub struct Options {
-    pub connect: ConnectOptions,
+    /// Server address, name and password from the command line; with a
+    /// password the login screen is skipped.
+    pub server: String,
+    pub name: Option<String>,
+    pub password: Option<String>,
+    pub register: bool,
+    pub cert: PathBuf,
     pub vsync: bool,
     /// The folder holding `textures/` (normally `assets`).
-    pub assets: std::path::PathBuf,
+    pub assets: PathBuf,
+    pub settings_path: PathBuf,
+    /// `--demo-ui SCREEN`: run offline against `demo.rs`, opening SCREEN
+    /// (`hud`, `inventory`, `crafting`, `station`, `claims` or `login`).
+    pub demo: Option<String>,
+}
+
+/// The block being broken: where, holding what, and how far along (0 to 1).
+#[derive(Clone, Copy)]
+struct Mining {
+    pos: BlockPos,
+    slot: usize,
+    item: Option<ItemId>,
+    progress: f64,
 }
 
 /// Everything that exists once the server has welcomed us.
 struct Session {
     planet_name: String,
+    account: String,
     day: DayCycle,
     /// Server tick in the welcome and our clock when it arrived, for the time
     /// of day before the first snapshot.
@@ -48,23 +88,39 @@ struct Session {
     world: ClientWorld,
     me: Predictor,
     remotes: Remotes,
-    hotbar: Vec<BlockId>,
-    /// One icon per hotbar entry.
-    icons: Vec<Icon>,
+    items: Items,
+    icons: ItemIcons,
+    claims: Claims,
+    plot_allowance: u32,
+    /// Hotbar slot, 0 to 9.
     selected: usize,
     edit_seq: u32,
     place_cooldown: f64,
     target: Option<RayHit>,
-    /// The block being broken and how far along, 0 to 1.
-    mining: Option<(BlockPos, f64)>,
+    /// The plot claim mode points at.
+    claim_target: Option<PlotPos>,
+    mining: Option<Mining>,
+}
+
+struct EguiState {
+    ctx: egui::Context,
+    winit: egui_winit::State,
 }
 
 pub struct App {
     opts: Options,
     window: Option<Arc<Window>>,
     renderer: Option<Renderer>,
-    net: Option<Net>,
+    egui: Option<EguiState>,
+    link: Option<Link>,
     session: Option<Session>,
+    settings: Settings,
+    login: LoginForm,
+    menu: Option<Menu>,
+    drag: Option<Drag>,
+    live_station: Option<LiveStation>,
+    claim_mode: bool,
+    notices: Notices,
     status: String,
     keys: HashSet<KeyCode>,
     mouse: [bool; 2],
@@ -83,13 +139,33 @@ pub struct App {
 impl App {
     pub fn new(opts: Options) -> Self {
         let now = Instant::now();
+        let settings = Settings::load(&opts.settings_path);
+        let login = LoginForm {
+            name: opts.name.clone().unwrap_or_else(|| settings.name.clone()),
+            password: String::new(),
+            server: if settings.server.is_empty() || opts.name.is_some() {
+                opts.server.clone()
+            } else {
+                settings.server.clone()
+            },
+            error: None,
+            busy: false,
+        };
         Self {
             opts,
             window: None,
             renderer: None,
-            net: None,
+            egui: None,
+            link: None,
             session: None,
-            status: "connecting".into(),
+            settings,
+            login,
+            menu: None,
+            drag: None,
+            live_station: None,
+            claim_mode: false,
+            notices: Notices::default(),
+            status: "logging in".into(),
             keys: HashSet::new(),
             mouse: [false; 2],
             grabbed: false,
@@ -107,6 +183,10 @@ impl App {
 
     fn local_ticks(&self) -> f64 {
         self.start.elapsed().as_secs_f64() / TICK_DT
+    }
+
+    fn now(&self) -> f64 {
+        self.start.elapsed().as_secs_f64()
     }
 
     fn set_grab(&mut self, grab: bool) {
@@ -130,85 +210,225 @@ impl App {
         }
     }
 
+    fn send(&mut self, msg: ClientMsg) {
+        if let Some(l) = &mut self.link {
+            l.send(msg);
+        }
+    }
+
+    // ---- logging in ----
+
+    fn start_login(&mut self, register: bool) {
+        let name = self.login.name.trim().to_string();
+        if bm_protocol::clean_name(&name).as_deref() != Some(name.as_str()) {
+            self.login.error = Some(format!(
+                "Names are 2 to {} letters, digits, spaces, - or _.",
+                bm_protocol::MAX_NAME_LEN
+            ));
+            return;
+        }
+        if self.login.password.chars().count() < MIN_PASSWORD_LEN {
+            self.login.error = Some(format!("Passwords are at least {MIN_PASSWORD_LEN} characters."));
+            return;
+        }
+        if self.login.server.trim().is_empty() {
+            self.login.error = Some("Which server? For example 127.0.0.1:7777".into());
+            return;
+        }
+        self.login.error = None;
+        self.login.busy = true;
+        self.status = format!("connecting to {}", self.login.server.trim());
+        // A new attempt is a new network session.
+        self.link = Some(Link::Net(net::spawn(ConnectOptions {
+            server: self.login.server.trim().to_string(),
+            name,
+            password: self.login.password.clone(),
+            register,
+            cert: self.opts.cert.clone(),
+        })));
+    }
+
+    fn cancel_login(&mut self) {
+        self.link = None;
+        self.login.busy = false;
+        self.status = "logging in".into();
+    }
+
+    // ---- menus ----
+
+    fn open_menu(&mut self, menu: Menu) {
+        if self.menu == Some(menu) {
+            return;
+        }
+        self.close_menu(false);
+        if let Menu::Crafting(Some(pos)) = menu {
+            self.live_station = None;
+            self.send(ClientMsg::WatchStation { pos: Some(pos) });
+        }
+        self.menu = Some(menu);
+        self.keys.clear();
+        self.mouse = [false; 2];
+        if let Some(s) = &mut self.session {
+            s.mining = None;
+        }
+        self.set_grab(false);
+    }
+
+    fn close_menu(&mut self, regrab: bool) {
+        if let Some(Menu::Crafting(Some(_))) = self.menu {
+            self.send(ClientMsg::WatchStation { pos: None });
+            self.live_station = None;
+        }
+        let was_open = self.menu.take().is_some();
+        self.drag = None;
+        if was_open && regrab && self.session.is_some() {
+            self.set_grab(true);
+        }
+    }
+
+    /// The crafting screen: the station looked at if there is one in reach,
+    /// otherwise the hand recipes.
+    fn crafting_menu(&self) -> Menu {
+        let station = self.session.as_ref().and_then(|s| {
+            let hit = s.target?;
+            let block = s.world.block(hit.block)?;
+            s.world.registry.get(block).station.map(|_| hit.block)
+        });
+        Menu::Crafting(station)
+    }
+
+    fn toggle(&mut self, menu: Menu) {
+        if self
+            .menu
+            .is_some_and(|m| std::mem::discriminant(&m) == std::mem::discriminant(&menu))
+        {
+            self.close_menu(true);
+        } else {
+            self.claim_mode = false;
+            self.open_menu(menu);
+        }
+    }
+
+    fn apply_actions(&mut self, actions: Vec<UiAction>) {
+        for a in actions {
+            match a {
+                UiAction::Send(m) => self.send(m),
+                UiAction::LogIn { register } => self.start_login(register),
+                UiAction::CancelLogin => self.cancel_login(),
+                UiAction::CloseMenu => self.close_menu(true),
+            }
+        }
+    }
+
+    // ---- the network ----
+
     fn handle_net(&mut self) {
-        let Some(net) = &self.net else { return };
-        let events: Vec<NetEvent> = net.events.try_iter().collect();
-        for ev in events {
+        let Some(link) = &mut self.link else { return };
+        for ev in link.poll() {
             match ev {
-                NetEvent::Connected(w) => match BlockRegistry::from_defs(w.blocks.clone()) {
-                    Ok(registry) => {
-                        let set = TextureSet::load(&registry, &self.opts.assets.join("textures"));
-                        let lin = |c: [u8; 3]| c.map(crate::textures::srgb_to_linear);
-                        self.missing_textures = set.missing.len();
-                        if let Some(r) = &mut self.renderer {
-                            r.write_palette(&registry);
-                            r.set_textures(&set);
-                        }
-                        let hotbar: Vec<BlockId> =
-                            registry.iter().filter(|(_, d)| d.placeable).map(|(id, _)| id).collect();
-                        let icons: Vec<Icon> = hotbar
-                            .iter()
-                            .map(|id| {
-                                let def = registry.get(*id);
-                                let f = set
-                                    .faces
-                                    .get(id.0 as usize)
-                                    .copied()
-                                    .unwrap_or([crate::textures::NO_TEXTURE; 4]);
-                                // Table entries pack `first_layer | variants << 16`.
-                                let layer = |e: u32| {
-                                    if e == crate::textures::NO_TEXTURE {
-                                        e
-                                    } else {
-                                        e & 0xffff
-                                    }
-                                };
-                                Icon {
-                                    layers: [layer(f[0]), layer(f[1]), layer(f[2])],
-                                    colors: [
-                                        lin(def.top_color.unwrap_or(def.color)),
-                                        lin(def.color),
-                                        lin(def.bottom_color.unwrap_or(def.color)),
-                                    ],
-                                }
-                            })
-                            .collect();
-                        tracing::info!("welcomed to {} as #{}", w.planet_name, w.player_id);
-                        self.status = format!("on {}", w.planet_name);
-                        self.session = Some(Session {
-                            planet_name: w.planet_name.clone(),
-                            day: w.day,
-                            welcome_tick: w.tick,
-                            welcome_local: self.start.elapsed().as_secs_f64() / TICK_DT,
-                            movement: w.movement,
-                            reach: w.reach,
-                            view_radius: w.view_radius,
-                            world: ClientWorld::new(w.planet, registry),
-                            me: Predictor::new(w.spawn),
-                            remotes: Remotes::default(),
-                            hotbar,
-                            icons,
-                            selected: 0,
-                            edit_seq: 0,
-                            place_cooldown: 0.0,
-                            target: None,
-                            mining: None,
-                        });
-                    }
-                    Err(e) => self.status = format!("the server sent a bad block catalogue: {e}"),
-                },
+                NetEvent::Connected(w) => self.welcome(*w),
                 NetEvent::Msg(m) => self.handle_msg(m),
                 NetEvent::Snapshot(d) => self.handle_snapshot(d),
                 NetEvent::Disconnected(reason) => {
                     tracing::warn!("disconnected: {reason}");
-                    self.status = format!("disconnected: {reason}");
+                    let was_playing = self.session.is_some();
+                    self.close_menu(false);
+                    self.claim_mode = false;
                     self.session = None;
+                    self.link = None;
+                    if let Some(r) = &mut self.renderer {
+                        r.clear_chunks();
+                    }
+                    self.login.busy = false;
+                    self.login.error = Some(if was_playing {
+                        format!("Disconnected: {reason}")
+                    } else {
+                        reason.clone()
+                    });
+                    self.status = format!("disconnected: {reason}");
+                    self.set_grab(false);
+                    return;
                 }
             }
         }
     }
 
+    fn welcome(&mut self, w: bm_protocol::Welcome) {
+        let registry = match BlockRegistry::from_defs(w.blocks.clone()) {
+            Ok(r) => r,
+            Err(e) => return self.refuse_catalogue(format!("the server sent a bad block catalogue: {e}")),
+        };
+        let items = match Items::new(w.items.clone(), w.recipes.clone(), w.inventory.clone(), &registry) {
+            Ok(i) => i,
+            Err(e) => return self.refuse_catalogue(format!("the server sent a bad item catalogue: {e}")),
+        };
+        let set = TextureSet::load(&registry, &self.opts.assets.join("textures"));
+        self.missing_textures = set.missing.len();
+        if let Some(r) = &mut self.renderer {
+            r.clear_chunks();
+            r.write_palette(&registry);
+            r.set_textures(&set);
+        }
+        let items_dir = self.opts.assets.join("textures").join("items");
+        let sources = items
+            .registry
+            .defs()
+            .iter()
+            .map(|d| icon_for(d, &registry, &set, &items_dir))
+            .collect();
+        let icons = match &self.egui {
+            Some(e) => ItemIcons::build(&e.ctx, sources),
+            None => ItemIcons::default(),
+        };
+        tracing::info!("welcomed to {} as {} (#{})", w.planet_name, w.account, w.player_id);
+        self.status = format!("on {}", w.planet_name);
+        // Remember who and where, never the password; and forget it here too.
+        self.login.busy = false;
+        self.login.error = None;
+        self.login.password.clear();
+        if self.opts.demo.is_none() {
+            self.settings.name = w.account.clone();
+            self.settings.server = self.login.server.trim().to_string();
+            if let Err(e) = self.settings.save(&self.opts.settings_path) {
+                tracing::warn!("cannot save settings to {}: {e}", self.opts.settings_path.display());
+            }
+        }
+        self.session = Some(Session {
+            planet_name: w.planet_name.clone(),
+            account: w.account.clone(),
+            day: w.day,
+            welcome_tick: w.tick,
+            welcome_local: self.local_ticks(),
+            movement: w.movement,
+            reach: w.reach,
+            view_radius: w.view_radius,
+            claims: Claims::new(w.planet, w.claims),
+            world: ClientWorld::new(w.planet, registry),
+            me: Predictor::new(w.spawn),
+            remotes: Remotes::default(),
+            items,
+            icons,
+            plot_allowance: w.plot_allowance,
+            selected: 0,
+            edit_seq: 0,
+            place_cooldown: 0.0,
+            target: None,
+            claim_target: None,
+            mining: None,
+        });
+        self.set_grab(true);
+        self.open_demo_screen();
+    }
+
+    fn refuse_catalogue(&mut self, why: String) {
+        tracing::error!("{why}");
+        self.link = None;
+        self.login.busy = false;
+        self.login.error = Some(why);
+    }
+
     fn handle_msg(&mut self, m: ServerMsg) {
+        let now = self.now();
         let Some(s) = &mut self.session else { return };
         match m {
             ServerMsg::Chunk { pos, data } => match Chunk::decode(&data) {
@@ -225,6 +445,15 @@ impl App {
             ServerMsg::EditResult { seq, pos, block, .. } => s.world.apply_edit_result(seq, pos, block),
             ServerMsg::PlayerJoined { id, name } => s.remotes.joined(id, name),
             ServerMsg::PlayerLeft { id } => s.remotes.left(id),
+            ServerMsg::Slots { changes } => s.items.apply_slots(&changes),
+            ServerMsg::Station(view) => {
+                if self.menu == Some(Menu::Crafting(Some(view.pos))) {
+                    self.live_station = Some(LiveStation { view, received: now });
+                }
+            }
+            ServerMsg::Claim(c) => s.claims.upsert(c),
+            ServerMsg::ClaimRemoved { id } => s.claims.remove(id),
+            ServerMsg::Notice { text } => self.notices.push(text, now),
             ServerMsg::Welcome(_) | ServerMsg::Refused { .. } => {}
         }
     }
@@ -252,8 +481,44 @@ impl App {
         );
     }
 
+    // ---- claims ----
+
+    fn claim_click(&mut self, add: bool) {
+        let now = self.now();
+        let Some(s) = &self.session else { return };
+        let Some(plot) = s.claim_target else { return };
+        let msg = match s.claims.at(plot) {
+            Some(c) if c.owner == s.account && add => Err("That plot is already yours.".to_string()),
+            Some(c) if c.owner != s.account => Err(format!("That plot belongs to {}.", c.owner)),
+            Some(c) => {
+                if PlotPos::of(c.stone, s.world.shape) == plot {
+                    Err("That plot holds your claim stone. Break the stone to give up the claim.".into())
+                } else {
+                    Ok(ClientMsg::ReleasePlot { plot })
+                }
+            }
+            None if !add => Err("That plot is not yours to give up.".into()),
+            None => match s.claims.adjacent_claim_of(&s.account, plot) {
+                Some(claim) => {
+                    if s.claims.plots_owned_by(&s.account) as u32 >= s.plot_allowance {
+                        Err(format!("You hold all {} plots you may claim.", s.plot_allowance))
+                    } else {
+                        Ok(ClientMsg::ClaimPlot { claim, plot })
+                    }
+                }
+                None => Err("Claim plots next to your claim. A claim stone starts a new claim.".into()),
+            },
+        };
+        match msg {
+            Ok(m) => self.send(m),
+            Err(text) => self.notices.push(text, now),
+        }
+    }
+
+    // ---- the frame ----
+
     fn sample_input(&self) -> PlayerInput {
-        let k = |c: KeyCode| self.grabbed && self.keys.contains(&c);
+        let k = |c: KeyCode| self.grabbed && self.menu.is_none() && self.keys.contains(&c);
         let (yaw, pitch) = PlayerInput::from_angles(self.yaw, self.pitch);
         PlayerInput {
             forward: k(KeyCode::KeyW) as i8 - k(KeyCode::KeyS) as i8,
@@ -272,14 +537,20 @@ impl App {
         self.handle_net();
 
         let input = self.sample_input();
-        let mouse = self.mouse;
-        let grabbed = self.grabbed;
+        let playing = self.grabbed && self.menu.is_none();
+        let mouse = if playing && !self.claim_mode {
+            self.mouse
+        } else {
+            [false; 2]
+        };
+        let claim_mode = self.claim_mode;
         let (yaw, pitch) = (self.yaw, self.pitch);
         let Some(s) = &mut self.session else { return };
-        let net = self.net.as_ref().expect("session implies net");
+        let Some(link) = &mut self.link else { return };
 
         // Fixed-rate simulation, decoupled from frame rate. Keeps ticking when
-        // the window is hidden, so the server keeps receiving inputs.
+        // the window is hidden or a menu is open, so the server keeps
+        // receiving inputs.
         self.accumulator += dt;
         // Until the chunks around us arrive they read as solid here but not
         // on the server, and every tick would be a misprediction. Wait; the
@@ -292,7 +563,7 @@ impl App {
             self.accumulator -= TICK_DT;
             ticks += 1;
             let seq = s.me.tick(input, &s.movement, s.world.shape, &s.world);
-            net.send_datagram(ClientDatagram::Input {
+            link.send_datagram(ClientDatagram::Input {
                 latest: seq,
                 inputs: s.me.recent_inputs(INPUT_REDUNDANCY),
             });
@@ -312,32 +583,60 @@ impl App {
         }
         .forward();
         let world = &s.world;
-        s.target = raycast(eye, dir, s.reach, |p| {
-            world.block(p).is_some_and(|b| world.flags.solid(b))
+        let solid = |p: BlockPos| world.block(p).is_some_and(|b| world.flags.solid(b));
+        s.target = raycast(eye, dir, s.reach, solid);
+        s.claim_target = claim_mode.then(|| {
+            let at = match raycast(eye, dir, CLAIM_AIM, solid) {
+                Some(hit) => hit.block,
+                None => {
+                    let p = eye + dir * CLAIM_AIM_AIR;
+                    BlockPos::containing(p.x, p.y, p.z)
+                }
+            };
+            PlotPos::of(at, world.shape)
         });
-        // Breaking takes the block's hardness in seconds of holding. The
-        // server times the same hold from our StartBreak (ADR-0004), so the
-        // progress here is a prediction of what it will accept.
-        let breaking = grabbed && mouse[0];
+
+        // Breaking takes `break_seconds` of holding: the block's hardness,
+        // shortened by a suitable tool in the selected slot. The server times
+        // the same hold from our StartBreak (ADR-0004), so the progress here
+        // is a prediction of what it will accept.
+        let slot = s.selected;
+        let held = s.items.slot(slot);
         let mut mining = s.mining.take();
-        if breaking && let Some(hit) = s.target {
-            let def = s.world.registry.get(s.world.block(hit.block).unwrap_or(BlockId::AIR));
+        if mouse[0]
+            && let Some(hit) = s.target
+        {
+            let block = s.world.block(hit.block).unwrap_or(BlockId::AIR);
+            let def = s.world.registry.get(block);
             if def.breakable {
-                let hardness = def.hardness as f64;
+                let item = held.map(|h| h.item);
+                let seconds = s.items.registry.break_seconds(def, item) as f64;
                 let progress = match mining {
-                    Some((b, p)) if b == hit.block => p,
+                    Some(m) if m.pos == hit.block && m.slot == slot && m.item == item => m.progress,
                     _ => {
-                        if hardness > 0.0 {
-                            net.send(ClientMsg::StartBreak { pos: hit.block });
+                        if seconds > 0.0 {
+                            link.send(ClientMsg::StartBreak {
+                                pos: hit.block,
+                                slot: slot as u8,
+                            });
                         }
                         0.0
                     }
                 };
-                let progress = if hardness > 0.0 { progress + dt / hardness } else { 1.0 };
+                let progress = if seconds > 0.0 { progress + dt / seconds } else { 1.0 };
                 if progress >= 1.0 {
                     s.edit_seq += 1;
-                    s.world.predict_edit(s.edit_seq, hit.block, BlockId::AIR);
-                    net.send(ClientMsg::Edit {
+                    // With no room for what it yields the server refuses the
+                    // break; predicting it would only flash the block away.
+                    let fits = s
+                        .items
+                        .registry
+                        .drop_of(block)
+                        .is_none_or(|d| s.items.inventory.can_fit(&s.items.registry, d, 1));
+                    if fits {
+                        s.world.predict_edit(s.edit_seq, hit.block, BlockId::AIR);
+                    }
+                    link.send(ClientMsg::Edit {
                         seq: s.edit_seq,
                         at: s.me.seq,
                         pos: hit.block,
@@ -345,7 +644,12 @@ impl App {
                     });
                     mining = None;
                 } else {
-                    mining = Some((hit.block, progress));
+                    mining = Some(Mining {
+                        pos: hit.block,
+                        slot,
+                        item,
+                        progress,
+                    });
                 }
             } else {
                 mining = None;
@@ -355,11 +659,12 @@ impl App {
         }
         s.mining = mining;
 
+        // Placing spends one of the selected item, so only a block item can.
         s.place_cooldown -= dt;
-        if grabbed
-            && mouse[1]
+        let place_block = held.and_then(|h| s.items.def(&h)).and_then(|d| d.block());
+        if mouse[1]
             && s.place_cooldown <= 0.0
-            && let (Some(hit), Some(&block)) = (s.target, s.hotbar.get(s.selected))
+            && let (Some(hit), Some(block)) = (s.target, place_block)
         {
             let at = hit.adjacent();
             let free = s
@@ -370,11 +675,11 @@ impl App {
             if free && !blocks_me && s.world.shape.contains_y(at.y) {
                 s.edit_seq += 1;
                 s.world.predict_edit(s.edit_seq, at, block);
-                net.send(ClientMsg::Edit {
+                link.send(ClientMsg::Edit {
                     seq: s.edit_seq,
                     at: s.me.seq,
                     pos: at,
-                    action: EditAction::Place(block),
+                    action: EditAction::Place { slot: slot as u8 },
                 });
                 s.place_cooldown = PLACE_REPEAT;
             }
@@ -391,29 +696,159 @@ impl App {
         }
     }
 
+    /// Runs this frame's menus and HUD and returns them tessellated.
+    fn run_ui(&mut self) -> Option<(Vec<egui::ClippedPrimitive>, egui::TexturesDelta, f32)> {
+        let window = self.window.clone()?;
+        let e = self.egui.as_mut()?;
+        let raw = e.winit.take_egui_input(&window);
+        let now = self.start.elapsed().as_secs_f64();
+        let mut actions = Vec::new();
+        let notices = self.notices.visible(now);
+        let menu = self.menu;
+        let login = &mut self.login;
+        let drag = &mut self.drag;
+        let session = self.session.as_ref();
+        let live = self.live_station.as_ref();
+        let claim_mode = self.claim_mode;
+        let out = e.ctx.run_ui(raw, |ui| {
+            let ctx = ui.ctx().clone();
+            let Some(s) = session else {
+                menus::login(&ctx, login, &mut actions);
+                return;
+            };
+            let shape = s.world.shape;
+            let feet = s.me.state.pos;
+            let here = PlotPos::of(BlockPos::containing(feet.x, feet.y, feet.z), shape);
+            let owner = s.claims.at(here).map(|c| (c.owner.clone(), c.owner == s.account));
+            let claim_help = claim_mode.then(|| {
+                format!(
+                    "Left click a plot next to your claim to add it. Right click one of yours to give it up.\n\
+                     {} of {} plots claimed. P to leave.",
+                    s.claims.plots_owned_by(&s.account),
+                    s.plot_allowance
+                )
+            });
+            menus::hud(
+                &ctx,
+                &Hud {
+                    items: &s.items,
+                    icons: &s.icons,
+                    selected: s.selected,
+                    notices: notices.clone(),
+                    owner,
+                    claim_mode: claim_help,
+                },
+            );
+            match menu {
+                Some(Menu::Inventory) => menus::inventory(&ctx, &s.items, &s.icons, s.selected, drag, &mut actions),
+                Some(Menu::Crafting(station)) => {
+                    let station = station.and_then(|pos| {
+                        let block = s.world.block(pos)?;
+                        let kind = s.world.registry.get(block).station?;
+                        Some((pos, kind, menus::station_name(&s.world.registry, kind)))
+                    });
+                    menus::crafting(
+                        &ctx,
+                        &CraftingView {
+                            items: &s.items,
+                            icons: &s.icons,
+                            station,
+                            live,
+                            now,
+                        },
+                        &mut actions,
+                    );
+                }
+                None => {}
+            }
+        });
+        e.winit.handle_platform_output(&window, out.platform_output);
+        let prims = e.ctx.tessellate(out.shapes, out.pixels_per_point);
+        let ppp = out.pixels_per_point;
+        self.apply_actions(actions);
+        Some((prims, out.textures_delta, ppp))
+    }
+
+    /// Claim outlines for claim mode: (shown, through terrain).
+    fn claim_lines(&self, eye: DVec3) -> (Vec<LineVertex>, Vec<LineVertex>) {
+        let mut lines = Vec::new();
+        let Some(s) = &self.session else {
+            return (lines, Vec::new());
+        };
+        if !self.claim_mode {
+            return (lines, Vec::new());
+        }
+        let shape = s.world.shape;
+        let mut push = |plots: &HashSet<PlotPos>, color: [f32; 4], lift: f32| {
+            for edge in outline(plots, shape) {
+                for p in edge.endpoints(shape, eye) {
+                    // Pushed a hair outwards so lines on block edges win the
+                    // depth test against the terrain they lie on.
+                    let rel = (p - eye).as_vec3();
+                    let rel = rel + rel.normalize_or_zero() * -lift;
+                    lines.push(LineVertex {
+                        pos: rel.to_array(),
+                        color,
+                    });
+                }
+            }
+        };
+        let size = bm_core::PLOT_SIZE as f64;
+        for c in s.claims.iter() {
+            let near = c.plots.iter().any(|p| {
+                let centre = DVec3::new(p.x as f64 + 0.5, p.y as f64 + 0.5, p.z as f64 + 0.5) * size;
+                let d = shape.delta(eye, centre);
+                d.x.hypot(d.z) < CLAIM_DRAW_RADIUS
+            });
+            if near {
+                let colour = if c.owner == s.account { OWN_LINE } else { OTHER_LINE };
+                push(&c.plots.iter().copied().collect(), colour, 0.01);
+            }
+        }
+        if let Some(t) = s.claim_target {
+            push(&HashSet::from([t]), TARGET_LINE, 0.02);
+        }
+        let xray = lines
+            .iter()
+            .map(|v| LineVertex {
+                pos: v.pos,
+                color: [v.color[0], v.color[1], v.color[2], v.color[3] * XRAY_ALPHA],
+            })
+            .collect();
+        (lines, xray)
+    }
+
     fn render(&mut self) {
+        let ui = self.run_ui();
+        let ui_frame = ui.as_ref().map(|(p, t, ppp)| EguiFrame {
+            primitives: p,
+            textures: t,
+            pixels_per_point: *ppp,
+        });
         let alpha = self.accumulator / TICK_DT;
         let local = self.local_ticks();
         let time = self.start.elapsed().as_secs_f32();
         let (yaw, pitch) = (self.yaw, self.pitch);
-        let Some(r) = &mut self.renderer else { return };
         let Some(s) = &self.session else {
-            // Nothing to draw yet: an empty sky.
+            // Nothing to draw yet: an empty sky behind the login screen.
+            let Some(r) = &mut self.renderer else { return };
             let cam = Camera {
                 eye: DVec3::ZERO,
                 yaw,
-                pitch,
+                pitch: 0.25,
                 fov_y: 75f32.to_radians(),
             };
             let day = DayCycle::default();
             r.render(&Scene {
                 camera: &cam,
-                sky: &Sky::at(&day, 0.0),
+                sky: &Sky::at(&day, day.day_ticks as f64 * 0.18),
                 shape: PlanetShape::new(8, 1),
                 boxes: &[],
                 highlight: None,
                 breaking: None,
-                ui: &[],
+                lines: &[],
+                xray_lines: &[],
+                ui: ui_frame,
                 fog_end: 100.0,
                 time,
             });
@@ -458,23 +893,26 @@ impl App {
                 }
             })
             .collect();
-        let mut ui = UiBuilder::default();
-        ui.hotbar(
-            [r.width() as f32, r.height() as f32],
-            &Hotbar {
-                icons: &s.icons,
-                selected: s.selected,
-            },
-        );
+        let (lines, xray) = self.claim_lines(eye);
+        let highlight = if self.claim_mode {
+            None
+        } else {
+            s.target.map(|t| t.block)
+        };
+        let view_radius = s.view_radius;
+        let breaking = s.mining.map(|m| (m.pos, m.progress as f32));
+        let Some(r) = &mut self.renderer else { return };
         r.render(&Scene {
             camera: &camera,
             sky: &sky,
-            ui: &ui.verts,
+            ui: ui_frame,
             shape,
             boxes: &boxes,
-            highlight: s.target.map(|t| t.block),
-            breaking: s.mining.map(|(b, p)| (b, p as f32)),
-            fog_end: (s.view_radius as f32 - 1.0) * 32.0,
+            highlight,
+            breaking,
+            lines: &lines,
+            xray_lines: &xray,
+            fog_end: (view_radius as f32 - 1.0) * 32.0,
             time,
         });
     }
@@ -492,11 +930,12 @@ impl App {
         let title = match &self.session {
             Some(s) => {
                 let p = s.me.state.pos;
-                let block = s
-                    .hotbar
-                    .get(s.selected)
-                    .map(|b| s.world.registry.get(*b).name.clone())
-                    .unwrap_or_default();
+                let held = s
+                    .items
+                    .slot(s.selected)
+                    .and_then(|h| s.items.def(&h))
+                    .map(|d| d.display.clone())
+                    .unwrap_or_else(|| "empty hand".into());
                 let (chunks, meshes, quads) = self
                     .renderer
                     .as_ref()
@@ -506,7 +945,7 @@ impl App {
                     "Boundmore | {} | {:.0} fps | {:.0} ms | {:.0} {:.0} {:.0} | {} chunks, {} drawn, {}k quads, {} to mesh | {} corrections | [{}] {}",
                     s.planet_name,
                     self.fps,
-                    self.net.as_ref().map(|n| n.rtt_ms()).unwrap_or(0.0),
+                    self.link.as_ref().map(|n| n.rtt_ms()).unwrap_or(0.0),
                     p.x,
                     p.y,
                     p.z,
@@ -515,8 +954,8 @@ impl App {
                     quads / 1000,
                     s.world.dirty_count(),
                     s.me.corrections,
-                    s.selected + 1,
-                    block,
+                    (s.selected + 1) % 10,
+                    held,
                 )
             }
             None => format!("Boundmore | {}", self.status),
@@ -528,12 +967,55 @@ impl App {
         };
         w.set_title(&title);
     }
+
+    /// `--demo-ui`: open the screen asked for once the demo welcomes us.
+    fn open_demo_screen(&mut self) {
+        let Some(screen) = self.opts.demo.clone() else { return };
+        let now = self.now();
+        match screen.as_str() {
+            "inventory" => self.open_menu(Menu::Inventory),
+            "crafting" => self.open_menu(Menu::Crafting(None)),
+            "station" => {
+                // Face the demo workbench, two blocks ahead and below the eye.
+                self.pitch = -0.5;
+                self.open_menu(Menu::Crafting(Some(BlockPos::new(128, 44, 126))));
+            }
+            "claims" => {
+                self.yaw = 0.7;
+                self.pitch = -0.32;
+                self.claim_mode = true;
+            }
+            _ => {
+                self.pitch = -0.12;
+                self.notices.push("Your inventory is full".into(), now);
+                if let Some(s) = &mut self.session {
+                    s.selected = 2;
+                }
+            }
+        }
+    }
 }
 
 fn player_colour(id: u32) -> [f32; 4] {
     let h = id.wrapping_mul(2_654_435_761);
     let c = |shift: u32| 0.25 + 0.6 * ((h >> shift) & 0xff) as f32 / 255.0;
     [c(0), c(8), c(16), 1.0]
+}
+
+fn digit_slot(code: KeyCode) -> Option<usize> {
+    Some(match code {
+        KeyCode::Digit1 => 0,
+        KeyCode::Digit2 => 1,
+        KeyCode::Digit3 => 2,
+        KeyCode::Digit4 => 3,
+        KeyCode::Digit5 => 4,
+        KeyCode::Digit6 => 5,
+        KeyCode::Digit7 => 6,
+        KeyCode::Digit8 => 7,
+        KeyCode::Digit9 => 8,
+        KeyCode::Digit0 => 9,
+        _ => return None,
+    })
 }
 
 impl ApplicationHandler for App {
@@ -560,17 +1042,46 @@ impl ApplicationHandler for App {
                 return;
             }
         }
+        let ctx = egui::Context::default();
+        menus::install_style(&ctx);
+        let winit = egui_winit::State::new(
+            ctx.clone(),
+            egui::ViewportId::ROOT,
+            &window,
+            Some(window.scale_factor() as f32),
+            None,
+            None,
+        );
+        self.egui = Some(EguiState { ctx, winit });
         self.window = Some(window);
-        let c = &self.opts.connect;
-        self.net = Some(net::spawn(ConnectOptions {
-            server: c.server,
-            name: c.name.clone(),
-            cert: c.cert.clone(),
-        }));
+        match self.opts.demo.as_deref() {
+            Some("login") => {
+                self.login.error = Some("No account by that name. Check it, or create one.".into());
+            }
+            Some(_) => {
+                let name = self.opts.name.clone().unwrap_or_else(|| "Pendragon".into());
+                self.link = Some(Link::Demo(Box::new(crate::demo::Demo::new(&name))));
+            }
+            None => {
+                // A password on the command line skips the login screen
+                // (headless testing); a refusal still lands on it.
+                if let Some(p) = self.opts.password.take() {
+                    self.login.password = p;
+                    self.start_login(self.opts.register);
+                }
+            }
+        }
         event_loop.set_control_flow(ControlFlow::Poll);
     }
 
     fn window_event(&mut self, event_loop: &ActiveEventLoop, _id: WindowId, event: WindowEvent) {
+        // egui sees everything first; the game takes what egui does not need.
+        let mut egui_typing = false;
+        if let (Some(e), Some(w)) = (&mut self.egui, &self.window) {
+            let _ = e.winit.on_window_event(w, &event);
+            egui_typing = e.ctx.egui_wants_keyboard_input();
+        }
+        let in_game = self.session.is_some();
         match event {
             WindowEvent::CloseRequested => event_loop.exit(),
             WindowEvent::Resized(size) => {
@@ -581,51 +1092,71 @@ impl ApplicationHandler for App {
             WindowEvent::Focused(false) => {
                 self.keys.clear();
                 self.mouse = [false; 2];
+                self.drag = None;
                 self.set_grab(false);
             }
             WindowEvent::KeyboardInput { event, .. } => {
                 let PhysicalKey::Code(code) = event.physical_key else {
                     return;
                 };
-                if event.state == ElementState::Pressed {
-                    self.keys.insert(code);
-                    match code {
-                        KeyCode::Escape => self.set_grab(false),
-                        KeyCode::F11 => {
-                            if let Some(w) = &self.window {
-                                let full = w.fullscreen().is_some();
-                                w.set_fullscreen((!full).then_some(Fullscreen::Borderless(None)));
-                            }
-                        }
-                        _ => {}
-                    }
-                    let digit = match code {
-                        KeyCode::Digit1 => Some(0),
-                        KeyCode::Digit2 => Some(1),
-                        KeyCode::Digit3 => Some(2),
-                        KeyCode::Digit4 => Some(3),
-                        KeyCode::Digit5 => Some(4),
-                        KeyCode::Digit6 => Some(5),
-                        KeyCode::Digit7 => Some(6),
-                        KeyCode::Digit8 => Some(7),
-                        KeyCode::Digit9 => Some(8),
-                        KeyCode::Digit0 => Some(9),
-                        _ => None,
-                    };
-                    if let (Some(d), Some(s)) = (digit, &mut self.session)
-                        && d < s.hotbar.len()
-                    {
-                        s.selected = d;
-                    }
-                } else {
+                if event.state != ElementState::Pressed {
                     self.keys.remove(&code);
+                    return;
+                }
+                if code == KeyCode::F11 {
+                    if let Some(w) = &self.window {
+                        let full = w.fullscreen().is_some();
+                        w.set_fullscreen((!full).then_some(Fullscreen::Borderless(None)));
+                    }
+                    return;
+                }
+                if !in_game || egui_typing || event.repeat {
+                    return;
+                }
+                match code {
+                    KeyCode::Escape => {
+                        if self.menu.is_some() {
+                            self.close_menu(true);
+                        } else {
+                            self.set_grab(false);
+                        }
+                    }
+                    KeyCode::KeyI | KeyCode::Tab => self.toggle(Menu::Inventory),
+                    KeyCode::KeyC => {
+                        let m = self.crafting_menu();
+                        self.toggle(m);
+                    }
+                    KeyCode::KeyP if self.menu.is_none() => {
+                        self.claim_mode = !self.claim_mode;
+                        self.mouse = [false; 2];
+                    }
+                    _ => {}
+                }
+                if let (Some(d), Some(s)) = (digit_slot(code), &mut self.session) {
+                    s.selected = d;
+                }
+                if self.menu.is_none() {
+                    self.keys.insert(code);
                 }
             }
             WindowEvent::MouseInput { state, button, .. } => {
+                if !in_game || self.menu.is_some() {
+                    return; // the menus have it
+                }
                 let down = state == ElementState::Pressed;
                 if down && !self.grabbed {
                     self.set_grab(true);
                     return; // the click that grabs the mouse does not dig
+                }
+                if self.claim_mode {
+                    if down {
+                        match button {
+                            MouseButton::Left => self.claim_click(true),
+                            MouseButton::Right => self.claim_click(false),
+                            _ => {}
+                        }
+                    }
+                    return;
                 }
                 match button {
                     MouseButton::Left => self.mouse[0] = down,
@@ -638,15 +1169,15 @@ impl ApplicationHandler for App {
                 }
             }
             WindowEvent::MouseWheel { delta, .. } => {
+                if self.menu.is_some() {
+                    return;
+                }
                 let steps = match delta {
                     MouseScrollDelta::LineDelta(_, y) => y.signum() as i32,
                     MouseScrollDelta::PixelDelta(p) => p.y.signum() as i32,
                 };
-                if let Some(s) = &mut self.session
-                    && !s.hotbar.is_empty()
-                {
-                    let n = s.hotbar.len() as i32;
-                    s.selected = (s.selected as i32 - steps).rem_euclid(n) as usize;
+                if let Some(s) = &mut self.session {
+                    s.selected = (s.selected as i32 - steps).rem_euclid(HOTBAR_SLOTS as i32) as usize;
                 }
             }
             WindowEvent::RedrawRequested => {
@@ -660,6 +1191,7 @@ impl ApplicationHandler for App {
     fn device_event(&mut self, _el: &ActiveEventLoop, _id: DeviceId, event: DeviceEvent) {
         if let DeviceEvent::MouseMotion { delta: (dx, dy) } = event
             && self.grabbed
+            && self.menu.is_none()
         {
             self.yaw = (self.yaw + dx * MOUSE_SENSITIVITY).rem_euclid(std::f64::consts::TAU);
             let limit = bm_core::movement::pitch_radians(bm_core::movement::PITCH_LIMIT);
