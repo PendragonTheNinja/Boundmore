@@ -1,0 +1,58 @@
+# Planet kinds. A kind is a template: when a planet is created, its
+# generation settings are copied from here and saved with the planet, so
+# editing this file changes only planets created afterwards.
+#
+#   name        unique; the server's planet list refers to it
+#   display     what players see (default: the name in title case)
+#   tier        1 is the gentle start; higher tiers hold rarer ore
+#   [kind.look]
+#     day_zenith, day_horizon   daytime sky, linear RGB 0-1
+#     color                     the planet seen from other planets, linear RGB
+#     tints                     [["block", [r, g, b]], ...] multiplies a block's
+#                               texture, sRGB 0-255 (white is none)
+#   [kind.generation]           PlanetGenConfig fields (bm-worldgen); any left
+#                               out keep their defaults
+
+[[kind]]
+name = "temperate"
+tier = 1
+[kind.look]
+day_zenith = [0.08, 0.26, 0.78]
+day_horizon = [0.42, 0.62, 0.90]
+color = [0.30, 0.55, 0.35]
+
+[[kind]]
+name = "arid"
+tier = 2
+[kind.look]
+day_zenith = [0.20, 0.32, 0.62]
+day_horizon = [0.85, 0.70, 0.50]
+color = [0.80, 0.50, 0.28]
+tints = [["sand", [255, 200, 160]], ["stone", [255, 225, 200]]]
+[kind.generation]
+tree_density = 0.0
+snow_line = 400
+
+[[kind]]
+name = "frozen"
+tier = 2
+[kind.look]
+day_zenith = [0.18, 0.34, 0.70]
+day_horizon = [0.70, 0.80, 0.92]
+color = [0.80, 0.88, 0.95]
+tints = [["foliage", [170, 210, 200]]]
+[kind.generation]
+snow_line = -20
+tree_density = 0.004
+
+[[kind]]
+name = "lush"
+tier = 3
+[kind.look]
+day_zenith = [0.10, 0.36, 0.62]
+day_horizon = [0.55, 0.78, 0.70]
+color = [0.20, 0.62, 0.42]
+tints = [["turf", [190, 255, 170]], ["foliage", [170, 255, 160]]]
+[kind.generation]
+mountain_height = 170.0
+tree_density = 0.03

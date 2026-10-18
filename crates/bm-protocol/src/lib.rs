@@ -16,13 +16,13 @@
 //! decoders bound sizes, and the server validates content.
 
 use bm_core::{
-    BlockDef, BlockId, BlockPos, ChunkPos, DayCycle, Inventory, ItemDef, ItemStack, MoveConfig, PlanetShape,
-    PlayerInput, PlayerState, PlotPos, Recipe, Station,
+    BlockDef, BlockId, BlockPos, ChunkPos, DayCycle, Inventory, ItemDef, ItemStack, MoveConfig, PlanetLook,
+    PlanetShape, PlayerInput, PlayerState, PlotPos, Recipe, Station,
 };
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
 
 /// Bump on any change to a message below. Client and server must match.
-pub const PROTOCOL_VERSION: u32 = 6;
+pub const PROTOCOL_VERSION: u32 = 7;
 
 /// QUIC application protocol name; also refuses non-Boundmore peers early.
 pub const ALPN: &[u8] = b"boundmore/1";
@@ -92,6 +92,9 @@ pub enum ClientMsg {
     ClaimPlot { claim: u32, plot: PlotPos },
     /// Give up one plot of your claims (never the one holding its claim stone).
     ReleasePlot { plot: PlotPos },
+    /// Travel to another planet from a warp shrine within reach. The server
+    /// answers with `Travel`, or a `Notice` saying why not.
+    Warp { shrine: BlockPos, planet: u16 },
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -107,8 +110,11 @@ pub struct Welcome {
     pub player_id: u32,
     /// The account's name as it was registered.
     pub account: String,
-    pub planet: PlanetShape,
-    pub planet_name: String,
+    /// The planet the player is on. Chunks, block changes, claims and
+    /// snapshots all belong to it until a `Travel`.
+    pub planet: PlanetInfo,
+    /// Every planet on this server, for the travel menu and the sky.
+    pub universe: Vec<PlanetSummary>,
     /// The block catalogue. The client renders whatever the server says a
     /// block is (ADR-0003); it ships no copy of its own that could disagree.
     pub blocks: Vec<BlockDef>,
@@ -124,12 +130,42 @@ pub struct Welcome {
     pub view_radius: u8,
     /// Furthest a player may edit from their eye, in blocks.
     pub reach: f64,
-    /// Day length and phase; time of day is derived from snapshot ticks.
-    pub day: DayCycle,
     /// Every claim on the planet (later: only those near the player).
     pub claims: Vec<ClaimView>,
     /// Plots this account may claim in all.
     pub plot_allowance: u32,
+}
+
+/// Everything a client needs to be on a planet.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct PlanetInfo {
+    pub id: u16,
+    pub name: String,
+    /// The kind's display name ("Arid").
+    pub kind: String,
+    pub tier: u8,
+    pub shape: PlanetShape,
+    /// Day length and phase on this planet; time of day is derived from
+    /// snapshot ticks (one clock for the whole server).
+    pub day: DayCycle,
+    pub look: PlanetLook,
+    /// `look.tints` resolved: one per block id, `NO_TINT` for none.
+    pub tints: Vec<[u8; 3]>,
+}
+
+/// A planet as listed in the travel menu and drawn in the sky.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct PlanetSummary {
+    pub id: u16,
+    pub name: String,
+    pub kind: String,
+    pub tier: u8,
+    /// Linear RGB, as seen from other planets.
+    pub color: [f32; 3],
+    /// Blocks around, for its apparent size in the sky.
+    pub width_blocks: u32,
+    /// Players there when the list was sent.
+    pub players: u16,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -209,6 +245,24 @@ pub enum ServerMsg {
     Notice {
         text: String,
     },
+    /// The player is now on another planet. The client drops every chunk,
+    /// remote player, claim and station view of the old one; what follows on
+    /// this stream belongs to the new one. Input sequences carry on.
+    Travel(Box<Travel>),
+    /// The planet list changed (players arriving and leaving, a new planet).
+    Universe {
+        planets: Vec<PlanetSummary>,
+    },
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct Travel {
+    pub planet: PlanetInfo,
+    pub spawn: PlayerState,
+    /// Server tick the spawn state belongs to.
+    pub tick: u64,
+    /// Every claim on the new planet.
+    pub claims: Vec<ClaimView>,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -231,6 +285,9 @@ pub enum ServerDatagram {
     /// World state at `tick`. Large player counts split one tick across
     /// several snapshots; `you` is repeated in each.
     Snapshot {
+        /// The planet it describes; a snapshot from before a `Travel` arrives
+        /// out of order with the stream and is dropped.
+        planet: u16,
         tick: u64,
         /// Highest input sequence applied to `you`.
         ack: u32,
@@ -309,6 +366,7 @@ mod tests {
     #[test]
     fn full_snapshot_fits_a_datagram() {
         let snap = ServerDatagram::Snapshot {
+            planet: u16::MAX,
             tick: u64::MAX,
             ack: u32::MAX,
             you: PlayerState {
@@ -357,8 +415,27 @@ mod tests {
         let w = ServerMsg::Welcome(Box::new(Welcome {
             player_id: 1,
             account: "Pendragon".into(),
-            planet: PlanetShape::new(64, 12),
-            planet_name: "Verdance".into(),
+            planet: PlanetInfo {
+                id: 0,
+                name: "Verdance".into(),
+                kind: "Temperate".into(),
+                tier: 1,
+                shape: PlanetShape::new(64, 12),
+                day: DayCycle::default(),
+                look: PlanetLook::default(),
+                tints: vec![bm_core::NO_TINT; blocks.len()],
+            },
+            universe: (0..32)
+                .map(|id| PlanetSummary {
+                    id,
+                    name: "A planet with quite a long name".into(),
+                    kind: "Temperate".into(),
+                    tier: 3,
+                    color: [0.5; 3],
+                    width_blocks: 2048,
+                    players: 100,
+                })
+                .collect(),
             blocks: blocks.defs().to_vec(),
             items: items.defs().to_vec(),
             recipes: recipes.recipes.clone(),
@@ -368,7 +445,6 @@ mod tests {
             tick: 0,
             view_radius: 10,
             reach: 7.0,
-            day: DayCycle::default(),
             claims: vec![ClaimView {
                 id: 1,
                 owner: "x".into(),

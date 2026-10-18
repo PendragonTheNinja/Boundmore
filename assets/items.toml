@@ -19,6 +19,12 @@ name = "copper_ore"
 name = "copper_ingot"
 
 [[item]]
+name = "iron_ore"
+
+[[item]]
+name = "iron_ingot"
+
+[[item]]
 name = "stone_hammer"
 stack = 1
 tool = { class = "hammer", speed = 2.5, durability = 150 }
@@ -47,3 +53,18 @@ tool = { class = "shovel", speed = 4.0, durability = 400 }
 name = "copper_axe"
 stack = 1
 tool = { class = "axe", speed = 4.0, durability = 400 }
+
+[[item]]
+name = "iron_hammer"
+stack = 1
+tool = { class = "hammer", speed = 6.0, durability = 900 }
+
+[[item]]
+name = "iron_shovel"
+stack = 1
+tool = { class = "shovel", speed = 6.0, durability = 900 }
+
+[[item]]
+name = "iron_axe"
+stack = 1
+tool = { class = "axe", speed = 6.0, durability = 900 }

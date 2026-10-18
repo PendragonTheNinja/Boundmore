@@ -10,7 +10,10 @@
 //! the economy, and a client that could generate terrain could see every vein
 //! on the planet.
 
+pub mod kinds;
 pub mod noise;
+
+pub use kinds::{KindError, PlanetKind, PlanetKinds};
 
 use bm_core::{
     BlockId, BlockPos, BlockRegistry, CHUNK_SIZE, CHUNK_VOLUME, Chunk, ChunkPos, LocalPos, PlanetShape, RegistryError,
@@ -24,8 +27,11 @@ use serde::{Deserialize, Serialize};
 /// against terrain that would no longer be there).
 pub const GENERATOR_VERSION: u32 = 1;
 
-/// Per-planet generation settings, saved with the planet.
+/// Per-planet generation settings, saved with the planet. A planet kind in
+/// `assets/planets.toml` supplies them (`[kind.generation]`, any field left
+/// out keeps its default) when a planet is created.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
 pub struct PlanetGenConfig {
     pub seed: u64,
     pub sea_level: i64,
@@ -46,6 +52,13 @@ impl Default for PlanetGenConfig {
             mountain_height: 130.0,
             tree_density: 0.012,
         }
+    }
+}
+
+impl PlanetGenConfig {
+    /// Every block the settings name exists (none yet; kinds add some).
+    pub fn check(&self, _blocks: &BlockRegistry) -> Result<(), RegistryError> {
+        Ok(())
     }
 }
 

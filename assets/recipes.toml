@@ -76,3 +76,34 @@ output = "claim_stone"
 inputs = [["stone", 6], ["glow_crystal", 1]]
 station = "workbench"
 seconds = 5.0
+
+[[recipe]]
+output = "iron_ingot"
+inputs = [["iron_ore", 1], ["coal", 2]]
+station = "furnace"
+seconds = 8.0
+
+[[recipe]]
+output = "iron_hammer"
+inputs = [["iron_ingot", 3], ["timber", 2]]
+station = "workbench"
+seconds = 6.0
+
+[[recipe]]
+output = "iron_shovel"
+inputs = [["iron_ingot", 1], ["timber", 2]]
+station = "workbench"
+seconds = 6.0
+
+[[recipe]]
+output = "iron_axe"
+inputs = [["iron_ingot", 2], ["timber", 2]]
+station = "workbench"
+seconds = 6.0
+
+[[recipe]]
+output = "sandstone"
+count = 4
+inputs = [["sand", 4]]
+station = "workbench"
+seconds = 2.0
