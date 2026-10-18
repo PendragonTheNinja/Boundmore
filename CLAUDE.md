@@ -16,13 +16,14 @@ Owner: Nathan (`PendragonTheNinja`). Solo project, multi-year, no deadline. Do i
 
 | Crate | Role | Rule |
 |---|---|---|
-| `bm-core` | blocks, chunks, coordinates, planets, raycast, movement | headless: no graphics, sockets or files |
+| `bm-core` | blocks, chunks, coordinates, planets, raycast, movement, light, day cycle | headless: no graphics, sockets or files |
 | `bm-worldgen` | deterministic planet generation | server only (ADR-0003) |
 | `bm-mesh` | greedy meshing with AO | headless |
 | `bm-protocol` | wire messages, framing | pure data, no IO |
 | `bm-net` | QUIC endpoints, certificates, framed streams | shared by server and client |
 | `bm-server` | authoritative game loop, streaming, edits, saves | lib + `bm-server` binary |
-| `bm-client` | window, renderer, prediction, input | `boundmore` binary |
+| `bm-client` | window, renderer, prediction, input, HUD | `boundmore` binary |
+| `tools/bm-texgen` | paints every block texture procedurally | `cargo run --release -p bm-texgen` rewrites `assets/textures/` |
 
 Dependency direction: `bm-core` depends on nothing in the workspace; nothing headless depends on wgpu or winit.
 
@@ -40,6 +41,8 @@ Dependency direction: `bm-core` depends on nothing in the workspace; nothing hea
 10. **Saves are crash-safe and never silently lose a build**: a failed read is retried, never answered with fresh terrain; a failed write is retried; dirty chunks are saved before eviction.
 11. **Reversed-Z, infinite far plane** in the renderer: clear depth to 0, test `Greater`. Build projections with `render::projection`, never a library helper with a different convention.
 12. **Reliable messages share one ordered stream** so a block change can never overtake its chunk. Movement uses datagrams and is never resent.
+13. **Light first, mesh once** (`bm-core/src/light.rs`). Light is computed only for complete columns; unlit or missing reads as dark (dark-then-brighten is safe, lit-then-stale is the bug). Every chunk insert, forget and block change goes through `LightMap`, and the chunks it returns are re-meshed. Sky and block light are separate vertex channels; day and night is a uniform (`sun_color.w`), never a re-mesh.
+14. **Textures are data**: the catalogue names them, files live in `assets/textures/` (`docs/art-direction.md`), and a missing file falls back to the block colour with a warning in the title bar. Face table entries pack `first_layer | variants << 16`; decode before using one as a layer.
 
 ## Verification (run before every commit)
 
@@ -49,7 +52,7 @@ cargo clippy --workspace --all-targets -- -D warnings
 cargo test --workspace
 ```
 
-Expected test counts at `M1`: bm-core 32, bm-worldgen 13, bm-mesh 8, bm-protocol 5, bm-server 2 unit + 2 end-to-end, bm-client 11 (73 in all). CI (`.github/workflows/ci.yml`) runs the same on Linux and builds on Windows.
+Expected test counts (M2, 2026-10-18): bm-core 48, bm-worldgen 13, bm-mesh 12, bm-protocol 5, bm-server 2 unit + 2 end-to-end, bm-client 20, bm-texgen 4 (106 in all). CI (`.github/workflows/ci.yml`) runs the same on Linux and builds on Windows.
 
 **Load test:** run a server, then `cargo run --release -p bm-server --example bots -- --count 50 --prefix Load`. Watch the server's 30-second report for slow ticks.
 
@@ -60,7 +63,7 @@ Xvfb :99 -screen 0 1280x720x24 &
 DISPLAY=:99 VK_ICD_FILENAMES=/usr/share/vulkan/icd.d/lvp_icd.json WGPU_BACKEND=vulkan target/release/boundmore --name Tester --cert data/server.cert.der &
 DISPLAY=:99 import -window root shot.png
 ```
-Drive it with `xdotool` (`windowfocus --sync`, then plain `keydown`/`click`, not `--window`). Frame rates there mean nothing; correctness and pictures do. Nathan's machine is the authority on performance and feel. Stop processes with `pkill -x boundmore`, never `pkill -f` (it matches your own shell).
+Drive it with `xdotool` (`windowfocus --sync`, then plain `keydown`/`click`, not `--window`; to break, `mousedown 1`, wait the block's hardness, `mouseup 1`). `BOUNDMORE_TIME=0.77` (0 midnight, 0.5 noon) previews a time of day; `--assets DIR` points at another texture set. Frame rates there mean nothing; correctness and pictures do. Nathan's machine is the authority on performance and feel. Stop processes with `pkill -x boundmore`, never `pkill -f` (it matches your own shell).
 
 ## Starting a session (do this first, every time)
 

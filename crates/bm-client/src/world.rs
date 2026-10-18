@@ -1,7 +1,9 @@
 //! What the client knows of the planet: the chunks the server has sent, the
 //! edits it has predicted, and the queue of chunks waiting to be meshed.
 
-use bm_core::{BlockFlags, BlockId, BlockPos, BlockRegistry, Chunk, ChunkPos, PhysicsWorld, PlanetShape};
+use bm_core::{
+    BlockFlags, BlockId, BlockPos, BlockRegistry, Chunk, ChunkLight, ChunkPos, LightMap, PhysicsWorld, PlanetShape,
+};
 use bm_mesh::{ChunkMesh, neighbor_index};
 use crossbeam_channel::{Receiver, Sender};
 use std::collections::{HashMap, HashSet};
@@ -15,6 +17,8 @@ pub struct ClientWorld {
     chunks: HashMap<ChunkPos, Arc<Chunk>>,
     /// Edits sent but not yet answered: position -> (edit seq, block before).
     pending: HashMap<BlockPos, (u32, BlockId)>,
+    /// Sky and block light for the resident chunks (bm-core `light.rs`).
+    light: LightMap,
     mesher: Mesher,
 }
 
@@ -24,10 +28,11 @@ impl ClientWorld {
         Self {
             shape,
             flags: registry.flags(),
-            registry,
             water,
             chunks: HashMap::new(),
             pending: HashMap::new(),
+            light: LightMap::new(shape, &registry.flags()),
+            registry,
             mesher: Mesher::new(),
         }
     }
@@ -39,12 +44,18 @@ impl ClientWorld {
         // already the truth: nothing predicted needs re-applying to it.
         self.chunks.insert(pos, Arc::new(chunk));
         self.dirty_around(pos);
+        // Light arrives when the chunk completes its column; the light map
+        // says which chunks (here and next door) changed and need a re-mesh.
+        let relit = self.light.chunk_loaded(pos, &self.chunks);
+        self.mesher.dirty.extend(relit);
     }
 
     pub fn forget_chunk(&mut self, pos: ChunkPos) {
         let pos = self.shape.wrap_chunk(pos);
         self.chunks.remove(&pos);
         self.mesher.forget(pos);
+        let relit = self.light.chunk_forgotten(pos, &self.chunks);
+        self.mesher.dirty.extend(relit);
     }
 
     pub fn block(&self, p: BlockPos) -> Option<BlockId> {
@@ -66,6 +77,8 @@ impl ClientWorld {
         };
         if Arc::make_mut(c).set(p.local(), id) != id {
             self.dirty_block(p);
+            let relit = self.light.block_changed(p, &self.chunks);
+            self.mesher.dirty.extend(relit);
         }
     }
 
@@ -140,8 +153,13 @@ impl ClientWorld {
         // Chunks still missing a neighbour leave the queue: the neighbour's
         // arrival puts them back (`dirty_around`), so they are not rescanned
         // every frame while they wait at the edge of view.
-        let (ready, waiting): (Vec<ChunkPos>, Vec<ChunkPos>) =
-            self.mesher.dirty.iter().partition(|p| self.neighbourhood_complete(**p));
+        // Light first, mesh once: a chunk meshed before its column is lit
+        // would be drawn dark and meshed again moments later.
+        let (ready, waiting): (Vec<ChunkPos>, Vec<ChunkPos>) = self
+            .mesher
+            .dirty
+            .iter()
+            .partition(|p| self.light.is_lit(**p) && self.neighbourhood_complete(**p));
         for p in waiting {
             self.mesher.dirty.remove(&p);
         }
@@ -167,6 +185,7 @@ impl ClientWorld {
                     }
                 }
             }
+            let lights = self.light.neighborhood(p);
             let version = self.mesher.next_version(p);
             let flags = self.flags.clone();
             let tx = self.mesher.done_tx.clone();
@@ -174,7 +193,8 @@ impl ClientWorld {
             rayon::spawn(move || {
                 let center = nb[13].clone().expect("centre present");
                 let refs: [Option<&Chunk>; 27] = std::array::from_fn(|i| nb[i].as_deref());
-                let mesh = bm_mesh::mesh_chunk(&center, &refs, BlockId::AIR, &flags);
+                let light_refs: [Option<&ChunkLight>; 27] = std::array::from_fn(|i| lights[i].as_ref());
+                let mesh = bm_mesh::mesh_chunk_lit(&center, &refs, &light_refs, BlockId::AIR, &flags);
                 let _ = tx.send(MeshResult { pos: p, version, mesh });
             });
         }

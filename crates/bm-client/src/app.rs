@@ -155,8 +155,16 @@ impl App {
                                     .get(id.0 as usize)
                                     .copied()
                                     .unwrap_or([crate::textures::NO_TEXTURE; 4]);
+                                // Table entries pack `first_layer | variants << 16`.
+                                let layer = |e: u32| {
+                                    if e == crate::textures::NO_TEXTURE {
+                                        e
+                                    } else {
+                                        e & 0xffff
+                                    }
+                                };
                                 Icon {
-                                    layers: [f[0], f[1], f[2]],
+                                    layers: [layer(f[0]), layer(f[1]), layer(f[2])],
                                     colors: [
                                         lin(def.top_color.unwrap_or(def.color)),
                                         lin(def.color),
@@ -593,6 +601,7 @@ impl ApplicationHandler for App {
                         KeyCode::Digit7 => Some(6),
                         KeyCode::Digit8 => Some(7),
                         KeyCode::Digit9 => Some(8),
+                        KeyCode::Digit0 => Some(9),
                         _ => None,
                     };
                     if let (Some(d), Some(s)) = (digit, &mut self.session)

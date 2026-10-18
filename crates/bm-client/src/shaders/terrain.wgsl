@@ -29,6 +29,8 @@ struct VsOut {
     @location(3) @interpolate(flat) face: u32,
     @location(4) ao: f32,
     @location(5) @interpolate(flat) origin: vec3<i32>,
+    // x: sky light, y: block light, each 0..1 before the curve
+    @location(6) light: vec2<f32>,
 };
 
 const NORMALS = array<vec3<f32>, 6>(
@@ -53,6 +55,7 @@ fn vs_main(in: VsIn) -> VsOut {
     out.face = (in.a >> 18u) & 7u;
     out.ao = AO_CURVE[(in.a >> 21u) & 3u];
     out.origin = in.origin;
+    out.light = vec2<f32>(f32((in.b >> 16u) & 15u), f32((in.b >> 20u) & 15u)) / 15.0;
     return out;
 }
 
@@ -141,12 +144,27 @@ fn albedo(in: VsOut) -> vec4<f32> {
     return vec4<f32>(c, palette[in.block * 4u + 3u].x);
 }
 
+// Perceived brightness of a light level: each step down is a fixed fraction
+// darker, so falloff reads as a smooth glow rather than a staircase.
+fn light_curve(l: f32) -> f32 {
+    return pow(l, 1.7);
+}
+
+// The darkest anything gets: sealed caves are dark, but never pure black.
+const AMBIENT: f32 = 0.012;
+// Block light is warm, like lamplight on stone.
+const BLOCK_TINT: vec3<f32> = vec3<f32>(1.0, 0.88, 0.70);
+
 fn shade(in: VsOut, base: vec3<f32>) -> vec3<f32> {
     let n = NORMALS[in.face];
-    // Until per-voxel light lands (M2), the whole scene follows the sky's
-    // brightness; direct sun adds warmth to faces turned towards it by day.
+    // Sky and block light arrive as separate channels so night dims only the
+    // sky (a uniform, never a re-mesh). Direct sun warms faces turned to it,
+    // but only where the sky reaches.
+    let sky = light_curve(in.light.x);
+    let block = light_curve(in.light.y);
     let sun = max(dot(n, g.sun_dir.xyz), 0.0) * g.sun_dir.w;
-    let light = g.sun_color.w * (0.82 + 0.18 * sun);
+    let sky_light = sky * g.sun_color.w * (0.82 + 0.18 * sun);
+    let light = max(vec3<f32>(sky_light), BLOCK_TINT * block) + AMBIENT;
     let c = base * FACE_SHADE[in.face] * light * in.ao;
     let d = length(in.rel);
     let fog = clamp((d - g.params.x) / max(g.params.y - g.params.x, 1.0), 0.0, 1.0);

@@ -36,6 +36,15 @@ Coloured light, shadows from the sun, animated water, cut-out leaves, sound, inv
 - [x] Texture pipeline in the client (catalogue field, array, variants, mipmaps; a missing texture falls back to the block colour and shows in the title bar)
 - [x] Hotbar (isometric block icons, scrolling, selection)
 - [x] Fixes from Nathan's first play (2026-10-18): climbing out of water (a pop up when pushing against a shore with jump held); breaking shows progress
-- [ ] Light engine (agent `light`, branch `m2-light`) merged and integrated in the client
-- [ ] Painted textures (agent `texgen`, branch `m2-texgen`) merged and reviewed
-- [ ] Play-tested headlessly, screenshots in `docs/media/`, ready for Nathan
+- [x] Light engine (agent `light`) merged and integrated: lit columns, smooth per-vertex sky and block light, night dims only the sky. Timings (release): a column lights in about 1 ms, an edit in 0.015 ms on average.
+- [x] Painted textures (agent `texgen`) merged: 43 block textures and 8 crack stages; contact sheet `docs/media/textures.png`, diorama `docs/media/texture-preview.png`
+- [x] Play-tested headlessly: `docs/media/m2-day.png`, `m2-dusk.png`, `m2-glow-crystal-at-night.png`
+- [ ] Nathan's play-test of M2
+
+### Known gaps and next ideas
+
+- Texture weak points the painter named: stone reads a little like cobblestone; water and snow repeat over large areas (no variants yet); glow crystal is regular; foliage is busy at 1:1. Re-run `bm-texgen` after tuning.
+- Water is static and its surface is a flat sheet; animated water is a later milestone.
+- Leaves are opaque cubes; cut-out leaves need an alpha-tested pass.
+- Prediction corrections occasionally appear around one's own edits (the client applies an edit a round trip before the server does). Small, and smoothed; revisit if Nathan notices them.
+

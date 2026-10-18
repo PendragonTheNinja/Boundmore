@@ -15,9 +15,10 @@ Start with `../CLAUDE.md` (rules and invariants), then the milestone marked in p
 
 | Crate | Read first |
 |---|---|
-| `bm-core` | `movement.rs` (determinism rules), `planet.rs` (seam rules), `chunk.rs` (format) |
+| `bm-core` | `movement.rs` (determinism rules), `planet.rs` (seam rules), `chunk.rs` (format), `light.rs` (light rules and the LightMap call order), `time.rs` (day cycle) |
 | `bm-worldgen` | `lib.rs` header (purity rules), `GENERATOR_VERSION` |
 | `bm-mesh` | `Vertex` packing, `mesh_chunk` |
 | `bm-protocol` | module header (channels), `PROTOCOL_VERSION` |
 | `bm-server` | `game.rs` (`step`, `check_edit`), `net.rs` (Event/Outbox boundary) |
-| `bm-client` | `app.rs` (`update`, `render`), `predict.rs`, `render.rs` |
+| `bm-client` | `app.rs` (`update`, `render`), `predict.rs`, `render.rs`, `world.rs` (light and mesh scheduling), `textures.rs`, `sky.rs`, `ui.rs` |
+| `tools/bm-texgen` | `materials.rs` (one painter per material) |
