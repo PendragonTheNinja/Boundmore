@@ -264,6 +264,7 @@ name = "bm-mesh"
 version = "0.1.0"
 dependencies = [
  "bm-core",
+ "bm-worldgen",
  "bytemuck",
  "rand 0.9.5",
 ]
