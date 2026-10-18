@@ -153,7 +153,7 @@ fn stone_style() -> RockStyle {
         spacing: 9.0,
         stretch: 1.45,
         bevel: 2.4,
-        cracks: 0.5,
+        cracks: 0.4,
         tone: 0.56,
         spread: 0.2,
         tilt: 0.03,
@@ -767,9 +767,9 @@ fn ore(ctx: Ctx, host: Tex, style: &OreStyle, ramp: &Ramp) -> Tex {
 pub fn copper_vein(ctx: Ctx) -> Tex {
     let style = OreStyle {
         salt: seed("copper_vein"),
-        spacing: 11.0,
-        radius: 4.8,
-        keep: 0.85,
+        spacing: 10.5,
+        radius: 5.6,
+        keep: 0.9,
         facet: 2.6,
         tone: 0.5,
         spread: 0.4,
