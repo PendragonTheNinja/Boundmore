@@ -24,6 +24,8 @@ pub struct ServerConfig {
     pub max_players: usize,
     /// Furthest a player may edit from their eye, in blocks.
     pub reach: f64,
+    /// Plots one account may claim in all.
+    pub plot_allowance: u32,
 }
 
 impl Default for ServerConfig {
@@ -39,6 +41,7 @@ impl Default for ServerConfig {
             view_radius: 10,
             max_players: 200,
             reach: 7.0,
+            plot_allowance: 64,
         }
     }
 }

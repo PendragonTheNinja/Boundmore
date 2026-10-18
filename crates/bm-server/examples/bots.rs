@@ -2,11 +2,13 @@
 //!
 //! `cargo run --release -p bm-server --example bots -- --count 50 --server 127.0.0.1:7777 --cert data/server.cert.der [--prefix Bot] [--seconds N]`
 //!
-//! Each bot connects like a real client, then wanders: walks, turns, jumps,
+//! Each bot registers an account (password `botpassword123`), or logs in if a
+//! previous run registered it, then wanders: walks, turns, jumps,
 //! sends inputs at 60 Hz with the same redundancy the game uses, and reads
 //! everything the server sends.
 
 use bm_core::{PlayerInput, TICK_DT};
+use bm_net::quinn::{Connection, Endpoint, RecvStream, SendStream};
 use bm_net::{read_msg, write_msg};
 use bm_protocol::{ClientDatagram, ClientMsg, INPUT_REDUNDANCY, PROTOCOL_VERSION, ServerMsg};
 use std::collections::VecDeque;
@@ -73,22 +75,48 @@ async fn main() -> anyhow::Result<()> {
     }
 }
 
-async fn bot(i: usize, name: String, server: SocketAddr, cert: Vec<u8>, totals: Arc<Totals>) -> anyhow::Result<()> {
-    let endpoint = bm_net::client_endpoint(&cert.into())?;
+const BOT_PASSWORD: &str = "botpassword123";
+
+/// A welcomed connection: every handle must outlive the bot.
+type Session = (Endpoint, Connection, SendStream, RecvStream);
+
+/// Connects and says hello; the session on a welcome, the refusal's reason
+/// otherwise.
+async fn connect(
+    name: &str,
+    register: bool,
+    server: SocketAddr,
+    cert: &[u8],
+) -> anyhow::Result<Result<Session, String>> {
+    let endpoint = bm_net::client_endpoint(&cert.to_vec().into())?;
     let conn = bm_net::connect(&endpoint, server).await?;
     let (mut send, mut recv) = conn.open_bi().await?;
     write_msg(
         &mut send,
         &ClientMsg::Hello {
             protocol: PROTOCOL_VERSION,
-            name,
+            name: name.into(),
+            password: BOT_PASSWORD.into(),
+            register,
         },
     )
     .await?;
     match read_msg::<ServerMsg>(&mut recv).await? {
-        Some(ServerMsg::Welcome(_)) => {}
+        Some(ServerMsg::Welcome(_)) => Ok(Ok((endpoint, conn, send, recv))),
+        Some(ServerMsg::Refused { reason }) => Ok(Err(reason)),
         other => anyhow::bail!("not welcomed: {other:?}"),
     }
+}
+
+async fn bot(i: usize, name: String, server: SocketAddr, cert: Vec<u8>, totals: Arc<Totals>) -> anyhow::Result<()> {
+    let (_endpoint, conn, _send, mut recv) = match connect(&name, true, server, &cert).await? {
+        Ok(c) => c,
+        Err(reason) if reason == "that name is taken" => match connect(&name, false, server, &cert).await? {
+            Ok(c) => c,
+            Err(reason) => anyhow::bail!("refused: {reason}"),
+        },
+        Err(reason) => anyhow::bail!("refused: {reason}"),
+    };
     totals.connected.fetch_add(1, Ordering::Relaxed);
     let t2 = totals.clone();
     tokio::spawn(async move {
