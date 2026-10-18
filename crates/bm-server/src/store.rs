@@ -128,6 +128,9 @@ pub struct PlayerData {
     /// None: never placed in the world (starts at the spawn).
     pub state: Option<PlayerState>,
     pub inventory: Vec<Option<SavedStack>>,
+    /// Unix seconds when the player was last connected; 0 if never recorded.
+    /// Claims lapse after `claim_keep_days` without a visit (not yet enforced).
+    pub last_seen: u64,
 }
 
 /// A queued station job, saved with its recipe spelled out so it can be
@@ -435,6 +438,7 @@ fn upgrade_1_to_2(tx: &WriteTransaction) -> Result<()> {
                 let data = PlayerData {
                     state: Some(*state),
                     inventory: Vec::new(),
+                    last_seen: 0,
                 };
                 new.insert(key.as_str(), postcard::to_stdvec(&data)?.as_slice())?;
             }
@@ -555,6 +559,7 @@ mod tests {
                     PlayerData {
                         state: Some(at(1.0)),
                         inventory: vec![Some(stack.clone())],
+                        last_seen: 1_700_000_000,
                     },
                 )],
                 stations: vec![(spot, Some(station.clone()))],

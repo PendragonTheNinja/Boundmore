@@ -26,6 +26,9 @@ pub struct ServerConfig {
     pub reach: f64,
     /// Plots one account may claim in all.
     pub plot_allowance: u32,
+    /// Days without a visit before a claim lapses and its contents go back to
+    /// the owner (decided 2026-10-18; lapsing itself is not built yet).
+    pub claim_keep_days: u32,
 }
 
 impl Default for ServerConfig {
@@ -42,6 +45,7 @@ impl Default for ServerConfig {
             max_players: 200,
             reach: 7.0,
             plot_allowance: 64,
+            claim_keep_days: 183,
         }
     }
 }

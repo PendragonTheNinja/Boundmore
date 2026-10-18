@@ -12,10 +12,10 @@ What a Boundless player expects to find, and where each stands. "Ours" is the Bo
 | Worlds that wrap | No edge; walk round the world | **Done** (ADR-0002) |
 | Freeform building | Every block editable, huge palette, colours | **Done** for placing and breaking; palette and colours: M2 |
 | Shaped blocks (chisel) | Slopes, bevels, cuts on any block | M5 |
-| Mining by hand and tool | Hold to break; harder blocks, better tools; AoE tools later | Instant break today. Hold-to-break by hardness: M2 |
-| Light and darkness | Dark caves, torches, glowing ores, day and night | Not yet. M2 |
-| Inventory and crafting | Gather, craft at machines that run over time, upgrade with power | M3 |
-| Plots and beacons | Claim land so builds are protected; costs upkeep | M3 |
+| Mining by hand and tool | Hold to break; harder blocks, better tools; AoE tools later | **Done**: hold-to-break by hardness (M2), stone and copper tools that wear (M3). AoE tools later |
+| Light and darkness | Dark caves, torches, glowing ores, day and night | **Done** (M2) |
+| Inventory and crafting | Gather, craft at machines that run over time, upgrade with power | **Done** for inventory, hand crafting, workbench and furnace (M3). Power and more machines later |
+| Plots and beacons | Claim land so builds are protected; costs upkeep | **Done** for claims (M3). **Changed on purpose:** no fuel; a claim lapses after 6 months without a visit and its contents go back to the owner (the research below) |
 | Settlements | Plots near each other form ranked settlements | M6 |
 | Portals and travel | Player-built portals link planets; warps; grapples | Portals: M4. Grapples: M5 |
 | Player economy | Shop stands and request baskets; almost nothing sold by NPCs | M6 |
@@ -31,7 +31,7 @@ What a Boundless player expects to find, and where each stands. "Ours" is the Bo
 
 **M2: A world worth looking at.** Light propagation (sky light and block light, dark caves, glowing blocks), day and night, a real texture pipeline (a texture atlas or array, our own art direction), the full block palette with colour variants, hold-to-break with hardness, a hotbar and minimal HUD, sound hooks. Ends with a planet that looks like a place.
 
-**M3: Gather, craft, claim.** Accounts (real login, so names cannot be taken), inventory, item drops, tools, crafting machines that work over time, plots/beacons protecting builds. Introduces the relational store (Postgres) for accounts and items, with transactions for every item movement.
+**M3: Gather, craft, claim.** Accounts (real login, so names cannot be taken), inventory, item drops, tools, crafting machines that work over time, plots/beacons protecting builds. Accounts, inventories, stations and claims live in the same crash-safe redb save as the world, written in one batch so a block broken into an inventory is saved with it (built 2026-10-18).
 
 **M4: Many worlds.** Planet types (tiers, climates, block sets), several planets per server cluster, portals between them, planets visible in the sky. Each planet its own process; a gateway routes players.
 
@@ -43,8 +43,6 @@ What a Boundless player expects to find, and where each stands. "Ours" is the Bo
 
 **M8: Ownership.** Rentable worlds, world customisation, and the operations work for running it as a service.
 
-## Things to decide with Nathan before M2
+## Player research
 
-1. **Block scale and player size.** How many blocks tall is a player in Boundless, and how high can they jump? This sets everything from cave size to building feel (`docs/feel.md`).
-2. **Art direction.** Boundless has a distinctive bright, painterly look. What is Boundmore's?
-3. **Which systems players miss most.** The order above is engineering order; if the community's top wish is, say, the economy, it can move earlier.
+`research/boundless-forum-feedback.md` ranks what Boundless players liked, disliked and wished for, with ten candidate principles. Decided so far: no beacon fuel (claims lapse after 6 months away, nothing destroyed). Open: portal fuel (Nathan is more open to it than to beacon fuel), whether to move PvE earlier (the most-wished-for content), schematics that save a lapsed build so it can be placed again.

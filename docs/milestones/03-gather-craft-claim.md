@@ -1,6 +1,6 @@
 # Milestone 3: Gather, Craft, Claim
 
-*Spec written 2026-10-18. In progress.*
+*Spec written 2026-10-18. Built 2026-10-18; awaiting Nathan's play-test.*
 
 ## Goal
 
@@ -42,12 +42,13 @@ Item entities on the ground, trading and shops, guilds, claim permissions for fr
 - **Plot size** 8×8×8. Confirmed by Nathan, 2026-10-18.
 - **Inventory size** 40 slots, stacks of 100 for blocks. Confirmed by Nathan, 2026-10-18.
 - **Stations on someone else's claim** cannot be used (craft, watch or collect), so output can't be taken. Proposed by the server work; awaiting Nathan.
-- **Land upkeep** (whether claims ever expire): open, see `docs/research/boundless-forum-feedback.md` principle 2.
+- **Land upkeep:** decided by Nathan, 2026-10-18. No fuel. A claim lapses after 6 months (`claim_keep_days` = 183) without its owner visiting, and its contents go back to the owner, never destroyed; players must be told (a notice when a claim is placed now, the tutorial later). Each player's `last_seen` is saved from M3 on; lapsing itself is a later task. A schematic that saves the build so it can be placed again is wanted if it proves feasible.
 
 ## Status
 
-- [ ] Shared contract and data files
-- [ ] Server (agent)
-- [ ] Client (agent)
-- [ ] Integrated, play-tested headlessly
-- [ ] Nathan's play-test
+- [x] Shared contract and data files
+- [x] Server: accounts (Argon2id, login rate limit), inventory, gathering, tools with wear, hand and station crafting that runs unattended and across restarts, claims, save v1 to v2 upgrade. 15 unit and 8 end-to-end tests.
+- [x] Client: egui menus (login, inventory with drag and drop, crafting, station queue and output, claim mode with outlines), hotbar icons and counts, notices, saved settings. Screenshots `docs/media/m3-*.png`.
+- [x] Art: workbench, furnace and claim stone faces; item icons (`assets/textures/items/`).
+- [x] Integrated: fmt, clippy and all 156 tests clean on the merged tree; headless run against the real server (login refusal, gathering, live crafting counts).
+- [ ] Nathan's play-test. Not yet confirmed against the real server headlessly: placing and station crafting by aiming (covered by the end-to-end tests and the offline demo).

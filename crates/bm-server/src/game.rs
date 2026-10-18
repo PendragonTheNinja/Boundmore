@@ -808,6 +808,14 @@ impl Game {
             }
         }
         if let Some(claim) = claim_created {
+            if let Some(p) = self.players.get(&id) {
+                p.out.send(&ServerMsg::Notice {
+                    text: format!(
+                        "This land is yours. It stays yours as long as you visit at least once every {} months.",
+                        self.cfg.claim_keep_days / 30
+                    ),
+                });
+            }
             self.broadcast_claim(claim);
         }
         if let Some(claim) = claim_removed {
@@ -1137,9 +1145,13 @@ impl Game {
     /// every newly departed player's to the writer, in one batch.
     fn save(&mut self, done: Option<Sender<()>>) {
         let items = &self.items;
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map_or(0, |d| d.as_secs());
         let data = |state: PlayerState, inv: &Inventory| PlayerData {
             state: Some(state),
             inventory: save_slots(items, inv),
+            last_seen: now,
         };
         let mut players: Vec<(String, PlayerData)> = self
             .players

@@ -301,7 +301,14 @@ fn seed(dir: &Path, name: &str, stacks: &[(usize, &str, u16, u16)]) {
     }
     store
         .write(&WriteBatch {
-            players: vec![(account.key, PlayerData { state: None, inventory })],
+            players: vec![(
+                account.key,
+                PlayerData {
+                    state: None,
+                    inventory,
+                    last_seen: 0,
+                },
+            )],
             ..Default::default()
         })
         .unwrap();
