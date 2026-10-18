@@ -209,6 +209,7 @@ impl BlockRegistry {
             solid: self.defs.iter().map(|d| d.solid).collect(),
             opaque: self.defs.iter().map(|d| d.opaque).collect(),
             translucent: self.defs.iter().map(|d| d.translucent).collect(),
+            light: self.defs.iter().map(|d| d.light).collect(),
         }
     }
 }
@@ -219,6 +220,7 @@ pub struct BlockFlags {
     solid: Vec<bool>,
     opaque: Vec<bool>,
     translucent: Vec<bool>,
+    light: Vec<u8>,
 }
 
 impl BlockFlags {
@@ -235,6 +237,21 @@ impl BlockFlags {
     #[inline]
     pub fn translucent(&self, id: BlockId) -> bool {
         self.translucent.get(id.0 as usize).copied().unwrap_or(false)
+    }
+
+    /// Light the block gives off, 0 to 15.
+    #[inline]
+    pub fn light(&self, id: BlockId) -> u8 {
+        self.light.get(id.0 as usize).copied().unwrap_or(0)
+    }
+
+    /// Number of ids in the catalogue the tables were built from.
+    pub fn len(&self) -> usize {
+        self.solid.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.solid.is_empty()
     }
 }
 
