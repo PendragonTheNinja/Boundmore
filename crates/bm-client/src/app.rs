@@ -5,6 +5,7 @@ use crate::net::{self, ConnectOptions, Net, NetEvent};
 use crate::predict::{Predictor, RemoteSample, Remotes};
 use crate::render::{BoxInstance, Camera, Renderer, Scene};
 use crate::sky::Sky;
+use crate::textures::TextureSet;
 use crate::world::ClientWorld;
 use bm_core::movement::{MoveConfig, PlayerInput};
 use bm_core::{BlockId, BlockPos, BlockRegistry, Chunk, DayCycle, PlanetShape, RayHit, TICK_DT, raycast};
@@ -28,6 +29,8 @@ const PLAYER_VISUAL_HEIGHT: f32 = 2.0;
 pub struct Options {
     pub connect: ConnectOptions,
     pub vsync: bool,
+    /// The folder holding `textures/` (normally `assets`).
+    pub assets: std::path::PathBuf,
 }
 
 /// Everything that exists once the server has welcomed us.
@@ -71,6 +74,7 @@ pub struct App {
     frames: u32,
     fps: f64,
     last_title: Instant,
+    missing_textures: usize,
 }
 
 impl App {
@@ -94,6 +98,7 @@ impl App {
             frames: 0,
             fps: 0.0,
             last_title: now,
+            missing_textures: 0,
         }
     }
 
@@ -129,8 +134,11 @@ impl App {
             match ev {
                 NetEvent::Connected(w) => match BlockRegistry::from_defs(w.blocks.clone()) {
                     Ok(registry) => {
+                        let set = TextureSet::load(&registry, &self.opts.assets.join("textures"));
+                        self.missing_textures = set.missing.len();
                         if let Some(r) = &mut self.renderer {
                             r.write_palette(&registry);
+                            r.set_textures(&set);
                         }
                         let hotbar: Vec<BlockId> =
                             registry.iter().filter(|(_, d)| d.placeable).map(|(id, _)| id).collect();
@@ -364,6 +372,7 @@ impl App {
                 shape: PlanetShape::new(8, 1),
                 boxes: &[],
                 highlight: None,
+                breaking: None,
                 fog_end: 100.0,
                 time,
             });
@@ -414,6 +423,7 @@ impl App {
             shape,
             boxes: &boxes,
             highlight: s.target.map(|t| t.block),
+            breaking: s.mining.map(|(b, p)| (b, p as f32)),
             fog_end: (s.view_radius as f32 - 1.0) * 32.0,
             time,
         });
@@ -460,6 +470,11 @@ impl App {
                 )
             }
             None => format!("Boundmore | {}", self.status),
+        };
+        let title = if self.missing_textures > 0 {
+            format!("{title} | {} TEXTURES MISSING (see log)", self.missing_textures)
+        } else {
+            title
         };
         w.set_title(&title);
     }

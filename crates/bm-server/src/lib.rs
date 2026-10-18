@@ -29,6 +29,7 @@ pub struct RunningServer {
     game: Option<JoinHandle<()>>,
     net: Option<JoinHandle<()>>,
     writer: Option<JoinHandle<()>>,
+    store: Option<Store>,
 }
 
 impl RunningServer {
@@ -48,6 +49,13 @@ impl RunningServer {
         }
         if let Some(w) = self.writer.take() {
             let _ = w.join();
+        }
+        // Chunk loads still running on the thread pool hold the database;
+        // let them finish so the file is closed when `stop` returns.
+        if let Some(store) = self.store.take()
+            && !store.wait_until_sole_owner(std::time::Duration::from_secs(10))
+        {
+            tracing::warn!("chunk loads were still running at shutdown");
         }
     }
 
@@ -123,6 +131,7 @@ pub fn start(cfg: ServerConfig) -> Result<RunningServer> {
 
     let (writer_tx, writer) = store::spawn_writer(store.clone());
     let world = world::World::new(meta.shape, registry, generator.clone(), store.clone());
+    let held = store.clone();
     let game = game::Game::new(cfg, meta.name, world, &generator, store, writer_tx, events_rx);
     let running = Arc::new(AtomicBool::new(true));
     let game_running = running.clone();
@@ -138,5 +147,6 @@ pub fn start(cfg: ServerConfig) -> Result<RunningServer> {
         game: Some(game),
         net: Some(net),
         writer: Some(writer),
+        store: Some(held),
     })
 }

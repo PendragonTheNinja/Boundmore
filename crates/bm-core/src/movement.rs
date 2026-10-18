@@ -39,6 +39,9 @@ pub struct MoveConfig {
     pub air_accel: f64,
     pub water_gravity_scale: f64,
     pub water_drag: f64,
+    /// Upward speed while pushing against a wall with jump held in water:
+    /// enough to clear a shore one block above the surface.
+    pub water_exit_velocity: f64,
     pub max_fall_speed: f64,
     pub half_width: f64,
     pub height: f64,
@@ -58,6 +61,7 @@ impl Default for MoveConfig {
             air_accel: 14.0,
             water_gravity_scale: 0.2,
             water_drag: 3.5,
+            water_exit_velocity: 10.5,
             max_fall_speed: 55.0,
             // Nathan, 2026-10-18: a character reads as two blocks tall, and
             // no character fits under anything lower than two blocks. 1.9
@@ -198,7 +202,20 @@ pub fn step(
     s.vel.x = horiz.x;
     s.vel.z = horiz.z;
 
-    if in_water {
+    // Climbing out of water (Nathan, 2026-10-18: "I can't jump out of
+    // water"). A swimmer floats with their feet most of a block under the
+    // surface, from where no jump reaches a shore a block above it. Pushing
+    // against a solid block with jump held pops them up out of the water.
+    let against_wall = wl > 0.0 && {
+        let probe = PlayerState {
+            pos: s.pos + wish * 0.08,
+            ..*s
+        };
+        intersects(&probe, cfg, world)
+    };
+    if in_water && input.jump && against_wall {
+        s.vel.y = cfg.water_exit_velocity;
+    } else if in_water {
         s.vel.y -= cfg.gravity * cfg.water_gravity_scale * dt;
         if input.jump {
             s.vel.y += cfg.gravity * 0.6 * dt;
@@ -481,6 +498,39 @@ mod tests {
             &w,
         );
         assert!(s.pos.x >= 0.0 && s.pos.x < 10.0, "{}", s.pos.x);
+    }
+
+    #[test]
+    fn swimmers_climb_out_onto_a_shore_one_block_above_the_water() {
+        // Water fills y < 20 (its surface is the top of y = 19); the shore at
+        // x >= 8 stands one block higher (top at y = 21).
+        let mut w = world();
+        w.floor = 0;
+        w.water_below = 20;
+        for x in 8..60 {
+            for z in 0..12 {
+                for y in 0..21 {
+                    w.solid.insert(BlockPos::new(x, y, z));
+                }
+            }
+        }
+        let mut s = PlayerState {
+            pos: DVec3::new(5.5, 15.0, 5.5),
+            ..Default::default()
+        };
+        let (yaw, _) = PlayerInput::from_angles(std::f64::consts::FRAC_PI_2, 0.0); // +X
+        run(
+            &mut s,
+            PlayerInput {
+                forward: 1,
+                jump: true,
+                yaw,
+                ..Default::default()
+            },
+            300,
+            &w,
+        );
+        assert!(s.pos.x > 8.3 && s.pos.y >= 21.0, "still in the water at {:?}", s.pos);
     }
 
     #[test]

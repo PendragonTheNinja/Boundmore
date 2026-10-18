@@ -20,6 +20,7 @@ bm-protocol.workspace = true
 bytemuck.workspace = true
 crossbeam-channel.workspace = true
 glam.workspace = true
+image.workspace = true
 pollster.workspace = true
 rayon.workspace = true
 tokio.workspace = true

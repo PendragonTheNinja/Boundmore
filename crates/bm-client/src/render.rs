@@ -9,6 +9,7 @@
 //! - One vertex buffer per chunk and per pass, a shared quad index buffer, and
 //!   one instance record per visible chunk carrying its offset and origin.
 
+use crate::textures::{self, TextureSet};
 use bm_core::{BlockPos, BlockRegistry, CHUNK_SIZE, ChunkPos, PlanetShape};
 use bm_mesh::{ChunkMesh, Vertex};
 use glam::{DVec3, Mat4, Vec3, Vec4};
@@ -66,6 +67,14 @@ struct ChunkInstance {
 
 #[repr(C)]
 #[derive(Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
+struct OverlayVertex {
+    pos: [f32; 3],
+    uv: [f32; 2],
+    layer: u32,
+}
+
+#[repr(C)]
+#[derive(Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
 struct BoxVertex {
     corner: [f32; 3],
     normal: [f32; 3],
@@ -106,6 +115,8 @@ pub struct Scene<'a> {
     pub shape: PlanetShape,
     pub boxes: &'a [BoxInstance],
     pub highlight: Option<BlockPos>,
+    /// The block being broken and how far along (0 to 1), for the cracks.
+    pub breaking: Option<(BlockPos, f32)>,
     pub fog_end: f32,
     pub time: f32,
 }
@@ -131,6 +142,12 @@ pub struct Renderer {
     line_pipeline: wgpu::RenderPipeline,
     cross_pipeline: wgpu::RenderPipeline,
     sky_pipeline: wgpu::RenderPipeline,
+    overlay_pipeline: wgpu::RenderPipeline,
+    overlay: wgpu::Buffer,
+    crack_base: Option<u32>,
+    bind_layout: wgpu::BindGroupLayout,
+    faces: wgpu::Buffer,
+    sampler: wgpu::Sampler,
     quad_indices: wgpu::Buffer,
     quad_capacity: u32,
     chunks: HashMap<ChunkPos, GpuChunk>,
@@ -221,22 +238,52 @@ impl Renderer {
         };
         let layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             label: Some("globals"),
-            entries: &[uniform(0), uniform(1)],
-        });
-        let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
-            label: Some("globals"),
-            layout: &layout,
             entries: &[
-                wgpu::BindGroupEntry {
-                    binding: 0,
-                    resource: globals.as_entire_binding(),
+                uniform(0),
+                uniform(1),
+                uniform(2),
+                wgpu::BindGroupLayoutEntry {
+                    binding: 3,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Texture {
+                        sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                        view_dimension: wgpu::TextureViewDimension::D2Array,
+                        multisampled: false,
+                    },
+                    count: None,
                 },
-                wgpu::BindGroupEntry {
-                    binding: 1,
-                    resource: palette.as_entire_binding(),
+                wgpu::BindGroupLayoutEntry {
+                    binding: 4,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
+                    count: None,
                 },
             ],
         });
+        let faces = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("texture faces"),
+            size: (PALETTE_BLOCKS * 16) as u64,
+            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+        // Crisp texels up close (the painted look), smooth at a distance.
+        let sampler = device.create_sampler(&wgpu::SamplerDescriptor {
+            label: Some("blocks"),
+            address_mode_u: wgpu::AddressMode::Repeat,
+            address_mode_v: wgpu::AddressMode::Repeat,
+            mag_filter: wgpu::FilterMode::Nearest,
+            min_filter: wgpu::FilterMode::Linear,
+            mipmap_filter: wgpu::MipmapFilterMode::Linear,
+            ..Default::default()
+        });
+        let empty = TextureSet {
+            layers: vec![vec![255; (textures::SIZE * textures::SIZE * 4) as usize]],
+            faces: Vec::new(),
+            crack_base: None,
+            missing: Vec::new(),
+        };
+        let block_view = make_block_texture(&device, &queue, &empty);
+        let bind_group = make_bind_group(&device, &layout, [&globals, &palette, &faces], &block_view, &sampler);
         let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("main"),
             bind_group_layouts: &[Some(&layout)],
@@ -400,8 +447,26 @@ impl Renderer {
             &opaque_target,
         );
 
+        let overlay_buffers = [Some(wgpu::VertexBufferLayout {
+            array_stride: std::mem::size_of::<OverlayVertex>() as u64,
+            step_mode: wgpu::VertexStepMode::Vertex,
+            attributes: &wgpu::vertex_attr_array![0 => Float32x3, 1 => Float32x2, 2 => Uint32],
+        })];
+        let overlay_pipeline = pipeline(
+            "crack overlay",
+            &terrain,
+            "vs_overlay",
+            "fs_overlay",
+            &overlay_buffers,
+            TriangleList,
+            None,
+            Some(depth_state(false, GreaterEqual)),
+            &blend_target,
+        );
+
         let (box_vertices, box_indices) = cube(&device);
         let quad_capacity = 1 << 16;
+        let overlay = make_vertex_buffer(&device, "overlay", 36 * std::mem::size_of::<OverlayVertex>());
         let mut r = Self {
             quad_indices: make_quad_indices(&device, quad_capacity),
             quad_capacity,
@@ -426,6 +491,12 @@ impl Renderer {
             line_pipeline,
             cross_pipeline,
             sky_pipeline,
+            overlay_pipeline,
+            overlay,
+            crack_base: None,
+            bind_layout: layout,
+            faces,
+            sampler,
             chunks: HashMap::new(),
             stats: FrameStats::default(),
         };
@@ -450,6 +521,25 @@ impl Renderer {
             tracing::warn!("only the first {PALETTE_BLOCKS} blocks have colours");
         }
         self.queue.write_buffer(&self.palette, 0, bytemuck::cast_slice(&data));
+    }
+
+    /// Uploads the block textures and the per-block face table.
+    pub fn set_textures(&mut self, set: &TextureSet) {
+        let mut table = vec![[textures::NO_TEXTURE, textures::NO_TEXTURE, textures::NO_TEXTURE, 0u32]; PALETTE_BLOCKS];
+        for (i, f) in set.faces.iter().take(PALETTE_BLOCKS).enumerate() {
+            table[i] = *f;
+        }
+        self.queue.write_buffer(&self.faces, 0, bytemuck::cast_slice(&table));
+        let view = make_block_texture(&self.device, &self.queue, set);
+        self.bind_group = make_bind_group(
+            &self.device,
+            &self.bind_layout,
+            [&self.globals, &self.palette, &self.faces],
+            &view,
+            &self.sampler,
+        );
+        self.crack_base = set.crack_base;
+        tracing::info!("{} texture layers uploaded", set.layers.len());
     }
 
     pub fn resize(&mut self, width: u32, height: u32) {
@@ -585,6 +675,18 @@ impl Renderer {
             self.queue.write_buffer(&self.lines, 0, bytemuck::cast_slice(&verts));
         });
 
+        let cracks = match (scene.breaking, self.crack_base) {
+            (Some((b, progress)), Some(base)) => {
+                let stage = ((progress * textures::CRACK_STAGES as f32) as u32).min(textures::CRACK_STAGES - 1);
+                let corner = DVec3::new(b.x as f64, b.y as f64, b.z as f64);
+                let rel = (scene.shape.nearest_lap(cam.eye, corner) - cam.eye).as_vec3();
+                let verts = crack_cube(rel - Vec3::splat(0.003), 1.006, base + stage);
+                self.queue.write_buffer(&self.overlay, 0, bytemuck::cast_slice(&verts));
+                true
+            }
+            _ => false,
+        };
+
         let mut encoder = self
             .device
             .create_command_encoder(&wgpu::CommandEncoderDescriptor { label: Some("frame") });
@@ -655,6 +757,11 @@ impl Renderer {
                 }
             }
 
+            if cracks {
+                pass.set_pipeline(&self.overlay_pipeline);
+                pass.set_vertex_buffer(0, self.overlay.slice(..));
+                pass.draw(0..36, 0..1);
+            }
             if highlight.is_some() {
                 pass.set_pipeline(&self.line_pipeline);
                 pass.set_vertex_buffer(0, self.lines.slice(..));
@@ -693,6 +800,123 @@ pub fn view_rotation(forward: Vec3) -> Mat4 {
         Vec4::new(s.z, u.z, -f.z, 0.0),
         Vec4::W,
     )
+}
+
+fn make_bind_group(
+    device: &wgpu::Device,
+    layout: &wgpu::BindGroupLayout,
+    [globals, palette, faces]: [&wgpu::Buffer; 3],
+    view: &wgpu::TextureView,
+    sampler: &wgpu::Sampler,
+) -> wgpu::BindGroup {
+    device.create_bind_group(&wgpu::BindGroupDescriptor {
+        label: Some("globals"),
+        layout,
+        entries: &[
+            wgpu::BindGroupEntry {
+                binding: 0,
+                resource: globals.as_entire_binding(),
+            },
+            wgpu::BindGroupEntry {
+                binding: 1,
+                resource: palette.as_entire_binding(),
+            },
+            wgpu::BindGroupEntry {
+                binding: 2,
+                resource: faces.as_entire_binding(),
+            },
+            wgpu::BindGroupEntry {
+                binding: 3,
+                resource: wgpu::BindingResource::TextureView(view),
+            },
+            wgpu::BindGroupEntry {
+                binding: 4,
+                resource: wgpu::BindingResource::Sampler(sampler),
+            },
+        ],
+    })
+}
+
+/// One 2D array texture holding every block texture layer, with mipmaps
+/// made on the CPU in linear light.
+fn make_block_texture(device: &wgpu::Device, queue: &wgpu::Queue, set: &TextureSet) -> wgpu::TextureView {
+    let size = textures::SIZE;
+    let texture = device.create_texture(&wgpu::TextureDescriptor {
+        label: Some("blocks"),
+        size: wgpu::Extent3d {
+            width: size,
+            height: size,
+            depth_or_array_layers: set.layers.len() as u32,
+        },
+        mip_level_count: textures::MIP_LEVELS,
+        sample_count: 1,
+        dimension: wgpu::TextureDimension::D2,
+        format: wgpu::TextureFormat::Rgba8UnormSrgb,
+        usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
+        view_formats: &[],
+    });
+    for (layer, pixels) in set.layers.iter().enumerate() {
+        let mut level = pixels.clone();
+        let mut s = size;
+        for mip in 0..textures::MIP_LEVELS {
+            queue.write_texture(
+                wgpu::TexelCopyTextureInfo {
+                    texture: &texture,
+                    mip_level: mip,
+                    origin: wgpu::Origin3d {
+                        x: 0,
+                        y: 0,
+                        z: layer as u32,
+                    },
+                    aspect: wgpu::TextureAspect::All,
+                },
+                &level,
+                wgpu::TexelCopyBufferLayout {
+                    offset: 0,
+                    bytes_per_row: Some(4 * s),
+                    rows_per_image: Some(s),
+                },
+                wgpu::Extent3d {
+                    width: s,
+                    height: s,
+                    depth_or_array_layers: 1,
+                },
+            );
+            if s > 1 {
+                level = textures::downsample(&level, s);
+                s /= 2;
+            }
+        }
+    }
+    texture.create_view(&wgpu::TextureViewDescriptor {
+        dimension: Some(wgpu::TextureViewDimension::D2Array),
+        ..Default::default()
+    })
+}
+
+/// The six faces of a cube as triangles, textured with one overlay layer.
+fn crack_cube(min: Vec3, size: f32, layer: u32) -> Vec<OverlayVertex> {
+    let mut out = Vec::with_capacity(36);
+    let faces: [(Vec3, Vec3, Vec3); 6] = [
+        (Vec3::X, Vec3::NEG_Z, Vec3::NEG_Y),
+        (Vec3::ZERO, Vec3::Z, Vec3::NEG_Y),
+        (Vec3::Y, Vec3::X, Vec3::Z),
+        (Vec3::ZERO, Vec3::X, Vec3::Z),
+        (Vec3::Z, Vec3::X, Vec3::NEG_Y),
+        (Vec3::ZERO, Vec3::NEG_X, Vec3::NEG_Y),
+    ];
+    for (plane, u, v) in faces {
+        // Corner of the face with u = v = 0, mapped into the unit cube.
+        let origin = plane + u.min(Vec3::ZERO).abs() + v.min(Vec3::ZERO).abs();
+        let corner = |a: f32, b: f32| OverlayVertex {
+            pos: (min + (origin + u * a + v * b) * size).to_array(),
+            uv: [a, b],
+            layer,
+        };
+        let q = [corner(0.0, 0.0), corner(1.0, 0.0), corner(1.0, 1.0), corner(0.0, 1.0)];
+        out.extend_from_slice(&[q[0], q[1], q[2], q[0], q[2], q[3]]);
+    }
+    out
 }
 
 fn make_depth(device: &wgpu::Device, config: &wgpu::SurfaceConfiguration) -> wgpu::TextureView {

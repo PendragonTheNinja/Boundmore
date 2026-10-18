@@ -7,6 +7,7 @@ mod net;
 mod predict;
 mod render;
 mod sky;
+mod textures;
 mod world;
 
 use anyhow::{Context, bail};
@@ -25,6 +26,7 @@ fn main() -> anyhow::Result<()> {
     let mut name = "Player".to_string();
     let mut cert = PathBuf::from("data").join(bm_net::CERT_FILE);
     let mut vsync = true;
+    let mut assets = PathBuf::from("assets");
     let mut args = std::env::args().skip(1);
     while let Some(a) = args.next() {
         let mut val = || args.next().with_context(|| format!("{a} needs a value"));
@@ -33,8 +35,11 @@ fn main() -> anyhow::Result<()> {
             "--name" => name = val()?,
             "--cert" => cert = PathBuf::from(val()?),
             "--no-vsync" => vsync = false,
+            "--assets" => assets = PathBuf::from(val()?),
             "--help" | "-h" => {
-                println!("boundmore [--server HOST:PORT] [--name NAME] [--cert server.cert.der] [--no-vsync]");
+                println!(
+                    "boundmore [--server HOST:PORT] [--name NAME] [--cert server.cert.der] [--assets DIR] [--no-vsync]"
+                );
                 return Ok(());
             }
             other => bail!("unknown argument {other}"),
@@ -54,6 +59,7 @@ fn main() -> anyhow::Result<()> {
             cert,
         },
         vsync,
+        assets,
     });
     event_loop.run_app(&mut app)?;
     Ok(())

@@ -144,6 +144,19 @@ impl Store {
         Ok(())
     }
 
+    /// Waits until this is the only handle on the database (loader jobs
+    /// still finishing hold clones), so it is closed when this one drops.
+    pub fn wait_until_sole_owner(&self, timeout: std::time::Duration) -> bool {
+        let start = std::time::Instant::now();
+        while Arc::strong_count(&self.db) > 1 {
+            if start.elapsed() > timeout {
+                return false;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(5));
+        }
+        true
+    }
+
     pub fn stored_chunks(&self) -> Result<u64> {
         let tx = self.db.begin_read()?;
         Ok(redb::ReadableTableMetadata::len(&tx.open_table(CHUNKS)?)?)
