@@ -215,7 +215,11 @@ mod tests {
         let stone = blocks.get(blocks.id("stone").unwrap());
         let red = vec![[200u8, 10, 10, 255]; (textures::SIZE * textures::SIZE) as usize].concat();
         // Variants packed in the upper bits must not change the layer read.
-        let img = block_icon(stone, [3 | 3 << 16, 3 | 3 << 16, 3 | 3 << 16, 0], &[vec![], vec![], vec![], red]);
+        let img = block_icon(
+            stone,
+            [3 | 3 << 16, 3 | 3 << 16, 3 | 3 << 16, 0],
+            &[vec![], vec![], vec![], red],
+        );
         let c = ICON_SIZE / 2;
         assert_eq!(px(&img, c, c / 2), [200, 10, 10, 255]);
     }

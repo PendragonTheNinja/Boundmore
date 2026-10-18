@@ -21,7 +21,7 @@ const SHORT: Color32 = Color32::from_rgb(235, 104, 92);
 const RED: Color32 = Color32::from_rgb(226, 82, 70);
 const PANEL: Color32 = Color32::from_rgba_premultiplied(13, 12, 19, 222);
 const SLOT_FILL: Color32 = Color32::from_rgba_premultiplied(5, 5, 9, 150);
-const SLOT_RIM: Color32 = Color32::from_rgba_premultiplied(120, 110, 92, 120);
+const SLOT_RIM: Color32 = Color32::from_rgba_unmultiplied_const(120, 110, 92, 140);
 
 const SLOT: f32 = 54.0;
 const GAP: f32 = 6.0;
@@ -162,7 +162,7 @@ pub fn install_style(ctx: &egui::Context) {
             color: Color32::from_black_alpha(140),
         };
         v.extreme_bg_color = Color32::from_rgba_premultiplied(4, 4, 8, 210);
-        v.faint_bg_color = Color32::from_rgba_premultiplied(255, 255, 255, 8);
+        v.faint_bg_color = Color32::from_white_alpha(8);
         v.selection.bg_fill = Color32::from_rgb(120, 86, 30);
         v.selection.stroke = Stroke::new(1.0, GOLD);
         v.hyperlink_color = GOLD;
@@ -192,7 +192,7 @@ pub fn install_style(ctx: &egui::Context) {
             w.fg_stroke = Stroke::new(1.0, TEXT);
         }
         v.widgets.noninteractive.corner_radius = round;
-        v.widgets.noninteractive.bg_stroke = Stroke::new(1.0, Color32::from_rgba_premultiplied(90, 80, 64, 90));
+        v.widgets.noninteractive.bg_stroke = Stroke::new(1.0, Color32::from_rgba_unmultiplied(90, 80, 64, 110));
     });
 }
 
@@ -441,37 +441,48 @@ pub fn hud(ctx: &egui::Context, h: &Hud) {
             });
     }
 
-    if h.owner.is_some() || h.claim_mode.is_some() {
-        egui::Area::new(Id::unique("claim-info"))
-            .anchor(Align2::CENTER_TOP, vec2(0.0, 14.0))
+    let top_area = |id: &str, y: f32| {
+        egui::Area::new(Id::unique(id.to_string()))
+            .anchor(Align2::CENTER_TOP, vec2(0.0, y))
             .interactable(false)
             .order(egui::Order::Background)
-            .show(ctx, |ui| {
-                ui.with_layout(Layout::top_down(Align::Center), |ui| {
-                    if let Some((owner, mine)) = &h.owner {
-                        egui::Frame::new()
-                            .fill(Color32::from_black_alpha(120))
-                            .corner_radius(CornerRadius::same(12))
-                            .inner_margin(egui::Margin::symmetric(12, 3))
-                            .show(ui, |ui| {
-                                let (text, colour) = if *mine {
-                                    ("Your claim".to_string(), GOLD)
-                                } else {
-                                    (format!("{owner}'s claim"), Color32::from_rgb(240, 150, 140))
-                                };
-                                ui.label(egui::RichText::new(text).color(colour).size(14.0));
-                            });
-                    }
-                    if let Some(help) = &h.claim_mode {
-                        egui::Frame::window(ui.style())
-                            .inner_margin(egui::Margin::symmetric(14, 8))
-                            .show(ui, |ui| {
-                                ui.label(egui::RichText::new("Claim mode").color(GOLD).strong());
-                                ui.label(egui::RichText::new(help).size(14.0));
-                            });
-                    }
+    };
+    // In claim mode the panel says whose land this is instead.
+    if let Some((owner, mine)) = h.owner.as_ref().filter(|_| h.claim_mode.is_none()) {
+        top_area("claim-owner", 14.0).show(ctx, |ui| {
+            egui::Frame::new()
+                .fill(Color32::from_black_alpha(120))
+                .corner_radius(CornerRadius::same(12))
+                .inner_margin(egui::Margin::symmetric(12, 3))
+                .show(ui, |ui| {
+                    let (text, colour) = if *mine {
+                        ("Your claim".to_string(), GOLD)
+                    } else {
+                        (format!("{owner}'s claim"), Color32::from_rgb(240, 150, 140))
+                    };
+                    ui.label(egui::RichText::new(text).color(colour).size(14.0));
                 });
-            });
+        });
+    }
+    if let Some(help) = &h.claim_mode {
+        top_area("claim-help", 14.0).show(ctx, |ui| {
+            egui::Frame::window(ui.style())
+                .inner_margin(egui::Margin::symmetric(14, 8))
+                .show(ui, |ui| {
+                    ui.vertical_centered(|ui| {
+                        ui.label(egui::RichText::new("Claim mode").color(GOLD).strong());
+                        ui.label(egui::RichText::new(help).size(14.0));
+                        if let Some((owner, mine)) = &h.owner {
+                            let here = if *mine {
+                                "You are standing in your claim.".to_string()
+                            } else {
+                                format!("You are standing in {owner}'s claim.")
+                            };
+                            ui.label(egui::RichText::new(here).color(MUTED).size(13.0));
+                        }
+                    });
+                });
+        });
     }
 }
 
@@ -575,7 +586,7 @@ pub fn inventory(
                 if over {
                     Color32::from_rgb(110, 34, 30)
                 } else {
-                    Color32::from_rgba_premultiplied(40, 14, 14, 160)
+                    Color32::from_rgba_unmultiplied(70, 24, 22, 170)
                 },
             );
             painter.rect_stroke(
@@ -710,7 +721,7 @@ pub fn crafting(ctx: &egui::Context, v: &CraftingView, actions: &mut Vec<UiActio
 fn recipe_row(ui: &mut Ui, v: &CraftingView, index: u16, recipe: &bm_core::Recipe, actions: &mut Vec<UiAction>) {
     let max = v.items.craft_max(recipe);
     egui::Frame::new()
-        .fill(Color32::from_rgba_premultiplied(255, 255, 255, 6))
+        .fill(Color32::from_white_alpha(7))
         .corner_radius(CornerRadius::same(10))
         .inner_margin(egui::Margin::same(8))
         .show(ui, |ui| {
