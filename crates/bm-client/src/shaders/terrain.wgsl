@@ -3,17 +3,6 @@
 // attributes. Everything is drawn relative to the camera (floating origin),
 // so f32 precision never runs out however far from the planet's origin we are.
 
-struct Globals {
-    view_proj: mat4x4<f32>,
-    sun_dir: vec4<f32>,
-    fog_color: vec4<f32>,
-    // x: fog start, y: fog end, z: time in seconds, w: unused
-    params: vec4<f32>,
-    // x, y: framebuffer size in pixels
-    screen: vec4<f32>,
-};
-
-@group(0) @binding(0) var<uniform> g: Globals;
 // Four entries per block: side, top and bottom colour (linear rgb), then
 // parameters (x: opacity, y: fringe). Written by `Renderer::write_palette`.
 @group(0) @binding(1) var<uniform> palette: array<vec4<f32>, 1024>;
@@ -105,11 +94,14 @@ fn shade(in: VsOut) -> vec3<f32> {
     let base = base_colour(in);
     let n = NORMALS[in.face];
     var c = surface(base, in.local, n, in.origin);
-    let sun = max(dot(n, g.sun_dir.xyz), 0.0);
-    c = c * FACE_SHADE[in.face] * (0.78 + 0.22 * sun) * in.ao;
+    // Until per-voxel light lands (M2), the whole scene follows the sky's
+    // brightness; direct sun adds warmth to faces turned towards it by day.
+    let sun = max(dot(n, g.sun_dir.xyz), 0.0) * g.sun_dir.w;
+    let light = g.sun_color.w * (0.82 + 0.18 * sun);
+    c = c * FACE_SHADE[in.face] * light * in.ao;
     let d = length(in.rel);
     let fog = clamp((d - g.params.x) / max(g.params.y - g.params.x, 1.0), 0.0, 1.0);
-    return mix(c, g.fog_color.rgb, fog * fog);
+    return mix(c, sky_gradient(in.rel / max(d, 0.001)), fog * fog);
 }
 
 @fragment

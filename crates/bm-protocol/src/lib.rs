@@ -15,7 +15,7 @@
 //! a little-endian `u32` length. Every message from the other side is untrusted:
 //! decoders bound sizes, and the server validates content.
 
-use bm_core::{BlockDef, BlockId, BlockPos, ChunkPos, MoveConfig, PlanetShape, PlayerInput, PlayerState};
+use bm_core::{BlockDef, BlockId, BlockPos, ChunkPos, DayCycle, MoveConfig, PlanetShape, PlayerInput, PlayerState};
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
 
 /// Bump on any change to a message below. Client and server must match.
@@ -74,6 +74,8 @@ pub struct Welcome {
     pub view_radius: u8,
     /// Furthest a player may edit from their eye, in blocks.
     pub reach: f64,
+    /// Day length and phase; time of day is derived from snapshot ticks.
+    pub day: DayCycle,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]

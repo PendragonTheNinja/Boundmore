@@ -8,6 +8,7 @@ pub mod coords;
 pub mod movement;
 pub mod planet;
 pub mod raycast;
+pub mod time;
 
 pub use block::{BlockDef, BlockFlags, BlockId, BlockRegistry, RegistryError};
 pub use chunk::{CHUNK_FORMAT_VERSION, Chunk, ChunkDecodeError};
@@ -15,3 +16,4 @@ pub use coords::{BlockPos, CHUNK_SIZE, CHUNK_VOLUME, ChunkPos, LocalPos};
 pub use movement::{MoveConfig, PhysicsWorld, PlayerInput, PlayerState, TICK_DT, TICK_HZ};
 pub use planet::PlanetShape;
 pub use raycast::{RayHit, raycast};
+pub use time::DayCycle;

@@ -114,9 +114,23 @@ impl Store {
         }
     }
 
+    /// The planet clock in ticks (0 for a new planet).
+    pub fn clock(&self) -> Result<u64> {
+        let tx = self.db.begin_read()?;
+        let t = tx.open_table(META)?;
+        Ok(match t.get("clock")? {
+            Some(v) => postcard::from_bytes(v.value())?,
+            None => 0,
+        })
+    }
+
     pub fn write(&self, batch: &WriteBatch) -> Result<()> {
         let tx = self.db.begin_write()?;
         {
+            if let Some(clock) = batch.clock {
+                tx.open_table(META)?
+                    .insert("clock", postcard::to_stdvec(&clock)?.as_slice())?;
+            }
             let mut chunks = tx.open_table(CHUNKS)?;
             for (p, bytes) in &batch.chunks {
                 chunks.insert(chunk_key(*p).as_slice(), bytes.as_slice())?;
@@ -140,6 +154,8 @@ impl Store {
 pub struct WriteBatch {
     pub chunks: Vec<(ChunkPos, Vec<u8>)>,
     pub players: Vec<(String, PlayerState)>,
+    /// The planet clock, so days continue across restarts.
+    pub clock: Option<u64>,
     /// Signalled once the batch is durable (used at shutdown).
     pub done: Option<Sender<()>>,
 }
@@ -210,6 +226,7 @@ mod tests {
                         ..Default::default()
                     },
                 )],
+                clock: Some(777),
                 done: None,
             })
             .unwrap();
@@ -221,6 +238,7 @@ mod tests {
         assert_eq!(s.chunk(ChunkPos::new(-1, 2, 3)).unwrap(), Some(vec![9, 9]));
         assert_eq!(s.chunk(ChunkPos::new(0, 0, 0)).unwrap(), None);
         assert_eq!(s.player("Pendragon").unwrap().unwrap().pos, DVec3::new(1.0, 2.0, 3.0));
+        assert_eq!(s.clock().unwrap(), 777);
     }
 
     #[test]

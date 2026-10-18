@@ -4,9 +4,10 @@
 use crate::net::{self, ConnectOptions, Net, NetEvent};
 use crate::predict::{Predictor, RemoteSample, Remotes};
 use crate::render::{BoxInstance, Camera, Renderer, Scene};
+use crate::sky::Sky;
 use crate::world::ClientWorld;
 use bm_core::movement::{MoveConfig, PlayerInput};
-use bm_core::{BlockId, BlockPos, BlockRegistry, Chunk, PlanetShape, RayHit, TICK_DT, raycast};
+use bm_core::{BlockId, BlockPos, BlockRegistry, Chunk, DayCycle, PlanetShape, RayHit, TICK_DT, raycast};
 use bm_protocol::{ClientDatagram, ClientMsg, EditAction, INPUT_REDUNDANCY, ServerDatagram, ServerMsg};
 use glam::{DVec3, Vec3};
 use std::collections::HashSet;
@@ -32,6 +33,11 @@ pub struct Options {
 /// Everything that exists once the server has welcomed us.
 struct Session {
     planet_name: String,
+    day: DayCycle,
+    /// Server tick in the welcome and our clock when it arrived, for the time
+    /// of day before the first snapshot.
+    welcome_tick: u64,
+    welcome_local: f64,
     movement: MoveConfig,
     reach: f64,
     view_radius: u8,
@@ -132,6 +138,9 @@ impl App {
                         self.status = format!("on {}", w.planet_name);
                         self.session = Some(Session {
                             planet_name: w.planet_name.clone(),
+                            day: w.day,
+                            welcome_tick: w.tick,
+                            welcome_local: self.start.elapsed().as_secs_f64() / TICK_DT,
                             movement: w.movement,
                             reach: w.reach,
                             view_radius: w.view_radius,
@@ -348,8 +357,10 @@ impl App {
                 pitch,
                 fov_y: 75f32.to_radians(),
             };
+            let day = DayCycle::default();
             r.render(&Scene {
                 camera: &cam,
+                sky: &Sky::at(&day, 0.0),
                 shape: PlanetShape::new(8, 1),
                 boxes: &[],
                 highlight: None,
@@ -359,6 +370,16 @@ impl App {
             return;
         };
         let shape = s.world.shape;
+        let mut tick = s
+            .remotes
+            .server_tick(local)
+            .unwrap_or(s.welcome_tick as f64 + (local - s.welcome_local));
+        // A development override for judging the sky: BOUNDMORE_TIME=0.75 is
+        // sunset. Visual only; the server's clock is untouched.
+        if let Some(tod) = std::env::var("BOUNDMORE_TIME").ok().and_then(|v| v.parse::<f64>().ok()) {
+            tick = tod * s.day.day_ticks as f64 - s.day.start_offset as f64;
+        }
+        let sky = Sky::at(&s.day, tick);
         let feet = s.me.render_pos(alpha, shape);
         let eye = shape.wrap_point(feet + DVec3::new(0.0, s.movement.eye_height, 0.0));
         let camera = Camera {
@@ -389,6 +410,7 @@ impl App {
             .collect();
         r.render(&Scene {
             camera: &camera,
+            sky: &sky,
             shape,
             boxes: &boxes,
             highlight: s.target.map(|t| t.block),

@@ -183,6 +183,12 @@ impl Remotes {
         }
     }
 
+    /// Our best estimate of the server's tick right now, once any snapshot
+    /// has arrived.
+    pub fn server_tick(&self, local_ticks: f64) -> Option<f64> {
+        self.offset.map(|o| local_ticks + o)
+    }
+
     /// Interpolated positions at our current time. Positions are canonical;
     /// the renderer moves them to the lap nearest the camera.
     pub fn sample(&self, local_ticks: f64, shape: PlanetShape) -> Vec<(u32, RemoteSample)> {

@@ -22,14 +22,39 @@ const NEAR: f32 = 0.05;
 /// Blocks with colours in the palette uniform (4 × 16 bytes each, 16 KiB).
 const PALETTE_BLOCKS: usize = 256;
 
+/// Must match `Globals` in shaders/common.wgsl.
 #[repr(C)]
 #[derive(Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
 struct Globals {
     view_proj: [[f32; 4]; 4],
+    inv_view_proj: [[f32; 4]; 4],
     sun_dir: [f32; 4],
-    fog_color: [f32; 4],
+    sky_zenith: [f32; 4],
+    sky_horizon: [f32; 4],
+    sun_color: [f32; 4],
     params: [f32; 4],
     screen: [f32; 4],
+}
+
+/// Every shader is `common.wgsl` followed by its own file.
+macro_rules! shader_source {
+    ($file:literal) => {
+        concat!(
+            include_str!("shaders/common.wgsl"),
+            include_str!(concat!("shaders/", $file))
+        )
+    };
+}
+
+const TERRAIN_WGSL: &str = shader_source!("terrain.wgsl");
+const SIMPLE_WGSL: &str = shader_source!("simple.wgsl");
+const SKY_WGSL: &str = shader_source!("sky.wgsl");
+
+fn shader(device: &wgpu::Device, label: &str, source: &'static str) -> wgpu::ShaderModule {
+    device.create_shader_module(wgpu::ShaderModuleDescriptor {
+        label: Some(label),
+        source: wgpu::ShaderSource::Wgsl(source.into()),
+    })
 }
 
 #[repr(C)]
@@ -77,6 +102,7 @@ impl Camera {
 
 pub struct Scene<'a> {
     pub camera: &'a Camera,
+    pub sky: &'a crate::sky::Sky,
     pub shape: PlanetShape,
     pub boxes: &'a [BoxInstance],
     pub highlight: Option<BlockPos>,
@@ -104,6 +130,7 @@ pub struct Renderer {
     box_pipeline: wgpu::RenderPipeline,
     line_pipeline: wgpu::RenderPipeline,
     cross_pipeline: wgpu::RenderPipeline,
+    sky_pipeline: wgpu::RenderPipeline,
     quad_indices: wgpu::Buffer,
     quad_capacity: u32,
     chunks: HashMap<ChunkPos, GpuChunk>,
@@ -125,8 +152,6 @@ fn srgb_to_linear(c: u8) -> f32 {
         ((c + 0.055) / 1.055).powf(2.4)
     }
 }
-
-pub const SKY: [f32; 3] = [0.54, 0.72, 0.92];
 
 impl Renderer {
     pub async fn new(window: Arc<Window>, vsync: bool) -> anyhow::Result<Self> {
@@ -218,8 +243,9 @@ impl Renderer {
             immediate_size: 0,
         });
 
-        let terrain = device.create_shader_module(wgpu::include_wgsl!("shaders/terrain.wgsl"));
-        let simple = device.create_shader_module(wgpu::include_wgsl!("shaders/simple.wgsl"));
+        let terrain = shader(&device, "terrain", TERRAIN_WGSL);
+        let simple = shader(&device, "simple", SIMPLE_WGSL);
+        let sky_module = shader(&device, "sky", SKY_WGSL);
 
         let chunk_buffers = [
             Some(wgpu::VertexBufferLayout {
@@ -361,6 +387,19 @@ impl Renderer {
             &blend_target,
         );
 
+        // Fills only pixels no geometry reached (depth still the cleared 0).
+        let sky_pipeline = pipeline(
+            "sky",
+            &sky_module,
+            "vs_sky",
+            "fs_sky",
+            &[],
+            TriangleList,
+            None,
+            Some(depth_state(false, GreaterEqual)),
+            &opaque_target,
+        );
+
         let (box_vertices, box_indices) = cube(&device);
         let quad_capacity = 1 << 16;
         let mut r = Self {
@@ -386,6 +425,7 @@ impl Renderer {
             box_pipeline,
             line_pipeline,
             cross_pipeline,
+            sky_pipeline,
             chunks: HashMap::new(),
             stats: FrameStats::default(),
         };
@@ -470,16 +510,20 @@ impl Renderer {
         let cam = scene.camera;
         let aspect = self.config.width as f32 / self.config.height as f32;
         let view_proj = projection(cam.fov_y, aspect) * view_rotation(cam.forward().as_vec3());
-        let sun = Vec3::new(0.35, 0.85, 0.4).normalize();
+        let sky = scene.sky;
         let fog_start = scene.fog_end * 0.55;
+        let v4 = |c: [f32; 3], w: f32| [c[0], c[1], c[2], w];
         self.queue.write_buffer(
             &self.globals,
             0,
             bytemuck::bytes_of(&Globals {
                 view_proj: view_proj.to_cols_array_2d(),
-                sun_dir: [sun.x, sun.y, sun.z, 0.0],
-                fog_color: [SKY[0], SKY[1], SKY[2], 1.0],
-                params: [fog_start, scene.fog_end, scene.time, 0.0],
+                inv_view_proj: view_proj.inverse().to_cols_array_2d(),
+                sun_dir: v4(sky.sun_dir, sky.daylight),
+                sky_zenith: v4(sky.zenith, 1.0),
+                sky_horizon: v4(sky.horizon, 1.0),
+                sun_color: v4(sky.sun_color, sky.sky_light),
+                params: [fog_start, scene.fog_end, scene.time, sky.stars],
                 screen: [self.config.width as f32, self.config.height as f32, 0.0, 0.0],
             }),
         );
@@ -554,9 +598,9 @@ impl Renderer {
                     resolve_target: None,
                     ops: wgpu::Operations {
                         load: wgpu::LoadOp::Clear(wgpu::Color {
-                            r: SKY[0] as f64,
-                            g: SKY[1] as f64,
-                            b: SKY[2] as f64,
+                            r: sky.horizon[0] as f64,
+                            g: sky.horizon[1] as f64,
+                            b: sky.horizon[2] as f64,
                             a: 1.0,
                         }),
                         store: wgpu::StoreOp::Store,
@@ -597,6 +641,9 @@ impl Renderer {
                 pass.set_index_buffer(self.quad_indices.slice(..), wgpu::IndexFormat::Uint32);
                 pass.set_vertex_buffer(1, self.instances.slice(..));
             }
+
+            pass.set_pipeline(&self.sky_pipeline);
+            pass.draw(0..3, 0..1);
 
             // Translucent last, far to near, without writing depth.
             pass.set_pipeline(&self.terrain_translucent);
@@ -822,10 +869,7 @@ mod tests {
 
     #[test]
     fn shaders_validate() {
-        for (name, src) in [
-            ("terrain", include_str!("shaders/terrain.wgsl")),
-            ("simple", include_str!("shaders/simple.wgsl")),
-        ] {
+        for (name, src) in [("terrain", TERRAIN_WGSL), ("simple", SIMPLE_WGSL), ("sky", SKY_WGSL)] {
             let module =
                 naga::front::wgsl::parse_str(src).unwrap_or_else(|e| panic!("{name}: {}", e.emit_to_string(src)));
             naga::valid::Validator::new(naga::valid::ValidationFlags::all(), naga::valid::Capabilities::all())
@@ -836,7 +880,7 @@ mod tests {
 
     #[test]
     fn layouts_match_the_shaders() {
-        assert_eq!(std::mem::size_of::<Globals>(), 64 + 16 * 4);
+        assert_eq!(std::mem::size_of::<Globals>(), 64 * 2 + 16 * 6);
         assert_eq!(std::mem::size_of::<ChunkInstance>(), 24);
         assert_eq!(std::mem::size_of::<Vertex>(), 8);
     }

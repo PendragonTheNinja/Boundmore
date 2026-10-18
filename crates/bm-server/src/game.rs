@@ -10,7 +10,7 @@ use crate::net::{Event, Outbox};
 use crate::store::{Store, WriteBatch};
 use crate::world::World;
 use bm_core::movement::{self, MoveConfig, PlayerInput, PlayerState};
-use bm_core::{BlockId, BlockPos, CHUNK_SIZE, ChunkPos, TICK_DT};
+use bm_core::{BlockId, BlockPos, CHUNK_SIZE, ChunkPos, DayCycle, TICK_DT};
 use bm_net::quinn::Connection;
 use bm_protocol::{ClientMsg, EditAction, PLAYERS_PER_SNAPSHOT, RemotePlayer, ServerDatagram, ServerMsg, Welcome};
 use bm_worldgen::Generator;
@@ -72,6 +72,7 @@ pub struct Game {
     events: Receiver<Event>,
     players: HashMap<u32, Player>,
     tick: u64,
+    day: DayCycle,
     movement: MoveConfig,
     spawn: BlockPos,
     stats: Stats,
@@ -96,6 +97,10 @@ impl Game {
         writer: Sender<WriteBatch>,
         events: Receiver<Event>,
     ) -> Self {
+        let tick = store.clock().unwrap_or_else(|e| {
+            tracing::error!("reading the planet clock: {e:#}; starting at 0");
+            0
+        });
         Self {
             spawn: generator.spawn_point(),
             cfg,
@@ -105,7 +110,8 @@ impl Game {
             writer,
             events,
             players: HashMap::new(),
-            tick: 0,
+            tick,
+            day: DayCycle::default(),
             movement: MoveConfig::default(),
             stats: Stats::default(),
         }
@@ -268,6 +274,7 @@ impl Game {
             tick: self.tick,
             view_radius: self.cfg.view_radius,
             reach: self.cfg.reach,
+            day: self.day,
         })));
         for (oid, other) in &self.players {
             out.send(&ServerMsg::PlayerJoined {
@@ -598,6 +605,7 @@ impl Game {
         let batch = WriteBatch {
             chunks: self.world.take_dirty(),
             players: self.players.values().map(|p| (p.name.clone(), p.state)).collect(),
+            clock: Some(self.tick),
             done,
         };
         if !batch.is_empty() || batch.done.is_some() {

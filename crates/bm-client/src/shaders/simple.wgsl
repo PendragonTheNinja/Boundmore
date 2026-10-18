@@ -1,14 +1,6 @@
 // Players, the block highlight and the crosshair: small things drawn with
 // plain positions.
 
-struct Globals {
-    view_proj: mat4x4<f32>,
-    sun_dir: vec4<f32>,
-    fog_color: vec4<f32>,
-    params: vec4<f32>,
-    screen: vec4<f32>,
-};
-@group(0) @binding(0) var<uniform> g: Globals;
 
 // ---- boxes (other players), instanced unit cube ----
 
@@ -30,7 +22,7 @@ fn vs_box(in: BoxIn) -> BoxOut {
     let rel = in.center + in.corner * in.half_size;
     var out: BoxOut;
     out.clip = g.view_proj * vec4<f32>(rel, 1.0);
-    let light = 0.6 + 0.4 * max(dot(in.normal, g.sun_dir.xyz), 0.0);
+    let light = (0.6 + 0.4 * max(dot(in.normal, g.sun_dir.xyz), 0.0) * g.sun_dir.w) * g.sun_color.w;
     out.color = in.color.rgb * light;
     return out;
 }

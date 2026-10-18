@@ -6,6 +6,7 @@ mod app;
 mod net;
 mod predict;
 mod render;
+mod sky;
 mod world;
 
 use anyhow::{Context, bail};
