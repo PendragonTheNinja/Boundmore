@@ -15,6 +15,9 @@
 #   placeable   may appear in the build hotbar
 #   hardness    seconds to break by hand (0 = instant)
 #   opacity     for translucent blocks, how opaque they draw (default 1)
+#   light       light given off, 0-15 (default 0)
+#   textures    { all = "x" } or any of top / side / bottom; names are files in
+#               assets/textures/blocks/ (docs/art-direction.md)
 
 [[block]]
 name = "air"
@@ -35,6 +38,7 @@ translucent = false
 breakable = false
 placeable = false
 hardness = 0.0
+textures = { all = "bedrock" }
 
 [[block]]
 name = "stone"
@@ -45,6 +49,7 @@ translucent = false
 breakable = true
 placeable = true
 hardness = 0.6
+textures = { all = "stone" }
 
 [[block]]
 name = "deep_stone"
@@ -55,6 +60,7 @@ translucent = false
 breakable = true
 placeable = true
 hardness = 0.9
+textures = { all = "deep_stone" }
 
 [[block]]
 name = "soil"
@@ -65,6 +71,7 @@ translucent = false
 breakable = true
 placeable = true
 hardness = 0.3
+textures = { all = "soil" }
 
 [[block]]
 name = "turf"
@@ -77,6 +84,7 @@ translucent = false
 breakable = true
 placeable = true
 hardness = 0.3
+textures = { top = "turf_top", side = "turf_side", bottom = "soil" }
 
 [[block]]
 name = "sand"
@@ -87,6 +95,7 @@ translucent = false
 breakable = true
 placeable = true
 hardness = 0.25
+textures = { all = "sand" }
 
 [[block]]
 name = "gravel"
@@ -97,6 +106,7 @@ translucent = false
 breakable = true
 placeable = true
 hardness = 0.35
+textures = { all = "gravel" }
 
 [[block]]
 name = "snow"
@@ -107,6 +117,7 @@ translucent = false
 breakable = true
 placeable = true
 hardness = 0.2
+textures = { all = "snow" }
 
 [[block]]
 name = "water"
@@ -118,6 +129,7 @@ breakable = false
 placeable = false
 hardness = 0.0
 opacity = 0.62
+textures = { all = "water" }
 
 [[block]]
 name = "trunk"
@@ -130,6 +142,7 @@ translucent = false
 breakable = true
 placeable = true
 hardness = 0.5
+textures = { side = "trunk_side", top = "trunk_top", bottom = "trunk_top" }
 
 [[block]]
 name = "foliage"
@@ -140,6 +153,7 @@ translucent = false
 breakable = true
 placeable = true
 hardness = 0.1
+textures = { all = "foliage" }
 
 [[block]]
 name = "coal_seam"
@@ -150,6 +164,7 @@ translucent = false
 breakable = true
 placeable = false
 hardness = 0.8
+textures = { all = "coal_seam" }
 
 [[block]]
 name = "copper_vein"
@@ -160,6 +175,7 @@ translucent = false
 breakable = true
 placeable = false
 hardness = 1.0
+textures = { all = "copper_vein" }
 
 [[block]]
 name = "glow_crystal"
@@ -170,6 +186,8 @@ translucent = false
 breakable = true
 placeable = true
 hardness = 0.7
+textures = { all = "glow_crystal" }
+light = 12
 
 [[block]]
 name = "timber"
@@ -180,6 +198,7 @@ translucent = false
 breakable = true
 placeable = true
 hardness = 0.4
+textures = { all = "timber" }
 
 [[block]]
 name = "brick"
@@ -190,6 +209,7 @@ translucent = false
 breakable = true
 placeable = true
 hardness = 0.7
+textures = { all = "brick" }
 
 [[block]]
 name = "glass"
@@ -201,3 +221,4 @@ breakable = true
 placeable = true
 hardness = 0.2
 opacity = 0.28
+textures = { all = "glass" }

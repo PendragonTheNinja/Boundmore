@@ -44,6 +44,13 @@ pub struct BlockDef {
     /// How opaque a translucent block draws (1 for everything else).
     #[serde(default = "full_opacity")]
     pub opacity: f32,
+    /// Light the block gives off, 0 (none) to 15.
+    #[serde(default)]
+    pub light: u8,
+    /// Texture names per face (`docs/art-direction.md`). Every block that
+    /// renders must resolve all three faces.
+    #[serde(default)]
+    pub textures: BlockTextures,
 }
 
 fn full_opacity() -> f32 {
@@ -54,6 +61,39 @@ impl BlockDef {
     /// Whether the block produces geometry at all.
     pub fn renders(&self) -> bool {
         self.opaque || self.translucent
+    }
+}
+
+/// Texture names for a block's faces; `top`, `side` and `bottom` each fall
+/// back to `all`. Names are file stems under `assets/textures/blocks/`.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct BlockTextures {
+    #[serde(default)]
+    pub all: Option<String>,
+    #[serde(default)]
+    pub top: Option<String>,
+    #[serde(default)]
+    pub side: Option<String>,
+    #[serde(default)]
+    pub bottom: Option<String>,
+}
+
+impl BlockTextures {
+    pub fn top(&self) -> Option<&str> {
+        self.top.as_deref().or(self.all.as_deref())
+    }
+
+    pub fn side(&self) -> Option<&str> {
+        self.side.as_deref().or(self.all.as_deref())
+    }
+
+    pub fn bottom(&self) -> Option<&str> {
+        self.bottom.as_deref().or(self.all.as_deref())
+    }
+
+    /// Top, side and bottom, if all three resolve.
+    pub fn faces(&self) -> Option<[&str; 3]> {
+        Some([self.top()?, self.side()?, self.bottom()?])
     }
 }
 
@@ -71,6 +111,10 @@ pub enum RegistryError {
     TooMany(usize),
     #[error("no block named `{0}`")]
     Unknown(String),
+    #[error("block `{0}` renders but does not name a texture for every face")]
+    MissingTextures(String),
+    #[error("block `{0}` gives off light {1}; the most is 15")]
+    TooBright(String, u8),
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -105,6 +149,12 @@ impl BlockRegistry {
         for (i, d) in defs.iter().enumerate() {
             if d.opaque && d.translucent {
                 return Err(RegistryError::OpaqueAndTranslucent(d.name.clone()));
+            }
+            if d.renders() && d.textures.faces().is_none() {
+                return Err(RegistryError::MissingTextures(d.name.clone()));
+            }
+            if d.light > 15 {
+                return Err(RegistryError::TooBright(d.name.clone(), d.light));
             }
             if by_name.insert(d.name.clone(), BlockId(i as u16)).is_some() {
                 return Err(RegistryError::Duplicate(d.name.clone()));
@@ -199,6 +249,23 @@ mod tests {
         assert!(r.get(r.id("stone").unwrap()).solid);
         assert!(r.get(r.id("water").unwrap()).translucent);
         assert!(!r.get(r.id("bedrock").unwrap()).breakable);
+        let turf = r.get(r.id("turf").unwrap());
+        assert_eq!(turf.textures.faces(), Some(["turf_top", "turf_side", "soil"]));
+        assert!(r.get(r.id("glow_crystal").unwrap()).light > 0);
+    }
+
+    #[test]
+    fn rendering_blocks_need_every_face_textured() {
+        let air = BlockRegistry::builtin().defs()[0].clone();
+        let mut stone = BlockRegistry::builtin().get(BlockId(2)).clone();
+        stone.textures = BlockTextures {
+            top: Some("x".into()),
+            ..Default::default()
+        };
+        assert!(matches!(
+            BlockRegistry::from_defs(vec![air, stone]),
+            Err(RegistryError::MissingTextures(_))
+        ));
     }
 
     #[test]
