@@ -1706,6 +1706,25 @@ mod tests {
             assert_eq!(map.light_at(BlockPos::new(96, y, 96)).sky(), 15);
         }
         assert_matches(&map, &reference(shape, &flags, &world, &cols), &world);
+
+        // A sea deep enough that whole chunks are water, beside dry land.
+        let shape = PlanetShape::new(4, 3);
+        let cols = all_columns(shape);
+        let world = build(shape, &cols, |x, y, _| {
+            if y < 32 || (x >= 64 && y < 70) {
+                ids.stone
+            } else if y < 64 {
+                ids.water
+            } else {
+                ids.air
+            }
+        });
+        let mut map = LightMap::new(shape, &flags);
+        load(&mut map, &world, &sorted_keys(&world));
+        assert_eq!(map.light_at(BlockPos::new(10, 63, 10)).sky(), 14);
+        assert_eq!(map.light_at(BlockPos::new(10, 50, 10)).sky(), 1);
+        assert_eq!(map.light_at(BlockPos::new(10, 40, 10)), Light::DARK);
+        assert_matches(&map, &reference(shape, &flags, &world, &cols), &world);
     }
 
     #[test]
