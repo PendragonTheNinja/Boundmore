@@ -60,6 +60,20 @@ const MAX_QUEUED_EDITS: usize = 64;
 const BREAK_SLACK_SECONDS: f64 = 0.12;
 const BREAK_SLACK_FRACTION: f64 = 0.2;
 
+/// What waits in a player's queue for the input it follows.
+#[derive(Clone, Copy, Debug)]
+enum Queued {
+    Edit {
+        seq: u32,
+        pos: BlockPos,
+        action: EditAction,
+    },
+    StartBreak {
+        pos: BlockPos,
+        slot: u8,
+    },
+}
+
 /// The block a player is holding break on.
 #[derive(Clone, Copy, Debug, PartialEq)]
 struct Mining {
@@ -88,8 +102,9 @@ struct Player {
     center: Option<ChunkPos>,
     edit_tokens: f64,
     mining: Option<Mining>,
-    /// Edits waiting for the input they follow: (at, seq, pos, action).
-    edits: VecDeque<(u32, u32, BlockPos, EditAction)>,
+    /// Edits and break holds waiting for the input they follow, in the order
+    /// sent (their `at` never decreases).
+    edits: VecDeque<(u32, Queued)>,
     /// The station whose updates this player receives.
     watching: Option<BlockPos>,
 }
@@ -353,20 +368,8 @@ impl Game {
                 }
             }
             Event::Msg { id, msg } => match msg {
-                ClientMsg::Edit { seq, at, pos, action } => {
-                    if let Some(p) = self.players.get_mut(&id) {
-                        if at <= p.last_seq {
-                            // Late (its input was already simulated, e.g. a
-                            // lost input was repeated): apply now.
-                            self.edit(id, seq, pos, action);
-                        } else if at > p.last_seq + MAX_EDIT_LEAD || p.edits.len() >= MAX_QUEUED_EDITS {
-                            self.edit_refused(id, seq, pos, "edit too far ahead of movement");
-                        } else {
-                            p.edits.push_back((at, seq, pos, action));
-                        }
-                    }
-                }
-                ClientMsg::StartBreak { pos, slot } => self.start_break(id, pos, slot),
+                ClientMsg::Edit { seq, at, pos, action } => self.queue(id, at, Queued::Edit { seq, pos, action }),
+                ClientMsg::StartBreak { at, pos, slot } => self.queue(id, at, Queued::StartBreak { pos, slot }),
                 ClientMsg::MoveItems { from, to, count } => {
                     self.change_inventory(id, |inv, items| {
                         inv.move_items(items, from as usize, to as usize, count)
@@ -547,13 +550,38 @@ impl Game {
         }
     }
 
+    /// Applies an edit or break hold right after the input it follows, in
+    /// the order the client sent them: a hold on the next block must never
+    /// overtake the break of the one before it.
+    fn queue(&mut self, id: u32, at: u32, queued: Queued) {
+        let Some(p) = self.players.get_mut(&id) else { return };
+        if at <= p.last_seq && p.edits.is_empty() {
+            // Late (its input was already simulated, e.g. a lost input was
+            // repeated): apply now.
+            self.apply_queued(id, queued);
+        } else if at > p.last_seq + MAX_EDIT_LEAD || p.edits.len() >= MAX_QUEUED_EDITS {
+            if let Queued::Edit { seq, pos, .. } = queued {
+                self.edit_refused(id, seq, pos, "edit too far ahead of movement");
+            }
+        } else {
+            p.edits.push_back((at, queued));
+        }
+    }
+
+    fn apply_queued(&mut self, id: u32, queued: Queued) {
+        match queued {
+            Queued::Edit { seq, pos, action } => self.edit(id, seq, pos, action),
+            Queued::StartBreak { pos, slot } => self.start_break(id, pos, slot),
+        }
+    }
+
     fn apply_due_edits(&mut self, id: u32) {
         loop {
             let Some(p) = self.players.get_mut(&id) else { return };
             match p.edits.front() {
-                Some(&(at, ..)) if at <= p.last_seq => {
-                    let (_, seq, pos, action) = p.edits.pop_front().expect("present");
-                    self.edit(id, seq, pos, action);
+                Some(&(at, _)) if at <= p.last_seq => {
+                    let (_, queued) = p.edits.pop_front().expect("present");
+                    self.apply_queued(id, queued);
                 }
                 _ => return,
             }

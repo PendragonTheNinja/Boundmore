@@ -22,7 +22,7 @@ use bm_core::{
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
 
 /// Bump on any change to a message below. Client and server must match.
-pub const PROTOCOL_VERSION: u32 = 5;
+pub const PROTOCOL_VERSION: u32 = 6;
 
 /// QUIC application protocol name; also refuses non-Boundmore peers early.
 pub const ALPN: &[u8] = b"boundmore/1";
@@ -54,8 +54,10 @@ pub enum ClientMsg {
     /// The player has started holding break on this block, holding the item
     /// in hotbar `slot` (a tool, or anything: a non-tool breaks by hand). The
     /// server times the hold from here: a break sooner than the tool allows
-    /// is refused.
-    StartBreak { pos: BlockPos, slot: u8 },
+    /// is refused. `at` is the input sequence it follows, as for `Edit`: it
+    /// is queued with the edits, so it can never overtake the break of the
+    /// block before it.
+    StartBreak { at: u32, pos: BlockPos, slot: u8 },
     /// `at` is the input sequence the edit follows: the server applies it
     /// right after simulating that input, exactly where the client's
     /// prediction put it, so both judge "is a player in the way" on the same

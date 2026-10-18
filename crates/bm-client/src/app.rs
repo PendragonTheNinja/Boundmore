@@ -616,6 +616,7 @@ impl App {
                     _ => {
                         if seconds > 0.0 {
                             link.send(ClientMsg::StartBreak {
+                                at: s.me.seq,
                                 pos: hit.block,
                                 slot: slot as u8,
                             });

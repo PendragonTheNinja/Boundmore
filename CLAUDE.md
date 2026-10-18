@@ -52,7 +52,7 @@ cargo clippy --workspace --all-targets -- -D warnings
 cargo test --workspace
 ```
 
-Expected test counts (M3, 2026-10-18): bm-core 62, bm-worldgen 13, bm-mesh 12, bm-protocol 6, bm-server 15 unit + 8 end-to-end, bm-client 35, bm-texgen 5 (156 in all). CI (`.github/workflows/ci.yml`) runs the same on Linux and builds on Windows.
+Expected test counts (M3, 2026-10-18): bm-core 62, bm-worldgen 13, bm-mesh 12, bm-protocol 6, bm-server 15 unit + 9 end-to-end, bm-client 35, bm-texgen 5 (157 in all). CI (`.github/workflows/ci.yml`) runs the same on Linux and builds on Windows.
 
 **Load test:** run a server, then `cargo run --release -p bm-server --example bots -- --count 50 --prefix Load`. Watch the server's 30-second report for slow ticks.
 

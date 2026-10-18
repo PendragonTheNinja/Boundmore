@@ -230,7 +230,12 @@ impl TestClient {
 
     /// Holds break for `seconds` with hotbar `slot`, then breaks.
     async fn dig_with(&mut self, seq: u32, pos: BlockPos, slot: u8, seconds: f32) -> (bool, BlockId) {
-        self.send(ClientMsg::StartBreak { pos, slot }).await;
+        self.send(ClientMsg::StartBreak {
+            at: self.seq,
+            pos,
+            slot,
+        })
+        .await;
         tokio::time::sleep(Duration::from_secs_f32(seconds)).await;
         self.edit(seq, pos, EditAction::Break).await
     }
@@ -860,4 +865,75 @@ async fn a_version_1_planet_opens_and_keeps_its_players() {
         })
         .unwrap();
     assert_eq!(meta.save_version, bm_server::store::SAVE_VERSION);
+}
+
+/// Holding break straight on from one block to the next, as the game does:
+/// the break of the first block waits for the input it follows, and the hold
+/// on the next block, sent just after, must not overtake it (it did, and
+/// every second block was refused and flashed back).
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn digging_block_after_block_keeps_every_break() {
+    let dir = tempfile::tempdir().unwrap();
+    let server = bm_server::start(config(dir.path())).unwrap();
+    let mut carol = TestClient::register(&server, "Carol").await;
+    let first = carol.feet();
+    let second = first.offset(0, -1, 0);
+    carol.wait_for_chunk(first.chunk()).await;
+    carol.wait_for_chunk(second.chunk()).await;
+    let hardness =
+        |c: &TestClient, p: BlockPos| c.welcome.blocks[c.chunks[&p.chunk()].get(p.local()).0 as usize].hardness;
+    let (h1, h2) = (hardness(&carol, first), hardness(&carol, second));
+    assert!(h1 > 0.0 && h2 > 0.0, "the ground takes time to break");
+
+    // Inputs at the real rate, as the game sends them.
+    async fn hold(c: &mut TestClient, seconds: f32) {
+        for _ in 0..(seconds * 60.0).ceil() as u32 {
+            c.send_inputs(1, PlayerInput::default());
+            tokio::time::sleep(Duration::from_secs_f64(1.0 / 60.0)).await;
+        }
+    }
+    carol
+        .send(ClientMsg::StartBreak {
+            at: carol.seq,
+            pos: first,
+            slot: HAND,
+        })
+        .await;
+    hold(&mut carol, h1 + 0.1).await;
+    // The break follows an input not sent yet; the next hold goes straight after.
+    let at = carol.seq + 1;
+    carol
+        .send(ClientMsg::Edit {
+            seq: 1,
+            at,
+            pos: first,
+            action: EditAction::Break,
+        })
+        .await;
+    carol
+        .send(ClientMsg::StartBreak {
+            at,
+            pos: second,
+            slot: HAND,
+        })
+        .await;
+    hold(&mut carol, h2 + 0.1).await;
+    carol
+        .send(ClientMsg::Edit {
+            seq: 2,
+            at: carol.seq,
+            pos: second,
+            action: EditAction::Break,
+        })
+        .await;
+
+    let mut results = Vec::new();
+    while results.len() < 2 {
+        if let ServerMsg::EditResult { seq, accepted, .. } =
+            carol.until(|m| matches!(m, ServerMsg::EditResult { .. })).await
+        {
+            results.push((seq, accepted));
+        }
+    }
+    assert_eq!(results, vec![(1, true), (2, true)], "both breaks kept");
 }
