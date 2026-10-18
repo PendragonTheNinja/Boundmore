@@ -6,6 +6,7 @@ use crate::predict::{Predictor, RemoteSample, Remotes};
 use crate::render::{BoxInstance, Camera, Renderer, Scene};
 use crate::sky::Sky;
 use crate::textures::TextureSet;
+use crate::ui::{Hotbar, Icon, UiBuilder};
 use crate::world::ClientWorld;
 use bm_core::movement::{MoveConfig, PlayerInput};
 use bm_core::{BlockId, BlockPos, BlockRegistry, Chunk, DayCycle, PlanetShape, RayHit, TICK_DT, raycast};
@@ -48,6 +49,8 @@ struct Session {
     me: Predictor,
     remotes: Remotes,
     hotbar: Vec<BlockId>,
+    /// One icon per hotbar entry.
+    icons: Vec<Icon>,
     selected: usize,
     edit_seq: u32,
     place_cooldown: f64,
@@ -135,6 +138,7 @@ impl App {
                 NetEvent::Connected(w) => match BlockRegistry::from_defs(w.blocks.clone()) {
                     Ok(registry) => {
                         let set = TextureSet::load(&registry, &self.opts.assets.join("textures"));
+                        let lin = |c: [u8; 3]| c.map(crate::textures::srgb_to_linear);
                         self.missing_textures = set.missing.len();
                         if let Some(r) = &mut self.renderer {
                             r.write_palette(&registry);
@@ -142,6 +146,25 @@ impl App {
                         }
                         let hotbar: Vec<BlockId> =
                             registry.iter().filter(|(_, d)| d.placeable).map(|(id, _)| id).collect();
+                        let icons: Vec<Icon> = hotbar
+                            .iter()
+                            .map(|id| {
+                                let def = registry.get(*id);
+                                let f = set
+                                    .faces
+                                    .get(id.0 as usize)
+                                    .copied()
+                                    .unwrap_or([crate::textures::NO_TEXTURE; 4]);
+                                Icon {
+                                    layers: [f[0], f[1], f[2]],
+                                    colors: [
+                                        lin(def.top_color.unwrap_or(def.color)),
+                                        lin(def.color),
+                                        lin(def.bottom_color.unwrap_or(def.color)),
+                                    ],
+                                }
+                            })
+                            .collect();
                         tracing::info!("welcomed to {} as #{}", w.planet_name, w.player_id);
                         self.status = format!("on {}", w.planet_name);
                         self.session = Some(Session {
@@ -156,6 +179,7 @@ impl App {
                             me: Predictor::new(w.spawn),
                             remotes: Remotes::default(),
                             hotbar,
+                            icons,
                             selected: 0,
                             edit_seq: 0,
                             place_cooldown: 0.0,
@@ -373,6 +397,7 @@ impl App {
                 boxes: &[],
                 highlight: None,
                 breaking: None,
+                ui: &[],
                 fog_end: 100.0,
                 time,
             });
@@ -417,9 +442,18 @@ impl App {
                 }
             })
             .collect();
+        let mut ui = UiBuilder::default();
+        ui.hotbar(
+            [r.width() as f32, r.height() as f32],
+            &Hotbar {
+                icons: &s.icons,
+                selected: s.selected,
+            },
+        );
         r.render(&Scene {
             camera: &camera,
             sky: &sky,
+            ui: &ui.verts,
             shape,
             boxes: &boxes,
             highlight: s.target.map(|t| t.block),

@@ -30,11 +30,12 @@ Coloured light, shadows from the sun, animated water, cut-out leaves, sound, inv
 
 ## Status
 
-- [ ] Whole-column streaming
-- [ ] Hold to break (protocol, server validation, client progress, crack overlay)
-- [ ] Day and night (server time, sky, sun, fog, sky-light scale)
-- [ ] Texture pipeline in the client (catalogue field, array, variants, mipmaps)
-- [ ] Light engine (agent) merged and integrated in the client
-- [ ] Painted textures (agent) merged and reviewed
-- [ ] Hotbar
+- [x] Whole-column streaming
+- [x] Hold to break (protocol, server validation, client progress, crack overlay with built-in cracks until painted ones exist)
+- [x] Day and night (saved planet clock, sky pass, sun, moon, stars, fog from the sky, night dimming). `BOUNDMORE_TIME=0.75` previews a time of day.
+- [x] Texture pipeline in the client (catalogue field, array, variants, mipmaps; a missing texture falls back to the block colour and shows in the title bar)
+- [x] Hotbar (isometric block icons, scrolling, selection)
+- [x] Fixes from Nathan's first play (2026-10-18): climbing out of water (a pop up when pushing against a shore with jump held); breaking shows progress
+- [ ] Light engine (agent `light`, branch `m2-light`) merged and integrated in the client
+- [ ] Painted textures (agent `texgen`, branch `m2-texgen`) merged and reviewed
 - [ ] Play-tested headlessly, screenshots in `docs/media/`, ready for Nathan

@@ -8,6 +8,7 @@ mod predict;
 mod render;
 mod sky;
 mod textures;
+mod ui;
 mod world;
 
 use anyhow::{Context, bail};

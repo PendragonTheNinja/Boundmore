@@ -168,7 +168,7 @@ fn builtin_crack(stage: u32) -> Layer {
     px
 }
 
-fn srgb_to_linear(c: u8) -> f32 {
+pub fn srgb_to_linear(c: u8) -> f32 {
     let c = c as f32 / 255.0;
     if c <= 0.04045 {
         c / 12.92

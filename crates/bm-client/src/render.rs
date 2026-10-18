@@ -10,6 +10,7 @@
 //!   one instance record per visible chunk carrying its offset and origin.
 
 use crate::textures::{self, TextureSet};
+use crate::ui::UiVertex;
 use bm_core::{BlockPos, BlockRegistry, CHUNK_SIZE, ChunkPos, PlanetShape};
 use bm_mesh::{ChunkMesh, Vertex};
 use glam::{DVec3, Mat4, Vec3, Vec4};
@@ -50,6 +51,7 @@ macro_rules! shader_source {
 const TERRAIN_WGSL: &str = shader_source!("terrain.wgsl");
 const SIMPLE_WGSL: &str = shader_source!("simple.wgsl");
 const SKY_WGSL: &str = shader_source!("sky.wgsl");
+const UI_WGSL: &str = shader_source!("ui.wgsl");
 
 fn shader(device: &wgpu::Device, label: &str, source: &'static str) -> wgpu::ShaderModule {
     device.create_shader_module(wgpu::ShaderModuleDescriptor {
@@ -117,6 +119,8 @@ pub struct Scene<'a> {
     pub highlight: Option<BlockPos>,
     /// The block being broken and how far along (0 to 1), for the cracks.
     pub breaking: Option<(BlockPos, f32)>,
+    /// HUD triangles in pixels, drawn over everything.
+    pub ui: &'a [UiVertex],
     pub fog_end: f32,
     pub time: f32,
 }
@@ -144,6 +148,9 @@ pub struct Renderer {
     sky_pipeline: wgpu::RenderPipeline,
     overlay_pipeline: wgpu::RenderPipeline,
     overlay: wgpu::Buffer,
+    ui_pipeline: wgpu::RenderPipeline,
+    ui_buffer: wgpu::Buffer,
+    ui_capacity: usize,
     crack_base: Option<u32>,
     bind_layout: wgpu::BindGroupLayout,
     faces: wgpu::Buffer,
@@ -293,6 +300,7 @@ impl Renderer {
         let terrain = shader(&device, "terrain", TERRAIN_WGSL);
         let simple = shader(&device, "simple", SIMPLE_WGSL);
         let sky_module = shader(&device, "sky", SKY_WGSL);
+        let ui_module = shader(&device, "ui", UI_WGSL);
 
         let chunk_buffers = [
             Some(wgpu::VertexBufferLayout {
@@ -464,9 +472,27 @@ impl Renderer {
             &blend_target,
         );
 
+        let ui_buffers = [Some(wgpu::VertexBufferLayout {
+            array_stride: std::mem::size_of::<UiVertex>() as u64,
+            step_mode: wgpu::VertexStepMode::Vertex,
+            attributes: &wgpu::vertex_attr_array![0 => Float32x2, 1 => Float32x2, 2 => Uint32, 3 => Float32x4],
+        })];
+        let ui_pipeline = pipeline(
+            "ui",
+            &ui_module,
+            "vs_ui",
+            "fs_ui",
+            &ui_buffers,
+            TriangleList,
+            None,
+            Some(depth_state(false, Always)),
+            &blend_target,
+        );
+
         let (box_vertices, box_indices) = cube(&device);
         let quad_capacity = 1 << 16;
         let overlay = make_vertex_buffer(&device, "overlay", 36 * std::mem::size_of::<OverlayVertex>());
+        let ui_buffer = make_vertex_buffer(&device, "ui", 4096 * std::mem::size_of::<UiVertex>());
         let mut r = Self {
             quad_indices: make_quad_indices(&device, quad_capacity),
             quad_capacity,
@@ -493,6 +519,9 @@ impl Renderer {
             sky_pipeline,
             overlay_pipeline,
             overlay,
+            ui_pipeline,
+            ui_buffer,
+            ui_capacity: 4096,
             crack_base: None,
             bind_layout: layout,
             faces,
@@ -581,6 +610,14 @@ impl Renderer {
 
     pub fn remove_chunk(&mut self, pos: ChunkPos) {
         self.chunks.remove(&pos);
+    }
+
+    pub fn width(&self) -> u32 {
+        self.config.width
+    }
+
+    pub fn height(&self) -> u32 {
+        self.config.height
     }
 
     pub fn chunk_meshes(&self) -> usize {
@@ -687,6 +724,13 @@ impl Renderer {
             _ => false,
         };
 
+        if scene.ui.len() > self.ui_capacity {
+            self.ui_capacity = scene.ui.len().next_power_of_two();
+            self.ui_buffer = make_vertex_buffer(&self.device, "ui", self.ui_capacity * std::mem::size_of::<UiVertex>());
+        }
+        self.queue
+            .write_buffer(&self.ui_buffer, 0, bytemuck::cast_slice(scene.ui));
+
         let mut encoder = self
             .device
             .create_command_encoder(&wgpu::CommandEncoderDescriptor { label: Some("frame") });
@@ -769,6 +813,11 @@ impl Renderer {
             }
             pass.set_pipeline(&self.cross_pipeline);
             pass.draw(0..12, 0..1);
+            if !scene.ui.is_empty() {
+                pass.set_pipeline(&self.ui_pipeline);
+                pass.set_vertex_buffer(0, self.ui_buffer.slice(..));
+                pass.draw(0..scene.ui.len() as u32, 0..1);
+            }
         }
         self.queue.submit([encoder.finish()]);
         self.queue.present(frame);
@@ -1093,7 +1142,12 @@ mod tests {
 
     #[test]
     fn shaders_validate() {
-        for (name, src) in [("terrain", TERRAIN_WGSL), ("simple", SIMPLE_WGSL), ("sky", SKY_WGSL)] {
+        for (name, src) in [
+            ("terrain", TERRAIN_WGSL),
+            ("simple", SIMPLE_WGSL),
+            ("sky", SKY_WGSL),
+            ("ui", UI_WGSL),
+        ] {
             let module =
                 naga::front::wgsl::parse_str(src).unwrap_or_else(|e| panic!("{name}: {}", e.emit_to_string(src)));
             naga::valid::Validator::new(naga::valid::ValidationFlags::all(), naga::valid::Capabilities::all())
