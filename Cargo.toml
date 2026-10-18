@@ -25,6 +25,7 @@ bm-protocol = { path = "crates/bm-protocol" }
 bm-net = { path = "crates/bm-net" }
 
 anyhow = "1"
+bytes = "1"
 bytemuck = { version = "1", features = ["derive"] }
 crossbeam-channel = "0.5"
 glam = { version = "0.34", features = ["serde", "bytemuck"] }
@@ -40,7 +41,7 @@ redb = "4"
 rustls = { version = "0.23", default-features = false, features = ["ring", "std", "logging", "tls12"] }
 serde = { version = "1", features = ["derive"] }
 thiserror = "2"
-tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync", "time", "net"] }
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync", "time", "net", "signal"] }
 toml = "0.9"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }

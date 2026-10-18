@@ -12,3 +12,6 @@ bm-core.workspace = true
 postcard.workspace = true
 serde.workspace = true
 thiserror.workspace = true
+
+[dev-dependencies]
+glam.workspace = true
