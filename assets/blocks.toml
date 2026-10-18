@@ -18,6 +18,9 @@
 #   light       light given off, 0-15 (default 0)
 #   textures    { all = "x" } or any of top / side / bottom; names are files in
 #               assets/textures/blocks/ (docs/art-direction.md)
+#   material    rock | soil | wood | plant | crystal: which tools break it faster
+#   drops       the item it yields (default: its own item; "" for nothing)
+#   station     workbench | furnace: a crafting station
 
 [[block]]
 name = "air"
@@ -39,6 +42,7 @@ breakable = false
 placeable = false
 hardness = 0.0
 textures = { all = "bedrock" }
+material = "rock"
 
 [[block]]
 name = "stone"
@@ -50,6 +54,7 @@ breakable = true
 placeable = true
 hardness = 0.6
 textures = { all = "stone" }
+material = "rock"
 
 [[block]]
 name = "deep_stone"
@@ -61,6 +66,7 @@ breakable = true
 placeable = true
 hardness = 0.9
 textures = { all = "deep_stone" }
+material = "rock"
 
 [[block]]
 name = "soil"
@@ -72,6 +78,7 @@ breakable = true
 placeable = true
 hardness = 0.3
 textures = { all = "soil" }
+material = "soil"
 
 [[block]]
 name = "turf"
@@ -85,6 +92,8 @@ breakable = true
 placeable = true
 hardness = 0.3
 textures = { top = "turf_top", side = "turf_side", bottom = "soil" }
+material = "soil"
+drops = "soil"
 
 [[block]]
 name = "sand"
@@ -96,6 +105,7 @@ breakable = true
 placeable = true
 hardness = 0.25
 textures = { all = "sand" }
+material = "soil"
 
 [[block]]
 name = "gravel"
@@ -107,6 +117,7 @@ breakable = true
 placeable = true
 hardness = 0.35
 textures = { all = "gravel" }
+material = "soil"
 
 [[block]]
 name = "snow"
@@ -118,6 +129,7 @@ breakable = true
 placeable = true
 hardness = 0.2
 textures = { all = "snow" }
+material = "soil"
 
 [[block]]
 name = "water"
@@ -143,6 +155,7 @@ breakable = true
 placeable = true
 hardness = 0.5
 textures = { side = "trunk_side", top = "trunk_top", bottom = "trunk_top" }
+material = "wood"
 
 [[block]]
 name = "foliage"
@@ -154,6 +167,7 @@ breakable = true
 placeable = true
 hardness = 0.1
 textures = { all = "foliage" }
+material = "plant"
 
 [[block]]
 name = "coal_seam"
@@ -165,6 +179,8 @@ breakable = true
 placeable = false
 hardness = 0.8
 textures = { all = "coal_seam" }
+material = "rock"
+drops = "coal"
 
 [[block]]
 name = "copper_vein"
@@ -176,6 +192,8 @@ breakable = true
 placeable = false
 hardness = 1.0
 textures = { all = "copper_vein" }
+material = "rock"
+drops = "copper_ore"
 
 [[block]]
 name = "glow_crystal"
@@ -188,6 +206,7 @@ placeable = true
 hardness = 0.7
 textures = { all = "glow_crystal" }
 light = 12
+material = "crystal"
 
 [[block]]
 name = "timber"
@@ -199,6 +218,7 @@ breakable = true
 placeable = true
 hardness = 0.4
 textures = { all = "timber" }
+material = "wood"
 
 [[block]]
 name = "brick"
@@ -210,6 +230,7 @@ breakable = true
 placeable = true
 hardness = 0.7
 textures = { all = "brick" }
+material = "rock"
 
 [[block]]
 name = "glass"
@@ -222,3 +243,47 @@ placeable = true
 hardness = 0.2
 opacity = 0.28
 textures = { all = "glass" }
+material = "crystal"
+
+[[block]]
+name = "workbench"
+color = [150, 108, 64]
+top_color = [184, 142, 92]
+solid = true
+opaque = true
+translucent = false
+breakable = true
+placeable = true
+hardness = 0.6
+textures = { top = "workbench_top", side = "workbench_side", bottom = "timber" }
+material = "wood"
+station = "workbench"
+
+[[block]]
+name = "furnace"
+color = [96, 92, 98]
+top_color = [120, 116, 122]
+solid = true
+opaque = true
+translucent = false
+breakable = true
+placeable = true
+hardness = 1.0
+textures = { top = "furnace_top", side = "furnace_side", bottom = "stone" }
+material = "rock"
+station = "furnace"
+light = 7
+
+[[block]]
+name = "claim_stone"
+color = [120, 110, 150]
+top_color = [170, 210, 240]
+solid = true
+opaque = true
+translucent = false
+breakable = true
+placeable = true
+hardness = 1.5
+textures = { top = "claim_stone_top", side = "claim_stone_side", bottom = "stone" }
+material = "rock"
+light = 6

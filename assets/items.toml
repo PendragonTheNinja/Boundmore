@@ -1,0 +1,49 @@
+# Items that are not blocks. Every placeable block in blocks.toml is an item
+# already, under the same name. Sent to clients in the handshake.
+#
+#   name      unique; recipes and block `drops` refer to it
+#   display   what players see (default: the name in title case)
+#   stack     most per slot (default 100; tools must be 1)
+#   tool      { class = hammer | shovel | axe, speed, durability }
+#             speed: how many times faster than a bare hand on the materials
+#             its class suits (hammer: rock, crystal; shovel: soil; axe: wood, plant)
+#   icon      texture in assets/textures/items/ (default: the name)
+
+[[item]]
+name = "coal"
+
+[[item]]
+name = "copper_ore"
+
+[[item]]
+name = "copper_ingot"
+
+[[item]]
+name = "stone_hammer"
+stack = 1
+tool = { class = "hammer", speed = 2.5, durability = 150 }
+
+[[item]]
+name = "stone_shovel"
+stack = 1
+tool = { class = "shovel", speed = 2.5, durability = 150 }
+
+[[item]]
+name = "stone_axe"
+stack = 1
+tool = { class = "axe", speed = 2.5, durability = 150 }
+
+[[item]]
+name = "copper_hammer"
+stack = 1
+tool = { class = "hammer", speed = 4.0, durability = 400 }
+
+[[item]]
+name = "copper_shovel"
+stack = 1
+tool = { class = "shovel", speed = 4.0, durability = 400 }
+
+[[item]]
+name = "copper_axe"
+stack = 1
+tool = { class = "axe", speed = 4.0, durability = 400 }

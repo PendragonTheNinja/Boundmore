@@ -1,0 +1,78 @@
+# Recipes. Items by name; `station` is hand (instant, the default), workbench
+# or furnace (queued at the station, `seconds` per craft).
+
+[[recipe]]
+output = "timber"
+count = 4
+inputs = [["trunk", 1]]
+
+[[recipe]]
+output = "workbench"
+inputs = [["timber", 4]]
+
+[[recipe]]
+output = "furnace"
+inputs = [["stone", 8]]
+station = "workbench"
+seconds = 4.0
+
+[[recipe]]
+output = "stone_hammer"
+inputs = [["stone", 3], ["timber", 2]]
+station = "workbench"
+seconds = 3.0
+
+[[recipe]]
+output = "stone_shovel"
+inputs = [["stone", 1], ["timber", 2]]
+station = "workbench"
+seconds = 3.0
+
+[[recipe]]
+output = "stone_axe"
+inputs = [["stone", 2], ["timber", 2]]
+station = "workbench"
+seconds = 3.0
+
+[[recipe]]
+output = "copper_ingot"
+inputs = [["copper_ore", 1], ["coal", 1]]
+station = "furnace"
+seconds = 6.0
+
+[[recipe]]
+output = "copper_hammer"
+inputs = [["copper_ingot", 3], ["timber", 2]]
+station = "workbench"
+seconds = 5.0
+
+[[recipe]]
+output = "copper_shovel"
+inputs = [["copper_ingot", 1], ["timber", 2]]
+station = "workbench"
+seconds = 5.0
+
+[[recipe]]
+output = "copper_axe"
+inputs = [["copper_ingot", 2], ["timber", 2]]
+station = "workbench"
+seconds = 5.0
+
+[[recipe]]
+output = "glass"
+inputs = [["sand", 2]]
+station = "furnace"
+seconds = 3.0
+
+[[recipe]]
+output = "brick"
+count = 4
+inputs = [["soil", 2], ["sand", 2]]
+station = "furnace"
+seconds = 4.0
+
+[[recipe]]
+output = "claim_stone"
+inputs = [["stone", 6], ["glow_crystal", 1]]
+station = "workbench"
+seconds = 5.0

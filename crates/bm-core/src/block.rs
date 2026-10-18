@@ -51,6 +51,40 @@ pub struct BlockDef {
     /// renders must resolve all three faces.
     #[serde(default)]
     pub textures: BlockTextures,
+    /// What it is made of: decides which tools break it faster.
+    #[serde(default)]
+    pub material: Material,
+    /// The item breaking it yields. Unset: the block's own item, if it has
+    /// one. Empty string: nothing.
+    #[serde(default)]
+    pub drops: Option<String>,
+    /// A crafting station: looking at it and opening crafting offers its
+    /// recipes, which then run over time inside it.
+    #[serde(default)]
+    pub station: Option<Station>,
+}
+
+/// What a block is made of, for tools (`ToolClass::suits`).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Material {
+    #[default]
+    None,
+    Rock,
+    Soil,
+    Wood,
+    Plant,
+    Crystal,
+}
+
+/// Where a recipe is made.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Station {
+    /// In the hands, instantly.
+    Hand,
+    Workbench,
+    Furnace,
 }
 
 fn full_opacity() -> f32 {

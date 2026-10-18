@@ -5,13 +5,21 @@
 pub mod block;
 pub mod chunk;
 pub mod coords;
+pub mod inventory;
+pub mod items;
 pub mod light;
 pub mod movement;
 pub mod planet;
+pub mod plots;
 pub mod raycast;
+pub mod recipes;
 pub mod time;
 
-pub use block::{BlockDef, BlockFlags, BlockId, BlockRegistry, RegistryError};
+pub use block::{BlockDef, BlockFlags, BlockId, BlockRegistry, Material, RegistryError, Station};
+pub use inventory::{HOTBAR_SLOTS, INVENTORY_SLOTS, Inventory};
+pub use items::{ItemDef, ItemError, ItemId, ItemKind, ItemRegistry, ItemStack, ToolClass};
+pub use plots::{PLOT_SIZE, PlotPos};
+pub use recipes::{Recipe, RecipeBook, RecipeError};
 pub use chunk::{CHUNK_FORMAT_VERSION, Chunk, ChunkDecodeError};
 pub use coords::{BlockPos, CHUNK_SIZE, CHUNK_VOLUME, ChunkPos, LocalPos};
 pub use light::{BlockSource, ChunkLight, Light, LightMap, MAX_LIGHT};
