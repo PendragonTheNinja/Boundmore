@@ -1,4 +1,32 @@
 [package]
 name = "bm-client"
+description = "The game client: window, renderer, prediction, input."
 version.workspace = true
 edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[[bin]]
+name = "boundmore"
+path = "src/main.rs"
+
+[dependencies]
+anyhow.workspace = true
+bm-core.workspace = true
+bm-mesh.workspace = true
+bm-net.workspace = true
+bm-protocol.workspace = true
+bytemuck.workspace = true
+crossbeam-channel.workspace = true
+glam.workspace = true
+pollster.workspace = true
+rayon.workspace = true
+tokio.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+wgpu.workspace = true
+winit.workspace = true
+
+[dev-dependencies]
+naga = { version = "30", features = ["wgsl-in"] }

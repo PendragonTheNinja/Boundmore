@@ -199,20 +199,34 @@ impl Game {
     }
 
     fn join(&mut self, id: u32, name: String, conn: Connection, out: Outbox) {
-        if self.players.values().any(|p| p.name.eq_ignore_ascii_case(&name)) {
-            out.close("a player with that name is already on this planet");
-            return;
+        // A second login under the same name replaces the first: after a
+        // crash the old connection lingers until its idle timeout, and the
+        // player should not be locked out for that long. (Accounts will make
+        // this an authenticated decision.)
+        let mut replaced = None;
+        if let Some(old) = self
+            .players
+            .iter()
+            .find(|(_, p)| p.name.eq_ignore_ascii_case(&name))
+            .map(|(id, _)| *id)
+        {
+            if let Some(p) = self.players.get(&old) {
+                p.out.close("you logged in from somewhere else");
+                // The save of this state is still on its way to disk.
+                replaced = Some(p.state);
+            }
+            self.leave(old);
         }
         if self.players.len() >= self.cfg.max_players {
             out.close("this planet is full");
             return;
         }
-        let saved = match self.store.player(&name) {
-            Ok(s) => s,
-            Err(e) => {
+        let saved = match replaced {
+            Some(s) => Some(s),
+            None => self.store.player(&name).unwrap_or_else(|e| {
                 tracing::error!("loading {name}: {e:#}");
                 None
-            }
+            }),
         };
         let state = saved
             .filter(|s| s.pos.is_finite() && s.vel.is_finite() && self.world.shape.contains_y(s.pos.y as i64))

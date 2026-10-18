@@ -6,12 +6,15 @@
 # Fields
 #   name        unique, used by worldgen and saves
 #   color       base colour, sRGB 0-255 (placeholder until the texture pass)
+#   top_color, bottom_color   optional per-face overrides of `color`
+#   fringe      sides show a band of the top colour along their upper edge
 #   solid       physical: collision, targeting, breaking
 #   opaque      visual: hides faces behind it, casts ambient occlusion
 #   translucent drawn in the blended pass (water, glass)
 #   breakable   false for the world floor
 #   placeable   may appear in the build hotbar
 #   hardness    seconds to break by hand (0 = instant)
+#   opacity     for translucent blocks, how opaque they draw (default 1)
 
 [[block]]
 name = "air"
@@ -65,7 +68,9 @@ hardness = 0.3
 
 [[block]]
 name = "turf"
-color = [92, 156, 74]
+color = [112, 82, 58]
+top_color = [92, 156, 74]
+fringe = true
 solid = true
 opaque = true
 translucent = false
@@ -112,10 +117,13 @@ translucent = true
 breakable = false
 placeable = false
 hardness = 0.0
+opacity = 0.62
 
 [[block]]
 name = "trunk"
 color = [104, 74, 48]
+top_color = [168, 132, 88]
+bottom_color = [168, 132, 88]
 solid = true
 opaque = true
 translucent = false
@@ -192,3 +200,4 @@ translucent = true
 breakable = true
 placeable = true
 hardness = 0.2
+opacity = 0.28

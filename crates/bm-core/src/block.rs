@@ -23,7 +23,15 @@ impl BlockId {
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct BlockDef {
     pub name: String,
+    /// Side colour, and every face's unless overridden below.
     pub color: [u8; 3],
+    #[serde(default)]
+    pub top_color: Option<[u8; 3]>,
+    #[serde(default)]
+    pub bottom_color: Option<[u8; 3]>,
+    /// Sides show a band of the top colour along their upper edge (turf).
+    #[serde(default)]
+    pub fringe: bool,
     /// Physical: collision, targeting, breaking.
     pub solid: bool,
     /// Visual: hides faces behind it and casts ambient occlusion.
@@ -33,6 +41,13 @@ pub struct BlockDef {
     pub breakable: bool,
     pub placeable: bool,
     pub hardness: f32,
+    /// How opaque a translucent block draws (1 for everything else).
+    #[serde(default = "full_opacity")]
+    pub opacity: f32,
+}
+
+fn full_opacity() -> f32 {
+    1.0
 }
 
 impl BlockDef {

@@ -1,0 +1,12 @@
+# Copy to server.toml to change the defaults. Every field is optional.
+bind = "0.0.0.0:7777"
+data_dir = "data"
+planet_name = "Verdance"
+# Used only when the planet is first created.
+seed = 20261018
+width_chunks = 64
+height_chunks = 12
+view_radius = 10
+view_height = 4
+max_players = 200
+reach = 7.0

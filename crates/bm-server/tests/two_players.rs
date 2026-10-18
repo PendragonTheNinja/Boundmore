@@ -241,6 +241,11 @@ async fn two_players_share_one_world() {
     let (_, ack1, _, _) = alice.latest_snapshot().await;
     assert!(ack1 - ack0 < 40, "applied {} inputs in 200 ms", ack1 - ack0);
 
+    // Logging in again under the same name replaces the old session.
+    let alice2 = TestClient::connect(&server, "Alice").await;
+    assert_ne!(alice2.welcome.player_id, alice.welcome.player_id);
+    bob.until(|m| matches!(m, ServerMsg::PlayerLeft { id } if *id == alice.welcome.player_id))
+        .await;
     drop(alice);
     drop(bob);
     server.stop();
