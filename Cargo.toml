@@ -49,6 +49,9 @@ tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 wgpu = "30"
 winit = "0.30"
+egui = { version = "0.37", features = ["default_fonts"] }
+egui-winit = "0.37"
+egui-wgpu = { version = "0.37", default-features = false }
 
 # Debug builds of a voxel game are unplayably slow; optimise dependencies even in dev.
 [profile.dev.package."*"]
