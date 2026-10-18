@@ -1,14 +1,17 @@
 //! Boundmore server library. `bm-server` is a thin binary over [`start`]; tests
 //! start real servers on ephemeral ports the same way.
 
+pub mod accounts;
+pub mod claims;
 pub mod config;
+pub mod crafting;
 pub mod game;
 pub mod net;
 pub mod store;
 pub mod world;
 
 use anyhow::{Context, Result};
-use bm_core::{BlockRegistry, CHUNK_FORMAT_VERSION, PlanetShape};
+use bm_core::{BlockRegistry, CHUNK_FORMAT_VERSION, ItemRegistry, PlanetShape, RecipeBook};
 use bm_net::quinn::Endpoint;
 use bm_worldgen::{GENERATOR_VERSION, Generator, PlanetGenConfig};
 use config::ServerConfig;
@@ -88,6 +91,8 @@ pub fn start(cfg: ServerConfig) -> Result<RunningServer> {
     cfg.validate()?;
     std::fs::create_dir_all(&cfg.data_dir).with_context(|| format!("creating {}", cfg.data_dir.display()))?;
     let registry = Arc::new(BlockRegistry::builtin());
+    let items = ItemRegistry::builtin(&registry);
+    let recipes = RecipeBook::builtin(&items);
     let store = Store::open(&cfg.data_dir.join(file_name(&cfg.planet_name)))?;
     let meta = store.planet_meta(PlanetMeta {
         save_version: SAVE_VERSION,
@@ -124,15 +129,18 @@ pub fn start(cfg: ServerConfig) -> Result<RunningServer> {
     let addr = endpoint.local_addr()?;
     let (events_tx, events_rx) = crossbeam_channel::unbounded();
     let accept_endpoint = endpoint.clone();
+    let net_store = store.clone();
     let net = std::thread::Builder::new().name("net".into()).spawn(move || {
-        rt.block_on(net::accept_loop(accept_endpoint, events_tx));
+        rt.block_on(net::accept_loop(accept_endpoint, events_tx, net_store));
         rt.shutdown_timeout(std::time::Duration::from_secs(1));
     })?;
 
     let (writer_tx, writer) = store::spawn_writer(store.clone());
     let world = world::World::new(meta.shape, registry, generator.clone(), store.clone());
     let held = store.clone();
-    let game = game::Game::new(cfg, meta.name, world, &generator, store, writer_tx, events_rx);
+    let game = game::Game::new(
+        cfg, meta.name, world, &generator, items, recipes, store, writer_tx, events_rx,
+    )?;
     let running = Arc::new(AtomicBool::new(true));
     let game_running = running.clone();
     let game = std::thread::Builder::new()

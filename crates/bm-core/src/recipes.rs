@@ -85,7 +85,11 @@ impl RecipeBook {
                 output_count: e.count,
                 inputs,
                 station: e.station,
-                seconds: if e.station == Station::Hand { 0.0 } else { e.seconds.max(0.0) },
+                seconds: if e.station == Station::Hand {
+                    0.0
+                } else {
+                    e.seconds.max(0.0)
+                },
             });
         }
         Ok(Self { recipes })
@@ -121,7 +125,10 @@ mod tests {
         let book = RecipeBook::builtin(&items);
         let makes = |name: &str| {
             let id = items.id(name).unwrap();
-            book.recipes.iter().find(|r| r.output == id).unwrap_or_else(|| panic!("no recipe for {name}"))
+            book.recipes
+                .iter()
+                .find(|r| r.output == id)
+                .unwrap_or_else(|| panic!("no recipe for {name}"))
         };
         assert_eq!(makes("timber").station, Station::Hand);
         assert_eq!(makes("workbench").station, Station::Hand);

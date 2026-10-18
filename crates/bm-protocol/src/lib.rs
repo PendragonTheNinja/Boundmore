@@ -16,8 +16,8 @@
 //! decoders bound sizes, and the server validates content.
 
 use bm_core::{
-    BlockDef, BlockId, BlockPos, ChunkPos, DayCycle, Inventory, ItemDef, ItemStack, MoveConfig, PlanetShape, PlayerInput,
-    PlayerState, PlotPos, Recipe, Station,
+    BlockDef, BlockId, BlockPos, ChunkPos, DayCycle, Inventory, ItemDef, ItemStack, MoveConfig, PlanetShape,
+    PlayerInput, PlayerState, PlotPos, Recipe, Station,
 };
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
 
@@ -55,10 +55,7 @@ pub enum ClientMsg {
     /// in hotbar `slot` (a tool, or anything: a non-tool breaks by hand). The
     /// server times the hold from here: a break sooner than the tool allows
     /// is refused.
-    StartBreak {
-        pos: BlockPos,
-        slot: u8,
-    },
+    StartBreak { pos: BlockPos, slot: u8 },
     /// `at` is the input sequence the edit follows: the server applies it
     /// right after simulating that input, exactly where the client's
     /// prediction put it, so both judge "is a player in the way" on the same
@@ -71,15 +68,9 @@ pub enum ClientMsg {
     },
     /// Move up to `count` items between inventory slots (merge, split, or a
     /// whole-stack swap; see `Inventory::move_items`).
-    MoveItems {
-        from: u8,
-        to: u8,
-        count: u16,
-    },
+    MoveItems { from: u8, to: u8, count: u16 },
     /// Throw a whole slot away.
-    Discard {
-        slot: u8,
-    },
+    Discard { slot: u8 },
     /// Craft recipe `recipe` (an index into `Welcome::recipes`) `count`
     /// times. Hand recipes need no station and finish at once; station
     /// recipes name a station block of the right kind within reach, where
@@ -91,23 +82,14 @@ pub enum ClientMsg {
     },
     /// Start (or with `None`, stop) receiving `Station` updates for one
     /// station, e.g. while its screen is open.
-    WatchStation {
-        pos: Option<BlockPos>,
-    },
+    WatchStation { pos: Option<BlockPos> },
     /// Move a station's finished output into the inventory (as much as fits).
-    CollectStation {
-        pos: BlockPos,
-    },
+    CollectStation { pos: BlockPos },
     /// Add a plot to one of your claims; it must touch the claim by a face
     /// and be unclaimed, within your allowance.
-    ClaimPlot {
-        claim: u32,
-        plot: PlotPos,
-    },
+    ClaimPlot { claim: u32, plot: PlotPos },
     /// Give up one plot of your claims (never the one holding its claim stone).
-    ReleasePlot {
-        plot: PlotPos,
-    },
+    ReleasePlot { plot: PlotPos },
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]

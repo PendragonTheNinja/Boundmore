@@ -9,6 +9,7 @@ Start with `../CLAUDE.md` (rules and invariants), then the milestone marked in p
 | `decisions/NNNN-*.md` | ADRs: why the architecture is the way it is. Immutable once accepted; superseded by new ones | Before changing anything they cover |
 | `feel.md` | Every gameplay number and what to calibrate it against, plus Nathan's verdicts | Touching movement, reach, world size, timings |
 | `art-direction.md` | The look: palette, texture rules, what Boundless and Hytale contribute | Making or changing any texture, colour or model |
+| `research/boundless-forum-feedback.md` | What Boundless players liked, disliked and asked for (3,153 forum posts, weighted to 2020+), with candidate design principles | Before designing any Boundless system (upkeep, crafting, PvE, economy, social) |
 | `media/` | Screenshots per milestone | Releases, comparisons |
 
 ## Crate map

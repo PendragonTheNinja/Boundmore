@@ -3,11 +3,12 @@
 
 use crate::color::{Ramp, Rgba};
 use crate::noise::{Site, cell, hash, hash2, seed, unit, wrap_delta, wrap_i};
+use crate::stations;
 use crate::tex::{Ctx, Field, SIZE, SIZEF, Tex, c, paint, smoothstep};
 
 // ---------------------------------------------------------------- palettes
 
-fn stone_ramp() -> Ramp {
+pub(crate) fn stone_ramp() -> Ramp {
     Ramp::from_hex(&[
         0x2b2d45, 0x3f4560, 0x56607a, 0x6f7b93, 0x8995ab, 0xa5b0c2, 0xc4cbd6, 0xe4e2dc,
     ])
@@ -43,15 +44,15 @@ fn water_ramp() -> Ramp {
     ])
 }
 
-fn bark_ramp() -> Ramp {
+pub(crate) fn bark_ramp() -> Ramp {
     Ramp::from_hex(&[0x2a1820, 0x3e2420, 0x573424, 0x6e4529, 0x85582f, 0x9d6e3a, 0xb8874a])
 }
 
-fn end_grain_ramp() -> Ramp {
+pub(crate) fn end_grain_ramp() -> Ramp {
     Ramp::from_hex(&[0x5c3a26, 0x7a5232, 0x98693e, 0xb3814c, 0xc99a5e, 0xddb574, 0xecd091])
 }
 
-fn plank_ramp() -> Ramp {
+pub(crate) fn plank_ramp() -> Ramp {
     Ramp::from_hex(&[0x4a2a1e, 0x6e4026, 0x8f5a30, 0xac743c, 0xc48d4a, 0xd8a85c, 0xecc477])
 }
 
@@ -75,13 +76,13 @@ fn crystal_ramp() -> Ramp {
     ])
 }
 
-fn copper_ramp() -> Ramp {
+pub(crate) fn copper_ramp() -> Ramp {
     Ramp::from_hex(&[
         0x4a1a14, 0x7a2e18, 0xa8461e, 0xd0672a, 0xec8c3a, 0xfbb456, 0xffd98a, 0xfff3c4,
     ])
 }
 
-fn coal_ramp() -> Ramp {
+pub(crate) fn coal_ramp() -> Ramp {
     Ramp::from_hex(&[
         0x0a0810, 0x13101c, 0x1d1a2a, 0x29263a, 0x3a3850, 0x5a5a78, 0x9a9cc8, 0xe0e4ff,
     ])
@@ -906,6 +907,12 @@ pub fn paint_named(name: &str, variant: u32) -> Option<Tex> {
         "timber" => timber,
         "brick" => brick,
         "glass" => glass,
+        "workbench_top" => stations::workbench_top,
+        "workbench_side" => stations::workbench_side,
+        "furnace_top" => stations::furnace_top,
+        "furnace_side" => stations::furnace_side,
+        "claim_stone_top" => stations::claim_stone_top,
+        "claim_stone_side" => stations::claim_stone_side,
         _ => return None,
     };
     Some(f(ctx))

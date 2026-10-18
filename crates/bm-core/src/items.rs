@@ -42,7 +42,11 @@ pub enum ItemKind {
     Material,
     /// Breaks its materials `speed` times faster than a bare hand, for
     /// `durability` blocks.
-    Tool { class: ToolClass, speed: f32, durability: u16 },
+    Tool {
+        class: ToolClass,
+        speed: f32,
+        durability: u16,
+    },
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -67,7 +71,11 @@ impl ItemDef {
 
     pub fn tool(&self) -> Option<(ToolClass, f32, u16)> {
         match self.kind {
-            ItemKind::Tool { class, speed, durability } => Some((class, speed, durability)),
+            ItemKind::Tool {
+                class,
+                speed,
+                durability,
+            } => Some((class, speed, durability)),
             _ => None,
         }
     }
@@ -315,7 +323,10 @@ mod tests {
         let stone_item = i.id("stone").unwrap();
         assert_eq!(i.get(stone_item).unwrap().block(), Some(stone));
         assert_eq!(i.drop_of(stone), Some(stone_item));
-        assert_eq!(i.drop_of(b.id("copper_vein").unwrap()), Some(i.id("copper_ore").unwrap()));
+        assert_eq!(
+            i.drop_of(b.id("copper_vein").unwrap()),
+            Some(i.id("copper_ore").unwrap())
+        );
         assert_eq!(i.drop_of(b.id("coal_seam").unwrap()), Some(i.id("coal").unwrap()));
         assert_eq!(i.drop_of(BlockId::AIR), None);
         assert_eq!(i.get(stone_item).unwrap().display, "Stone");
@@ -343,7 +354,10 @@ mod tests {
             Err(ItemError::Duplicate(_))
         ));
         assert!(matches!(
-            ItemRegistry::build(&b, "[[item]]\nname = \"pick\"\nstack = 5\ntool = { class = \"hammer\", speed = 2.0, durability = 10 }\n"),
+            ItemRegistry::build(
+                &b,
+                "[[item]]\nname = \"pick\"\nstack = 5\ntool = { class = \"hammer\", speed = 2.0, durability = 10 }\n"
+            ),
             Err(ItemError::BadTool(_))
         ));
         // The builtin blocks name drops that only the builtin items define.
