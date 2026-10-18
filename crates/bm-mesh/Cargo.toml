@@ -12,4 +12,5 @@ bm-core.workspace = true
 bytemuck.workspace = true
 
 [dev-dependencies]
+bm-worldgen.workspace = true
 rand.workspace = true
