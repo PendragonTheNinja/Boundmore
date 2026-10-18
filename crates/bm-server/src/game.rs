@@ -40,6 +40,11 @@ const MAX_PENDING_LOADS: usize = 512;
 /// Edits per second, and the burst allowed.
 const EDIT_RATE: f64 = 12.0;
 const EDIT_BURST: f64 = 24.0;
+/// A break may arrive this much sooner than the block's hardness, in seconds
+/// plus a fraction of the hardness, to absorb network jitter between the
+/// player's StartBreak and Break.
+const BREAK_SLACK_SECONDS: f64 = 0.12;
+const BREAK_SLACK_FRACTION: f64 = 0.2;
 
 struct Player {
     name: String,
@@ -54,6 +59,8 @@ struct Player {
     wanted: Vec<ChunkPos>,
     center: Option<ChunkPos>,
     edit_tokens: f64,
+    /// The block being held for breaking, and the tick the hold began.
+    mining: Option<(BlockPos, u64)>,
 }
 
 pub struct Game {
@@ -193,6 +200,15 @@ impl Game {
             }
             Event::Msg { id, msg } => match msg {
                 ClientMsg::Edit { seq, pos, action } => self.edit(id, seq, pos, action),
+                ClientMsg::StartBreak { pos } => {
+                    let canon = self.world.shape.wrap_block(pos);
+                    let tick = self.tick;
+                    if let Some(p) = self.players.get_mut(&id)
+                        && p.mining.is_none_or(|(b, _)| b != canon)
+                    {
+                        p.mining = Some((canon, tick));
+                    }
+                }
                 ClientMsg::Hello { .. } => {}
             },
         }
@@ -276,6 +292,7 @@ impl Game {
                 wanted: Vec::new(),
                 center: None,
                 edit_tokens: EDIT_BURST,
+                mining: None,
             },
         );
     }
@@ -319,23 +336,27 @@ impl Game {
         }
     }
 
-    fn view_list(&self, center: ChunkPos) -> Vec<ChunkPos> {
+    /// Every chunk of every column within the view radius (M2: planets are
+    /// bounded in height, so whole columns are sent and sky light is exact
+    /// from the top down). Nearest columns first; within a column, the
+    /// chunks nearest the player's height first.
+    fn view_list(&self, center: ChunkPos, eye_cy: i32) -> Vec<ChunkPos> {
         let r = self.cfg.view_radius as i32;
-        let h = self.cfg.view_height as i32;
         let mut list = Vec::new();
-        for dy in -h..=h {
-            let y = center.y + dy;
-            if !self.world.shape.contains_chunk_y(y) {
-                continue;
-            }
-            for dz in -r..=r {
-                for dx in -r..=r {
-                    if dx * dx + dz * dz <= r * r {
-                        list.push((
-                            dx * dx + dz * dz + dy * dy * 2,
-                            self.world.shape.wrap_chunk(center.offset(dx, dy, dz)),
-                        ));
-                    }
+        for dz in -r..=r {
+            for dx in -r..=r {
+                let d2 = dx * dx + dz * dz;
+                if d2 > r * r {
+                    continue;
+                }
+                for y in 0..self.world.shape.height_chunks as i32 {
+                    let key = d2 * 16 + (y - eye_cy).abs();
+                    list.push((
+                        key,
+                        self.world
+                            .shape
+                            .wrap_chunk(ChunkPos::new(center.x + dx, y, center.z + dz)),
+                    ));
                 }
             }
         }
@@ -345,13 +366,15 @@ impl Game {
 
     fn stream(&mut self, id: u32) {
         let Some(p) = self.players.get(&id) else { return };
-        let here = self
+        let at = self
             .world
             .shape
             .wrap_chunk(BlockPos::containing(p.state.pos.x, p.state.pos.y, p.state.pos.z).chunk());
+        // Only the column matters: whole columns are streamed.
+        let here = ChunkPos::new(at.x, 0, at.z);
         if p.center != Some(here) {
-            let wanted = self.view_list(here);
-            let (r, h) = (self.cfg.view_radius as i32 + 2, self.cfg.view_height as i32 + 2);
+            let wanted = self.view_list(here, at.y);
+            let r = self.cfg.view_radius as i32 + 2;
             let shape = self.world.shape;
             let p = self.players.get_mut(&id).expect("present");
             let forget: Vec<ChunkPos> = p
@@ -359,8 +382,8 @@ impl Game {
                 .iter()
                 .copied()
                 .filter(|c| {
-                    let (dx, dy, dz) = shape.chunk_delta(here, *c);
-                    dx * dx + dz * dz > r * r || dy.abs() > h
+                    let (dx, _, dz) = shape.chunk_delta(here, *c);
+                    dx * dx + dz * dz > r * r
                 })
                 .collect();
             for c in forget {
@@ -522,6 +545,17 @@ impl Game {
                 if current.is_air() || !def.breakable {
                     return Err("cannot break that");
                 }
+                let hardness = def.hardness as f64;
+                if hardness > 0.0 {
+                    let held = match p.mining {
+                        Some((b, since)) if b == canon => (self.tick - since) as f64 * TICK_DT,
+                        _ => return Err("break without holding"),
+                    };
+                    if held + BREAK_SLACK_SECONDS + hardness * BREAK_SLACK_FRACTION < hardness {
+                        return Err("broken too fast");
+                    }
+                }
+                p.mining = None;
                 Ok(BlockId::AIR)
             }
             EditAction::Place(block) => {

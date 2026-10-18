@@ -19,8 +19,8 @@ use winit::keyboard::{KeyCode, PhysicalKey};
 use winit::window::{CursorGrabMode, Fullscreen, Window, WindowId};
 
 const MOUSE_SENSITIVITY: f64 = 0.0022;
-/// Seconds between repeated breaks or places while a button is held.
-const EDIT_REPEAT: f64 = 0.22;
+/// Seconds between repeated places while the button is held.
+const PLACE_REPEAT: f64 = 0.22;
 const MAX_TICKS_PER_FRAME: u32 = 8;
 const PLAYER_VISUAL_HEIGHT: f32 = 2.0;
 
@@ -41,8 +41,10 @@ struct Session {
     hotbar: Vec<BlockId>,
     selected: usize,
     edit_seq: u32,
-    edit_cooldown: f64,
+    place_cooldown: f64,
     target: Option<RayHit>,
+    /// The block being broken and how far along, 0 to 1.
+    mining: Option<(BlockPos, f64)>,
 }
 
 pub struct App {
@@ -139,8 +141,9 @@ impl App {
                             hotbar,
                             selected: 0,
                             edit_seq: 0,
-                            edit_cooldown: 0.0,
+                            place_cooldown: 0.0,
                             target: None,
+                            mining: None,
                         });
                     }
                     Err(e) => self.status = format!("the server sent a bad block catalogue: {e}"),
@@ -257,39 +260,66 @@ impl App {
         s.target = raycast(eye, dir, s.reach, |p| {
             world.block(p).is_some_and(|b| world.flags.solid(b))
         });
-        s.edit_cooldown -= dt;
-        if grabbed && s.edit_cooldown <= 0.0 && (mouse[0] || mouse[1]) {
-            if let Some(hit) = s.target {
-                if mouse[0] {
-                    let def = s.world.registry.get(s.world.block(hit.block).unwrap_or(BlockId::AIR));
-                    if def.breakable {
-                        s.edit_seq += 1;
-                        s.world.predict_edit(s.edit_seq, hit.block, BlockId::AIR);
-                        net.send(ClientMsg::Edit {
-                            seq: s.edit_seq,
-                            pos: hit.block,
-                            action: EditAction::Break,
-                        });
-                        s.edit_cooldown = EDIT_REPEAT;
+        // Breaking takes the block's hardness in seconds of holding. The
+        // server times the same hold from our StartBreak (ADR-0004), so the
+        // progress here is a prediction of what it will accept.
+        let breaking = grabbed && mouse[0];
+        let mut mining = s.mining.take();
+        if breaking && let Some(hit) = s.target {
+            let def = s.world.registry.get(s.world.block(hit.block).unwrap_or(BlockId::AIR));
+            if def.breakable {
+                let hardness = def.hardness as f64;
+                let progress = match mining {
+                    Some((b, p)) if b == hit.block => p,
+                    _ => {
+                        if hardness > 0.0 {
+                            net.send(ClientMsg::StartBreak { pos: hit.block });
+                        }
+                        0.0
                     }
-                } else if let Some(&block) = s.hotbar.get(s.selected) {
-                    let at = hit.adjacent();
-                    let free = s
-                        .world
-                        .block(at)
-                        .is_some_and(|b| b.is_air() || s.world.registry.get(b).name == "water");
-                    let blocks_me = s.world.registry.get(block).solid && s.me.state.overlaps_block(&s.movement, at);
-                    if free && !blocks_me && s.world.shape.contains_y(at.y) {
-                        s.edit_seq += 1;
-                        s.world.predict_edit(s.edit_seq, at, block);
-                        net.send(ClientMsg::Edit {
-                            seq: s.edit_seq,
-                            pos: at,
-                            action: EditAction::Place(block),
-                        });
-                        s.edit_cooldown = EDIT_REPEAT;
-                    }
+                };
+                let progress = if hardness > 0.0 { progress + dt / hardness } else { 1.0 };
+                if progress >= 1.0 {
+                    s.edit_seq += 1;
+                    s.world.predict_edit(s.edit_seq, hit.block, BlockId::AIR);
+                    net.send(ClientMsg::Edit {
+                        seq: s.edit_seq,
+                        pos: hit.block,
+                        action: EditAction::Break,
+                    });
+                    mining = None;
+                } else {
+                    mining = Some((hit.block, progress));
                 }
+            } else {
+                mining = None;
+            }
+        } else {
+            mining = None;
+        }
+        s.mining = mining;
+
+        s.place_cooldown -= dt;
+        if grabbed
+            && mouse[1]
+            && s.place_cooldown <= 0.0
+            && let (Some(hit), Some(&block)) = (s.target, s.hotbar.get(s.selected))
+        {
+            let at = hit.adjacent();
+            let free = s
+                .world
+                .block(at)
+                .is_some_and(|b| b.is_air() || s.world.registry.get(b).name == "water");
+            let blocks_me = s.world.registry.get(block).solid && s.me.state.overlaps_block(&s.movement, at);
+            if free && !blocks_me && s.world.shape.contains_y(at.y) {
+                s.edit_seq += 1;
+                s.world.predict_edit(s.edit_seq, at, block);
+                net.send(ClientMsg::Edit {
+                    seq: s.edit_seq,
+                    pos: at,
+                    action: EditAction::Place(block),
+                });
+                s.place_cooldown = PLACE_REPEAT;
             }
         }
 
@@ -516,7 +546,7 @@ impl ApplicationHandler for App {
                 }
                 if !down && let Some(s) = &mut self.session {
                     // Releasing lets the next click act at once.
-                    s.edit_cooldown = 0.0;
+                    s.place_cooldown = 0.0;
                 }
             }
             WindowEvent::MouseWheel { delta, .. } => {

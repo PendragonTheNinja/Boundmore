@@ -137,6 +137,18 @@ impl TestClient {
         (tick, ack, you, others)
     }
 
+    /// Holds break for the block's hardness, then breaks it, as a player does.
+    async fn dig(&mut self, seq: u32, pos: BlockPos) -> (bool, BlockId) {
+        let hardness = self
+            .chunks
+            .get(&pos.chunk())
+            .map(|c| self.welcome.blocks[c.get(pos.local()).0 as usize].hardness)
+            .unwrap_or(0.0);
+        write_msg(&mut self.send, &ClientMsg::StartBreak { pos }).await.unwrap();
+        tokio::time::sleep(Duration::from_secs_f32(hardness)).await;
+        self.edit(seq, pos, EditAction::Break).await
+    }
+
     async fn edit(&mut self, seq: u32, pos: BlockPos, action: EditAction) -> (bool, BlockId) {
         write_msg(&mut self.send, &ClientMsg::Edit { seq, pos, action })
             .await
@@ -160,7 +172,6 @@ fn config(dir: &Path) -> ServerConfig {
         width_chunks: 16,
         height_chunks: 12,
         view_radius: 3,
-        view_height: 2,
         ..Default::default()
     }
 }
@@ -183,8 +194,14 @@ async fn two_players_share_one_world() {
     let joined = alice.until(|m| matches!(m, ServerMsg::PlayerJoined { .. })).await;
     assert!(matches!(joined, ServerMsg::PlayerJoined { ref name, .. } if name == "Bob"));
 
+    // Breaking without holding for the block's hardness is refused.
+    assert!(
+        !alice.edit(90, feet, EditAction::Break).await.0,
+        "instant break refused"
+    );
+
     // Alice digs the block she stands on; Bob sees it go.
-    let (ok, block) = alice.edit(1, feet, EditAction::Break).await;
+    let (ok, block) = alice.dig(1, feet).await;
     assert!(ok, "break accepted");
     assert_eq!(block, BlockId::AIR);
     bob.until(|m| matches!(m, ServerMsg::BlockChanged { pos, .. } if *pos == feet))
@@ -260,7 +277,7 @@ async fn edits_and_positions_survive_a_restart() {
         let spawn = alice.welcome.spawn;
         let feet = BlockPos::containing(spawn.pos.x, spawn.pos.y - 0.5, spawn.pos.z);
         alice.wait_for_chunk(feet.chunk()).await;
-        assert!(alice.edit(1, feet, EditAction::Break).await.0);
+        assert!(alice.dig(1, feet).await.0);
         tokio::time::sleep(Duration::from_millis(500)).await;
         let (_, _, state, _) = alice.latest_snapshot().await;
         drop(alice);

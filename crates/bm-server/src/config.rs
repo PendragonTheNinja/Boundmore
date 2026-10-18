@@ -21,8 +21,6 @@ pub struct ServerConfig {
     pub height_chunks: u32,
     /// Horizontal chunk radius streamed around each player.
     pub view_radius: u8,
-    /// Vertical chunk radius streamed around each player.
-    pub view_height: u8,
     pub max_players: usize,
     /// Furthest a player may edit from their eye, in blocks.
     pub reach: f64,
@@ -39,7 +37,6 @@ impl Default for ServerConfig {
             width_chunks: 64,
             height_chunks: 12,
             view_radius: 10,
-            view_height: 4,
             max_players: 200,
             reach: 7.0,
         }

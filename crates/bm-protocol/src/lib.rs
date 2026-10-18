@@ -19,7 +19,7 @@ use bm_core::{BlockDef, BlockId, BlockPos, ChunkPos, MoveConfig, PlanetShape, Pl
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
 
 /// Bump on any change to a message below. Client and server must match.
-pub const PROTOCOL_VERSION: u32 = 1;
+pub const PROTOCOL_VERSION: u32 = 2;
 
 /// QUIC application protocol name; also refuses non-Boundmore peers early.
 pub const ALPN: &[u8] = b"boundmore/1";
@@ -38,6 +38,12 @@ pub enum ClientMsg {
     Hello {
         protocol: u32,
         name: String,
+    },
+    /// The player has started holding break on this block. The server times
+    /// the hold: a break that arrives sooner than the block's hardness allows
+    /// is refused.
+    StartBreak {
+        pos: BlockPos,
     },
     Edit {
         seq: u32,
