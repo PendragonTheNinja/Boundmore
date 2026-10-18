@@ -30,6 +30,16 @@ cargo run --release -p bm-client -- --name YourName --server 203.0.113.5:7777 --
 
 Load testing: `cargo run --release -p bm-server --example bots -- --count 50`.
 
+## Updating
+
+```
+git pull
+cargo run --release -p bm-server
+cargo run --release -p bm-client -- --name YourName
+```
+
+Stop the running server (Ctrl+C in its window) and close the game before rebuilding: Windows will not let a running program be replaced, and the build fails with `failed to remove file ... bm-server.exe: Access is denied`. If a copy is still running somewhere, `taskkill /IM bm-server.exe /F` and `taskkill /IM boundmore.exe /F` stop them.
+
 ## Layout
 
 | Crate | What |
