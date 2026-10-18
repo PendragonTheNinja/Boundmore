@@ -23,6 +23,7 @@ toml.workspace = true
 tracing.workspace = true
 tracing-subscriber.workspace = true
 postcard.workspace = true
+argon2 = "0.6.0"
 
 [dev-dependencies]
 tempfile = "3"
