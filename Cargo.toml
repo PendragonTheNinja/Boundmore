@@ -8,6 +8,7 @@ members = [
     "crates/bm-net",
     "crates/bm-server",
     "crates/bm-client",
+    "tools/bm-texgen",
 ]
 
 [workspace.package]
@@ -29,6 +30,7 @@ bytes = "1"
 bytemuck = { version = "1", features = ["derive"] }
 crossbeam-channel = "0.5"
 glam = { version = "0.34", features = ["serde", "bytemuck"] }
+image = { version = "0.25", default-features = false, features = ["png"] }
 libm = "0.2"
 lz4_flex = { version = "0.14", default-features = false, features = ["safe-encode", "safe-decode", "std"] }
 pollster = "1"

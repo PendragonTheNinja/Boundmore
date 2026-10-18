@@ -1,0 +1,12 @@
+[package]
+name = "bm-texgen"
+description = "Paints every block texture procedurally, writes the PNGs, a contact sheet and a preview."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+bm-core.workspace = true
+image.workspace = true
