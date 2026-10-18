@@ -1,0 +1,151 @@
+//! The review contact sheet: every texture at 4x, a 3 x 3 tiling at 2x to
+//! show seams (mixing variants where a texture has them), and the face
+//! shrunk to 8 x 8 and 4 x 4 the way mipmaps will see it from a distance.
+
+use crate::canvas::Canvas;
+use crate::color::Rgba;
+use crate::tex::{SIZE, Tex};
+use crate::{Family, find};
+
+const BIG: usize = 4;
+const TILE: usize = 2;
+const GAP: usize = 8;
+const LABEL: usize = 18;
+const PAD: usize = 14;
+const CELL_W: usize = SIZE * BIG + GAP + SIZE * 3 * TILE + PAD;
+const CELL_H: usize = LABEL + SIZE * 3 * TILE + PAD;
+const COLUMNS: usize = 5;
+
+/// One entry on the sheet.
+struct Entry {
+    label: String,
+    tex: Tex,
+    /// The nine faces of the tiled panel, row by row.
+    tiles: Vec<Tex>,
+    /// Whether the tiled panel sits on a checkerboard (translucent faces).
+    checker: bool,
+}
+
+/// Box-filters a face down to `n` x `n` (in roughly linear light).
+pub fn shrink(tex: &Tex, n: usize) -> Tex {
+    let k = SIZE / n;
+    let mut out = Tex::default();
+    for y in 0..SIZE {
+        for x in 0..SIZE {
+            let (bx, by) = (x / k * k, y / k * k);
+            let mut acc = [0.0f32; 4];
+            for j in 0..k {
+                for i in 0..k {
+                    let p = tex.get(bx + i, by + j);
+                    acc[0] += p.r.powf(2.2) * p.a;
+                    acc[1] += p.g.powf(2.2) * p.a;
+                    acc[2] += p.b.powf(2.2) * p.a;
+                    acc[3] += p.a;
+                }
+            }
+            let a = acc[3].max(1e-6);
+            let m = (k * k) as f32;
+            out.set(
+                x,
+                y,
+                Rgba::new(
+                    (acc[0] / a).powf(1.0 / 2.2),
+                    (acc[1] / a).powf(1.0 / 2.2),
+                    (acc[2] / a).powf(1.0 / 2.2),
+                    acc[3] / m,
+                ),
+            );
+        }
+    }
+    out
+}
+
+/// Which face of a family goes in each of the nine tiled slots, so a
+/// variant's panel shows it next to the base and its siblings.
+fn mix_pattern(fam: &Family, i: usize) -> Vec<Tex> {
+    let n = fam.faces.len();
+    if i == 0 || n == 1 {
+        return vec![fam.faces[i].clone(); 9];
+    }
+    (0..9)
+        .map(|s| {
+            let pick = if s == 4 || s % 2 == 0 { i } else { (i + s) % n };
+            fam.faces[pick].clone()
+        })
+        .collect()
+}
+
+pub fn contact_sheet(families: &[Family], cracks: &[Tex]) -> Canvas {
+    let mut entries = Vec::new();
+    for fam in families {
+        let translucent = fam.base().px.iter().any(|p| p.a < 1.0);
+        for i in 0..fam.faces.len() {
+            entries.push(Entry {
+                label: fam.file_stem(i),
+                tex: fam.faces[i].clone(),
+                tiles: mix_pattern(fam, i),
+                checker: translucent,
+            });
+        }
+    }
+    // Cracks over a spread of hosts, light to dark.
+    let hosts = [
+        "snow",
+        "sand",
+        "turf_top",
+        "timber",
+        "stone",
+        "brick",
+        "deep_stone",
+        "coal_seam",
+        "bedrock",
+    ];
+    for (i, crack) in cracks.iter().enumerate() {
+        let tiles = hosts
+            .iter()
+            .map(|h| {
+                let base = find(families, h).base();
+                Tex {
+                    px: base.px.iter().zip(&crack.px).map(|(b, c)| b.over(*c)).collect(),
+                }
+            })
+            .collect();
+        entries.push(Entry {
+            label: format!("crack_{i}"),
+            tex: crack.clone(),
+            tiles,
+            checker: true,
+        });
+    }
+
+    let rows = entries.len().div_ceil(COLUMNS);
+    let mut sheet = Canvas::new(PAD + COLUMNS * CELL_W, PAD + rows * CELL_H, Rgba::hex(0x1c1d26));
+    for (n, e) in entries.iter().enumerate() {
+        let x0 = (PAD + (n % COLUMNS) * CELL_W) as i64;
+        let y0 = (PAD + (n / COLUMNS) * CELL_H) as i64;
+        sheet.text(&e.label, x0, y0, 2, Rgba::hex(0xe8e4d8));
+        let y = y0 + LABEL as i64;
+        if e.checker {
+            sheet.checker(x0, y, SIZE * BIG, SIZE * BIG, 8);
+        }
+        sheet.blit(&e.tex, x0, y, BIG);
+        // Shrunk to 8 x 8 and 4 x 4 (each drawn 32 px wide).
+        let small_y = y + (SIZE * BIG) as i64 + 16;
+        for (j, n) in [8usize, 4].into_iter().enumerate() {
+            let sx = x0 + j as i64 * 48;
+            if e.checker {
+                sheet.checker(sx, small_y, SIZE, SIZE, 8);
+            }
+            sheet.blit(&shrink(&e.tex, n), sx, small_y, 1);
+        }
+        let tx = x0 + (SIZE * BIG + GAP) as i64;
+        if e.checker {
+            sheet.checker(tx, y, SIZE * 3 * TILE, SIZE * 3 * TILE, 12);
+        }
+        for (s, t) in e.tiles.iter().enumerate() {
+            let (cx, cy) = ((s % 3) * SIZE * TILE, (s / 3) * SIZE * TILE);
+            sheet.blit(t, tx + cx as i64, y + cy as i64, TILE);
+        }
+    }
+    sheet
+}

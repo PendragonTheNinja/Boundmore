@@ -8,6 +8,7 @@ members = [
     "crates/bm-net",
     "crates/bm-server",
     "crates/bm-client",
+    "tools/bm-texgen",
 ]
 
 [workspace.package]
