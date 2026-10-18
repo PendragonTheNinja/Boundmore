@@ -39,8 +39,10 @@ Item entities on the ground, trading and shops, guilds, claim permissions for fr
 
 ## Decisions for Nathan
 
-- **Plot size** 8×8×8 (cubes, as we remember Boundless's). Confirm.
-- **Inventory size** 40 slots, stacks of 100 for blocks. Confirm or give Boundless's numbers.
+- **Plot size** 8×8×8. Confirmed by Nathan, 2026-10-18.
+- **Inventory size** 40 slots, stacks of 100 for blocks. Confirmed by Nathan, 2026-10-18.
+- **Stations on someone else's claim** cannot be used (craft, watch or collect), so output can't be taken. Proposed by the server work; awaiting Nathan.
+- **Land upkeep** (whether claims ever expire): open, see `docs/research/boundless-forum-feedback.md` principle 2.
 
 ## Status
 
