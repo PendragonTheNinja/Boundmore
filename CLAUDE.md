@@ -76,6 +76,8 @@ Drive it with `xdotool` (`windowfocus --sync`, then plain `keydown`/`click`, not
 ## Working with Nathan (agreed 2026-10-18)
 
 - **Work in large batches, not one step at a time.** Nathan tests when a major piece lands, not after every change. Keep building, verify everything you can yourself (tests, the headless run below, screenshots), push in task-sized commits, and tell him when something is worth playing. Ask only when a decision is genuinely his (feel, art, what players want).
+- **Keep going between milestones** (Nathan, 2026-10-19): when one milestone is built, start the next without waiting, unless the next needs his decision.
+- **Stop and ask first** when a decision is genuinely his AND building it the wrong way would cost a lot of work or time to change (data formats players will save into, how a system feels or is paid for, anything that shapes what players invest in). Build around it or pick other work meanwhile; never guess on those.
 - **Parallel agents are welcome** where work splits cleanly (separate crates or modules, each in its own git worktree). Merge, re-verify, push.
 - **He plays Boundless; his reports about how it felt are ground truth.** Record each such decision in `docs/feel.md` or the relevant spec with the date.
 - **Art direction:** Boundless's bright, painterly high fantasy, crossed with Hytale's chunky stylised charm, in Boundmore's own textures (`docs/art-direction.md`). Nathan is not an artist: Claude produces the textures (procedurally, `tools/bm-texgen`), and the pipeline must also accept hand-made or AI-generated replacements dropped into `assets/textures/`.
