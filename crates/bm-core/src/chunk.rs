@@ -196,6 +196,12 @@ impl Chunk {
         (self.palette.len() == 1).then(|| self.palette[0].id)
     }
 
+    /// The single block state this chunk is made of (exact after
+    /// [`Chunk::compact`], as [`Chunk::uniform`]).
+    pub fn uniform_state(&self) -> Option<BlockState> {
+        (self.palette.len() == 1).then(|| self.palette[0])
+    }
+
     pub fn palette(&self) -> &[BlockState] {
         &self.palette
     }

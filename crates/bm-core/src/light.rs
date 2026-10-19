@@ -257,6 +257,15 @@ fn offer(l: u8, dir: usize, ch: usize) -> u8 {
     }
 }
 
+/// A voxel's light properties: its type's, except that a chiselled block is
+/// never opaque (ADR-0008): light passes through the octants cut away, and
+/// its neighbours draw their faces against it.
+#[inline]
+fn cell_prop(props: &[u8], s: crate::BlockState) -> u8 {
+    let p = props[s.id.0 as usize];
+    if s.shape.is_full() { p } else { p & !OPAQUE }
+}
+
 /// The level a cell with properties `p` takes from an offer.
 #[inline]
 fn admit(offered: u8, p: u8, ch: usize) -> u8 {
@@ -604,7 +613,7 @@ impl LightMap {
         let top_chunk = p.chunk().y as u32 == self.shape.height_chunks - 1;
         let props = blocks
             .chunk(p.chunk())
-            .map_or(OPAQUE, |c| self.props[c.get(p.local()).0 as usize]);
+            .map_or(OPAQUE, |c| cell_prop(&self.props, c.state(p.local())));
         for ch in [SKY, BLOCK] {
             let e = intrinsic(props, ch, i, top_chunk);
             if e > 0 {
@@ -777,8 +786,8 @@ impl LightMap {
             let Some(chunk) = blocks.chunk(self.slots[s].pos) else {
                 break;
             };
-            if let Some(b) = chunk.uniform() {
-                let p = self.props[b.0 as usize];
+            if let Some(b) = chunk.uniform_state() {
+                let p = cell_prop(&self.props, b);
                 if p & (OPAQUE | DIMS) == 0 {
                     if n_falling == 1024 {
                         self.slots[s].light = ChunkLight::open_sky();
@@ -811,7 +820,7 @@ impl LightMap {
                 }
                 for ly in (0..32).rev() {
                     let i = c | ly << 10;
-                    let p = props[chunk.get_index(i).0 as usize];
+                    let p = cell_prop(props, chunk.state_index(i));
                     if p & (OPAQUE | DIMS) == 0 {
                         d[i] = Light::OPEN_SKY.0;
                         stop[c] = base + ly as i64;
@@ -836,7 +845,7 @@ impl LightMap {
                 continue;
             }
             for i in 0..CHUNK_VOLUME {
-                let e = self.props[chunk.get_index(i).0 as usize] & EMIT;
+                let e = cell_prop(&self.props, chunk.state_index(i)) & EMIT;
                 if e > 0 {
                     cands.push((s, i, BLOCK, e));
                 }
@@ -1005,8 +1014,8 @@ impl LightMap {
             return;
         };
         let props = &self.props;
-        let uniform = chunk.uniform().map(|b| props[b.0 as usize]);
-        let prop = |i: usize| uniform.unwrap_or_else(|| props[chunk.get_index(i).0 as usize]);
+        let uniform = chunk.uniform_state().map(|b| cell_prop(props, b));
+        let prop = |i: usize| uniform.unwrap_or_else(|| cell_prop(props, chunk.state_index(i)));
         let ev = &mut self.ev;
         let work = &mut self.work;
         let active = &mut self.active_add;
@@ -1085,8 +1094,8 @@ impl LightMap {
             return;
         };
         let props = &self.props;
-        let uniform = chunk.uniform().map(|b| props[b.0 as usize]);
-        let prop = |i: usize| uniform.unwrap_or_else(|| props[chunk.get_index(i).0 as usize]);
+        let uniform = chunk.uniform_state().map(|b| cell_prop(props, b));
+        let prop = |i: usize| uniform.unwrap_or_else(|| cell_prop(props, chunk.state_index(i)));
         let ev = &mut self.ev;
         let work = &mut self.work;
         let active = &mut self.active_rem;
@@ -1191,7 +1200,8 @@ impl LightMap {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{BlockId, BlockRegistry};
+    use crate::shape::ShapeFamily;
+    use crate::{BlockId, BlockRegistry, BlockState, Shape};
     use rand::seq::SliceRandom;
     use rand::{Rng, SeedableRng, rngs::StdRng};
     use std::collections::VecDeque;
@@ -1306,10 +1316,11 @@ mod tests {
             }
             for i in 0..CHUNK_VOLUME {
                 let b = pos.block(LocalPos::from_index(i));
-                let id = chunk.get_index(i);
+                let st = chunk.state_index(i);
+                let id = st.id;
                 let k = at(b.x, b.y, b.z);
                 present[k] = true;
-                opaque[k] = flags.opaque(id);
+                opaque[k] = flags.opaque(id) && st.shape.is_full();
                 water[k] = !flags.opaque(id) && flags.translucent(id) && !flags.solid(id);
                 emit[k] = flags.light(id);
             }
@@ -1447,9 +1458,15 @@ mod tests {
         assert_matches(&map, &reference(shape, &flags, &world, &cols), &world);
 
         let mut rng = StdRng::seed_from_u64(11);
+        let slab = BlockState {
+            shape: Shape::new(ShapeFamily::Square, 0xf0).unwrap(),
+            ..BlockState::plain(ids.stone)
+        };
         let kinds = [
             ids.air, ids.air, ids.air, ids.stone, ids.stone, ids.glow, ids.water, ids.glass,
-        ];
+        ]
+        .map(BlockState::plain);
+        let kinds = [kinds.as_slice(), &[slab, slab]].concat();
         // Edits cluster on chunk borders and the seam, where the bugs live.
         let near_border = |rng: &mut StdRng, w: i64| -> i64 {
             let b: i64 = [0, 32, 64, 96][rng.random_range(0..4)];
@@ -1469,7 +1486,7 @@ mod tests {
             };
             let p = BlockPos::new(x, y, z);
             let id = kinds[rng.random_range(0..kinds.len())];
-            if world.get_mut(&p.chunk()).unwrap().set(p.local(), id) == id {
+            if world.get_mut(&p.chunk()).unwrap().set_state(p.local(), id) == id {
                 continue;
             }
             let before = snapshot(&map, &world);
@@ -1632,6 +1649,44 @@ mod tests {
         // Sealed again, it goes dark again.
         let p = BlockPos::new(31, 30, 33);
         world.get_mut(&p.chunk()).unwrap().set(p.local(), ids.stone);
+        map.block_changed(p, &world);
+        assert_eq!(map.light_at(BlockPos::new(31, 10, 33)), Light::DARK);
+        assert_matches(&map, &reference(shape, &flags, &world, &cols), &world);
+    }
+
+    #[test]
+    fn light_enters_a_cave_through_a_cut_block() {
+        let (r, ids) = setup();
+        let flags = r.flags();
+        let shape = PlanetShape::new(4, 2);
+        let cols = all_columns(shape);
+        // A sealed cave under one block of stone at the top of a shaft.
+        let cave = |x: i64, y: i64, z: i64| (26..40).contains(&x) && (10..20).contains(&y) && (26..40).contains(&z);
+        let shaft = |x: i64, y: i64, z: i64| (x, z) == (31, 33) && (20..39).contains(&y);
+        let mut world = build(shape, &cols, |x, y, z| {
+            if cave(x, y, z) || shaft(x, y, z) || y >= 40 {
+                ids.air
+            } else {
+                ids.stone
+            }
+        });
+        let mut map = LightMap::new(shape, &flags);
+        load(&mut map, &world, &sorted_keys(&world));
+        assert_eq!(map.light_at(BlockPos::new(31, 10, 33)), Light::DARK);
+        // Cut the top half off the lid: it keeps four octants, but light now
+        // passes it, as through any chiselled block (ADR-0008).
+        let p = BlockPos::new(31, 39, 33);
+        let slab = BlockState {
+            shape: Shape::new(ShapeFamily::Square, 0xf0).unwrap(),
+            ..BlockState::plain(ids.stone)
+        };
+        world.get_mut(&p.chunk()).unwrap().set_state(p.local(), slab);
+        map.block_changed(p, &world);
+        assert_eq!(map.light_at(BlockPos::new(31, 10, 33)).sky(), 15, "down the shaft");
+        assert!(map.light_at(BlockPos::new(35, 10, 33)).sky() > 0, "into the cave");
+        assert_matches(&map, &reference(shape, &flags, &world, &cols), &world);
+        // Filled back to a full block, the cave is dark again.
+        world.get_mut(&p.chunk()).unwrap().set_state(p.local(), BlockState::plain(ids.stone));
         map.block_changed(p, &world);
         assert_eq!(map.light_at(BlockPos::new(31, 10, 33)), Light::DARK);
         assert_matches(&map, &reference(shape, &flags, &world, &cols), &world);
