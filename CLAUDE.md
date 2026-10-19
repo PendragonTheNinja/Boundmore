@@ -54,6 +54,8 @@ cargo test --workspace
 
 Expected test counts (M5, 2026-10-19): bm-core 63, bm-worldgen 23, bm-mesh 12, bm-protocol 6, bm-server 30 unit + 15 end-to-end, bm-client 61, bm-texgen 5 (215 in all). CI (`.github/workflows/ci.yml`) runs the same on Linux and builds on Windows.
 
+**Upgrade check (any change to a saved or versioned format):** build the server from `main` in a separate worktree and target dir, let it create a universe (`bots --count 2 --planets 2` to make players), stop it, then open that data dir with the new server and read its log. Unit tests built from the new code missed exactly this once (2026-10-19: chunk format 2 refused every older universe).
+
 **Load test:** run a server, then `cargo run --release -p bm-server --example bots -- --count 50 --prefix Load`. Watch the server's 30-second report for slow ticks.
 
 **Seeing the game from a Linux sandbox** (no GPU): software Vulkan and a virtual display.

@@ -498,12 +498,32 @@ impl Store {
                 if u.save_version < SAVE_VERSION {
                     bail!("no upgrade from universe save version {}", u.save_version);
                 }
-                if u.chunk_format != CHUNK_FORMAT_VERSION {
+                // Older chunk formats still decode (`Chunk::decode` reads
+                // every earlier version); chunks are rewritten in the current
+                // one as they change. Only a newer format is refused.
+                if u.chunk_format > CHUNK_FORMAT_VERSION || u.chunk_format == 0 {
                     bail!(
-                        "universe chunk format {} is not {}",
+                        "universe chunk format {} is newer than this server's {}; update the server",
                         u.chunk_format,
                         CHUNK_FORMAT_VERSION
                     );
+                }
+                if u.chunk_format < CHUNK_FORMAT_VERSION {
+                    tracing::info!(
+                        "universe chunks are in format {}; they open as they are and are saved in format {}",
+                        u.chunk_format,
+                        CHUNK_FORMAT_VERSION
+                    );
+                    let tx = self.db.begin_write()?;
+                    tx.open_table(META)?.insert(
+                        "universe",
+                        postcard::to_stdvec(&UniverseMeta {
+                            chunk_format: CHUNK_FORMAT_VERSION,
+                            ..u
+                        })?
+                        .as_slice(),
+                    )?;
+                    tx.commit()?;
                 }
                 Ok(None)
             }
@@ -546,9 +566,9 @@ impl Store {
                 GENERATOR_VERSION
             );
         }
-        if meta.chunk_format != CHUNK_FORMAT_VERSION {
+        if meta.chunk_format > CHUNK_FORMAT_VERSION || meta.chunk_format == 0 {
             bail!(
-                "planet chunk format {} is not {}",
+                "planet chunk format {} is newer than this server's {}; update the server",
                 meta.chunk_format,
                 CHUNK_FORMAT_VERSION
             );
@@ -1324,6 +1344,47 @@ mod tests {
         legacy::write_v2_planet(&path, &meta, &[], &[], &[], &[], 0).unwrap();
         let s = Store::open(&path).unwrap();
         assert!(s.universe(&kinds()).is_err(), "an unknown generator is refused");
+    }
+
+    /// A universe saved before chunk format 2 opens (old chunks still decode)
+    /// and is marked current; one from a newer server is refused. Saves made
+    /// by the M4 and M5 servers are format 1 (2026-10-19).
+    #[test]
+    fn older_chunk_formats_open_and_newer_are_refused() {
+        let with_format = |format: u8| {
+            let dir = tempfile::tempdir().unwrap();
+            let s = Store::open(&dir.path().join("u.redb")).unwrap();
+            let tx = s.db.begin_write().unwrap();
+            tx.open_table(META)
+                .unwrap()
+                .insert(
+                    "universe",
+                    postcard::to_stdvec(&UniverseMeta {
+                        save_version: SAVE_VERSION,
+                        chunk_format: format,
+                    })
+                    .unwrap()
+                    .as_slice(),
+                )
+                .unwrap();
+            tx.commit().unwrap();
+            (dir, s)
+        };
+        let (_dir, s) = with_format(1);
+        assert!(s.universe(&kinds()).is_ok(), "format 1 opens");
+        let rtx = s.db.begin_read().unwrap();
+        let bytes = rtx
+            .open_table(META)
+            .unwrap()
+            .get("universe")
+            .unwrap()
+            .unwrap()
+            .value()
+            .to_vec();
+        let u: UniverseMeta = postcard::from_bytes(&bytes).unwrap();
+        assert_eq!(u.chunk_format, CHUNK_FORMAT_VERSION, "and is marked current");
+        let (_dir, s) = with_format(CHUNK_FORMAT_VERSION + 1);
+        assert!(s.universe(&kinds()).is_err(), "a newer format is refused");
     }
 
     /// Writes a planet exactly as save version 1 did: its meta, a chunk, and
