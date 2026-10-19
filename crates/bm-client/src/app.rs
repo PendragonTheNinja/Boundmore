@@ -1183,17 +1183,21 @@ impl App {
                 let local = self.local_ticks();
                 if let Some(s) = &self.session {
                     let sky = Sky::at(&s.planet.day, &s.planet.look, s.sky_tick(local));
-                    let up: Vec<Vec3> = sky
+                    // The fullest planets above the horizon (furthest from the
+                    // sun): between the two best if both fit in view.
+                    let sun = Vec3::from(sky.sun_dir);
+                    let mut up: Vec<Vec3> = sky
                         .planets(&s.universe, s.planet.id)
                         .iter()
                         .map(|p| Vec3::from(p.dir))
-                        .filter(|d| d.y > 0.05)
+                        .filter(|d| d.y > 0.12)
                         .collect();
-                    let aim = up
-                        .iter()
-                        .copied()
-                        .sum::<Vec3>()
-                        .normalize_or(Vec3::new(0.0, 0.5, -1.0).normalize());
+                    up.sort_by(|a, b| a.dot(sun).total_cmp(&b.dot(sun)));
+                    let aim = match up.as_slice() {
+                        [a, b, ..] if a.angle_between(*b) < 1.1 => (*a + *b).normalize(),
+                        [a, ..] => *a,
+                        [] => Vec3::new(0.0, 0.5, -1.0).normalize(),
+                    };
                     let limit = bm_core::movement::pitch_radians(bm_core::movement::PITCH_LIMIT);
                     self.yaw = (aim.x as f64).atan2(-aim.z as f64).rem_euclid(std::f64::consts::TAU);
                     self.pitch = (aim.y as f64).asin().clamp(-limit, limit);

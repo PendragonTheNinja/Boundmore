@@ -124,9 +124,9 @@ pub fn sky_rotation(day: &DayCycle, tick: f64) -> Mat3 {
 }
 
 /// Where a planet sits among the stars: stable for its id, spread around
-/// the sky by the golden angle, and kept 18 to 55 degrees off the sun's
-/// path so a planet is never lost in the sun's glare for long. Most sit on
-/// the side of the sky that stays above the horizon longest.
+/// the sky by the golden angle, and kept 30 to 60 degrees off the sun's
+/// path, on the side of the sky that stays above the horizon longest, so a
+/// planet is never lost in the sun's glare for long.
 pub fn star_direction(id: u16) -> Vec3 {
     let h = |salt: u32| {
         let mut x = (id as u32).wrapping_mul(0x9E37_79B9) ^ salt.wrapping_mul(0x85EB_CA6B);
@@ -136,10 +136,9 @@ pub fn star_direction(id: u16) -> Vec3 {
         (x & 0xffff) as f32 / 65535.0
     };
     let around = (id as f32 * 0.618_034 + 0.1 + h(1) * 0.08).fract() * std::f32::consts::TAU;
-    let off = (18.0 + 37.0 * h(2)).to_radians();
-    // Away from the axis's visible end (it points 20 degrees below the
-    // horizon), so three in four tilt towards the end that stays up.
-    let off = if id % 4 == 3 { off } else { -off };
+    // Towards the end of the axis that stays up (the other points 20
+    // degrees below the horizon), so planets are up more than half the day.
+    let off = -(30.0 + 30.0 * h(2)).to_radians();
     let axis = sky_axis();
     let east = Vec3::X;
     let up = axis.cross(east);
@@ -147,11 +146,12 @@ pub fn star_direction(id: u16) -> Vec3 {
     (on_path * off.cos() + axis * off.sin()).normalize()
 }
 
-/// Apparent radius in radians: a planet the size of a 2048-block one is
-/// four degrees across, larger ones grow with the square root of width.
+/// Apparent radius in radians: a 2048-block planet is eight degrees across
+/// (big in the sky, as neighbouring worlds should be), larger ones grow
+/// with the square root of width.
 pub fn apparent_radius(width_blocks: u32) -> f32 {
-    let r = 2.0 * (width_blocks.max(1) as f32 / 2048.0).sqrt();
-    r.clamp(0.8, 6.0).to_radians()
+    let r = 4.0 * (width_blocks.max(1) as f32 / 2048.0).sqrt();
+    r.clamp(1.5, 9.0).to_radians()
 }
 
 #[cfg(test)]
@@ -278,7 +278,7 @@ mod tests {
         let p = sky.planets(&universe, 0);
         assert_eq!(p.len(), 2, "not our own planet");
         assert!(p[0].radius > p[1].radius, "wider looks bigger");
-        assert!((apparent_radius(2048) - 2f32.to_radians()).abs() < 1e-6);
+        assert!((apparent_radius(2048) - 4f32.to_radians()).abs() < 1e-6);
         // The same planet moves with the stars over the night.
         let later = Sky::at(&d, &look(), d.day_ticks as f64 / 4.0).planets(&universe, 0);
         assert!(Vec3::from(p[0].dir).angle_between(Vec3::from(later[0].dir)) > 0.5);

@@ -66,7 +66,7 @@ fn draw_planets(dir: vec3<f32>, c_in: vec3<f32>, behind: vec3<f32>, pixel: f32) 
         let out_dir = off / max(length(off), 1e-6);
         let rim_lit = 0.12 + 0.88 * pow(clamp(dot(out_dir, sun) * 0.5 + 0.5, 0.0, 1.0), 2.0);
         let air = mix(p.color.rgb, vec3<f32>(0.72, 0.84, 1.0), 0.55);
-        let glow = exp(-max(t - 1.0, 0.0) / 0.06) * smoothstep(1.45, 1.0, t);
+        let glow = exp(-max(t - 1.0, 0.0) / 0.06) * (1.0 - smoothstep(1.0, 1.45, t));
 
         if (t < 1.0 + aa) {
             let mu = sqrt(max(1.0 - t * t, 0.0));
@@ -83,8 +83,10 @@ fn draw_planets(dir: vec3<f32>, c_in: vec3<f32>, behind: vec3<f32>, pixel: f32) 
             // The night side keeps a faint glow so it hides the stars.
             let lit = albedo * (lambert * 1.3 * limb + 0.03);
             let inner_air = air * pow(1.0 - mu, 3.0) * rim_lit * 0.5;
-            let disc = behind + lit + inner_air;
-            let cover = smoothstep(1.0 + aa, 1.0 - aa, t) * above;
+            // Where the planet is lit it outshines the sky in front of it; on its
+            // dark side the daytime sky shows through, as it does on the moon.
+            let disc = behind * (1.0 - 0.75 * clamp(lambert * 1.5, 0.0, 1.0)) + lit + inner_air;
+            let cover = (1.0 - smoothstep(1.0 - aa, 1.0 + aa, t)) * above;
             c = mix(c, disc, cover);
         }
         c += air * glow * rim_lit * 0.35 * above * step(1.0, t + aa * 0.5);
