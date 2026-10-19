@@ -128,9 +128,8 @@ impl Demo {
             // The first ten fill the hotbar; the rest leave a gap or two.
             let slot = if i < 10 { i } else { i + 3 };
             inv.slots[slot] = Some(ItemStack {
-                item: id(name),
-                count,
                 wear,
+                ..ItemStack::new(id(name), count)
             });
         }
         let planets = demo_planets(&blocks);
@@ -195,9 +194,8 @@ impl Demo {
         ];
         for (slot, name, count, wear) in inside {
             chest[slot] = Some(ItemStack {
-                item: id(name),
-                count,
                 wear,
+                ..ItemStack::new(id(name), count)
             });
         }
         let chests = HashMap::from([(BlockPos::new(CHEST[0], CHEST[1], CHEST[2]), chest)]);
@@ -233,6 +231,7 @@ impl Demo {
             universe: self.universe(),
             blocks: self.blocks.defs().to_vec(),
             items: self.items.defs().to_vec(),
+            colours: bm_core::ColourPalette::builtin(),
             recipes: self.book.recipes.clone(),
             inventory: self.inv.clone(),
             movement: MoveConfig::default(),
@@ -642,7 +641,7 @@ impl Demo {
         self.events.push_back(NetEvent::Msg(ServerMsg::EditResult {
             seq,
             pos,
-            block,
+            block: bm_core::BlockState::plain(block),
             accepted,
         }));
     }

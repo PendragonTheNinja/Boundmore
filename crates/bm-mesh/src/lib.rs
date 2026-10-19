@@ -14,7 +14,7 @@
 //! the GPU. Quads are the unit tests compare: greedy output must cover exactly
 //! the faces the naive mesher emits, with the same block, occlusion and light.
 
-use bm_core::{BlockFlags, BlockId, CHUNK_SIZE, Chunk, ChunkLight, Light, LocalPos};
+use bm_core::{BlockFlags, BlockId, CHUNK_SIZE, Chunk, ChunkLight, Colour, Light, LocalPos};
 
 const N: usize = CHUNK_SIZE as usize;
 const P: usize = N + 2;
@@ -22,6 +22,9 @@ const P: usize = N + 2;
 /// A chunk plus a one-block border, indexed `x + 1`, `y + 1`, `z + 1`.
 pub struct Padded {
     blocks: Box<[BlockId]>,
+    /// The centre chunk's colours (faces belong to the centre's blocks, so
+    /// the border never needs one), indexed by `LocalPos::index`.
+    colours: Box<[u8]>,
 }
 
 impl Padded {
@@ -33,6 +36,12 @@ impl Padded {
     #[inline]
     pub fn get(&self, x: i32, y: i32, z: i32) -> BlockId {
         self.blocks[Self::idx(x, y, z)]
+    }
+
+    /// The colour of a centre-chunk block.
+    #[inline]
+    pub fn colour(&self, x: i32, y: i32, z: i32) -> Colour {
+        Colour(self.colours[LocalPos::new(x as u8, y as u8, z as u8).index()])
     }
 
     /// Builds the padded volume. `neighbors[(dy+1)*9 + (dz+1)*3 + (dx+1)]` is
@@ -66,7 +75,12 @@ impl Padded {
                 }
             }
         }
-        Self { blocks }
+        let colours = if center.palette().iter().all(|s| s.colour == Colour::NATURAL) {
+            vec![0; N * N * N].into_boxed_slice()
+        } else {
+            center.to_dense_states().iter().map(|s| s.colour.0).collect()
+        };
+        Self { blocks, colours }
     }
 }
 
@@ -184,6 +198,7 @@ pub struct Quad {
     pub w: u8,
     pub h: u8,
     pub block: BlockId,
+    pub colour: Colour,
     /// Occlusion 0 (dark) to 3 (open) at corners (u0,v0), (u1,v0), (u1,v1), (u0,v1).
     pub ao: [u8; 4],
     /// Smooth light at the same corners.
@@ -271,6 +286,7 @@ fn face_light(p: &Padded, light: &PaddedLight, flags: &BlockFlags, b: [i32; 3], 
 #[derive(Clone, Copy, PartialEq, Eq)]
 struct Cell {
     block: BlockId,
+    colour: Colour,
     ao: [u8; 4],
     light: [Light; 4],
     translucent: bool,
@@ -308,6 +324,7 @@ fn for_each_face(
                     v,
                     Cell {
                         block: me,
+                        colour: p.colour(b[0], b[1], b[2]),
                         ao,
                         light: face_light(p, light, flags, b, face),
                         translucent,
@@ -364,6 +381,7 @@ pub fn mesh_quads(p: &Padded, light: &PaddedLight, flags: &BlockFlags) -> ChunkQ
                         w: w as u8,
                         h: h as u8,
                         block: cell.block,
+                        colour: cell.colour,
                         ao: cell.ao,
                         light: cell.light,
                     };
@@ -395,6 +413,7 @@ pub fn mesh_quads_naive(p: &Padded, light: &PaddedLight, flags: &BlockFlags) -> 
                     w: 1,
                     h: 1,
                     block: c.block,
+                    colour: c.colour,
                     ao: c.ao,
                     light: c.light,
                 };
@@ -413,7 +432,7 @@ pub fn mesh_quads_naive(p: &Padded, light: &PaddedLight, flags: &BlockFlags) -> 
 ///
 /// `a`: x (6 bits) | y << 6 | z << 12 | face << 18 (3 bits) | ao << 21 (2 bits)
 /// `b`: block id (16 bits) | sky light << 16 (4 bits) | block light << 20
-/// (4 bits); the top 8 bits are reserved.
+/// (4 bits) | colour << 24 (8 bits, palette id, 0 natural; ADR-0007).
 ///
 /// Sky and block light are separate so the shader can scale sky light by the
 /// time of day (and leave glow crystals alone) without anything re-meshing.
@@ -435,8 +454,20 @@ impl Vertex {
         }
     }
 
+    /// The same vertex in a palette colour (ADR-0007).
+    pub fn with_colour(self, c: Colour) -> Self {
+        Self {
+            b: (self.b & 0x00ff_ffff) | (c.0 as u32) << 24,
+            ..self
+        }
+    }
+
     pub fn block(self) -> BlockId {
         BlockId(self.b as u16)
+    }
+
+    pub fn colour(self) -> Colour {
+        Colour((self.b >> 24) as u8)
     }
 
     pub fn sky(self) -> u8 {
@@ -488,10 +519,10 @@ pub fn quads_to_vertices(quads: &[Quad], out: &mut Vec<Vertex>) {
         // Counter-clockwise seen from outside. u × v points along +axis, so
         // the (u, v) order is CCW for positive faces and reversed for negative.
         let mut v = [
-            Vertex::new(corner(0, 0), q.face, q.ao[0], q.block, q.light[0]),
-            Vertex::new(corner(w, 0), q.face, q.ao[1], q.block, q.light[1]),
-            Vertex::new(corner(w, h), q.face, q.ao[2], q.block, q.light[2]),
-            Vertex::new(corner(0, h), q.face, q.ao[3], q.block, q.light[3]),
+            Vertex::new(corner(0, 0), q.face, q.ao[0], q.block, q.light[0]).with_colour(q.colour),
+            Vertex::new(corner(w, 0), q.face, q.ao[1], q.block, q.light[1]).with_colour(q.colour),
+            Vertex::new(corner(w, h), q.face, q.ao[2], q.block, q.light[2]).with_colour(q.colour),
+            Vertex::new(corner(0, h), q.face, q.ao[3], q.block, q.light[3]).with_colour(q.colour),
         ];
         if !q.face.positive {
             v.swap(1, 3);
@@ -592,7 +623,7 @@ pub const NO_NEIGHBORS: [Option<&Chunk>; 27] = [None; 27];
 #[cfg(test)]
 mod tests {
     use super::*;
-    use bm_core::{BlockPos, BlockRegistry, CHUNK_VOLUME, ChunkPos, LightMap, PlanetShape};
+    use bm_core::{BlockPos, BlockRegistry, BlockState, CHUNK_VOLUME, ChunkPos, LightMap, PlanetShape};
     use rand::{Rng, SeedableRng, rngs::StdRng};
     use std::collections::BTreeSet;
     use std::collections::HashMap;
@@ -601,7 +632,7 @@ mod tests {
         BlockRegistry::builtin()
     }
 
-    type UnitFace = (Face, u8, u8, u8, BlockId, [u8; 4], [Light; 4]);
+    type UnitFace = (Face, u8, u8, u8, BlockId, Colour, [u8; 4], [Light; 4]);
 
     fn bright() -> PaddedLight {
         PaddedLight::uniform(Light::OPEN_SKY)
@@ -614,7 +645,7 @@ mod tests {
             for dv in 0..q.h {
                 for du in 0..q.w {
                     assert!(
-                        s.insert((q.face, q.layer, q.u + du, q.v + dv, q.block, q.ao, q.light)),
+                        s.insert((q.face, q.layer, q.u + du, q.v + dv, q.block, q.colour, q.ao, q.light)),
                         "overlapping quads"
                     );
                 }
@@ -623,17 +654,25 @@ mod tests {
         s
     }
 
+    /// Random blocks of `ids`, a third of them in one of three colours, so
+    /// the greedy mesher is checked never to merge across colours.
     fn random_chunk(rng: &mut StdRng, ids: &[BlockId], fill: f64) -> Chunk {
-        let dense: Vec<BlockId> = (0..CHUNK_VOLUME)
+        let dense: Vec<BlockState> = (0..CHUNK_VOLUME)
             .map(|_| {
                 if rng.random_bool(fill) {
-                    ids[rng.random_range(0..ids.len())]
+                    let id = ids[rng.random_range(0..ids.len())];
+                    let colour = if rng.random_bool(0.33) {
+                        Colour(rng.random_range(1..4))
+                    } else {
+                        Colour::NATURAL
+                    };
+                    BlockState::coloured(id, colour)
                 } else {
-                    BlockId::AIR
+                    BlockState::AIR
                 }
             })
             .collect();
-        Chunk::from_dense(&dense)
+        Chunk::from_dense_states(&dense)
     }
 
     /// Patchy light: a few values in blocks of cells, so faces still merge
@@ -805,12 +844,18 @@ mod tests {
         for sky in 0..16 {
             for block in 0..16 {
                 let face = Face::ALL[(sky + block) as usize % 6];
-                let v = Vertex::new([32, 17, 5], face, 2, BlockId(0xbeef), Light::new(sky, block));
+                let v =
+                    Vertex::new([32, 17, 5], face, 2, BlockId(0xbeef), Light::new(sky, block)).with_colour(Colour(201));
+                assert_eq!(v.colour(), Colour(201));
                 assert_eq!((v.sky(), v.block_light()), (sky, block));
                 assert_eq!(v.light(), Light::new(sky, block));
                 assert_eq!(v.block(), BlockId(0xbeef));
                 assert_eq!((v.position(), v.face(), v.ao()), ([32, 17, 5], face.index(), 2));
-                assert_eq!(v.b >> 24, 0, "top byte stays reserved");
+                assert_eq!(
+                    v.with_colour(Colour::NATURAL).b >> 24,
+                    0,
+                    "natural colour clears the top byte"
+                );
             }
         }
     }

@@ -2,7 +2,7 @@
 //! background loader that fills them.
 
 use crate::store::Store;
-use bm_core::{BlockFlags, BlockId, BlockPos, BlockRegistry, Chunk, ChunkPos, PhysicsWorld, PlanetShape};
+use bm_core::{BlockFlags, BlockId, BlockPos, BlockRegistry, BlockState, Chunk, ChunkPos, PhysicsWorld, PlanetShape};
 use bm_protocol::ServerMsg;
 use bm_worldgen::Generator;
 use crossbeam_channel::{Receiver, Sender};
@@ -143,16 +143,31 @@ impl World {
         self.chunks.get(&p.chunk()).map(|s| s.chunk.get(p.local()))
     }
 
-    /// Sets a block in a resident chunk. Returns the old block, or `None` if
-    /// the chunk is not resident (the caller must not have allowed the edit).
+    /// The full state (type, colour, shape) of a resident block.
+    pub fn state(&self, p: BlockPos) -> Option<BlockState> {
+        if !self.shape.contains_y(p.y) {
+            return Some(BlockState::AIR);
+        }
+        let p = self.shape.wrap_block(p);
+        self.chunks.get(&p.chunk()).map(|s| s.chunk.state(p.local()))
+    }
+
+    /// Sets a plain block (natural colour, full shape) in a resident chunk.
+    /// Returns the old block, or `None` if the chunk is not resident (the
+    /// caller must not have allowed the edit).
     pub fn set_block(&mut self, p: BlockPos, id: BlockId) -> Option<BlockId> {
+        self.set_state(p, BlockState::plain(id)).map(|s| s.id)
+    }
+
+    /// Sets a block state in a resident chunk; see [`World::set_block`].
+    pub fn set_state(&mut self, p: BlockPos, state: BlockState) -> Option<BlockState> {
         if !self.shape.contains_y(p.y) {
             return None;
         }
         let p = self.shape.wrap_block(p);
         let slot = self.chunks.get_mut(&p.chunk())?;
-        let old = slot.chunk.set(p.local(), id);
-        if old != id {
+        let old = slot.chunk.set_state(p.local(), state);
+        if old != state {
             slot.dirty = true;
             slot.frame = None;
         }

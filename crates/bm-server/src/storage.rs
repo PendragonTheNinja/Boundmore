@@ -37,7 +37,7 @@ pub fn move_stack(
     };
     match dst {
         None => Some((less(n), Some(ItemStack { count: n, ..src }))),
-        Some(d) if d.item == src.item && d.wear == 0 && src.wear == 0 => {
+        Some(d) if d.stacks_with(&src) => {
             let max = items.get(src.item).map_or(1, |def| def.stack);
             let n = n.min(max.saturating_sub(d.count));
             if n == 0 {
@@ -175,9 +175,8 @@ mod tests {
         assert_eq!(move_stack(&items, st(stone, 10), st(sand, 3), 4), None);
         // Worn tools never merge.
         let worn = Some(ItemStack {
-            item: hammer,
-            count: 1,
             wear: 5,
+            ..ItemStack::new(hammer, 1)
         });
         assert_eq!(move_stack(&items, worn, st(hammer, 1), 1), Some((st(hammer, 1), worn)));
         // Nothing from nothing, nothing of nothing.
@@ -200,10 +199,10 @@ mod tests {
             Some(ItemStack::new(sand, 7)),
             Some(ItemStack::new(hammer, 1)),
             Some(ItemStack {
-                item: hammer,
-                count: 1,
                 wear: 3,
+                ..ItemStack::new(hammer, 1)
             }),
+            Some(ItemStack::coloured(stone, bm_core::Colour(40), 30)),
         ];
         for a in stacks {
             for b in stacks {

@@ -18,8 +18,8 @@ use crate::textures::TextureSet;
 use crate::world::ClientWorld;
 use bm_core::movement::{MoveConfig, PlayerInput};
 use bm_core::{
-    BlockId, BlockPos, BlockRegistry, Chunk, DayCycle, HOTBAR_SLOTS, ItemId, PlanetLook, PlanetShape, PlotPos, RayHit,
-    TICK_DT, raycast,
+    BlockId, BlockPos, BlockRegistry, BlockState, Chunk, Colour, DayCycle, HOTBAR_SLOTS, ItemId, PlanetLook,
+    PlanetShape, PlotPos, RayHit, TICK_DT, raycast,
 };
 use bm_protocol::{
     ClientDatagram, ClientMsg, EditAction, INPUT_REDUNDANCY, MIN_PASSWORD_LEN, PlanetInfo, PlanetSummary,
@@ -901,7 +901,7 @@ impl App {
                         .drop_of(block)
                         .is_none_or(|d| s.items.inventory.can_fit(&s.items.registry, d, 1));
                     if fits {
-                        s.world.predict_edit(s.edit_seq, hit.block, BlockId::AIR);
+                        s.world.predict_edit(s.edit_seq, hit.block, BlockState::AIR);
                     }
                     link.send(ClientMsg::Edit {
                         seq: s.edit_seq,
@@ -941,7 +941,13 @@ impl App {
             let blocks_me = s.world.registry.get(block).solid && s.me.state.overlaps_block(&s.movement, at);
             if free && !blocks_me && s.world.shape.contains_y(at.y) {
                 s.edit_seq += 1;
-                s.world.predict_edit(s.edit_seq, at, block);
+                // The block takes the stack's colour, as the server will.
+                let colour = match held {
+                    Some(h) if s.world.registry.get(block).colourable => h.colour,
+                    _ => Colour::NATURAL,
+                };
+                s.world
+                    .predict_edit(s.edit_seq, at, BlockState::coloured(block, colour));
                 link.send(ClientMsg::Edit {
                     seq: s.edit_seq,
                     at: s.me.seq,
@@ -1681,7 +1687,7 @@ mod tests {
         s.remotes.joined(9, "Wren".into());
         assert!(!s.remotes.sample(30.0, s.world.shape).is_empty());
         assert!(s.claims.iter().count() > 0);
-        s.world.predict_edit(1, BlockPos::new(128, 43, 128), BlockId::AIR);
+        s.world.predict_edit(1, BlockPos::new(128, 43, 128), BlockState::AIR);
         assert_eq!(s.world.pending_edits(), 1);
         s.mining = Some(Mining {
             pos: BlockPos::new(129, 43, 128),

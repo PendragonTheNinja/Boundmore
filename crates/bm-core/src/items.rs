@@ -5,7 +5,7 @@
 //! as ore and ingots, tools) is listed in `assets/items.toml`. Like blocks,
 //! items are data the server sends to clients in the handshake.
 
-use crate::block::{BlockDef, BlockId, BlockRegistry, Material};
+use crate::block::{BlockDef, BlockId, BlockRegistry, Colour, Material};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
@@ -82,16 +82,35 @@ impl ItemDef {
 }
 
 /// Some number of one item in one slot. `wear` is durability spent (tools).
+/// `colour` is part of the item's identity: stacks of different colours never
+/// merge, and a placed block takes its stack's colour (ADR-0007).
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ItemStack {
     pub item: ItemId,
     pub count: u16,
     pub wear: u16,
+    #[serde(default)]
+    pub colour: Colour,
 }
 
 impl ItemStack {
     pub fn new(item: ItemId, count: u16) -> Self {
-        Self { item, count, wear: 0 }
+        Self::coloured(item, Colour::NATURAL, count)
+    }
+
+    pub fn coloured(item: ItemId, colour: Colour, count: u16) -> Self {
+        Self {
+            item,
+            count,
+            wear: 0,
+            colour,
+        }
+    }
+
+    /// Whether `other` can be added onto this stack (same item and colour,
+    /// neither worn).
+    pub fn stacks_with(&self, other: &ItemStack) -> bool {
+        self.item == other.item && self.colour == other.colour && self.wear == 0 && other.wear == 0
     }
 }
 

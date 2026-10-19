@@ -803,7 +803,15 @@ mod tests {
     fn fingerprint(g: &Generator) -> u64 {
         let mut h = 0xcbf2_9ce4_8422_2325;
         for (x, y, z) in FINGERPRINT_CHUNKS {
-            h = fnv(&g.generate(ChunkPos::new(x, y, z)).encode(), h);
+            // The blocks themselves, not their encoding: a new chunk format
+            // must not look like new terrain.
+            let bytes: Vec<u8> = g
+                .generate(ChunkPos::new(x, y, z))
+                .to_dense()
+                .iter()
+                .flat_map(|b| b.0.to_le_bytes())
+                .collect();
+            h = fnv(&bytes, h);
         }
         h
     }
@@ -850,8 +858,12 @@ mod tests {
     /// version 2 planet with default settings.
     #[test]
     fn default_settings_reproduce_version_1() {
-        assert_eq!(fingerprint(&generator()), 0x7d6bf6bb16c76ecf);
-        assert_eq!(fingerprint(&kind("temperate")), 0x7d6bf6bb16c76ecf);
+        // 0x7d6bf6bb16c76ecf when fingerprints hashed the chunk encoding;
+        // re-pinned on 2026-10-19 when they began hashing the blocks
+        // themselves, after checking main and the new chunk format give the
+        // same value (the terrain did not change).
+        assert_eq!(fingerprint(&generator()), 0x4d00_41c8_06c3_f24c);
+        assert_eq!(fingerprint(&kind("temperate")), 0x4d00_41c8_06c3_f24c);
         let v1 = PlanetGenConfigV1 {
             seed: 42,
             sea_level: 128,
@@ -876,10 +888,10 @@ mod tests {
         assert_eq!(got, want, "terrain changed");
     }
     const PINNED: [(&str, u64); 4] = [
-        ("temperate", 0x7d6b_f6bb_16c7_6ecf),
-        ("arid", 0x5591_efe4_48d4_bd2c),
-        ("frozen", 0x0b82_34fc_d26e_4a58),
-        ("lush", 0x400b_dcc2_0a12_90a6),
+        ("temperate", 0x4d00_41c8_06c3_f24c),
+        ("arid", 0x73a4_2ab0_3f53_7644),
+        ("frozen", 0xdb2c_2f7d_dce3_2c63),
+        ("lush", 0xbdf8_252a_fa20_5411),
     ];
 
     #[test]
@@ -1073,7 +1085,7 @@ mod tests {
                     for cy in 0..5 {
                         let p = ChunkPos::new(cx, cy, cz);
                         let c = g.generate(p);
-                        if !c.palette().contains(&iron) && !c.palette().contains(&copper) {
+                        if !c.may_contain(iron) && !c.may_contain(copper) {
                             continue;
                         }
                         for (i, b) in c.to_dense().into_iter().enumerate() {
@@ -1117,7 +1129,7 @@ mod tests {
             for cx in 0..12 {
                 for cy in 3..8 {
                     let c = g.generate(ChunkPos::new(cx, cy, cz));
-                    let (t, f) = (c.palette().contains(&trunk), c.palette().contains(&foliage));
+                    let (t, f) = (c.may_contain(trunk), c.may_contain(foliage));
                     if t && f {
                         trees += 1;
                     } else if f {

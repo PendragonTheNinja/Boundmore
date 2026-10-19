@@ -24,8 +24,8 @@ use anyhow::{Context, Result};
 use bm_core::items::title_case;
 use bm_core::movement::{self, MoveConfig, PlayerInput, PlayerState};
 use bm_core::{
-    BlockId, BlockPos, CHUNK_SIZE, ChunkPos, HOTBAR_SLOTS, Inventory, ItemId, ItemRegistry, ItemStack, PlanetShape,
-    PlotPos, RecipeBook, Station, TICK_DT,
+    BlockId, BlockPos, BlockState, CHUNK_SIZE, ChunkPos, Colour, ColourPalette, HOTBAR_SLOTS, Inventory, ItemId,
+    ItemRegistry, ItemStack, PlanetShape, PlotPos, RecipeBook, Station, TICK_DT,
 };
 use bm_net::quinn::Connection;
 use bm_protocol::{
@@ -166,14 +166,15 @@ impl From<ClaimError> for Refusal {
 
 /// An accepted edit: the block to write and what else it does.
 struct Accepted {
-    block: BlockId,
+    block: BlockState,
     effect: Effect,
 }
 
 enum Effect {
     Broke {
         old: BlockId,
-        drop: Option<ItemId>,
+        /// The item gathered, in the colour it takes from the block.
+        drop: Option<(ItemId, Colour)>,
         /// The hotbar slot of a matching tool, which wears.
         wear: Option<usize>,
     },
@@ -188,6 +189,8 @@ pub struct Game {
     /// Where new players start.
     start: usize,
     items: ItemRegistry,
+    /// The colour palette sent in every welcome (ADR-0007).
+    colours: ColourPalette,
     recipes: RecipeBook,
     claim_stone: BlockId,
     warp_shrine: BlockId,
@@ -355,6 +358,7 @@ impl Game {
             planets,
             start,
             items,
+            colours: ColourPalette::builtin(),
             recipes,
             claim_stone,
             warp_shrine,
@@ -646,6 +650,7 @@ impl Game {
             universe: self.universe(),
             blocks: pl.world.registry.defs().to_vec(),
             items: self.items.defs().to_vec(),
+            colours: self.colours.clone(),
             recipes: self.recipes.recipes.clone(),
             inventory: inventory.clone(),
             movement: self.movement,
@@ -1049,9 +1054,9 @@ impl Game {
         match accepted.effect {
             Effect::Broke { old, drop, wear } => {
                 storage_gone = planet.world.registry.get(old).storage > 0;
-                if let Some(item) = drop {
+                if let Some((item, colour)) = drop {
                     // Checked to fit.
-                    p.inventory.add(&self.items, item, 1);
+                    p.inventory.add_coloured(&self.items, item, colour, 1);
                 }
                 if let Some(slot) = wear
                     && let Some(s) = p.inventory.slots[slot].as_mut()
@@ -1070,7 +1075,7 @@ impl Game {
             }
             Effect::Placed { slot } => {
                 p.inventory.take_one(slot);
-                if new == self.claim_stone {
+                if new.id == self.claim_stone {
                     match planet
                         .claims
                         .create(self.next_claim, &p.account, &p.name, canon, allowance)
@@ -1088,7 +1093,7 @@ impl Game {
         if let Some(text) = broke {
             p.out.send(&ServerMsg::Notice { text });
         }
-        planet.world.set_block(pos, new);
+        planet.world.set_state(pos, new);
         self.stats.edits += 1;
         let chunk = canon.chunk();
         for (oid, o) in &self.players {
@@ -1122,7 +1127,7 @@ impl Game {
         tracing::debug!("refused edit from #{id} at {pos:?}: {why}");
         let Some(p) = self.players.get(&id) else { return };
         // What the block is on the planet they are on now.
-        let actual = self.planets[p.planet].world.block(pos).unwrap_or(BlockId::AIR);
+        let actual = self.planets[p.planet].world.state(pos).unwrap_or(BlockState::AIR);
         p.out.send(&ServerMsg::EditResult {
             seq,
             pos,
@@ -1196,9 +1201,14 @@ impl Game {
                         title_case(&def.name)
                     )));
                 }
-                let drop = self.items.drop_of(current);
-                if let Some(item) = drop
-                    && !p.inventory.can_fit(&self.items, item, 1)
+                // A block that yields itself keeps its colour in the pack.
+                let colour = world.state(canon).map_or(Colour::NATURAL, |s| s.colour);
+                let drop = self.items.drop_of(current).map(|item| {
+                    let own = self.items.item_for_block(current) == Some(item);
+                    (item, if own && def.colourable { colour } else { Colour::NATURAL })
+                });
+                if let Some((item, colour)) = drop
+                    && !p.inventory.can_fit_coloured(&self.items, item, colour, 1)
                 {
                     return Err(Refusal::Told("Your inventory is full".into()));
                 }
@@ -1209,7 +1219,7 @@ impl Game {
                     .and(p.mining.map(|m| m.slot as usize));
                 p.mining = None;
                 Ok(Accepted {
-                    block: BlockId::AIR,
+                    block: BlockState::AIR,
                     effect: Effect::Broke {
                         old: current,
                         drop,
@@ -1222,10 +1232,10 @@ impl Game {
                 if slot >= HOTBAR_SLOTS {
                     return Err("not a hotbar slot".into());
                 }
-                let block = p
-                    .inventory
-                    .get(slot)
-                    .and_then(|s| self.items.get(s.item))
+                let stack = p.inventory.get(slot).ok_or("nothing placeable in that slot")?;
+                let block = self
+                    .items
+                    .get(stack.item)
                     .and_then(|d| d.block())
                     .ok_or("nothing placeable in that slot")?;
                 if !reg.contains(block) || !reg.get(block).placeable {
@@ -1261,8 +1271,13 @@ impl Game {
                         return Err("a player is in the way".into());
                     }
                 }
+                let colour = if reg.get(block).colourable {
+                    stack.colour
+                } else {
+                    Colour::NATURAL
+                };
                 Ok(Accepted {
-                    block,
+                    block: BlockState::coloured(block, colour),
                     effect: Effect::Placed { slot },
                 })
             }

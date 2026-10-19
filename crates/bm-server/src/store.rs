@@ -20,8 +20,8 @@
 
 use anyhow::{Context, Result, bail};
 use bm_core::{
-    BlockPos, CHUNK_FORMAT_VERSION, ChunkPos, DayCycle, Inventory, ItemRegistry, ItemStack, PlanetShape, PlayerState,
-    PlotPos, Station,
+    BlockPos, CHUNK_FORMAT_VERSION, ChunkPos, Colour, DayCycle, Inventory, ItemRegistry, ItemStack, PlanetShape,
+    PlayerState, PlotPos, Station,
 };
 use bm_worldgen::{GENERATOR_VERSION, PlanetGenConfig, PlanetGenConfigV1, PlanetKinds};
 use crossbeam_channel::{Receiver, Sender};
@@ -156,7 +156,9 @@ impl std::fmt::Debug for AccountRecord {
     }
 }
 
-/// One stack as saved: by item name.
+/// One stack as saved: by item name. A coloured stack saves its colour id
+/// after a `#` (`stone#17`); a plain name is natural colour, which is how
+/// every stack saved before colours existed reads (ADR-0007).
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SavedStack {
     pub item: String,
@@ -166,8 +168,13 @@ pub struct SavedStack {
 
 impl SavedStack {
     pub fn new(items: &ItemRegistry, s: &ItemStack) -> Option<Self> {
+        let name = &items.get(s.item)?.name;
         Some(Self {
-            item: items.get(s.item)?.name.clone(),
+            item: if s.colour == Colour::NATURAL {
+                name.clone()
+            } else {
+                format!("{name}#{}", s.colour.0)
+            },
             count: s.count,
             wear: s.wear,
         })
@@ -175,11 +182,16 @@ impl SavedStack {
 
     /// The stack in this catalogue, if the item still exists.
     pub fn resolve(&self, items: &ItemRegistry) -> Option<ItemStack> {
-        let id = items.id(&self.item).ok()?;
+        let (name, colour) = match self.item.split_once('#') {
+            Some((name, c)) => (name, Colour(c.parse().ok()?)),
+            None => (self.item.as_str(), Colour::NATURAL),
+        };
+        let id = items.id(name).ok()?;
         Some(ItemStack {
             item: id,
             count: self.count,
             wear: self.wear,
+            colour,
         })
     }
 }
@@ -1385,12 +1397,13 @@ mod tests {
         let items = ItemRegistry::builtin(&blocks);
         let mut inv = Inventory::default();
         inv.slots[3] = Some(ItemStack {
-            item: items.id("stone_hammer").unwrap(),
-            count: 1,
             wear: 12,
+            ..ItemStack::new(items.id("stone_hammer").unwrap(), 1)
         });
+        inv.slots[5] = Some(ItemStack::coloured(items.id("stone").unwrap(), Colour(77), 9));
         let saved = save_slots(&items, &inv);
         assert_eq!(saved[3].as_ref().unwrap().item, "stone_hammer");
+        assert_eq!(saved[5].as_ref().unwrap().item, "stone#77");
         assert_eq!(load_slots(&items, &saved, "test"), inv.slots);
         let gone = vec![Some(SavedStack {
             item: "unobtainium".into(),

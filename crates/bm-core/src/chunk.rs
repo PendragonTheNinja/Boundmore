@@ -1,21 +1,22 @@
 //! Palette-compressed 32³ chunk storage and its versioned wire/save format.
 //!
-//! A chunk stores the distinct block ids it contains (the palette) and, per
-//! voxel, an index into that palette packed into `bits` bits. A chunk of one
+//! A chunk stores the distinct block states it contains (the palette: a block
+//! type with its colour and shape, ADR-0007) and, per voxel, an index into
+//! that palette packed into `bits` bits. A chunk of one
 //! block (air, solid stone) stores no indices at all. Indices never straddle a
 //! `u64` word, so reads are one load, one shift, one mask.
 //!
 //! Never assume a fixed bits-per-voxel: it grows as the palette grows.
 
-use crate::block::BlockId;
+use crate::block::{BlockId, BlockState, Colour, Shape};
 use crate::coords::{CHUNK_VOLUME, LocalPos};
 
 /// Version of the serialized chunk format. Bump on any change to `encode`.
-pub const CHUNK_FORMAT_VERSION: u8 = 1;
+pub const CHUNK_FORMAT_VERSION: u8 = 2;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Chunk {
-    palette: Vec<BlockId>,
+    palette: Vec<BlockState>,
     bits: u8,
     words: Vec<u64>,
 }
@@ -40,8 +41,13 @@ fn words_for(bits: u8) -> usize {
 impl Chunk {
     /// A chunk filled with one block.
     pub fn filled(id: BlockId) -> Self {
+        Self::filled_state(BlockState::plain(id))
+    }
+
+    /// A chunk filled with one block state.
+    pub fn filled_state(state: BlockState) -> Self {
         Self {
-            palette: vec![id],
+            palette: vec![state],
             bits: 0,
             words: Vec::new(),
         }
@@ -51,14 +57,23 @@ impl Chunk {
         Self::filled(BlockId::AIR)
     }
 
-    /// Builds a chunk from a dense array, choosing the smallest palette.
+    /// Builds a chunk from a dense array of plain blocks (natural colour,
+    /// full shape), choosing the smallest palette.
     pub fn from_dense(blocks: &[BlockId]) -> Self {
         assert_eq!(blocks.len(), CHUNK_VOLUME);
-        let mut palette: Vec<BlockId> = Vec::new();
+        let states: Vec<BlockState> = blocks.iter().map(|&b| BlockState::plain(b)).collect();
+        Self::from_dense_states(&states)
+    }
+
+    /// Builds a chunk from a dense array of states, choosing the smallest
+    /// palette.
+    pub fn from_dense_states(blocks: &[BlockState]) -> Self {
+        assert_eq!(blocks.len(), CHUNK_VOLUME);
+        let mut palette: Vec<BlockState> = Vec::new();
         let mut indices = vec![0u16; CHUNK_VOLUME];
         // Most chunks have a handful of distinct blocks; a linear scan with a
         // last-hit cache beats hashing here.
-        let mut last = (BlockId(u16::MAX), 0u16);
+        let mut last = (BlockState::plain(BlockId(u16::MAX)), 0u16);
         for (i, &b) in blocks.iter().enumerate() {
             if b != last.0 {
                 let idx = match palette.iter().position(|&p| p == b) {
@@ -107,6 +122,7 @@ impl Chunk {
         *w = (*w & !mask) | (v << shift);
     }
 
+    /// The block type at `p` (what physics, light and tools ask about).
     #[inline]
     pub fn get(&self, p: LocalPos) -> BlockId {
         self.get_index(p.index())
@@ -114,21 +130,38 @@ impl Chunk {
 
     #[inline]
     pub fn get_index(&self, i: usize) -> BlockId {
+        self.palette[self.read_index(i)].id
+    }
+
+    /// The full state at `p`: type, colour and shape.
+    #[inline]
+    pub fn state(&self, p: LocalPos) -> BlockState {
+        self.state_index(p.index())
+    }
+
+    #[inline]
+    pub fn state_index(&self, i: usize) -> BlockState {
         self.palette[self.read_index(i)]
     }
 
-    /// Sets a block, growing the palette (and repacking) if it is new. Returns
-    /// the previous block.
+    /// Sets a plain block (natural colour, full shape). Returns the previous
+    /// block type.
     pub fn set(&mut self, p: LocalPos, id: BlockId) -> BlockId {
+        self.set_state(p, BlockState::plain(id)).id
+    }
+
+    /// Sets a block state, growing the palette (and repacking) if it is new.
+    /// Returns the previous state.
+    pub fn set_state(&mut self, p: LocalPos, state: BlockState) -> BlockState {
         let i = p.index();
-        let old = self.get_index(i);
-        if old == id {
+        let old = self.state_index(i);
+        if old == state {
             return old;
         }
-        let idx = match self.palette.iter().position(|&b| b == id) {
+        let idx = match self.palette.iter().position(|&b| b == state) {
             Some(idx) => idx,
             None => {
-                self.palette.push(id);
+                self.palette.push(state);
                 let needed = bits_for(self.palette.len());
                 if needed > self.bits {
                     self.repack(needed);
@@ -156,14 +189,21 @@ impl Chunk {
         self.palette = old.palette;
     }
 
-    /// The single block this chunk is made of, if it is uniform. Exact only
-    /// after [`Chunk::compact`] (dead palette entries hide uniformity).
+    /// The single block type this chunk is made of, if it is uniform in
+    /// state. Exact only after [`Chunk::compact`] (dead palette entries hide
+    /// uniformity).
     pub fn uniform(&self) -> Option<BlockId> {
-        (self.palette.len() == 1).then(|| self.palette[0])
+        (self.palette.len() == 1).then(|| self.palette[0].id)
     }
 
-    pub fn palette(&self) -> &[BlockId] {
+    pub fn palette(&self) -> &[BlockState] {
         &self.palette
+    }
+
+    /// Whether any voxel may be of type `id` (palette entries can be dead
+    /// until [`Chunk::compact`], so `true` is a "maybe").
+    pub fn may_contain(&self, id: BlockId) -> bool {
+        self.palette.iter().any(|s| s.id == id)
     }
 
     pub fn bits(&self) -> u8 {
@@ -182,25 +222,35 @@ impl Chunk {
         if used.iter().all(|&u| u) {
             return;
         }
-        let dense = self.to_dense();
-        *self = Self::from_dense(&dense);
+        let dense = self.to_dense_states();
+        *self = Self::from_dense_states(&dense);
     }
 
+    /// Every voxel's type, in `LocalPos::index` order.
     pub fn to_dense(&self) -> Vec<BlockId> {
         (0..CHUNK_VOLUME).map(|i| self.get_index(i)).collect()
     }
 
-    /// Serializes (after compacting a copy) and LZ4-compresses. Format v1:
-    /// `version u8 | palette_len u16 | palette u16* | bits u8 | words u64*`,
-    /// little-endian, then LZ4 with the uncompressed size prepended.
+    /// Every voxel's state, in `LocalPos::index` order.
+    pub fn to_dense_states(&self) -> Vec<BlockState> {
+        (0..CHUNK_VOLUME).map(|i| self.state_index(i)).collect()
+    }
+
+    /// Serializes (after compacting a copy) and LZ4-compresses. Format v2:
+    /// `version u8 | palette_len u16 | (id u16, colour u8, shape u16)* |
+    /// bits u8 | words u64*`, little-endian, then LZ4 with the uncompressed
+    /// size prepended. Version 1 (palette of bare `id u16`) still decodes, as
+    /// natural colour and full shape.
     pub fn encode(&self) -> Vec<u8> {
         let mut c = self.clone();
         c.compact();
-        let mut raw = Vec::with_capacity(4 + c.palette.len() * 2 + c.words.len() * 8);
+        let mut raw = Vec::with_capacity(4 + c.palette.len() * 5 + c.words.len() * 8);
         raw.push(CHUNK_FORMAT_VERSION);
         raw.extend_from_slice(&(c.palette.len() as u16).to_le_bytes());
         for b in &c.palette {
-            raw.extend_from_slice(&b.0.to_le_bytes());
+            raw.extend_from_slice(&b.id.0.to_le_bytes());
+            raw.push(b.colour.0);
+            raw.extend_from_slice(&b.shape.0.to_le_bytes());
         }
         raw.push(c.bits);
         for w in &c.words {
@@ -212,8 +262,8 @@ impl Chunk {
     /// Decodes and fully validates bytes that came from disk or the network.
     /// Never panics on malformed input.
     pub fn decode(bytes: &[u8]) -> Result<Self, ChunkDecodeError> {
-        // Largest legal payload: 32768 distinct ids at 16 bits.
-        const MAX_RAW: usize = 4 + CHUNK_VOLUME * 2 + CHUNK_VOLUME * 8;
+        // Largest legal payload: a palette entry per voxel at 16 bits.
+        const MAX_RAW: usize = 4 + CHUNK_VOLUME * 5 + CHUNK_VOLUME * 8;
         if bytes.len() < 4 {
             return Err(ChunkDecodeError::Truncated);
         }
@@ -224,7 +274,7 @@ impl Chunk {
         let raw = lz4_flex::decompress_size_prepended(bytes).map_err(|_| ChunkDecodeError::Compression)?;
         let mut r = Reader { b: &raw, at: 0 };
         let version = r.u8()?;
-        if version != CHUNK_FORMAT_VERSION {
+        if version != 1 && version != CHUNK_FORMAT_VERSION {
             return Err(ChunkDecodeError::Version(version));
         }
         let len = r.u16()? as usize;
@@ -233,7 +283,16 @@ impl Chunk {
         }
         let mut palette = Vec::with_capacity(len);
         for _ in 0..len {
-            palette.push(BlockId(r.u16()?));
+            let id = BlockId(r.u16()?);
+            palette.push(if version == 1 {
+                BlockState::plain(id)
+            } else {
+                BlockState {
+                    id,
+                    colour: Colour(r.u8()?),
+                    shape: Shape(r.u16()?),
+                }
+            });
         }
         let bits = r.u8()?;
         if bits != bits_for(len) {
@@ -401,12 +460,55 @@ mod tests {
     }
 
     #[test]
+    fn colours_and_shapes_are_separate_palette_entries_and_round_trip() {
+        let mut c = Chunk::filled(BlockId(2));
+        let red = BlockState {
+            id: BlockId(2),
+            colour: Colour(17),
+            shape: Shape::FULL,
+        };
+        let cut = BlockState {
+            id: BlockId(2),
+            colour: Colour(17),
+            shape: Shape(0x1_05),
+        };
+        c.set_state(LocalPos::new(1, 2, 3), red);
+        c.set_state(LocalPos::new(4, 5, 6), cut);
+        assert_eq!(c.palette().len(), 3);
+        assert_eq!(c.get(LocalPos::new(1, 2, 3)), BlockId(2), "the type ignores colour");
+        assert_eq!(c.state(LocalPos::new(1, 2, 3)), red);
+        let back = Chunk::decode(&c.encode()).unwrap();
+        assert_eq!(back.to_dense_states(), c.to_dense_states());
+        // A plain set clears colour and shape.
+        assert_eq!(c.set(LocalPos::new(1, 2, 3), BlockId(2)), BlockId(2));
+        assert_eq!(c.state(LocalPos::new(1, 2, 3)), BlockState::plain(BlockId(2)));
+    }
+
+    #[test]
+    fn version_1_chunks_still_decode_as_plain_blocks() {
+        let mut raw = vec![1u8];
+        raw.extend_from_slice(&2u16.to_le_bytes());
+        for id in [0u16, 7] {
+            raw.extend_from_slice(&id.to_le_bytes());
+        }
+        raw.push(1);
+        for i in 0..words_for(1) {
+            raw.extend_from_slice(&(if i == 0 { 1u64 } else { 0 }).to_le_bytes());
+        }
+        let c = Chunk::decode(&lz4_flex::compress_prepend_size(&raw)).unwrap();
+        assert_eq!(c.state_index(0), BlockState::plain(BlockId(7)));
+        assert_eq!(c.get_index(1), BlockId::AIR);
+    }
+
+    #[test]
     fn decode_rejects_index_outside_palette() {
         // Palette of 3 at 2 bits: index 3 is representable but invalid.
         let mut raw = vec![CHUNK_FORMAT_VERSION];
         raw.extend_from_slice(&3u16.to_le_bytes());
         for id in [0u16, 1, 2] {
             raw.extend_from_slice(&id.to_le_bytes());
+            raw.push(0);
+            raw.extend_from_slice(&0u16.to_le_bytes());
         }
         raw.push(2);
         for _ in 0..words_for(2) {

@@ -178,7 +178,7 @@ impl TestClient {
             ServerMsg::BlockChanged { pos, block } | ServerMsg::EditResult { pos, block, .. } => {
                 let pos = self.shape().wrap_block(*pos);
                 if let Some(c) = self.chunks.get_mut(&pos.chunk()) {
-                    c.set(pos.local(), *block);
+                    c.set_state(pos.local(), *block);
                 }
             }
             ServerMsg::Slots { changes } => {
@@ -292,7 +292,7 @@ impl TestClient {
             ServerMsg::EditResult { accepted, block, .. } => {
                 // Slots and notices for the edit follow its result.
                 self.settle().await;
-                (accepted, block)
+                (accepted, block.id)
             }
             _ => unreachable!(),
         }

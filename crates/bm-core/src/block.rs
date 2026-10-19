@@ -12,6 +12,55 @@ use std::collections::HashMap;
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
 pub struct BlockId(pub u16);
 
+/// An index into the colour palette (`assets/colours.toml`, ADR-0007). 0 is
+/// natural: the block as its texture is painted. Items carry their colour, so
+/// a block keeps it from the world to the pack and back.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
+pub struct Colour(pub u8);
+
+impl Colour {
+    pub const NATURAL: Colour = Colour(0);
+}
+
+/// How a block is cut by chisels (ADR-0007). 0 is the full cube; the
+/// encoding of cut shapes belongs to the chisel milestone.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
+pub struct Shape(pub u16);
+
+impl Shape {
+    pub const FULL: Shape = Shape(0);
+}
+
+/// Everything about one voxel: its type, colour and shape. Chunks store
+/// states in their palette, so colours and cuts cost no memory per voxel.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
+pub struct BlockState {
+    pub id: BlockId,
+    pub colour: Colour,
+    pub shape: Shape,
+}
+
+impl BlockState {
+    pub const AIR: BlockState = BlockState::plain(BlockId::AIR);
+
+    /// Natural colour, full cube.
+    pub const fn plain(id: BlockId) -> Self {
+        Self {
+            id,
+            colour: Colour::NATURAL,
+            shape: Shape::FULL,
+        }
+    }
+
+    pub const fn coloured(id: BlockId, colour: Colour) -> Self {
+        Self {
+            id,
+            colour,
+            shape: Shape::FULL,
+        }
+    }
+}
+
 impl BlockId {
     pub const AIR: BlockId = BlockId(0);
 
@@ -66,6 +115,14 @@ pub struct BlockDef {
     /// it cannot be broken.
     #[serde(default)]
     pub storage: u8,
+    /// Takes a palette colour (ADR-0007). Ores, machines and the like keep
+    /// their painted look.
+    #[serde(default = "yes")]
+    pub colourable: bool,
+}
+
+fn yes() -> bool {
+    true
 }
 
 /// What a block is made of, for tools (`ToolClass::suits`).

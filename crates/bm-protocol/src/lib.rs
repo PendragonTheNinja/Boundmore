@@ -16,13 +16,13 @@
 //! decoders bound sizes, and the server validates content.
 
 use bm_core::{
-    BlockDef, BlockId, BlockPos, ChunkPos, DayCycle, Inventory, ItemDef, ItemStack, MoveConfig, PlanetLook,
-    PlanetShape, PlayerInput, PlayerState, PlotPos, Recipe, Station,
+    BlockDef, BlockPos, BlockState, ChunkPos, ColourPalette, DayCycle, Inventory, ItemDef, ItemStack, MoveConfig,
+    PlanetLook, PlanetShape, PlayerInput, PlayerState, PlotPos, Recipe, Station,
 };
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
 
 /// Bump on any change to a message below. Client and server must match.
-pub const PROTOCOL_VERSION: u32 = 8;
+pub const PROTOCOL_VERSION: u32 = 9;
 
 /// QUIC application protocol name; also refuses non-Boundmore peers early.
 pub const ALPN: &[u8] = b"boundmore/1";
@@ -159,6 +159,8 @@ pub struct Welcome {
     pub blocks: Vec<BlockDef>,
     /// The item catalogue (`ItemRegistry::from_defs` on the client).
     pub items: Vec<ItemDef>,
+    /// The colour palette (ADR-0007): ids 1 to 255, 0 is natural.
+    pub colours: ColourPalette,
     pub recipes: Vec<Recipe>,
     pub inventory: Inventory,
     pub movement: MoveConfig,
@@ -252,14 +254,14 @@ pub enum ServerMsg {
     },
     BlockChanged {
         pos: BlockPos,
-        block: BlockId,
+        block: BlockState,
     },
     /// Answer to the sender's `Edit`, carrying what the block now is: the
     /// predicted change if accepted, the true block if refused.
     EditResult {
         seq: u32,
         pos: BlockPos,
-        block: BlockId,
+        block: BlockState,
         accepted: bool,
     },
     PlayerJoined {
@@ -419,7 +421,7 @@ mod tests {
             ServerMsg::EditResult {
                 seq: 9,
                 pos: BlockPos::new(1, 2, 3),
-                block: BlockId(4),
+                block: BlockState::coloured(bm_core::BlockId(4), bm_core::Colour(9)),
                 accepted: false,
             },
         ];
@@ -503,6 +505,7 @@ mod tests {
                 .collect(),
             blocks: blocks.defs().to_vec(),
             items: items.defs().to_vec(),
+            colours: ColourPalette::builtin(),
             recipes: recipes.recipes.clone(),
             inventory: Inventory::default(),
             movement: MoveConfig::default(),

@@ -11,18 +11,18 @@ What a Boundless player expects to find, and where each stands. "Ours" is the Bo
 | Many small planets | Distinct worlds by tier, climate, hazards, resources; seen hanging in each other's skies | **Done** for four kinds in one universe, visible in each other's skies (M4). More kinds and hazards later |
 | Worlds that wrap | No edge; walk round the world | **Done** (ADR-0002) |
 | Freeform building | Every block editable, huge palette, colours | **Done** for placing and breaking; palette and colours: M2 |
-| Shaped blocks (chisel) | Slopes, bevels, cuts on any block | M6 |
+| Shaped blocks (chisel) | Slopes, bevels, cuts on any block | M7 |
 | Mining by hand and tool | Hold to break; harder blocks, better tools; AoE tools later | **Done**: hold-to-break by hardness (M2), stone and copper tools that wear (M3). AoE tools later |
 | Light and darkness | Dark caves, torches, glowing ores, day and night | **Done** (M2) |
 | Inventory and crafting | Gather, craft at machines that run over time, upgrade with power | **Done** for inventory, hand crafting, workbench and furnace (M3). Power and more machines later |
 | Plots and beacons | Claim land so builds are protected; costs upkeep | **Done** for claims (M3). **Changed on purpose:** no fuel; a claim lapses after 6 months without a visit and its contents go back to the owner (the research below) |
-| Settlements | Plots near each other form ranked settlements | M7 |
-| Portals and travel | Player-built portals link planets; warps; grapples | Warp shrines at each spawn (M4, free for now). Player-built portals need fuel, less punishing than Boundless (Nathan, 2026-10-19); design from `research/boundless-mechanics.md`. Grapples: M6 |
-| Player economy | Shop stands and request baskets; almost nothing sold by NPCs | M7 |
-| Hunting and creatures | Creatures per planet with drops; world bosses | M8 |
-| Meteors and events | Meteor strikes with special drops; temporary worlds that appear for a while | M8 |
-| Guilds | Shared plots, permissions, guild buffs | M7 |
-| Sovereign worlds | Players rent whole planets | M9 |
+| Settlements | Plots near each other form ranked settlements | M8 |
+| Portals and travel | Player-built portals link planets; warps; grapples | Warp shrines at each spawn (M4, free for now). Player-built portals need fuel, less punishing than Boundless (Nathan, 2026-10-19); design from `research/boundless-mechanics.md`. Grapples: M7 |
+| Player economy | Shop stands and request baskets; almost nothing sold by NPCs | M8 |
+| Hunting and creatures | Creatures per planet with drops; world bosses | M9 |
+| Meteors and events | Meteor strikes with special drops; temporary worlds that appear for a while | M9 |
+| Guilds | Shared plots, permissions, guild buffs | M8 |
+| Sovereign worlds | Players rent whole planets | M10 |
 | Character progression | Levels, skills, attributes | M3 onward |
 
 ## Milestones
@@ -37,13 +37,15 @@ What a Boundless player expects to find, and where each stands. "Ours" is the Bo
 
 **M5: Keep and talk.** Storage chests and chat (local, planet, universe, whispers), ahead of the larger milestones because the forum research ranks broken chat among the reasons players left. See `milestones/05-keep-and-talk.md`.
 
-**M6: Movement and shape.** Chisels and shaped blocks (slopes in terrain too), grapples, swimming improvements, far views (level-of-detail terrain).
+**M6: Colour and ash.** Block states with colour (ADR-0007), a 255-colour palette, planet colours, coloured ash when a claim lapses, reclaim. See `milestones/06-colour-and-ash.md`.
 
-**M7: Society.** Shop stands, request baskets, settlements and their ranking, guilds, mail.
+**M7: Movement and shape.** Chisels and shaped blocks (slopes in terrain too), grapples, swimming improvements, far views (level-of-detail terrain).
 
-**M8: Life.** Creatures, combat, hunting, meteors, temporary worlds.
+**M8: Society.** Shop stands, request baskets, settlements and their ranking, guilds, mail.
 
-**M9: Ownership.** Rentable worlds, world customisation, and the operations work for running it as a service.
+**M9: Life.** Creatures, combat, hunting, meteors, temporary worlds.
+
+**M10: Ownership.** Rentable worlds, world customisation, and the operations work for running it as a service.
 
 ## Player research
 
