@@ -136,6 +136,11 @@ impl Claims {
         self.by_id.get(&id)
     }
 
+    /// Every claim on the planet.
+    pub fn all(&self) -> impl Iterator<Item = &Claim> {
+        self.by_id.values()
+    }
+
     /// The claim holding a block, if any.
     pub fn at_block(&self, p: BlockPos) -> Option<&Claim> {
         self.at(PlotPos::of(p, self.shape))

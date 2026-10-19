@@ -49,6 +49,10 @@ const CLAIMS: TableDefinition<u32, &[u8]> = TableDefinition::new("claims");
 /// M5 without a version bump: a new table changes nothing already saved, and
 /// `Store::open` creates it in an older save.
 const STORAGE: TableDefinition<&[u8], &[u8]> = TableDefinition::new("planet_storage");
+/// Lowercased account name -> [`SavedReclaim`]: what came back from that
+/// account's lapsed claims. Added in M6 without a version bump, as `STORAGE`
+/// was: a new table changes nothing already saved.
+const RECLAIM: TableDefinition<&str, &[u8]> = TableDefinition::new("reclaim");
 
 /// Save version 1 and 2 tables, read only to upgrade, then deleted.
 const V1_PLAYERS: TableDefinition<&str, &[u8]> = TableDefinition::new("players");
@@ -230,9 +234,18 @@ pub struct PlayerData {
     /// Where on it. None: never placed there (starts at its shrine).
     pub state: Option<PlayerState>,
     pub inventory: Vec<Option<SavedStack>>,
-    /// Unix seconds when the player was last connected; 0 if never recorded.
-    /// Claims lapse after `claim_keep_days` without a visit (not yet enforced).
+    /// Unix seconds when the player was last connected; 0 if never recorded
+    /// (the server then counts from when it first sees the 0). Their claims
+    /// lapse after `claim_keep_days` without a visit.
     pub last_seen: u64,
+}
+
+/// What waits for an account from its lapsed claims: the items, and the
+/// notices it has not read yet (it was away when they lapsed).
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+pub struct SavedReclaim {
+    pub items: Vec<SavedStack>,
+    pub notices: Vec<String>,
 }
 
 /// A queued station job, saved with its recipe spelled out so it can be
@@ -436,6 +449,7 @@ impl Store {
         tx.open_table(STATIONS)?;
         tx.open_table(CLAIMS)?;
         tx.open_table(STORAGE)?;
+        tx.open_table(RECLAIM)?;
         tx.commit()?;
         Ok(Self { db: Arc::new(db) })
     }
@@ -658,6 +672,22 @@ impl Store {
         Ok(out)
     }
 
+    /// Every account's reclaim. A corrupt record is reported and skipped
+    /// (left on disk untouched).
+    pub fn reclaims(&self) -> Result<Vec<(String, SavedReclaim)>> {
+        let tx = self.db.begin_read()?;
+        let t = tx.open_table(RECLAIM)?;
+        let mut out = Vec::new();
+        for row in t.iter()? {
+            let (k, v) = row?;
+            match postcard::from_bytes(v.value()) {
+                Ok(r) => out.push((k.value().to_string(), r)),
+                Err(e) => tracing::error!("the reclaim of `{}` is corrupt ({e}); skipped", k.value()),
+            }
+        }
+        Ok(out)
+    }
+
     /// Every claim in the universe, and the next free claim id (above every
     /// stored key, even a corrupt one, so a new claim never overwrites a
     /// record).
@@ -724,6 +754,13 @@ impl Store {
                 match c {
                     Some(c) => claims.insert(*id, postcard::to_stdvec(c)?.as_slice())?,
                     None => claims.remove(*id)?,
+                };
+            }
+            let mut reclaim = tx.open_table(RECLAIM)?;
+            for (key, r) in &batch.reclaim {
+                match r {
+                    Some(r) => reclaim.insert(key.as_str(), postcard::to_stdvec(r)?.as_slice())?,
+                    None => reclaim.remove(key.as_str())?,
                 };
             }
         }
@@ -937,6 +974,8 @@ pub struct WriteBatch {
     pub claims: Vec<(u32, Option<SavedClaim>)>,
     /// Storage block slots by planet id; None deletes (it was emptied).
     pub storage: Vec<(u16, BlockPos, Option<SavedSlots>)>,
+    /// Reclaims by lowercased account name; None deletes (it was emptied).
+    pub reclaim: Vec<(String, Option<SavedReclaim>)>,
     /// The universe clock, so days and station jobs continue across restarts.
     pub clock: Option<u64>,
     /// Each is signalled once the batch is durable (shutdown waits on one;
@@ -952,6 +991,7 @@ impl WriteBatch {
             && self.stations.is_empty()
             && self.claims.is_empty()
             && self.storage.is_empty()
+            && self.reclaim.is_empty()
     }
 }
 
@@ -1148,6 +1188,13 @@ mod tests {
                 stations: vec![(2, spot, Some(station.clone()))],
                 claims: vec![(4, Some(claim.clone()))],
                 storage: vec![(2, spot, Some(vec![None, Some(stack.clone())]))],
+                reclaim: vec![(
+                    "pendragon".into(),
+                    Some(SavedReclaim {
+                        items: vec![stack.clone()],
+                        notices: vec!["gone".into()],
+                    }),
+                )],
                 clock: Some(777),
                 done: Vec::new(),
             })
@@ -1175,20 +1222,32 @@ mod tests {
         assert_eq!(p.state.unwrap().pos, DVec3::new(1.0, 2.0, 3.0));
         assert_eq!(p.inventory, vec![Some(stack.clone())]);
         assert_eq!(s.stations(2).unwrap(), vec![(spot, station)]);
-        assert_eq!(s.storage(2).unwrap(), vec![(spot, vec![None, Some(stack)])]);
+        assert_eq!(s.storage(2).unwrap(), vec![(spot, vec![None, Some(stack.clone())])]);
         assert!(s.storage(3).unwrap().is_empty());
         assert!(s.stations(1).unwrap().is_empty() && s.stations(3).unwrap().is_empty());
         assert_eq!(s.claims().unwrap(), (vec![(4, claim)], 5));
         assert_eq!(s.clock().unwrap(), 777);
+        assert_eq!(
+            s.reclaims().unwrap(),
+            vec![(
+                "pendragon".to_string(),
+                SavedReclaim {
+                    items: vec![stack.clone()],
+                    notices: vec!["gone".into()],
+                }
+            )]
+        );
 
         // Deletions.
         s.write(&WriteBatch {
             stations: vec![(2, spot, None)],
             claims: vec![(4, None)],
             storage: vec![(2, spot, None)],
+            reclaim: vec![("pendragon".into(), None)],
             ..Default::default()
         })
         .unwrap();
+        assert!(s.reclaims().unwrap().is_empty());
         assert!(s.stations(2).unwrap().is_empty());
         assert!(s.storage(2).unwrap().is_empty());
         assert_eq!(s.claims().unwrap(), (vec![], 1));
