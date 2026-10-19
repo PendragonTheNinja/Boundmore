@@ -1014,10 +1014,12 @@ pub fn travelling(ctx: &egui::Context, a: &Arrival, alpha: f32, time: f64) {
         .interactable(false)
         .show(ctx, |ui| {
             let painter = ui.painter();
+            // Opaque on the way (the old planet is gone, the new one not yet
+            // here), fading as we land.
             painter.rect_filled(
                 screen,
                 0,
-                Color32::from_rgba_unmultiplied(6, 5, 12, (240.0 * alpha) as u8),
+                Color32::from_rgba_unmultiplied(6, 5, 12, (255.0 * alpha) as u8),
             );
             let centre = screen.center() - vec2(0.0, 60.0);
             // A slow ring of motes around the destination.
