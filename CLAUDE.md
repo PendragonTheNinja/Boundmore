@@ -7,7 +7,7 @@ Read this file in full before changing anything. If a request conflicts with it,
 **Boundmore** is a spiritual successor to *Boundless* (Wonderstruck, 2018): a persistent online voxel universe of many small planets, built and traded on by its players. The goal is that Boundless players feel at home (same systems, same rhythm) in a game with its own art, names and world, that is finished and keeps being updated, and that runs better than the original.
 
 Rules of the spirit:
-- **Mechanics may follow Boundless closely; expression may not.** Never copy its art, textures, sounds, text, names (no "gleam", "Oortians", "Hunting Grounds") or code. Do not decompile or read its client. Study it as a player does.
+- **Mechanics may follow Boundless closely; expression may not.** Never copy its art, textures, sounds, text, names (no "gleam", "Oortians", "Hunting Grounds") or code. Study it as a player does. Game data the community publishes (fan sites such as boundless.mayumi.fi, pfiffel.com/bl, boundlessinfo.com, including the data files those sites host, which may be fetched and decoded) may be used for mechanics and numbers, which should match as closely as possible (Nathan, 2026-10-19); take facts (stats, formulas, rules), never its names, text, art or code wholesale.
 - **Feel numbers are calibration targets**, not guesses to defend: `docs/feel.md` lists every one and what to check it against in play. Nathan plays Boundless; his reports beat our assumptions.
 
 Owner: Nathan (`PendragonTheNinja`). Solo project, multi-year, no deadline. Do it right over doing it fast.
