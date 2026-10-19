@@ -812,6 +812,8 @@ impl App {
                     .collect();
             }
             ServerMsg::Welcome(_) | ServerMsg::Refused { .. } | ServerMsg::Travel(_) | ServerMsg::Storage(_) => {}
+            // M8: portals (ADR-0009), not built yet.
+            ServerMsg::Portal(_) | ServerMsg::Teleport { .. } | ServerMsg::TokenNames { .. } => {}
         }
     }
 

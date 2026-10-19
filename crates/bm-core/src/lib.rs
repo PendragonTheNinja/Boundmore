@@ -14,6 +14,7 @@ pub mod look;
 pub mod movement;
 pub mod planet;
 pub mod plots;
+pub mod portal;
 pub mod raycast;
 pub mod recipes;
 pub mod shape;
@@ -35,6 +36,7 @@ pub use movement::{
 };
 pub use planet::PlanetShape;
 pub use plots::{PLOT_SIZE, PlotPos};
+pub use portal::{FrameError, PortalAxis, PortalFrame, find_frame};
 pub use raycast::{RayHit, raycast, raycast_shaped};
 pub use recipes::{Recipe, RecipeBook, RecipeError};
 pub use shape::{ShapeFamily, edge_pairs, octant};

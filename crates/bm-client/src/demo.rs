@@ -773,6 +773,8 @@ impl Demo {
                     .push_back(NetEvent::Msg(ServerMsg::Chat { lines: vec![line] }));
             }
             ClientMsg::CollectReclaim { .. } => self.collect_reclaim(),
+            // M8: portals (ADR-0009), not built yet.
+            ClientMsg::OpenPortal { .. } | ClientMsg::Portal { .. } => {}
             ClientMsg::StartBreak { .. } | ClientMsg::Hello { .. } => {}
         }
         self.slots_since(&before);

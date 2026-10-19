@@ -124,3 +124,15 @@ grapple = { range = 26.0, shot_speed = 65.0, reel_speed = 7.0, durability = 700 
 name = "iron_hookshot"
 stack = 1
 grapple = { range = 20.0, shot_speed = 70.0, reel_speed = 16.0, hookshot = true, durability = 500 }
+
+# Portals (ADR-0009).
+
+[[item]]
+name = "wayshard"
+
+# Made at a portal, used up linking another of the same size; its tag is the
+# portal it was made at.
+[[item]]
+name = "portal_token"
+stack = 1
+portal_token = true

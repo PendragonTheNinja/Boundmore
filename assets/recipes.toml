@@ -167,3 +167,10 @@ output = "iron_hookshot"
 inputs = [["iron_ingot", 3], ["copper_ingot", 2], ["timber", 2]]
 station = "workbench"
 seconds = 6.0
+
+[[recipe]]
+output = "portal_conduit"
+count = 2
+inputs = [["stone", 4], ["copper_ingot", 1], ["wayshard", 1]]
+station = "workbench"
+seconds = 4.0

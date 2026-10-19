@@ -197,6 +197,7 @@ impl SavedStack {
             count: self.count,
             wear: self.wear,
             colour,
+            tag: 0,
         })
     }
 }

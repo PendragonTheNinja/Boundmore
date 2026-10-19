@@ -41,7 +41,8 @@
 [[kind]]
 name = "temperate"
 tier = 1
-# Generation: every default (coal and copper, no iron).
+# Generation: every default but the ores: coal and copper as by default
+# (in that order, so they lie where they always did), then wayshards.
 [kind.look]
 day_zenith = [0.08, 0.26, 0.78]
 day_horizon = [0.42, 0.62, 0.90]
@@ -56,6 +57,24 @@ gravel = ["Stone", "Fog", "Pewter", "Silver", "Muted Amber", "Muted Cobalt"]
 stone = ["Stone", "Pewter", "Fog", "Iron", "Muted Cobalt", "Muted Violet", "Muted Azure", "Muted Amber"]
 deep_stone = ["Iron", "Smoke", "Ash", "Pewter", "Muted Violet", "Muted Cobalt"]
 snow = ["Snow", "Bone", "Pearl", "Misty Azure", "Misty Sky", "Misty Cobalt"]
+[kind.generation]
+[[kind.generation.ores]]
+block = "coal_seam"
+size = 14.0
+threshold = 0.52
+min_y = 13
+min_depth = 6
+[[kind.generation.ores]]
+block = "copper_vein"
+size = 12.0
+threshold = 0.58
+max_y = 149
+[[kind.generation.ores]]
+block = "wayshard_vein"
+size = 6.0
+threshold = 0.64
+max_y = 68
+min_depth = 24
 
 [[kind]]
 name = "arid"
@@ -103,6 +122,12 @@ threshold = 0.60
 min_y = 13
 max_y = 96
 min_depth = 10
+[[kind.generation.ores]]
+block = "wayshard_vein"
+size = 6.0
+threshold = 0.64
+max_y = 68
+min_depth = 24
 
 [[kind]]
 name = "frozen"
@@ -148,6 +173,12 @@ threshold = 0.60
 min_y = 13
 max_y = 96
 min_depth = 10
+[[kind.generation.ores]]
+block = "wayshard_vein"
+size = 6.0
+threshold = 0.64
+max_y = 68
+min_depth = 24
 
 [[kind]]
 name = "lush"
@@ -193,3 +224,9 @@ threshold = 0.55
 min_y = 13
 max_y = 96
 min_depth = 10
+[[kind.generation.ores]]
+block = "wayshard_vein"
+size = 6.0
+threshold = 0.64
+max_y = 68
+min_depth = 24

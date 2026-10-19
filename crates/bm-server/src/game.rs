@@ -637,6 +637,8 @@ impl Game {
                 ClientMsg::StorageMove { pos, from, to, count } => self.storage_move(id, pos, from, to, count),
                 ClientMsg::Chat { channel, text } => self.chat(id, channel, text),
                 ClientMsg::CollectReclaim { shrine } => self.collect_reclaim(id, shrine),
+                // M8: portals (ADR-0009), not built yet.
+                ClientMsg::OpenPortal { .. } | ClientMsg::Portal { .. } => {}
                 ClientMsg::Hello { .. } => {}
             },
         }

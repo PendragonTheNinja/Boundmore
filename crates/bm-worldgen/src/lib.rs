@@ -1083,6 +1083,14 @@ mod tests {
         Generator::new(PlanetShape::new(64, 12), cfg, &blocks).unwrap()
     }
 
+    /// A kind's settings as planets made before M8 saved them: the same, but
+    /// without the wayshard ore appended to every kind's list.
+    fn before_wayshards(mut cfg: PlanetGenConfig) -> PlanetGenConfig {
+        assert_eq!(cfg.ores.last().map(|o| o.block.as_str()), Some("wayshard_vein"));
+        cfg.ores.pop();
+        cfg
+    }
+
     fn all_kinds() -> Vec<(String, u8, Generator)> {
         let blocks = BlockRegistry::builtin();
         PlanetKinds::builtin(&blocks)
@@ -1197,7 +1205,15 @@ mod tests {
         // themselves, after checking main and the new chunk format give the
         // same value (the terrain did not change).
         assert_eq!(fingerprint_ids(&generator()), 0x4d00_41c8_06c3_f24c);
-        assert_eq!(fingerprint_ids(&kind("temperate")), 0x4d00_41c8_06c3_f24c);
+        let blocks = BlockRegistry::builtin();
+        let temperate = before_wayshards(PlanetKinds::builtin(&blocks).get("temperate").unwrap().generation(42));
+        assert_eq!(
+            temperate.ores,
+            generator().config().ores,
+            "temperate lists the default ores first"
+        );
+        let temperate = Generator::new(PlanetShape::new(64, 12), temperate, &blocks).unwrap();
+        assert_eq!(fingerprint_ids(&temperate), 0x4d00_41c8_06c3_f24c);
         let v1 = PlanetGenConfigV1 {
             seed: 42,
             sea_level: 128,
@@ -1218,7 +1234,7 @@ mod tests {
         let blocks = BlockRegistry::builtin();
         for (name, pinned) in PINNED_V2 {
             let k = PlanetKinds::builtin(&blocks);
-            let with = k.get(name).unwrap().generation(42);
+            let with = before_wayshards(k.get(name).unwrap().generation(42));
             assert!(!with.colours.is_empty(), "{name} has no colours");
             let without = PlanetGenConfig {
                 colours: BTreeMap::new(),
@@ -1252,9 +1268,52 @@ mod tests {
         ("lush", 0xbdf8_252a_fa20_5411),
     ];
 
+    /// M8 appended wayshards to every kind's ores (ADR-0009). Planets made
+    /// before keep their saved ore lists and so their terrain exactly (these
+    /// are generator 3's pins from before M8); the server appends the new ore
+    /// to them on opening, which may only turn rock into wayshard, never
+    /// move or remove anything else.
+    #[test]
+    fn appending_wayshards_only_turns_rock_into_wayshard() {
+        let blocks = BlockRegistry::builtin();
+        let kinds = PlanetKinds::builtin(&blocks);
+        let rock = ["stone", "deep_stone", "sandstone"].map(id);
+        let wayshard = id("wayshard_vein");
+        for (name, pinned) in PINNED_M7 {
+            let with = kinds.get(name).unwrap().generation(42);
+            let without = before_wayshards(with.clone());
+            let shape = PlanetShape::new(64, 12);
+            let old = Generator::new(shape, without, &blocks).unwrap();
+            let new = Generator::new(shape, with, &blocks).unwrap();
+            assert_eq!(fingerprint(&old), pinned, "{name} before wayshards");
+            let mut found = 0;
+            for x in 0..8 {
+                for y in 0..3 {
+                    let pos = ChunkPos::new(x * 7, y, x * 13);
+                    let (a, b) = (old.generate(pos).to_dense_states(), new.generate(pos).to_dense_states());
+                    for (a, b) in a.iter().zip(&b) {
+                        if a != b {
+                            assert!(rock.contains(&a.id) && b.id == wayshard, "{name}: {a:?} became {b:?}");
+                            found += 1;
+                        }
+                    }
+                }
+            }
+            assert!(found > 0, "{name} has no wayshards in its deep rock");
+        }
+    }
+    const PINNED_M7: [(&str, u64); 4] = [
+        ("temperate", 0xdcf6_1868_0cb9_14df),
+        ("arid", 0xc1f7_d350_fed3_af65),
+        ("frozen", 0x04e5_7bc8_b505_2127),
+        ("lush", 0xc4ba_2a84_be17_4d24),
+    ];
+
     /// Pins what the generator produces for every built-in kind, colours
     /// included. If this fails the terrain changed: bump GENERATOR_VERSION
-    /// and re-pin, in the same commit.
+    /// and re-pin, in the same commit (a change to a kind's data alone, such
+    /// as M8's appended ore, re-pins without a bump only if planets saved
+    /// with the old data still make their old terrain).
     #[test]
     fn terrain_fingerprint_is_pinned() {
         let mut got: Vec<(String, u64)> = vec![("default".into(), fingerprint(&generator()))];
@@ -1265,13 +1324,15 @@ mod tests {
     }
     // Generator 3 was re-pinned before release (2026-10-19) when colour
     // borders got their wobble and the temperate greens were retuned; no
-    // planet had been made by the earlier version 3 outside tests.
+    // planet had been made by the earlier version 3 outside tests. The kinds
+    // were re-pinned again for M8's wayshards (2026-10-19), with the old pins
+    // kept in `PINNED_M7` for planets made before.
     const PINNED: [(&str, u64); 5] = [
         ("default", 0x6bc9_e59d_8877_7736),
-        ("temperate", 0xdcf6_1868_0cb9_14df),
-        ("arid", 0xc1f7_d350_fed3_af65),
-        ("frozen", 0x04e5_7bc8_b505_2127),
-        ("lush", 0xc4ba_2a84_be17_4d24),
+        ("temperate", 0x3608_579d_2236_4d0b),
+        ("arid", 0x5876_767f_47f6_8745),
+        ("frozen", 0x9a68_3b2f_8daa_0e57),
+        ("lush", 0x3f72_0658_6120_3994),
     ];
 
     #[test]

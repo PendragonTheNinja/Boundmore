@@ -23,7 +23,7 @@ use glam::DVec3;
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
 
 /// Bump on any change to a message below. Client and server must match.
-pub const PROTOCOL_VERSION: u32 = 11;
+pub const PROTOCOL_VERSION: u32 = 12;
 
 /// QUIC application protocol name; also refuses non-Boundmore peers early.
 pub const ALPN: &[u8] = b"boundmore/1";
@@ -119,6 +119,28 @@ pub enum ClientMsg {
     /// as fit, at a warp shrine within reach. Answered with `Slots` and
     /// `Reclaim`.
     CollectReclaim { shrine: BlockPos },
+    /// Start (Some: any conduit of the portal, within reach) or stop (None)
+    /// watching a portal's window (ADR-0009); the server answers with
+    /// `Portal` and repeats it on every change, or a `Notice` saying why not.
+    OpenPortal { pos: Option<BlockPos> },
+    /// Act on the open portal (`pos`: any of its conduits or surface blocks).
+    Portal { pos: BlockPos, action: PortalAction },
+}
+
+/// What the portal window's buttons do.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub enum PortalAction {
+    /// A token bound to this portal, into the pack.
+    MakeToken,
+    /// Link with the portal the token in this pack slot was made at, using
+    /// the token up.
+    Link { slot: u8 },
+    /// Forget the link, closing both sides.
+    Unlink,
+    /// Up to `count` wayshards from this pack slot into the tank.
+    AddFuel { slot: u8, count: u16 },
+    /// Up to `count` wayshards from the tank into the pack.
+    TakeFuel { count: u16 },
 }
 
 /// A slot in the inventory or in an open storage block.
@@ -318,6 +340,42 @@ pub enum ServerMsg {
     Reclaim {
         items: Vec<ItemStack>,
     },
+    /// The watched portal's window (`OpenPortal`), on open and on every
+    /// change; None when it is gone, out of reach or no longer yours.
+    Portal(Option<PortalView>),
+    /// Moved on the same planet (through a portal): take `spawn` as where we
+    /// are at `tick`, a jump rather than a correction. Chunks, claims and
+    /// views carry on.
+    Teleport {
+        spawn: PlayerState,
+        tick: u64,
+    },
+    /// What each portal token this player can see is bound to, by tag: for
+    /// tooltips ("2 by 3, Verdance, near 812, 140"). Sent after the welcome
+    /// and whenever a token reaches their pack or open storage.
+    TokenNames {
+        names: Vec<(u32, String)>,
+    },
+}
+
+/// A portal as its window shows it.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct PortalView {
+    /// The portal's lowest corner.
+    pub corner: BlockPos,
+    pub width: u8,
+    pub height: u8,
+    /// Where it leads: "Verdance, near 812, 140"; None when unlinked.
+    pub link: Option<String>,
+    /// Linked and this side's tank can pay a trip.
+    pub open: bool,
+    /// Wayshards in the tank, and the most it holds.
+    pub fuel: u32,
+    pub capacity: u32,
+    /// What one charged trip through this side costs.
+    pub trip_cost: u32,
+    /// Hours a traveller's charge lasts before they pay again.
+    pub cooldown_hours: f32,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]

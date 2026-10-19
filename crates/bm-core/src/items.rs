@@ -65,6 +65,9 @@ pub enum ItemKind {
         hookshot: bool,
         durability: u16,
     },
+    /// Links two portals of the same size (ADR-0009): made at one, used up
+    /// at the other. The stack's `tag` is the portal it was made at.
+    PortalToken,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -143,7 +146,9 @@ impl ItemDef {
 
 /// Some number of one item in one slot. `wear` is durability spent (tools).
 /// `colour` is part of the item's identity: stacks of different colours never
-/// merge, and a placed block takes its stack's colour (ADR-0007).
+/// merge, and a placed block takes its stack's colour (ADR-0007). `tag` is
+/// what one stack is bound to (a portal token's portal, ADR-0009), 0 for
+/// nothing; stacks with different tags never merge either.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ItemStack {
     pub item: ItemId,
@@ -151,6 +156,8 @@ pub struct ItemStack {
     pub wear: u16,
     #[serde(default)]
     pub colour: Colour,
+    #[serde(default)]
+    pub tag: u32,
 }
 
 impl ItemStack {
@@ -164,13 +171,26 @@ impl ItemStack {
             count,
             wear: 0,
             colour,
+            tag: 0,
         }
     }
 
-    /// Whether `other` can be added onto this stack (same item and colour,
-    /// neither worn).
+    /// A single item bound to `tag` (a portal token's portal).
+    pub fn tagged(item: ItemId, tag: u32) -> Self {
+        Self {
+            tag,
+            ..Self::new(item, 1)
+        }
+    }
+
+    /// Whether `other` can be added onto this stack (same item, colour and
+    /// tag, neither worn).
     pub fn stacks_with(&self, other: &ItemStack) -> bool {
-        self.item == other.item && self.colour == other.colour && self.wear == 0 && other.wear == 0
+        self.item == other.item
+            && self.colour == other.colour
+            && self.tag == other.tag
+            && self.wear == 0
+            && other.wear == 0
     }
 }
 
@@ -212,6 +232,8 @@ struct ItemEntry {
     chisel: Option<ChiselEntry>,
     #[serde(default)]
     grapple: Option<GrappleEntry>,
+    #[serde(default)]
+    portal_token: bool,
     icon: Option<String>,
 }
 
@@ -302,6 +324,7 @@ impl ItemRegistry {
                     hookshot: g.hookshot,
                     durability: g.durability,
                 },
+                (None, None, None) if e.portal_token => ItemKind::PortalToken,
                 (None, None, None) => ItemKind::Material,
                 _ => return Err(ItemError::BadTool(e.name)),
             };
@@ -354,6 +377,7 @@ impl ItemRegistry {
                 {
                     return Err(ItemError::BadTool(d.name.clone()));
                 }
+                ItemKind::PortalToken if d.stack != 1 => return Err(ItemError::BadTool(d.name.clone())),
                 ItemKind::Block(b) if !blocks.contains(b) => return Err(ItemError::BadBlock(d.name.clone(), b.0)),
                 _ => {}
             }

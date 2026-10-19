@@ -155,6 +155,7 @@ impl Items {
                     lines.push(format!("{left} of {total} uses left"));
                 }
             }
+            ItemKind::PortalToken => lines.push("Links two portals of the same size".into()),
             ItemKind::Block(_) => lines.push("A block you can place".into()),
             ItemKind::Material => lines.push("A crafting material".into()),
         }
