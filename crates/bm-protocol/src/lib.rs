@@ -114,6 +114,10 @@ pub enum ClientMsg {
     },
     /// A chat line. `Whisper` goes to one player by name, anywhere.
     Chat { channel: Channel, text: String },
+    /// Take reclaimed items (from a lapsed claim) into the inventory, as many
+    /// as fit, at a warp shrine within reach. Answered with `Slots` and
+    /// `Reclaim`.
+    CollectReclaim { shrine: BlockPos },
 }
 
 /// A slot in the inventory or in an open storage block.
@@ -302,6 +306,11 @@ pub enum ServerMsg {
     /// the universe channel on joining.
     Chat {
         lines: Vec<ChatLine>,
+    },
+    /// What waits in this account's reclaim (items from lapsed claims), sent
+    /// after the welcome when not empty and whenever it changes.
+    Reclaim {
+        items: Vec<ItemStack>,
     },
 }
 
