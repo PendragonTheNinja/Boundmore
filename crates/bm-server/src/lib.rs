@@ -81,8 +81,26 @@ impl Drop for RunningServer {
     }
 }
 
+/// Chunk loading and generation run on rayon's global pool. Sized to every
+/// core, its workers preempt the game thread during a burst of joins (50 bots
+/// arriving at once caused most of the load test's slow ticks), so leave one
+/// core free for the 60 Hz loop. Only the first call in a process sizes it.
+fn reserve_a_core_for_the_game_loop() {
+    let cores = std::thread::available_parallelism().map_or(2, |n| n.get());
+    let workers = cores.saturating_sub(1).max(1);
+    if rayon::ThreadPoolBuilder::new()
+        .num_threads(workers)
+        .thread_name(|i| format!("loader-{i}"))
+        .build_global()
+        .is_ok()
+    {
+        tracing::info!("{workers} loader threads on {cores} cores");
+    }
+}
+
 pub fn start(cfg: ServerConfig) -> Result<RunningServer> {
     cfg.validate()?;
+    reserve_a_core_for_the_game_loop();
     std::fs::create_dir_all(&cfg.data_dir).with_context(|| format!("creating {}", cfg.data_dir.display()))?;
     let registry = Arc::new(BlockRegistry::builtin());
     let items = ItemRegistry::builtin(&registry);
