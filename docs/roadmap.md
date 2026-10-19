@@ -11,13 +11,13 @@ What a Boundless player expects to find, and where each stands. "Ours" is the Bo
 | Many small planets | Distinct worlds by tier, climate, hazards, resources; seen hanging in each other's skies | **Done** for four kinds in one universe, visible in each other's skies (M4). More kinds and hazards later |
 | Worlds that wrap | No edge; walk round the world | **Done** (ADR-0002) |
 | Freeform building | Every block editable, huge palette, colours | **Done** for placing and breaking; palette and colours: M2 |
-| Shaped blocks (chisel) | Slopes, bevels, cuts on any block | M7 |
+| Shaped blocks (chisel) | Slopes, bevels, cuts on any block | M7. Decided (Nathan, 2026-10-19): Boundless's square, slope and bevel families on the 2x2x2 corner grid, precise versions as better-tier tools, plus a round family (rounded edges and corners); lattice frames later; room in the shape encoding for 8 families. Terrain chisels as slopes only |
 | Mining by hand and tool | Hold to break; harder blocks, better tools; AoE tools later | **Done**: hold-to-break by hardness (M2), stone and copper tools that wear (M3). AoE tools later |
 | Light and darkness | Dark caves, torches, glowing ores, day and night | **Done** (M2) |
 | Inventory and crafting | Gather, craft at machines that run over time, upgrade with power | **Done** for inventory, hand crafting, workbench and furnace (M3). Power and more machines later |
 | Plots and beacons | Claim land so builds are protected; costs upkeep | **Done** for claims (M3). **Changed on purpose:** no fuel; a claim lapses after 6 months without a visit and its contents go back to the owner (the research below) |
 | Settlements | Plots near each other form ranked settlements | M8 |
-| Portals and travel | Player-built portals link planets; warps; grapples | Warp shrines at each spawn (M4, free for now). Player-built portals need fuel, less punishing than Boundless (Nathan, 2026-10-19); design from `research/boundless-mechanics.md`. Grapples: M7 |
+| Portals and travel | Player-built portals link planets; warps; grapples | Warp shrines at each spawn (M4, free for now). Player-built portals need fuel, less punishing than Boundless (Nathan, 2026-10-19). Proposed, awaiting Nathan's yes before building: a portal never disappears (dormant when empty), uses no fuel while idle, and charges each player at most once per portal per day, so back-and-forth trips cannot drain it. Grapples: M7 |
 | Player economy | Shop stands and request baskets; almost nothing sold by NPCs | M8 |
 | Hunting and creatures | Creatures per planet with drops; world bosses | M9 |
 | Meteors and events | Meteor strikes with special drops; temporary worlds that appear for a while | M9 |
@@ -50,3 +50,7 @@ What a Boundless player expects to find, and where each stands. "Ours" is the Bo
 ## Player research
 
 `research/boundless-forum-feedback.md` ranks what Boundless players liked, disliked and wished for, with ten candidate principles. Decided so far: no beacon fuel (claims lapse after 6 months away, nothing destroyed). Open: portal fuel (Nathan is more open to it than to beacon fuel), whether to move PvE earlier (the most-wished-for content), schematics that save a lapsed build so it can be placed again.
+
+## Later art passes
+
+- **Larger textures** (Nathan asked, 2026-10-19): make the procedural painters resolution-aware so the same recipes paint 64×64 with real added detail; offer a texture-quality setting (32 or 64). Above 64, hand-made or AI-made drop-in replacements fit better than procedural paint.
