@@ -52,7 +52,7 @@ cargo clippy --workspace --all-targets -- -D warnings
 cargo test --workspace
 ```
 
-Expected test counts (M6, 2026-10-19): bm-core 69, bm-worldgen 32, bm-mesh 12, bm-protocol 6, bm-server 39 unit + 17 end-to-end, bm-client 72, bm-texgen 5 (252 in all). CI (`.github/workflows/ci.yml`) runs the same on Linux and builds on Windows.
+Expected test counts (M7 part 1, 2026-10-19): bm-core 81, bm-worldgen 32, bm-mesh 22, bm-protocol 6, bm-server 42 unit + 20 end-to-end, bm-client 79, bm-texgen 5 (287 in all). CI (`.github/workflows/ci.yml`) runs the same on Linux and builds on Windows.
 
 **Upgrade check (any change to a saved or versioned format):** build the server from `main` in a separate worktree and target dir, let it create a universe (`bots --count 2 --planets 2` to make players), stop it, then open that data dir with the new server and read its log. Unit tests built from the new code missed exactly this once (2026-10-19: chunk format 2 refused every older universe).
 
@@ -65,7 +65,7 @@ Xvfb :99 -screen 0 1280x720x24 &
 DISPLAY=:99 VK_ICD_FILENAMES=/usr/share/vulkan/icd.d/lvp_icd.json WGPU_BACKEND=vulkan target/release/boundmore --name Tester --password testerpass1 --register --cert data/server.cert.der &
 DISPLAY=:99 import -window root shot.png
 ```
-`--name` with `--password` skips the login screen (drop `--register` once the account exists). `--demo-ui login|hud|inventory|crafting|station|claims|shrine|travel|travelling|sky|storage|chat|colours|coloured-icons|reclaim` opens a menu on an offline test patch, no server needed.
+`--name` with `--password` skips the login screen (drop `--register` once the account exists). `--demo-ui login|hud|inventory|crafting|station|claims|shrine|travel|travelling|sky|storage|chat|colours|coloured-icons|reclaim|shapes|chisel` opens a menu on an offline test patch, no server needed.
 Drive it with `xdotool` (`windowfocus --sync`, then plain `keydown`/`click`, not `--window`; to break, `mousedown 1`, wait the block's hardness, `mouseup 1`). `BOUNDMORE_TIME=0.77` (0 midnight, 0.5 noon) previews a time of day; `--assets DIR` points at another texture set. Frame rates there mean nothing; correctness and pictures do. Nathan's machine is the authority on performance and feel. Stop processes with `pkill -x boundmore`, never `pkill -f` (it matches your own shell); when parallel agents run servers, give each its own `--bind` port and data dir and stop processes by PID, or one agent kills another's server.
 
 ## Starting a session (do this first, every time)
@@ -96,13 +96,15 @@ Drive it with `xdotool` (`windowfocus --sync`, then plain `keydown`/`click`, not
 
 ## Status
 
+**Where we are (handoff, 2026-10-19):** milestones 1 to 6 and part 1 of 7 (chisels) are on `main`; Nathan has play-tested up to M3. Next: M7 part 2, grapples (`docs/milestones/07-movement-and-shape.md`; research §2 has Boundless's numbers), then player-built portals with the agreed fuel rule (roadmap), then a skills proposal for Nathan before building any progression. Open follow-up: share the chisel rules between client and server in bm-core (the client copies the server's refusal texts today).
+
 - **Milestone 1, Foundation: done** (2026-10-18). `docs/milestones/01-foundation.md`.
 - **Milestone 2, A World Worth Looking At: built** (2026-10-18), play-tested by Nathan (breaking, water fixed). `docs/milestones/02-a-world-worth-looking-at.md`.
 - **Milestone 3, Gather, Craft, Claim: built** (2026-10-18); Nathan's first test found the block-after-block break refusal (fixed, protocol 6). `docs/milestones/03-gather-craft-claim.md`.
 - **Milestone 4, Many Worlds: built, awaiting Nathan's play-test.** `docs/milestones/04-many-worlds.md`. One process hosts the universe (ADR-0006), one save file `data/universe.redb`.
 - **Milestone 5, Keep and Talk: built, awaiting Nathan's play-test.** `docs/milestones/05-keep-and-talk.md`: storage chests and chat. Inserted ahead of Movement and Shape; the roadmap was renumbered.
 - **Milestone 6, Colour and Ash: built, awaiting Nathan's play-test.** `docs/milestones/06-colour-and-ash.md`; block states with colour and shape (ADR-0007), 255-colour palette, planet colours (generator 3), claims lapse to coloured ash, reclaim at warp shrines.
-- **Next: Milestone 7, Movement and Shape** (chisels: square, slope, bevel, precise, and an experimental round family; grapples), then player-built portals (fuel rule agreed, see roadmap).
+- **Milestone 7, Movement and Shape: part 1 (chisels) built, awaiting Nathan's play-test; part 2 (grapples) next.** `docs/milestones/07-movement-and-shape.md`; shapes are a family plus eight octants (ADR-0008).
 - **Design research:** `docs/research/boundless-forum-feedback.md` (what Boundless players liked and disliked). Read it before designing any Boundless system. Decided from it so far: no beacon fuel; a claim lapses only after 6 months without a visit, and its contents go back to the owner (2026-10-18); on a lapse the build turns to ash blocks that keep each block's colour, as in Boundless (2026-10-19). Player-built portals will need fuel, but less punishing than Boundless's (2026-10-19).
 - **Mechanics research:** `docs/research/boundless-mechanics.md` (how Boundless's systems worked, from the forum and wiki). Sources reachable from the sandbox: the forum's Discourse JSON API (`https://forum.playboundless.com/search.json?q=...`, `/t/<id>.json`) and the fandom wiki's MediaWiki API only (`https://boundless.fandom.com/api.php?action=parse&page=<Title>&prop=wikitext&format=json`; page URLs return 403). The wiki is frozen around spring 2020: prefer later dev posts and patch notes. Read the relevant section before designing a system, and do the research yourself rather than asking Nathan for facts the forum holds.
 - Update this section and the milestone's Status section at the end of every working session.

@@ -1,6 +1,6 @@
 # Milestone 7: Movement and Shape
 
-*Spec written 2026-10-19. In progress (chisels first, grapples second).*
+*Spec written 2026-10-19. Part 1 (chisels) built 2026-10-19; part 2 (grapples) next.*
 
 ## Goal
 
@@ -25,9 +25,11 @@ Lattice and other forged chisel effects, undo history, chisel skills, smooth ram
 
 ## Status
 
-- [ ] Part 1 contract: shape encoding, chisel items and recipes, catalogue flags, protocol 10 (main session)
-- [ ] Shaped geometry, meshing and rendering (agent)
-- [ ] Server chisel edits, collision and targeting against shapes (agent)
-- [ ] Chisel art: tool icons (agent)
+- [x] Part 1 contract: shape encoding, chisel items and recipes, catalogue flags, protocol 10
+- [x] Shaped geometry, meshing and rendering: per-block templates per family and mask, a 16-byte shaped vertex (1/256 block positions, normals), its own pipelines; aiming with `raycast_shaped`; cut preview (yellow) and fill preview (blue); screenshots `docs/media/m7-*.png`
+- [x] Core and server: kept-octant collision, a 0.55 step-up (half blocks only, never a full block), shaped raycast, light through cut blocks, the chisel rules and wear, cut blocks give back the whole block, lapse ash keeps the cut shape
+- [x] Chisel icons
+- [x] Integrated: 287 tests, fmt and clippy clean
+- [ ] Follow-up: move the chisel rules into bm-core so client and server share one copy
 - [ ] Part 2: grapples
 - [ ] Nathan's play-test
