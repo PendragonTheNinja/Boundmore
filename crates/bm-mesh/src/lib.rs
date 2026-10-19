@@ -120,7 +120,11 @@ impl Padded {
         } else {
             center.to_dense_states().iter().map(|s| s.colour.0).collect()
         };
-        Self { blocks, colours, shapes }
+        Self {
+            blocks,
+            colours,
+            shapes,
+        }
     }
 }
 
@@ -679,7 +683,14 @@ impl ShapedVertex {
 /// surface: the cells around the point half a block out along `n`, weighted
 /// by nearness. Opaque cells occlude and lend no light. For a cube corner
 /// this is the classic four cells in front of it.
-fn shaped_sample(p: &Padded, light: &PaddedLight, flags: &BlockFlags, b: [i32; 3], q: [f32; 3], n: [f32; 3]) -> (u8, Light) {
+fn shaped_sample(
+    p: &Padded,
+    light: &PaddedLight,
+    flags: &BlockFlags,
+    b: [i32; 3],
+    q: [f32; 3],
+    n: [f32; 3],
+) -> (u8, Light) {
     let s: [f32; 3] = std::array::from_fn(|a| b[a] as f32 + q[a] + n[a] * 0.5 - 0.5);
     let c0: [i32; 3] = s.map(|v| v.floor() as i32);
     let f: [f32; 3] = std::array::from_fn(|a| s[a] - c0[a] as f32);
@@ -746,11 +757,7 @@ pub fn mesh_shaped(p: &Padded, light: &PaddedLight, flags: &BlockFlags, mesh: &m
                     }
                     for k in 0..3 {
                         let (ao, l) = shaped_sample(p, light, flags, b, t.pos[k], t.normal[k]);
-                        let pos = [
-                            x as f32 + t.pos[k][0],
-                            y as f32 + t.pos[k][1],
-                            z as f32 + t.pos[k][2],
-                        ];
+                        let pos = [x as f32 + t.pos[k][0], y as f32 + t.pos[k][1], z as f32 + t.pos[k][2]];
                         out.push(ShapedVertex::new(pos, t.normal[k], t.tex_face, ao, me, l, colour));
                     }
                 }
@@ -805,11 +812,9 @@ fn mesh_with(
             neighbor_index(0, 0, -1),
             neighbor_index(0, 0, 1),
         ];
-        let sealed = faces.iter().all(|&i| {
-            neighbors[i]
-                .and_then(uniform)
-                .is_some_and(|nb| flags.opaque(nb))
-        });
+        let sealed = faces
+            .iter()
+            .all(|&i| neighbors[i].and_then(uniform).is_some_and(|nb| flags.opaque(nb)));
         if flags.opaque(b) && sealed {
             return ChunkMesh::default();
         }
@@ -1168,7 +1173,10 @@ mod tests {
         let mut c = Chunk::empty();
         // A half slab (top four removed) on a stone, with a stone beside it.
         let top = 0b1111_0000;
-        c.set_state(LocalPos::new(5, 5, 5), cut(&r, "stone", bm_core::ShapeFamily::Square, top));
+        c.set_state(
+            LocalPos::new(5, 5, 5),
+            cut(&r, "stone", bm_core::ShapeFamily::Square, top),
+        );
         c.set(LocalPos::new(5, 4, 5), stone);
         c.set(LocalPos::new(6, 5, 5), stone);
         let mesh = mesh_chunk(&c, &NO_NEIGHBORS, BlockId::AIR, &r.flags());
@@ -1201,11 +1209,21 @@ mod tests {
         let shape = 0b1000_0000;
         let count = |nb: BlockState| {
             let mut c = Chunk::empty();
-            c.set_state(LocalPos::new(5, 5, 5), cut(&r, "glass", bm_core::ShapeFamily::Bevel, shape));
+            c.set_state(
+                LocalPos::new(5, 5, 5),
+                cut(&r, "glass", bm_core::ShapeFamily::Bevel, shape),
+            );
             c.set_state(LocalPos::new(4, 5, 5), nb);
             let m = mesh_chunk(&c, &NO_NEIGHBORS, BlockId::AIR, &r.flags());
             assert!(m.shaped_opaque.is_empty());
-            m.shaped_translucent.len()
+            // Only the block at x = 5's own triangles.
+            m.shaped_translucent
+                .chunks(3)
+                .filter(|t| {
+                    let x: u32 = t.iter().map(|v| v.position()[0]).sum();
+                    x > 3 * 5 * 256 || (x == 3 * 5 * 256 && t[0].normal()[0] < 0.0)
+                })
+                .count()
         };
         let whole = count(BlockState::plain(glass));
         let cut_beside = count(cut(&r, "glass", bm_core::ShapeFamily::Bevel, 1));
@@ -1229,7 +1247,7 @@ mod tests {
     fn shaped_vertices_pack_and_light_like_cubes() {
         let v = ShapedVertex::new(
             [31.5, 0.25, 17.0],
-            [0.0, -0.7071, 0.7071],
+            [0.0, -0.6, 0.8],
             5,
             2,
             BlockId(0xbeef),
@@ -1237,16 +1255,26 @@ mod tests {
             Colour(77),
         );
         assert_eq!(v.position(), [31 * 256 + 128, 64, 17 * 256]);
-        assert_eq!((v.tex_face(), v.ao(), v.block(), v.light(), v.colour()), (5, 2, BlockId(0xbeef), Light::new(9, 4), Colour(77)));
+        assert_eq!(
+            (v.tex_face(), v.ao(), v.block(), v.light(), v.colour()),
+            (5, 2, BlockId(0xbeef), Light::new(9, 4), Colour(77))
+        );
         let n = v.normal();
-        assert!((n[1] + 0.7071).abs() < 0.01 && (n[2] - 0.7071).abs() < 0.01 && n[0] == 0.0);
+        assert!((n[1] + 0.6).abs() < 0.01 && (n[2] - 0.8).abs() < 0.01 && n[0] == 0.0);
         assert_eq!(std::mem::size_of::<ShapedVertex>(), 16);
         // A cut block in open sky is lit at every vertex, and open.
         let mut c = Chunk::empty();
         let r = reg();
-        c.set_state(LocalPos::new(5, 5, 5), cut(&r, "stone", bm_core::ShapeFamily::Round, 0b1100_0000));
+        c.set_state(
+            LocalPos::new(5, 5, 5),
+            cut(&r, "stone", bm_core::ShapeFamily::Round, 0b1100_0000),
+        );
         let m = mesh_chunk(&c, &NO_NEIGHBORS, BlockId::AIR, &r.flags());
-        assert!(m.shaped_opaque.iter().all(|v| v.light() == Light::OPEN_SKY && v.ao() == 3));
+        assert!(
+            m.shaped_opaque
+                .iter()
+                .all(|v| v.light() == Light::OPEN_SKY && v.ao() == 3)
+        );
     }
 
     #[test]
@@ -1254,7 +1282,10 @@ mod tests {
         let r = reg();
         let stone = r.id("stone").unwrap();
         let mut c = Chunk::empty();
-        c.set_state(LocalPos::new(5, 5, 5), cut(&r, "stone", bm_core::ShapeFamily::Square, 0b1111_0000));
+        c.set_state(
+            LocalPos::new(5, 5, 5),
+            cut(&r, "stone", bm_core::ShapeFamily::Square, 0b1111_0000),
+        );
         for z in 4..7 {
             for y in 5..8 {
                 c.set(LocalPos::new(4, y, z), stone);

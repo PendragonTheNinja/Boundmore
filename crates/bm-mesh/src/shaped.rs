@@ -87,7 +87,11 @@ fn sub(a: V3, b: V3) -> V3 {
 }
 
 fn cross(a: V3, b: V3) -> V3 {
-    [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]]
+    [
+        a[1] * b[2] - a[2] * b[1],
+        a[2] * b[0] - a[0] * b[2],
+        a[0] * b[1] - a[1] * b[0],
+    ]
 }
 
 fn dot(a: V3, b: V3) -> f32 {
@@ -119,10 +123,10 @@ fn tri(out: &mut Vec<ShapeTri>, p: [V3; 3], n: [V3; 3], towards: V3, face: Optio
     if dot(g, g) < 1e-12 {
         return;
     }
-    let (p, n) = if dot(g, towards) < 0.0 {
-        ([p[0], p[2], p[1]], [n[0], n[2], n[1]])
+    let (p, n, g) = if dot(g, towards) < 0.0 {
+        ([p[0], p[2], p[1]], [n[0], n[2], n[1]], [-g[0], -g[1], -g[2]])
     } else {
-        (p, n)
+        (p, n, g)
     };
     out.push(ShapeTri {
         pos: p,
@@ -154,7 +158,9 @@ enum Cell {
     Empty,
     /// Filled behind a cut along the edge of axis `c` (the other two axes
     /// have kept neighbours).
-    Edge { c: usize },
+    Edge {
+        c: usize,
+    },
     /// Filled behind a cut across the corner (all three neighbours kept).
     Corner,
 }
@@ -335,7 +341,12 @@ fn octant_cells(removed: u8, fill: Option<Fill>, out: &mut Vec<ShapeTri>) {
                 let mut n = [0.0; 3];
                 n[a] = -1.0;
                 n[b] = -1.0;
-                let pts = [at(1.0, 0.0, 0.0), at(0.0, 1.0, 0.0), at(0.0, 1.0, 1.0), at(1.0, 0.0, 1.0)];
+                let pts = [
+                    at(1.0, 0.0, 0.0),
+                    at(0.0, 1.0, 0.0),
+                    at(0.0, 1.0, 1.0),
+                    at(1.0, 0.0, 1.0),
+                ];
                 flat_poly(out, &pts, f.dir(n), None);
             }
             (Cell::Corner, Some(Fill::Bevel)) => {
@@ -499,30 +510,31 @@ fn hull(pts: &[V3], out: &mut Vec<ShapeTri>) -> bool {
             .copied()
             .filter(|p| (dot(normal, *p) - offset).abs() < EPS)
             .collect();
-        // Sort around the centre, counter-clockwise about the normal.
-        let c = on.iter().fold([0.0; 3], |s, p| [s[0] + p[0], s[1] + p[1], s[2] + p[2]]);
-        let c = [c[0] / on.len() as f32, c[1] / on.len() as f32, c[2] / on.len() as f32];
-        let u = normalize(sub(on[0], c));
+        // The polygon's corners, counter-clockwise about the normal: a 2D
+        // hull in the plane (points inside it or along an edge dropped).
+        let u = normalize(sub(on[1], on[0]));
         let v = cross(normal, u);
-        let mut ring: Vec<(f32, V3)> = on
-            .iter()
-            .map(|p| {
-                let d = sub(*p, c);
-                (dot(d, v).atan2(dot(d, u)), *p)
-            })
-            .collect();
-        ring.sort_by(|a, b| a.0.total_cmp(&b.0));
-        // Drop points in the middle of an edge, so the fan has no slivers.
-        let ring: Vec<V3> = ring.into_iter().map(|r| r.1).collect();
-        let m = ring.len();
-        let corners: Vec<V3> = (0..m)
-            .filter(|&q| {
-                let (a, b, p) = (ring[(q + m - 1) % m], ring[(q + 1) % m], ring[q]);
-                let g = cross(sub(p, a), sub(b, p));
-                dot(g, g) > 1e-8
-            })
-            .map(|q| ring[q])
-            .collect();
+        let mut flat: Vec<([f32; 2], V3)> = on.iter().map(|p| ([dot(*p, u), dot(*p, v)], *p)).collect();
+        flat.sort_by(|a, b| a.0[0].total_cmp(&b.0[0]).then(a.0[1].total_cmp(&b.0[1])));
+        let turn =
+            |o: [f32; 2], a: [f32; 2], b: [f32; 2]| (a[0] - o[0]) * (b[1] - o[1]) - (a[1] - o[1]) * (b[0] - o[0]);
+        let mut ring: Vec<([f32; 2], V3)> = Vec::new();
+        for pass in 0..2 {
+            let start = ring.len();
+            let pts: Vec<([f32; 2], V3)> = if pass == 0 {
+                flat.clone()
+            } else {
+                flat.iter().rev().copied().collect()
+            };
+            for p in pts {
+                while ring.len() >= start + 2 && turn(ring[ring.len() - 2].0, ring[ring.len() - 1].0, p.0) <= 1e-6 {
+                    ring.pop();
+                }
+                ring.push(p);
+            }
+            ring.pop();
+        }
+        let corners: Vec<V3> = ring.into_iter().map(|r| r.1).collect();
         let face = block_face(normal, offset);
         flat_poly(out, &corners, normal, face);
     }
@@ -536,8 +548,15 @@ fn block_face(normal: V3, offset: f32) -> Option<Face> {
             return None;
         }
         let positive = normal[a] > 0.0;
-        let on = if positive { (offset - 1.0).abs() < 1e-4 } else { offset.abs() < 1e-4 };
-        on.then_some(Face { axis: a as u8, positive })
+        let on = if positive {
+            (offset - 1.0).abs() < 1e-4
+        } else {
+            offset.abs() < 1e-4
+        };
+        on.then_some(Face {
+            axis: a as u8,
+            positive,
+        })
     })
 }
 
@@ -567,10 +586,18 @@ pub(crate) mod tests {
                 match cells[i as usize] {
                     Cell::Edge { c } => {
                         let (a, b) = other_axes(c);
-                        if round { s[a] * s[a] + s[b] * s[b] <= 1.0 } else { t[a] + t[b] >= 1.0 }
+                        if round {
+                            s[a] * s[a] + s[b] * s[b] <= 1.0
+                        } else {
+                            t[a] + t[b] >= 1.0
+                        }
                     }
                     Cell::Corner => {
-                        if round { dot(s, s) <= 2.0 } else { t[0] + t[1] + t[2] >= 1.0 }
+                        if round {
+                            dot(s, s) <= 2.0
+                        } else {
+                            t[0] + t[1] + t[2] >= 1.0
+                        }
                     }
                     _ => false,
                 }
@@ -704,7 +731,10 @@ pub(crate) mod tests {
         assert!(count(ShapeFamily::Round) > count(ShapeFamily::Bevel));
         // Round stays modest.
         for m in masks() {
-            assert!(template(Shape::new(ShapeFamily::Round, m).unwrap()).len() <= 260, "{m:#010b}");
+            assert!(
+                template(Shape::new(ShapeFamily::Round, m).unwrap()).len() <= 260,
+                "{m:#010b}"
+            );
         }
     }
 }

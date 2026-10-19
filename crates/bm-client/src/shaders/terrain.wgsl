@@ -37,6 +37,19 @@ struct VsOut {
     @location(6) light: vec2<f32>,
     // Palette colour id, 0 natural.
     @location(7) @interpolate(flat) colour: u32,
+    // Surface normal: the face's for cubes, smooth across a rounded cut.
+    @location(8) normal: vec3<f32>,
+};
+
+// A cut block's vertex (bm-mesh `ShapedVertex`): positions in 1/256 block,
+// a normal, and the face whose texture it takes.
+struct ShapedIn {
+    @location(0) xy: u32,
+    @location(1) z: u32,
+    @location(2) n: u32,
+    @location(3) b: u32,
+    @location(4) offset: vec3<f32>,
+    @location(5) origin: vec3<i32>,
 };
 
 const NORMALS = array<vec3<f32>, 6>(
@@ -46,7 +59,12 @@ const NORMALS = array<vec3<f32>, 6>(
 );
 
 // Classic per-face shading: the top is brightest, the underside darkest.
-const FACE_SHADE = array<f32, 6>(0.82, 0.82, 1.0, 0.52, 0.70, 0.70);
+// Slanted faces blend by how much they face each way (the squares of a unit
+// normal sum to one), so a cube face gets exactly its old value.
+fn face_shade(n: vec3<f32>) -> f32 {
+    let q = n * n;
+    return q.x * 0.82 + q.z * 0.70 + q.y * select(0.52, 1.0, n.y > 0.0);
+}
 const AO_CURVE = array<f32, 4>(0.42, 0.62, 0.82, 1.0);
 
 @vertex
@@ -63,6 +81,25 @@ fn vs_main(in: VsIn) -> VsOut {
     out.origin = in.origin;
     out.light = vec2<f32>(f32((in.b >> 16u) & 15u), f32((in.b >> 20u) & 15u)) / 15.0;
     out.colour = in.b >> 24u;
+    out.normal = NORMALS[out.face];
+    return out;
+}
+
+@vertex
+fn vs_shaped(in: ShapedIn) -> VsOut {
+    let local = vec3<f32>(f32(in.xy & 0xffffu), f32(in.xy >> 16u), f32(in.z & 0xffffu)) / 256.0;
+    let rel = in.offset + local;
+    var out: VsOut;
+    out.clip = g.view_proj * vec4<f32>(rel, 1.0);
+    out.rel = rel;
+    out.local = local;
+    out.block = in.b & 0xffffu;
+    out.face = (in.z >> 16u) & 7u;
+    out.ao = AO_CURVE[(in.z >> 19u) & 3u];
+    out.origin = in.origin;
+    out.light = vec2<f32>(f32((in.b >> 16u) & 15u), f32((in.b >> 20u) & 15u)) / 15.0;
+    out.colour = in.b >> 24u;
+    out.normal = unpack4x8snorm(in.n).xyz;
     return out;
 }
 
@@ -120,7 +157,7 @@ fn palette_colour(in: VsOut) -> vec3<f32> {
     // Turf-like sides: the top colour hangs a little way down the side,
     // with a ragged edge that varies per texel column.
     if (palette[i + 3u].y > 0.5) {
-        let n = NORMALS[in.face];
+        let n = normalize(in.normal);
         let inside = in.local - n * 0.01;
         let column = vec3<i32>(floor(inside * 8.0));
         let edge = 0.78 - 0.12 * hash3(in.origin * 8 + vec3<i32>(column.x, 0, column.z));
@@ -190,7 +227,7 @@ fn recolour(texel: vec3<f32>, base: f32, colour: vec3<f32>) -> vec3<f32> {
 }
 
 fn untinted_albedo(in: VsOut) -> vec4<f32> {
-    let n = NORMALS[in.face];
+    let n = normalize(in.normal);
     let inside = in.local - n * 0.01;
     let block = in.origin + vec3<i32>(floor(inside));
     let entry = faces[in.block][face_slot(in.face)];
@@ -219,7 +256,7 @@ const AMBIENT: f32 = 0.012;
 const BLOCK_TINT: vec3<f32> = vec3<f32>(1.0, 0.88, 0.70);
 
 fn shade(in: VsOut, base: vec3<f32>) -> vec3<f32> {
-    let n = NORMALS[in.face];
+    let n = normalize(in.normal);
     // Sky and block light arrive as separate channels so night dims only the
     // sky (a uniform, never a re-mesh). Direct sun warms faces turned to it,
     // but only where the sky reaches.
@@ -228,7 +265,7 @@ fn shade(in: VsOut, base: vec3<f32>) -> vec3<f32> {
     let sun = max(dot(n, g.sun_dir.xyz), 0.0) * g.sun_dir.w;
     let sky_light = sky * g.sun_color.w * (0.82 + 0.18 * sun);
     let light = max(vec3<f32>(sky_light), BLOCK_TINT * block) + AMBIENT;
-    let c = base * FACE_SHADE[in.face] * light * in.ao;
+    let c = base * face_shade(n) * light * in.ao;
     let d = length(in.rel);
     let fog = clamp((d - g.params.x) / max(g.params.y - g.params.x, 1.0), 0.0, 1.0);
     return mix(c, sky_gradient(in.rel / max(d, 0.001)), fog * fog);

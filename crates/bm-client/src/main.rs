@@ -4,6 +4,7 @@
 
 mod app;
 mod chat;
+mod chisel;
 mod claims;
 mod colour;
 mod demo;

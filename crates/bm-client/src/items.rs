@@ -8,7 +8,7 @@
 
 use bm_core::{
     BlockRegistry, Colour, ColourPalette, INVENTORY_SLOTS, Inventory, ItemDef, ItemError, ItemKind, ItemRegistry,
-    ItemStack, Recipe, RecipeBook, ToolClass,
+    ItemStack, Recipe, RecipeBook, ShapeFamily, ToolClass,
 };
 use bm_protocol::ClientMsg;
 
@@ -89,7 +89,7 @@ impl Items {
 
     /// Uses left and in all, for a tool.
     pub fn durability(&self, stack: &ItemStack) -> Option<(u16, u16)> {
-        let (_, _, total) = self.def(stack)?.tool()?;
+        let total = self.def(stack)?.durability()?;
         Some((total.saturating_sub(stack.wear), total))
     }
 
@@ -123,6 +123,20 @@ impl Items {
                     tool_materials(class),
                     trim_float(speed)
                 ));
+                if let Some((left, total)) = self.durability(stack) {
+                    lines.push(format!("{left} of {total} uses left"));
+                }
+            }
+            ItemKind::Chisel { family, precise, .. } => {
+                let how = match family {
+                    ShapeFamily::Square => "square",
+                    ShapeFamily::Slope => "sloped",
+                    ShapeFamily::Bevel => "bevelled",
+                    ShapeFamily::Round => "rounded",
+                };
+                let size = if precise { "an eighth" } else { "an edge" };
+                lines.push(format!("Cuts blocks into {how} shapes, {size} at a time"));
+                lines.push("Right click fills a cut back".into());
                 if let Some((left, total)) = self.durability(stack) {
                     lines.push(format!("{left} of {total} uses left"));
                 }

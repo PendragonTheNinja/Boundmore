@@ -19,7 +19,7 @@ use crate::world::ClientWorld;
 use bm_core::movement::{MoveConfig, PlayerInput};
 use bm_core::{
     BlockId, BlockPos, BlockRegistry, BlockState, Chunk, Colour, DayCycle, HOTBAR_SLOTS, ItemId, ItemStack, PlanetLook,
-    PlanetShape, PlotPos, RayHit, TICK_DT, raycast,
+    PlanetShape, PlotPos, RayHit, Shape, TICK_DT, raycast, raycast_shaped,
 };
 use bm_protocol::{
     ClientDatagram, ClientMsg, EditAction, INPUT_REDUNDANCY, MIN_PASSWORD_LEN, PlanetInfo, PlanetSummary,
@@ -50,6 +50,9 @@ const CLAIM_DRAW_RADIUS: f64 = 128.0;
 const OWN_LINE: [f32; 4] = [1.0, 0.55, 0.10, 0.95];
 const OTHER_LINE: [f32; 4] = [0.95, 0.10, 0.06, 0.95];
 const TARGET_LINE: [f32; 4] = [0.95, 0.95, 0.88, 1.0];
+/// Chisel previews: what a left click cuts, what a right click fills back.
+const CUT_LINE: [f32; 4] = [1.0, 0.82, 0.18, 1.0];
+const FILL_LINE: [f32; 4] = [0.45, 0.85, 1.0, 0.9];
 const XRAY_ALPHA: f32 = 0.22;
 /// The travelling screen stays at least this long (seconds), so a quick
 /// arrival reads as a journey rather than a flicker, then fades out.
@@ -121,6 +124,8 @@ struct Session {
     edit_seq: u32,
     place_cooldown: f64,
     target: Option<RayHit>,
+    /// With a chisel in hand: the aimed block and what each click would do.
+    chisel: Option<(BlockPos, crate::chisel::Plan)>,
     /// The plot claim mode points at.
     claim_target: Option<PlotPos>,
     mining: Option<Mining>,
@@ -164,6 +169,7 @@ impl Session {
             edit_seq: 0,
             place_cooldown: 0.0,
             target: None,
+            chisel: None,
             claim_target: None,
             mining: None,
             warp_shrine,
@@ -912,7 +918,11 @@ impl App {
         .forward();
         let world = &s.world;
         let solid = |p: BlockPos| world.block(p).is_some_and(|b| world.flags.solid(b));
-        s.target = raycast(eye, dir, s.reach, solid);
+        // Cut blocks are aimed at by their kept octants, as the server does.
+        s.target = raycast_shaped(eye, dir, s.reach, |p| {
+            let st = world.state(p)?;
+            world.flags.solid(st.id).then(|| world.block_shape(p))
+        });
         s.claim_target = claim_mode.then(|| {
             let at = match raycast(eye, dir, CLAIM_AIM, solid) {
                 Some(hit) => hit.block,
@@ -930,6 +940,67 @@ impl App {
         // is a prediction of what it will accept.
         let slot = s.selected;
         let held = s.items.slot(slot);
+        // A chisel in hand cuts with the left button and fills with the
+        // right, instead of breaking and placing.
+        let chisel = held.and_then(|h| s.items.def(&h)).and_then(|d| d.chisel());
+        s.place_cooldown -= dt;
+        s.chisel = None;
+        if let (Some((family, precise, _)), Some(hit)) = (chisel, s.target) {
+            let shape = s.world.block_shape(hit.block);
+            let plan = crate::chisel::plan(&hit, shape, precise);
+            s.chisel = Some((hit.block, plan));
+            let click = if mouse[0] {
+                plan.cut.map(|m| (m, false))
+            } else if mouse[1] {
+                plan.fill.map(|m| (m, true))
+            } else {
+                None
+            };
+            if let Some((octants, restore)) = click
+                && s.place_cooldown <= 0.0
+            {
+                s.place_cooldown = PLACE_REPEAT;
+                let state = s.world.state(hit.block).unwrap_or(BlockState::AIR);
+                let def = s.world.registry.get(state.id);
+                match crate::chisel::apply(def, state, family, octants, restore) {
+                    Ok(new) => {
+                        // Filling back over ourselves would be refused.
+                        let filled = Shape::new(family, !octants).unwrap_or(Shape::FULL);
+                        let corner = DVec3::new(hit.block.x as f64, hit.block.y as f64, hit.block.z as f64);
+                        let feet = s.world.shape.nearest_lap(corner, s.me.state.pos);
+                        let m = &s.movement;
+                        let in_me = restore
+                            && filled.boxes().any(|(lo, hi)| {
+                                let (lo, hi) = (corner + DVec3::from_array(lo), corner + DVec3::from_array(hi));
+                                feet.x - m.half_width < hi.x
+                                    && feet.x + m.half_width > lo.x
+                                    && feet.y < hi.y
+                                    && feet.y + m.height > lo.y
+                                    && feet.z - m.half_width < hi.z
+                                    && feet.z + m.half_width > lo.z
+                            });
+                        if !in_me {
+                            s.edit_seq += 1;
+                            s.world
+                                .predict_edit(s.edit_seq, hit.block, BlockState { shape: new, ..state });
+                            link.send(ClientMsg::Edit {
+                                seq: s.edit_seq,
+                                at: s.me.seq,
+                                pos: hit.block,
+                                action: EditAction::Chisel {
+                                    slot: slot as u8,
+                                    octants,
+                                    restore,
+                                },
+                            });
+                        }
+                    }
+                    Err(crate::chisel::Refused::Told(text)) => self.notices.push(text, now_s),
+                    Err(crate::chisel::Refused::Quiet) => {}
+                }
+            }
+        }
+        let mouse = if chisel.is_some() { [false; 2] } else { mouse };
         let mut mining = s.mining.take();
         if mouse[0]
             && let Some(hit) = s.target
@@ -989,7 +1060,6 @@ impl App {
         s.mining = mining;
 
         // Placing spends one of the selected item, so only a block item can.
-        s.place_cooldown -= dt;
         let place_block = held.and_then(|h| s.items.def(&h)).and_then(|d| d.block());
         if mouse[1]
             && s.place_cooldown <= 0.0
@@ -1293,12 +1363,24 @@ impl App {
                 }
             })
             .collect();
-        let (lines, xray) = self.claim_lines(eye);
-        let highlight = if self.claim_mode {
+        let (mut lines, xray) = self.claim_lines(eye);
+        let highlight = if self.claim_mode || s.chisel.is_some() {
             None
         } else {
             s.target.map(|t| t.block)
         };
+        if let Some((block, plan)) = s.chisel.filter(|_| !self.claim_mode) {
+            let corner = DVec3::new(block.x as f64, block.y as f64, block.z as f64);
+            let rel = (shape.nearest_lap(eye, corner) - eye).as_vec3();
+            for (mask, color, grow) in [(plan.cut, CUT_LINE, 0.004f32), (plan.fill, FILL_LINE, 0.002)] {
+                for (lo, hi) in mask.map(crate::chisel::outline).unwrap_or_default() {
+                    let lo = Vec3::new(lo[0] as f32, lo[1] as f32, lo[2] as f32) - Vec3::splat(grow);
+                    let hi = Vec3::new(hi[0] as f32, hi[1] as f32, hi[2] as f32) + Vec3::splat(grow);
+                    let edges = crate::render::cube_edges(rel + lo, hi - lo);
+                    lines.extend(edges.iter().map(|p| LineVertex { pos: *p, color }));
+                }
+            }
+        }
         let view_radius = s.view_radius;
         let breaking = s.mining.map(|m| (m.pos, m.progress as f32));
         let Some(r) = &mut self.renderer else { return };
@@ -1423,6 +1505,25 @@ impl App {
                     d.show_colours();
                 }
                 self.open_menu(Menu::Inventory);
+            }
+            // Chisel cuts of every family in daylight; with "chisel", a
+            // bevel chisel in hand aimed at a brick, its cut outlined.
+            "shapes" | "chisel" => {
+                let in_hand = screen == "chisel";
+                if let Some(Link::Demo(d)) = &mut self.link {
+                    d.show_shapes(in_hand);
+                }
+                if let Some(s) = &mut self.session {
+                    s.me.teleport(bm_core::PlayerState {
+                        pos: DVec3::from_array(crate::demo::SHAPES_VIEW),
+                        vel: DVec3::ZERO,
+                        on_ground: true,
+                    });
+                    if in_hand {
+                        s.selected = 6;
+                    }
+                }
+                (self.yaw, self.pitch) = if in_hand { (0.075, -0.55) } else { (0.0, -0.62) };
             }
             // The shrine window on its Reclaim tab, with things waiting.
             "reclaim" => {
