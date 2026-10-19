@@ -16,8 +16,10 @@ use crate::chat::{self, ChatLimit, Verdict};
 use crate::claims::ClaimError;
 use crate::config::ServerConfig;
 use crate::crafting::{self, CraftError, MAX_CRAFT_COUNT};
+use crate::lapse::{self, Lapse};
 use crate::net::{Event, Outbox};
 use crate::planet::Planet;
+use crate::reclaim::Reclaims;
 use crate::storage::move_stack;
 use crate::store::{PlayerData, Store, WriteBatch, load_slots, save_slots};
 use anyhow::{Context, Result};
@@ -77,6 +79,12 @@ const STORAGE_CHECK_EVERY: u64 = 15;
 /// past the last one the server had are refused: the client sent them about
 /// the planet it left, before it heard of the travel.
 const TRAVEL_GUARD_INPUTS: u32 = 30;
+/// How often claims are checked for lapsing (once a second: a pass over the
+/// claims, not the chunks).
+const LAPSE_CHECK_EVERY: u64 = 60;
+/// A lapsing claim turns one plot this often (four a second, across every
+/// lapse), so nothing stalls however large the claim.
+const LAPSE_PLOT_EVERY: u64 = 15;
 
 /// What waits in a player's queue for the input it follows.
 #[derive(Clone, Copy, Debug)]
@@ -210,6 +218,19 @@ pub struct Game {
     load: Arc<Mutex<Vec<PlanetLoad>>>,
     /// The last `chat::HISTORY` universe lines, oldest first (memory only).
     history: VecDeque<ChatLine>,
+    ash: BlockId,
+    /// Unix seconds each claim owner was last seen; an online player counts
+    /// from when they leave.
+    last_seen: HashMap<String, u64>,
+    /// Claims crumbling now.
+    lapses: Vec<Lapse>,
+    /// Whether claims have been checked since the server started.
+    lapses_checked: bool,
+    /// Chunks lapses have finished with: unpinned once a save has taken
+    /// them, so their ash is saved with the items reclaimed from them.
+    unpin_after_save: Vec<(usize, ChunkPos)>,
+    /// What lapsed claims gave back, per account.
+    reclaims: Reclaims,
 }
 
 /// One planet's load, as the report shows it.
@@ -353,6 +374,9 @@ impl Game {
         let registry = &planets.first().context("no planets")?.world.registry;
         let claim_stone = registry.id("claim_stone")?;
         let warp_shrine = registry.id("warp_shrine")?;
+        let ash = registry.id("ash")?;
+        let reclaims = Reclaims::load(store.reclaims()?, &items);
+        let last_seen = claim_owners_last_seen(&store, &planets, planets[start].id);
         Ok(Self {
             cfg,
             planets,
@@ -375,6 +399,12 @@ impl Game {
             universe_sent: 0,
             load: Arc::new(Mutex::new(Vec::new())),
             history: VecDeque::new(),
+            ash,
+            last_seen,
+            lapses: Vec::new(),
+            lapses_checked: false,
+            unpin_after_save: Vec::new(),
+            reclaims,
         })
     }
 
@@ -471,6 +501,7 @@ impl Game {
         }
         self.simulate();
         self.step_stations();
+        self.step_lapses();
         if self.tick % STORAGE_CHECK_EVERY == 0 {
             self.check_open_storage();
         }
@@ -581,6 +612,7 @@ impl Game {
                 ClientMsg::OpenStorage { pos } => self.open_storage(id, pos),
                 ClientMsg::StorageMove { pos, from, to, count } => self.storage_move(id, pos, from, to, count),
                 ClientMsg::Chat { channel, text } => self.chat(id, channel, text),
+                ClientMsg::CollectReclaim { shrine } => self.collect_reclaim(id, shrine),
                 ClientMsg::Hello { .. } => {}
             },
         }
@@ -676,6 +708,20 @@ impl Game {
         if let Some(text) = shrine_hint(shape, &pl.name, pl.shrine, state.pos) {
             out.send(&ServerMsg::Notice { text });
         }
+        // Back in time: a claim crumbling now stops where it is.
+        for text in self.stop_lapses_of(&account) {
+            out.send(&ServerMsg::Notice { text });
+        }
+        for text in self.reclaims.take_notices(&account) {
+            out.send(&ServerMsg::Notice { text });
+        }
+        let reclaimed = self.reclaims.items(&account);
+        if !reclaimed.is_empty() {
+            out.send(&ServerMsg::Reclaim {
+                items: reclaimed.to_vec(),
+            });
+        }
+        let pl = &self.planets[planet];
         tracing::info!("{name} (#{id}) joined on {} at {:.1?}", pl.name, state.pos);
         let arrived = format!("{name} arrived on {}", pl.name);
         self.planets[planet].players += 1;
@@ -712,6 +758,7 @@ impl Game {
     fn leave(&mut self, id: u32) {
         let Some(p) = self.players.remove(&id) else { return };
         tracing::info!("{} (#{id}) left", p.name);
+        self.last_seen.insert(p.account.clone(), unix_now());
         let planet = p.planet;
         self.departed.insert(
             p.account,
@@ -1284,20 +1331,26 @@ impl Game {
         }
     }
 
-    /// Travel from a warp shrine within reach to another planet.
-    fn warp(&mut self, id: u32, shrine: BlockPos, dest: u16) {
-        let Some(p) = self.players.get(&id) else { return };
-        let from = &self.planets[p.planet];
-        let shape = from.world.shape;
-        let at_shrine = shape.contains_y(shrine.y) && {
+    /// Whether `shrine` is a warp shrine within this player's reach.
+    fn at_shrine(&self, id: u32, shrine: BlockPos) -> bool {
+        let Some(p) = self.players.get(&id) else { return false };
+        let planet = &self.planets[p.planet];
+        let shape = planet.world.shape;
+        shape.contains_y(shrine.y) && {
             let canon = shape.wrap_block(shrine);
             p.sent.contains(&canon.chunk())
-                && from.world.block(canon) == Some(self.warp_shrine)
+                && planet.world.block(canon) == Some(self.warp_shrine)
                 && in_reach(shape, &self.movement, self.cfg.reach, &p.state, canon)
-        };
-        if !at_shrine {
+        }
+    }
+
+    /// Travel from a warp shrine within reach to another planet.
+    fn warp(&mut self, id: u32, shrine: BlockPos, dest: u16) {
+        if !self.at_shrine(id, shrine) {
             return self.notice(id, "Stand at a warp shrine to travel");
         }
+        let Some(p) = self.players.get(&id) else { return };
+        let from = &self.planets[p.planet];
         let Some(to) = self.planets.iter().position(|pl| pl.id == dest) else {
             return self.tell(id, "no such planet".into());
         };
@@ -1803,6 +1856,257 @@ impl Game {
         }
     }
 
+    /// Takes reclaimed items into the inventory, as many as fit, at a warp
+    /// shrine within reach.
+    fn collect_reclaim(&mut self, id: u32, shrine: BlockPos) {
+        if !self.at_shrine(id, shrine) {
+            return self.notice(id, "Stand at a warp shrine to collect your reclaimed items");
+        }
+        let Some(p) = self.players.get_mut(&id) else { return };
+        let before = p.inventory.clone();
+        let had = !self.reclaims.items(&p.account).is_empty();
+        let moved = self.reclaims.collect(&p.account, &mut p.inventory, &self.items);
+        send_slots(p, &before);
+        p.out.send(&ServerMsg::Reclaim {
+            items: self.reclaims.items(&p.account).to_vec(),
+        });
+        if !had {
+            self.notice(id, "Nothing waits for you in reclaim");
+        } else if !moved {
+            self.notice(id, "Your inventory is full");
+        }
+    }
+
+    /// Sends an account's reclaim to them, if they are online.
+    fn push_reclaim(&self, account: &str) {
+        if let Some(p) = self.players.values().find(|p| p.account == account) {
+            p.out.send(&ServerMsg::Reclaim {
+                items: self.reclaims.items(account).to_vec(),
+            });
+        }
+    }
+
+    /// Checks claims for lapsing, then moves the lapses on: each keeps the
+    /// chunk of its next plot loaded and its generated terrain made, and
+    /// every `LAPSE_PLOT_EVERY` ticks one plot turns.
+    fn step_lapses(&mut self) {
+        if !self.lapses_checked || self.tick % LAPSE_CHECK_EVERY == 0 {
+            self.lapses_checked = true;
+            self.find_lapses();
+        }
+        if self.lapses.is_empty() {
+            return;
+        }
+        let tick = self.tick;
+        for job in &mut self.lapses {
+            let world = &mut self.planets[job.planet].world;
+            if let Some(c) = job.next_chunk()
+                && job.chunk != Some(c)
+            {
+                if let Some(old) = job.chunk.take() {
+                    self.unpin_after_save.push((job.planet, old));
+                }
+                world.pin(c);
+                job.chunk = Some(c);
+                job.make_reference(world.generator(), c);
+            }
+            if let Some(c) = job.chunk {
+                world.request(c, tick);
+            }
+            job.receive_reference();
+        }
+        if tick % LAPSE_PLOT_EVERY != 0 {
+            return;
+        }
+        let ready = self.lapses.iter().position(|job| {
+            job.plots.is_empty()
+                || (job.reference.is_some() && job.chunk.is_some_and(|c| self.planets[job.planet].world.is_loaded(c)))
+        });
+        if let Some(i) = ready {
+            self.lapse_plot(i);
+        }
+    }
+
+    /// Starts a lapse for every claim whose owner has been away longer than
+    /// the keep time. Owners never seen are counted from now.
+    fn find_lapses(&mut self) {
+        let now = unix_now();
+        let keep = self.cfg.claim_keep_secs();
+        let online: HashSet<&str> = self.players.values().map(|p| p.account.as_str()).collect();
+        let mut start = Vec::new();
+        for (pi, planet) in self.planets.iter().enumerate() {
+            for c in planet.claims.all() {
+                if online.contains(c.owner.as_str()) || self.lapses.iter().any(|l| l.planet == pi && l.claim == c.id) {
+                    continue;
+                }
+                let seen = *self.last_seen.entry(c.owner.clone()).or_insert(now);
+                let away = now.saturating_sub(seen);
+                if away >= keep {
+                    start.push(Lapse::new(
+                        pi,
+                        c.id,
+                        c.owner.clone(),
+                        away,
+                        c.plots.iter().copied().collect(),
+                        PlotPos::of(c.stone, planet.world.shape),
+                    ));
+                    tracing::info!(
+                        "claim {} of {} on {} ({} plots) lapses: away {} days",
+                        c.id,
+                        c.owner_name,
+                        planet.name,
+                        c.plots.len(),
+                        away / 86_400
+                    );
+                }
+            }
+        }
+        self.lapses.extend(start);
+    }
+
+    /// Turns the next plot of lapse `i` to ash, and finishes the lapse when
+    /// none are left.
+    fn lapse_plot(&mut self, i: usize) {
+        let job = &mut self.lapses[i];
+        let Some(plot) = job.plots.pop_front() else {
+            return self.finish_lapse(i);
+        };
+        let pi = job.planet;
+        let planet = &mut self.planets[pi];
+        let mut changed = Vec::new();
+        let mut items = Vec::new();
+        let mut emptied = Vec::new();
+        // A plot the owner released (or a claim gone) is left alone.
+        let held = planet.claims.get(job.claim).is_some_and(|c| c.plots.contains(&plot));
+        if let (true, Some(reference)) = (held, &job.reference) {
+            let registry = planet.world.registry.clone();
+            let water = planet.world.water;
+            let origin = plot.origin();
+            for y in 0..bm_core::PLOT_SIZE {
+                for z in 0..bm_core::PLOT_SIZE {
+                    for x in 0..bm_core::PLOT_SIZE {
+                        let p = origin.offset(x, y, z);
+                        if planet.storage.has_contents(p) {
+                            items.extend(planet.storage.take(p));
+                            emptied.push(p);
+                        }
+                        if planet.stations.has_contents(p) {
+                            items.extend(planet.stations.take(p, &self.recipes));
+                        }
+                        let Some(current) = planet.world.state(p) else { continue };
+                        let generated = reference.state(p.local());
+                        if let Some(ash) = lapse::ash_for(
+                            current,
+                            generated,
+                            planet.plaza_state(p),
+                            &registry,
+                            &self.colours,
+                            self.ash,
+                            water,
+                        ) {
+                            planet.world.set_state(p, ash);
+                            changed.push((p, ash));
+                        }
+                    }
+                }
+            }
+        }
+        job.begun |= !changed.is_empty() || !items.is_empty();
+        job.reclaimed |= !items.is_empty();
+        let owner = job.owner.clone();
+        let done = job.plots.is_empty();
+        let chunk = plot.origin().chunk();
+        for o in self
+            .players
+            .values()
+            .filter(|o| o.planet == pi && o.sent.contains(&chunk))
+        {
+            for (pos, block) in &changed {
+                o.out.send(&ServerMsg::BlockChanged {
+                    pos: *pos,
+                    block: *block,
+                });
+            }
+        }
+        for p in emptied {
+            self.close_storage_at(pi, p);
+        }
+        if !items.is_empty() {
+            self.reclaims.add(&owner, items);
+            self.push_reclaim(&owner);
+        }
+        if done {
+            self.finish_lapse(i);
+        }
+    }
+
+    /// Removes a lapsed claim and says so.
+    fn finish_lapse(&mut self, i: usize) {
+        let job = self.lapses.remove(i);
+        if let Some(c) = job.chunk {
+            self.unpin_after_save.push((job.planet, c));
+        }
+        let pi = job.planet;
+        let planet = &mut self.planets[pi];
+        let Some(claim) = planet.claims.get(job.claim).cloned() else {
+            return;
+        };
+        planet.claims.remove_by_stone(claim.stone);
+        let name = planet.name.clone();
+        for o in self.players.values().filter(|o| o.planet == pi) {
+            o.out.send(&ServerMsg::ClaimRemoved { id: claim.id });
+        }
+        tracing::info!(
+            "claim {} of {} on {name} has lapsed after {} days away; {} plots turned to ash",
+            claim.id,
+            claim.owner_name,
+            job.away / 86_400,
+            claim.plots.len()
+        );
+        self.server_line(pi, format!("A claim on {name} has crumbled to ash"));
+        let mut text = format!(
+            "Your claim on {name} lapsed after {} away.",
+            lapse::months_away(job.away)
+        );
+        if job.reclaimed {
+            text.push_str(" Its stored items wait for you at any warp shrine.");
+        }
+        match self
+            .players
+            .iter()
+            .find(|(_, p)| p.account == job.owner)
+            .map(|(id, _)| *id)
+        {
+            Some(id) => self.notice(id, &text),
+            None => self.reclaims.add_notice(&job.owner, text),
+        }
+    }
+
+    /// Stops every lapse of an account's claims (they are back). Returns
+    /// notices for those that had already begun.
+    fn stop_lapses_of(&mut self, account: &str) -> Vec<String> {
+        let mut notices = Vec::new();
+        let mut kept = Vec::new();
+        for job in std::mem::take(&mut self.lapses) {
+            if job.owner != account {
+                kept.push(job);
+                continue;
+            }
+            if let Some(c) = job.chunk {
+                self.unpin_after_save.push((job.planet, c));
+            }
+            let name = &self.planets[job.planet].name;
+            tracing::info!("the lapse of claim {} on {name} stopped: its owner is back", job.claim);
+            if job.begun {
+                notices.push(format!(
+                    "Your claim on {name} had begun to crumble to ash. The rest of it is yours again."
+                ));
+            }
+        }
+        self.lapses = kept;
+        notices
+    }
+
     /// Hands every planet's dirty chunks, stations and claims, every
     /// player's state and every newly departed player's to the writer, in one
     /// batch.
@@ -1860,12 +2164,17 @@ impl Game {
                     .map(|(pos, s)| (id, pos, s)),
             );
         }
+        // Their ash is in this batch now, with what was reclaimed from them.
+        for (pi, c) in self.unpin_after_save.drain(..) {
+            self.planets[pi].world.unpin(c);
+        }
         let batch = WriteBatch {
             chunks,
             players,
             stations,
             claims,
             storage,
+            reclaim: self.reclaims.take_dirty(&self.items),
             clock: Some(self.tick),
             done,
         };
@@ -1892,6 +2201,54 @@ impl Game {
         }
         self.report();
     }
+}
+
+/// When each claim owner was last seen, from the save. An owner never seen
+/// (`last_seen` 0, kept from before it was recorded, or no character at all)
+/// is counted from now, and that is saved, so an old claim gets the full
+/// keep time from the day this server first notices it.
+fn claim_owners_last_seen(store: &Store, planets: &[Planet], start: u16) -> HashMap<String, u64> {
+    let now = unix_now();
+    let owners: BTreeSet<&str> = planets
+        .iter()
+        .flat_map(|p| p.claims.all().map(|c| c.owner.as_str()))
+        .collect();
+    let mut seen = HashMap::new();
+    let mut stamped = Vec::new();
+    for owner in owners {
+        let data = match store.player(owner) {
+            Ok(Some(d)) if d.last_seen > 0 => {
+                seen.insert(owner.to_string(), d.last_seen);
+                continue;
+            }
+            Ok(Some(d)) => d,
+            Ok(None) => PlayerData {
+                planet: start,
+                ..Default::default()
+            },
+            Err(e) => {
+                // Not written over: counted from now, in memory only.
+                tracing::error!("reading {owner}: {e:#}; their claims are kept from now");
+                seen.insert(owner.to_string(), now);
+                continue;
+            }
+        };
+        seen.insert(owner.to_string(), now);
+        stamped.push((owner.to_string(), PlayerData { last_seen: now, ..data }));
+    }
+    if !stamped.is_empty() {
+        tracing::info!(
+            "{} claim owners had never been seen; their claims are kept from now",
+            stamped.len()
+        );
+        if let Err(e) = store.write(&WriteBatch {
+            players: stamped,
+            ..Default::default()
+        }) {
+            tracing::error!("saving when claim owners were first seen: {e:#}");
+        }
+    }
+    seen
 }
 
 /// Where the planet's warp shrine is, for a player who arrives far from it

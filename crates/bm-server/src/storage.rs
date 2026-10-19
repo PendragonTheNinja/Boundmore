@@ -119,6 +119,17 @@ impl Storages {
         self.dirty.insert(pos);
     }
 
+    /// Removes a block's contents, returning them (its claim lapsed).
+    pub fn take(&mut self, pos: BlockPos) -> Vec<ItemStack> {
+        match self.map.remove(&pos) {
+            Some(slots) => {
+                self.dirty.insert(pos);
+                slots.into_iter().flatten().collect()
+            }
+            None => Vec::new(),
+        }
+    }
+
     /// Changed blocks for the save; None for one now empty.
     pub fn take_dirty(&mut self, items: &ItemRegistry) -> Vec<(BlockPos, Option<SavedSlots>)> {
         std::mem::take(&mut self.dirty)
@@ -240,6 +251,13 @@ mod tests {
         assert_eq!(t.slots(pos, 20), slots);
         // A shrunk block keeps what was beyond its new size.
         assert_eq!(t.slots(pos, 5).len(), 20);
+
+        let mut u = Storages::new();
+        u.set(pos, slots.clone());
+        u.take_dirty(&items);
+        assert_eq!(u.take(pos), vec![ItemStack::new(stone, 12)]);
+        assert!(!u.has_contents(pos) && u.take(pos).is_empty());
+        assert_eq!(u.take_dirty(&items), vec![(pos, None)]);
 
         s.set(pos, vec![None; 20]);
         assert!(!s.has_contents(pos));
