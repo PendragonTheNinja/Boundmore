@@ -158,6 +158,13 @@ pub trait PhysicsWorld {
 
 const SKIN: f64 = 1e-6;
 
+/// The tallest obstacle a walker steps onto without jumping. Every cut in the
+/// world is a multiple of half a block (ADR-0008), so this takes a half-block
+/// step (a slab, a slope's lower half) and never a full block; the extra 0.05
+/// is margin, not a feel number. Shared by client and server, so a constant
+/// rather than part of [`MoveConfig`].
+pub const STEP_HEIGHT: f64 = 0.55;
+
 fn aabb(pos: DVec3, cfg: &MoveConfig) -> (DVec3, DVec3) {
     (
         DVec3::new(pos.x - cfg.half_width, pos.y, pos.z - cfg.half_width),
@@ -235,6 +242,10 @@ pub fn step(
         s.vel.y = (s.vel.y - cfg.gravity * dt).max(-cfg.max_fall_speed);
     }
 
+    // Stepping up (ADR-0008): only a walker on the ground who is not rising
+    // (a jump this tick sets the velocity upwards) and not swimming.
+    let may_step = s.on_ground && s.vel.y <= 0.0 && !in_water;
+
     // Sub-step so no axis moves more than a little under half a block per
     // pass: a fast fall can never tunnel through a one-block floor.
     let travel = s.vel * dt;
@@ -248,10 +259,22 @@ pub fn step(
             }
             s.vel.y = 0.0;
         }
-        if move_axis(s, 0, part.x, cfg, world) {
+        let before = *s;
+        let mut blocked_x = move_axis(s, 0, part.x, cfg, world);
+        let mut blocked_z = move_axis(s, 2, part.z, cfg, world);
+        if may_step
+            && (blocked_x || blocked_z)
+            && let Some((stepped, bx, bz)) = step_up(&before, s, part, cfg, world)
+        {
+            *s = stepped;
+            (blocked_x, blocked_z) = (bx, bz);
+            s.on_ground = true;
+            s.vel.y = 0.0;
+        }
+        if blocked_x {
             s.vel.x = 0.0;
         }
-        if move_axis(s, 2, part.z, cfg, world) {
+        if blocked_z {
             s.vel.z = 0.0;
         }
     }
@@ -266,12 +289,47 @@ pub fn step(
     s.pos = planet.wrap_point(s.pos);
 }
 
-fn intersects(s: &PlayerState, cfg: &MoveConfig, world: &impl PhysicsWorld) -> bool {
-    let (lo, hi) = aabb(s.pos, cfg);
-    for_blocks(lo, hi, |b| world.solid(b))
+/// The horizontal move of one sub-step tried again from `STEP_HEIGHT` higher
+/// (as far as the headroom allows), then settled back down onto whatever is
+/// underneath. Taken only if it gets further than the plain move did and
+/// lands on something: a half-block ledge is climbed, a full-block wall is
+/// not (raised half a block, it still blocks). Returns the stepped state and
+/// whether X and Z were still blocked.
+fn step_up(
+    before: &PlayerState,
+    plain: &PlayerState,
+    part: DVec3,
+    cfg: &MoveConfig,
+    world: &impl PhysicsWorld,
+) -> Option<(PlayerState, bool, bool)> {
+    let mut t = *before;
+    move_axis(&mut t, 1, STEP_HEIGHT, cfg, world);
+    let risen = t.pos.y - before.pos.y;
+    if risen <= 0.0 {
+        return None;
+    }
+    let bx = move_axis(&mut t, 0, part.x, cfg, world);
+    let bz = move_axis(&mut t, 2, part.z, cfg, world);
+    if !move_axis(&mut t, 1, -risen, cfg, world) || t.pos.y <= before.pos.y {
+        return None;
+    }
+    let gain = |p: &PlayerState| {
+        let (dx, dz) = (p.pos.x - before.pos.x, p.pos.z - before.pos.z);
+        dx * dx + dz * dz
+    };
+    (gain(&t) > gain(plain) + 1e-12).then_some((t, bx, bz))
 }
 
-fn for_blocks(lo: DVec3, hi: DVec3, mut f: impl FnMut(BlockPos) -> bool) -> bool {
+fn intersects(s: &PlayerState, cfg: &MoveConfig, world: &impl PhysicsWorld) -> bool {
+    let (lo, hi) = aabb(s.pos, cfg);
+    for_solid_boxes(world, lo, hi, |_, _| true)
+}
+
+/// Calls `f` with every solid box overlapping `lo..hi` (more than [`SKIN`]
+/// deep), stopping when it returns true. A full block is one unit box; only
+/// a chiselled one is asked for its shape (ADR-0008), which gives one
+/// half-block box per kept octant.
+fn for_solid_boxes(world: &impl PhysicsWorld, lo: DVec3, hi: DVec3, mut f: impl FnMut(DVec3, DVec3) -> bool) -> bool {
     let (x0, y0, z0) = (
         (lo.x + SKIN).floor() as i64,
         (lo.y + SKIN).floor() as i64,
@@ -285,8 +343,24 @@ fn for_blocks(lo: DVec3, hi: DVec3, mut f: impl FnMut(BlockPos) -> bool) -> bool
     for y in y0..=y1 {
         for z in z0..=z1 {
             for x in x0..=x1 {
-                if f(BlockPos::new(x, y, z)) {
-                    return true;
+                let b = BlockPos::new(x, y, z);
+                if !world.solid(b) {
+                    continue;
+                }
+                let base = DVec3::new(x as f64, y as f64, z as f64);
+                let shape = world.shape(b);
+                if shape.is_full() {
+                    if f(base, base + DVec3::ONE) {
+                        return true;
+                    }
+                    continue;
+                }
+                for (l, h) in shape.boxes() {
+                    let (bl, bh) = (base + DVec3::from_array(l), base + DVec3::from_array(h));
+                    let overlaps = (0..3).all(|a| bl[a] < hi[a] - SKIN && bh[a] > lo[a] + SKIN);
+                    if overlaps && f(bl, bh) {
+                        return true;
+                    }
                 }
             }
         }
@@ -294,7 +368,7 @@ fn for_blocks(lo: DVec3, hi: DVec3, mut f: impl FnMut(BlockPos) -> bool) -> bool
     false
 }
 
-/// Moves along one axis, stopping flush against the first solid block.
+/// Moves along one axis, stopping flush against the first solid box.
 /// Returns whether it was blocked.
 fn move_axis(s: &mut PlayerState, axis: usize, delta: f64, cfg: &MoveConfig, world: &impl PhysicsWorld) -> bool {
     if delta == 0.0 {
@@ -310,16 +384,13 @@ fn move_axis(s: &mut PlayerState, axis: usize, delta: f64, cfg: &MoveConfig, wor
     };
     let mut limit = p[axis];
     let mut blocked = false;
-    for_blocks(lo, hi, |b| {
-        if world.solid(b) {
-            let face = [b.x, b.y, b.z][axis] as f64;
-            if delta > 0.0 {
-                limit = limit.min(face - above);
-            } else {
-                limit = limit.max(face + 1.0 + below);
-            }
-            blocked = true;
+    for_solid_boxes(world, lo, hi, |bl, bh| {
+        if delta > 0.0 {
+            limit = limit.min(bl[axis] - above);
+        } else {
+            limit = limit.max(bh[axis] + below);
         }
+        blocked = true;
         false
     });
     if blocked {
@@ -338,29 +409,202 @@ fn move_axis(s: &mut PlayerState, axis: usize, delta: f64, cfg: &MoveConfig, wor
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::collections::HashSet;
+    use crate::block::Shape;
+    use crate::shape::{ShapeFamily, octant};
+    use std::collections::{HashMap, HashSet};
 
     struct Flat {
         solid: HashSet<BlockPos>,
+        shaped: HashMap<BlockPos, Shape>,
         floor: i64,
         water_below: i64,
     }
 
     impl PhysicsWorld for Flat {
         fn solid(&self, p: BlockPos) -> bool {
-            p.y < self.floor || self.solid.contains(&p)
+            p.y < self.floor || self.solid.contains(&p) || self.shaped.contains_key(&p)
         }
         fn liquid(&self, p: BlockPos) -> bool {
             p.y < self.water_below && !self.solid(p)
+        }
+        fn shape(&self, p: BlockPos) -> Shape {
+            self.shaped.get(&p).copied().unwrap_or(Shape::FULL)
         }
     }
 
     fn world() -> Flat {
         Flat {
             solid: HashSet::new(),
+            shaped: HashMap::new(),
             floor: 10,
             water_below: 0,
         }
+    }
+
+    /// The bottom half of a block (its top four octants cut away).
+    fn slab() -> Shape {
+        Shape::new(ShapeFamily::Square, 0xf0).unwrap()
+    }
+
+    fn east() -> PlayerInput {
+        let (yaw, _) = PlayerInput::from_angles(std::f64::consts::FRAC_PI_2, 0.0); // +X
+        PlayerInput {
+            forward: 1,
+            yaw,
+            ..Default::default()
+        }
+    }
+
+    fn standing(x: f64, y: f64) -> PlayerState {
+        PlayerState {
+            pos: DVec3::new(x, y, 5.5),
+            on_ground: true,
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn walks_up_a_half_slab_without_jumping() {
+        let mut w = world();
+        for x in 8..30 {
+            w.shaped.insert(BlockPos::new(x, 10, 5), slab());
+        }
+        let mut s = standing(5.5, 10.0);
+        run(&mut s, east(), 120, &w);
+        assert!(s.pos.x > 12.0, "stopped at the slab: {:?}", s.pos);
+        assert!((s.pos.y - 10.5).abs() < 1e-9 && s.on_ground, "{:?}", s.pos);
+    }
+
+    #[test]
+    fn walks_up_a_staircase_of_halves() {
+        // Each block east is half a block higher: slab, full, full + slab, ...
+        let mut w = world();
+        for k in 0..12i64 {
+            let x = 8 + k;
+            for y in 10..10 + (k + 1) / 2 {
+                w.solid.insert(BlockPos::new(x, y, 5));
+            }
+            if k % 2 == 0 {
+                w.shaped.insert(BlockPos::new(x, 10 + k / 2, 5), slab());
+            }
+        }
+        for x in 20..40 {
+            for y in 10..16 {
+                w.solid.insert(BlockPos::new(x, y, 5));
+            }
+        }
+        let mut s = standing(5.5, 10.0);
+        run(&mut s, east(), 300, &w);
+        assert!(s.pos.x > 22.0 && (s.pos.y - 16.0).abs() < 1e-9, "{:?}", s.pos);
+    }
+
+    #[test]
+    fn a_full_block_wall_is_not_stepped_onto() {
+        let mut w = world();
+        w.solid.insert(BlockPos::new(8, 10, 5));
+        let mut s = standing(5.5, 10.0);
+        run(&mut s, east(), 120, &w);
+        assert!((s.pos.x - 7.7).abs() < 1e-9 && s.pos.y == 10.0, "{:?}", s.pos);
+        // Neither is a half slab on top of a full block (1.5 high).
+        let mut w = world();
+        w.solid.insert(BlockPos::new(8, 10, 5));
+        w.shaped.insert(BlockPos::new(8, 11, 5), slab());
+        let mut s = standing(5.5, 10.0);
+        run(&mut s, east(), 120, &w);
+        assert!((s.pos.x - 7.7).abs() < 1e-9, "{:?}", s.pos);
+    }
+
+    #[test]
+    fn a_slab_overhead_blocks_like_its_kept_half() {
+        // A top-half slab (bottom octants cut) at y = 12 leaves 2.5 blocks of
+        // headroom, so a walker passes under it; at y = 11 it leaves 1.5.
+        let top = Shape::new(ShapeFamily::Square, 0x0f).unwrap();
+        let pass = |roof: i64| {
+            let mut w = world();
+            for x in 8..20 {
+                w.shaped.insert(BlockPos::new(x, roof, 5), top);
+            }
+            let mut s = standing(5.5, 10.0);
+            run(&mut s, east(), 120, &w);
+            s.pos.x
+        };
+        assert!(pass(12) > 12.0);
+        assert!(pass(11) < 8.0, "1.5 blocks is too low");
+    }
+
+    #[test]
+    fn falls_onto_exactly_the_kept_octants_of_every_shape() {
+        let cfg = MoveConfig {
+            half_width: 0.1,
+            height: 0.2,
+            ..MoveConfig::default()
+        };
+        for removed in 1u8..0xff {
+            let shape = Shape::new(ShapeFamily::Slope, removed).unwrap();
+            let mut w = world();
+            w.shaped.insert(BlockPos::new(5, 10, 5), shape);
+            for (ox, oz) in [(0u8, 0u8), (1, 0), (0, 1), (1, 1)] {
+                let mut s = PlayerState {
+                    pos: DVec3::new(5.25 + ox as f64 * 0.5, 13.0, 5.25 + oz as f64 * 0.5),
+                    ..Default::default()
+                };
+                for _ in 0..240 {
+                    step(&mut s, &PlayerInput::default(), &cfg, planet(), &w);
+                }
+                let want = if shape.keeps(octant(ox, 1, oz)) {
+                    11.0
+                } else if shape.keeps(octant(ox, 0, oz)) {
+                    10.5
+                } else {
+                    10.0
+                };
+                assert!(
+                    (s.pos.y - want).abs() < 1e-9 && s.on_ground,
+                    "shape {removed:#04x} column ({ox}, {oz}): {} not {want}",
+                    s.pos.y
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn shaped_worlds_give_bit_identical_results() {
+        let mut w = world();
+        for x in 95..106 {
+            for z in 95..106 {
+                let removed = ((x * 31 + z * 17) % 255 + 1) as u8;
+                if removed != 0xff && (x + z) % 3 != 0 {
+                    w.shaped.insert(
+                        BlockPos::new(x, 10 + (x + z) % 2, z),
+                        Shape::new(ShapeFamily::Square, removed).unwrap(),
+                    );
+                }
+            }
+        }
+        let inputs: Vec<PlayerInput> = (0..900u32)
+            .map(|i| PlayerInput {
+                forward: 1,
+                strafe: (i / 50 % 3) as i8 - 1,
+                jump: i % 97 == 0,
+                sprint: i % 200 < 100,
+                yaw: (i * 311) as u16,
+                pitch: 0,
+            })
+            .collect();
+        let cfg = MoveConfig::default();
+        let simulate = || {
+            let mut s = PlayerState {
+                pos: DVec3::new(100.5, 14.0, 100.5),
+                ..Default::default()
+            };
+            let mut trace = Vec::new();
+            for inp in &inputs {
+                step(&mut s, inp, &cfg, planet(), &w);
+                trace.push((s.pos.x.to_bits(), s.pos.y.to_bits(), s.pos.z.to_bits()));
+            }
+            trace
+        };
+        assert_eq!(simulate(), simulate());
     }
 
     fn planet() -> PlanetShape {

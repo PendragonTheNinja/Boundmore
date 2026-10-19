@@ -46,7 +46,11 @@ pub fn ash_for(
     if !def.breakable {
         return None;
     }
-    Some(BlockState::coloured(ash, ash_colour(current.colour, def, palette)))
+    // A chiselled block crumbles in its shape: ash takes every family.
+    Some(BlockState {
+        shape: current.shape,
+        ..BlockState::coloured(ash, ash_colour(current.colour, def, palette))
+    })
 }
 
 /// The ash colour for a block: its own colour if it has one, else the
@@ -173,6 +177,26 @@ mod tests {
                 self.water,
             )
         }
+    }
+
+    #[test]
+    fn a_chiselled_block_crumbles_in_its_shape() {
+        let s = Setup::new();
+        let timber = s.id("timber");
+        let slab = bm_core::Shape::new(bm_core::ShapeFamily::Bevel, 0xf0).unwrap();
+        let cut = BlockState {
+            shape: slab,
+            ..BlockState::coloured(timber, Colour(12))
+        };
+        let ash = s.turn(cut, BlockState::AIR, None).unwrap();
+        assert_eq!((ash.id, ash.colour, ash.shape), (s.ash, Colour(12), slab));
+        // Natural ground cut with a slope chisel is a change too.
+        let stone = BlockState::plain(s.id("stone"));
+        let sloped = BlockState {
+            shape: bm_core::Shape::new(bm_core::ShapeFamily::Slope, 0x30).unwrap(),
+            ..stone
+        };
+        assert_eq!(s.turn(sloped, stone, None).unwrap().shape, sloped.shape);
     }
 
     #[test]

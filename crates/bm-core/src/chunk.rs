@@ -196,6 +196,26 @@ impl Chunk {
         (self.palette.len() == 1).then(|| self.palette[0].id)
     }
 
+    /// The single block state this chunk is made of (exact after
+    /// [`Chunk::compact`], as [`Chunk::uniform`]).
+    pub fn uniform_state(&self) -> Option<BlockState> {
+        (self.palette.len() == 1).then(|| self.palette[0])
+    }
+
+    /// Makes every palette entry with a shape the game cannot make
+    /// ([`Shape::is_valid`]) a full block, returning how many there were.
+    /// For chunks read from disk or the network (ADR-0008).
+    pub fn fix_invalid_shapes(&mut self) -> usize {
+        let mut n = 0;
+        for s in &mut self.palette {
+            if !s.shape.is_valid() {
+                s.shape = Shape::FULL;
+                n += 1;
+            }
+        }
+        n
+    }
+
     pub fn palette(&self) -> &[BlockState] {
         &self.palette
     }
@@ -367,6 +387,41 @@ mod tests {
 
     fn random_dense(rng: &mut StdRng, kinds: u16) -> Vec<BlockId> {
         (0..CHUNK_VOLUME).map(|_| BlockId(rng.random_range(0..kinds))).collect()
+    }
+
+    #[test]
+    fn invalid_shapes_read_as_full_blocks() {
+        use crate::shape::ShapeFamily;
+        let stone = BlockId(3);
+        let good = Shape::new(ShapeFamily::Slope, 0x30).unwrap();
+        let mut c = Chunk::empty();
+        c.set_state(
+            LocalPos::new(1, 2, 3),
+            BlockState {
+                shape: good,
+                ..BlockState::plain(stone)
+            },
+        );
+        c.set_state(
+            LocalPos::new(4, 5, 6),
+            BlockState {
+                shape: Shape(0xff | 1 << 8),
+                ..BlockState::plain(stone)
+            },
+        );
+        c.set_state(
+            LocalPos::new(7, 8, 9),
+            BlockState {
+                shape: Shape(1 | 6 << 8),
+                ..BlockState::plain(stone)
+            },
+        );
+        let mut c = Chunk::decode(&c.encode()).unwrap();
+        assert_eq!(c.fix_invalid_shapes(), 2);
+        assert_eq!(c.state(LocalPos::new(1, 2, 3)).shape, good, "valid shapes stay");
+        assert_eq!(c.state(LocalPos::new(4, 5, 6)), BlockState::plain(stone));
+        assert_eq!(c.state(LocalPos::new(7, 8, 9)), BlockState::plain(stone));
+        assert_eq!(c.fix_invalid_shapes(), 0);
     }
 
     #[test]
