@@ -590,6 +590,9 @@ impl Game {
             });
             other.out.send(&ServerMsg::PlayerJoined { id, name: name.clone() });
         }
+        if let Some(text) = shrine_hint(shape, &pl.name, pl.shrine, state.pos) {
+            out.send(&ServerMsg::Notice { text });
+        }
         tracing::info!("{name} (#{id}) joined on {} at {:.1?}", pl.name, state.pos);
         self.planets[planet].players += 1;
         self.counts_changed();
@@ -1545,5 +1548,54 @@ impl Game {
             tracing::error!("save did not finish within 30 s");
         }
         self.report();
+    }
+}
+
+/// Where the planet's warp shrine is, for a player who arrives far from it
+/// (characters kept from before shrines existed stand wherever they left).
+/// North is -Z.
+fn shrine_hint(shape: bm_core::PlanetShape, planet: &str, shrine: BlockPos, from: DVec3) -> Option<String> {
+    let to = DVec3::new(shrine.x as f64 + 0.5, shrine.y as f64, shrine.z as f64 + 0.5);
+    let d = shape.delta(from, to);
+    let dist = (d.x * d.x + d.z * d.z).sqrt();
+    if dist < 48.0 {
+        return None;
+    }
+    // Eight compass points, from the angle east of north.
+    let names = [
+        "north",
+        "north-east",
+        "east",
+        "south-east",
+        "south",
+        "south-west",
+        "west",
+        "north-west",
+    ];
+    let angle = d.x.atan2(-d.z).to_degrees().rem_euclid(360.0);
+    let dir = names[((angle + 22.5) / 45.0) as usize % 8];
+    Some(format!(
+        "The warp shrine of {planet} is {} blocks {dir} of you.",
+        dist.round() as i64
+    ))
+}
+
+#[cfg(test)]
+mod shrine_hint_tests {
+    use super::*;
+
+    #[test]
+    fn far_players_are_told_where_the_shrine_is() {
+        let shape = bm_core::PlanetShape::new(64, 12);
+        let shrine = BlockPos::new(100, 150, 100);
+        assert_eq!(
+            shrine_hint(shape, "Verdance", shrine, DVec3::new(110.0, 150.0, 110.0)),
+            None
+        );
+        let east = shrine_hint(shape, "Verdance", shrine, DVec3::new(0.5, 150.0, 100.5)).unwrap();
+        assert_eq!(east, "The warp shrine of Verdance is 100 blocks east of you.");
+        // Across the seam: from x 2000 on a 2048-block planet, x 100 is 148 east.
+        let seam = shrine_hint(shape, "Verdance", shrine, DVec3::new(2000.5, 150.0, 300.5)).unwrap();
+        assert!(seam.ends_with("blocks north-east of you."), "{seam}");
     }
 }
