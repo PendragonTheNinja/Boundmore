@@ -1,5 +1,5 @@
-//! One planet of the universe (ADR-0006): its world, stations and claims, its
-//! look and day, and its warp shrine.
+//! One planet of the universe (ADR-0006): its world, stations, storage and
+//! claims, its look and day, and its warp shrine.
 //!
 //! The shrine stands at the generator's spawn point on a small flat plaza the
 //! server cuts when the planet is created. Players arrive standing beside it,
@@ -9,6 +9,7 @@
 use crate::claims::Claims;
 use crate::config::PlanetSpec;
 use crate::crafting::Stations;
+use crate::storage::Storages;
 use crate::store::{SavedClaim, SavedPlanet, Store, WriteBatch};
 use crate::world::World;
 use anyhow::{Context, Result, bail};
@@ -43,6 +44,8 @@ pub struct Planet {
     pub day: DayCycle,
     pub world: World,
     pub stations: Stations,
+    /// Storage blocks with something in them.
+    pub storage: Storages,
     pub claims: Claims,
     pub shrine: BlockPos,
     pub guard: i64,
@@ -227,6 +230,7 @@ pub fn open(
         .resolve_tints(cat.registry)
         .map_err(|e| anyhow::anyhow!("planet {}: {e}", saved.name))?;
     let stations = Stations::load(store.stations(id)?, cat.items, cat.recipes);
+    let storage = Storages::load(store.storage(id)?, cat.items);
     let mut claims = Claims::load(id, saved.shape, claims);
     let guard = guard as i64;
     claims.reserve(guarded_plots(saved.shape, shrine, guard));
@@ -252,6 +256,7 @@ pub fn open(
         day: saved.day,
         world: World::new(id, saved.shape, cat.registry.clone(), generator, store.clone()),
         stations,
+        storage,
         claims,
         shrine,
         guard,
