@@ -7,20 +7,60 @@
 //! answers inventory, crafting, station, claim and edit messages with the same
 //! `bm-core` rules the real server uses, so drags and crafts behave. It is not
 //! a second server: no accounts, no reach or timing checks, no saves.
+//!
+//! It also stands in for a small universe: four planets, one of each kind in
+//! `assets/planets.toml` with that kind's look, a warp shrine by the spawn on
+//! each, and travel between them. After a warp the new planet's ground is
+//! held back for a moment (or for good, with `hold_arrivals`) so the
+//! travelling screen can be seen.
 
 use crate::net::NetEvent;
 use bm_core::{
     BlockId, BlockPos, BlockRegistry, CHUNK_SIZE, Chunk, ChunkPos, DayCycle, Inventory, ItemRegistry, ItemStack,
-    LocalPos, MoveConfig, PlanetShape, PlayerState, PlotPos, RecipeBook, Station,
+    LocalPos, MoveConfig, PlanetLook, PlanetShape, PlayerState, PlotPos, RecipeBook, Station,
 };
-use bm_protocol::{ClaimView, ClientMsg, EditAction, JobView, ServerMsg, StationView, Welcome};
+use bm_protocol::{
+    ClaimView, ClientMsg, EditAction, JobView, PlanetInfo, PlanetSummary, ServerMsg, StationView, Travel, Welcome,
+};
 use glam::DVec3;
+use serde::Deserialize;
 use std::collections::{HashMap, VecDeque};
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 pub const SPAWN: [f64; 3] = [128.5, 44.0, 128.5];
 const GROUND: i64 = 43;
 const SHAPE: (u32, u32) = (8, 4);
+/// The warp shrine by the spawn, on every demo planet.
+pub const SHRINE: [i64; 3] = [128, 44, 131];
+/// The demo's planets: name, kind, and the width shown for it in the sky and
+/// menu. (The demo's own patch is tiny; these are sizes real planets have.)
+const PLANETS: [(&str, &str, u32); 4] = [
+    ("Hearthmoor", "temperate", 2048),
+    ("Saffra", "arid", 3072),
+    ("Rimeholt", "frozen", 2560),
+    ("Verdance", "lush", 4096),
+];
+/// How long a new planet's ground is held back after a warp, by default.
+const ARRIVAL_HOLD: f64 = 2.5;
+
+#[derive(Deserialize)]
+struct KindsFile {
+    kind: Vec<KindDef>,
+}
+
+#[derive(Deserialize)]
+struct KindDef {
+    name: String,
+    display: Option<String>,
+    tier: u8,
+    look: PlanetLook,
+}
+
+struct DemoPlanet {
+    info: PlanetInfo,
+    summary: PlanetSummary,
+    edits: HashMap<BlockPos, BlockId>,
+}
 
 struct DemoStation {
     station: Station,
@@ -35,7 +75,12 @@ pub struct Demo {
     items: ItemRegistry,
     book: RecipeBook,
     inv: Inventory,
-    edits: HashMap<BlockPos, BlockId>,
+    planets: Vec<DemoPlanet>,
+    here: usize,
+    /// Chunks of a planet just warped to, and when they may go.
+    held: Vec<ServerMsg>,
+    release: Option<Instant>,
+    hold: Option<Duration>,
     stations: HashMap<BlockPos, DemoStation>,
     watched: Option<BlockPos>,
     claims: Vec<ClaimView>,
@@ -82,29 +127,7 @@ impl Demo {
                 wear,
             });
         }
-        let b = |n: &str| blocks.id(n).expect("builtin block");
-        let mut edits = HashMap::new();
-        let mut put = |x, y, z, block| {
-            edits.insert(BlockPos::new(x, y, z), block);
-        };
-        put(128, 44, 126, b("workbench"));
-        put(130, 44, 126, b("furnace"));
-        put(126, 44, 131, b("claim_stone"));
-        put(124, 44, 125, b("glow_crystal"));
-        for (tx, tz) in [(121, 120), (137, 119), (117, 135), (140, 138)] {
-            for y in 44..48 {
-                put(tx, y, tz, b("trunk"));
-            }
-            for dx in -2i64..=2 {
-                for dz in -2i64..=2 {
-                    for y in 47..50 {
-                        if dx.abs() + dz.abs() + (y - 48i64).abs() <= 3 && !(dx == 0 && dz == 0 && y < 48) {
-                            put(tx + dx, y, tz + dz, b("foliage"));
-                        }
-                    }
-                }
-            }
-        }
+        let planets = demo_planets(&blocks);
         let mut stations = HashMap::new();
         stations.insert(
             BlockPos::new(128, 44, 126),
@@ -160,7 +183,11 @@ impl Demo {
             items,
             book,
             inv,
-            edits,
+            planets,
+            here: 0,
+            held: Vec::new(),
+            release: None,
+            hold: Some(Duration::from_secs_f64(ARRIVAL_HOLD)),
             stations,
             watched: None,
             claims,
@@ -175,8 +202,8 @@ impl Demo {
         let w = Welcome {
             player_id: 1,
             account: self.account.clone(),
-            planet: shape(),
-            planet_name: "Demo".into(),
+            planet: self.planets[0].info.clone(),
+            universe: self.universe(),
             blocks: self.blocks.defs().to_vec(),
             items: self.items.defs().to_vec(),
             recipes: self.book.recipes.clone(),
@@ -190,11 +217,55 @@ impl Demo {
             tick: 0,
             view_radius: 4,
             reach: 7.0,
-            day: DayCycle::default(),
             claims: self.claims.clone(),
             plot_allowance: 64,
         };
         self.events.push_back(NetEvent::Connected(Box::new(w)));
+        let chunks = self.chunks_around_spawn();
+        self.events.extend(chunks.into_iter().map(NetEvent::Msg));
+    }
+
+    fn universe(&self) -> Vec<PlanetSummary> {
+        self.planets.iter().map(|p| p.summary.clone()).collect()
+    }
+
+    /// Keeps a warped-to planet's ground back for `secs` (infinite: for good),
+    /// so the travelling screen stays up.
+    pub fn hold_arrivals(&mut self, secs: f64) {
+        self.hold = Duration::try_from_secs_f64(secs).ok();
+    }
+
+    fn warp(&mut self, planet: u16) {
+        let Some(to) = self.planets.iter().position(|p| p.info.id == planet) else {
+            return self.notice("The shrine knows no such world.");
+        };
+        if to == self.here {
+            let name = self.planets[to].info.name.clone();
+            return self.notice(&format!("You are already on {name}."));
+        }
+        self.planets[self.here].summary.players -= 1;
+        self.planets[to].summary.players += 1;
+        self.here = to;
+        let claims = if to == 0 { self.claims.clone() } else { Vec::new() };
+        self.events.push_back(NetEvent::Msg(ServerMsg::Travel(Box::new(Travel {
+            planet: self.planets[to].info.clone(),
+            spawn: PlayerState {
+                pos: DVec3::from_array(SPAWN),
+                vel: DVec3::ZERO,
+                on_ground: true,
+            },
+            tick: 0,
+            claims,
+        }))));
+        self.events.push_back(NetEvent::Msg(ServerMsg::Universe {
+            planets: self.universe(),
+        }));
+        self.held = self.chunks_around_spawn();
+        self.release = self.hold.map(|h| Instant::now() + h);
+    }
+
+    fn chunks_around_spawn(&self) -> Vec<ServerMsg> {
+        let mut out = Vec::new();
         // Whole columns, nearest first: light needs complete columns.
         let centre = BlockPos::new(SPAWN[0] as i64, 0, SPAWN[2] as i64).chunk();
         let mut cols: Vec<(i32, i32)> = (-3..=3).flat_map(|dx| (-3..=3).map(move |dz| (dx, dz))).collect();
@@ -203,16 +274,23 @@ impl Demo {
             for cy in 0..SHAPE.1 as i32 {
                 let pos = ChunkPos::new(centre.x + dx, cy, centre.z + dz);
                 let data = self.make_chunk(pos).encode();
-                self.events.push_back(NetEvent::Msg(ServerMsg::Chunk { pos, data }));
+                out.push(ServerMsg::Chunk { pos, data });
             }
         }
+        out
     }
 
     fn ground(&self, p: BlockPos) -> BlockId {
-        if let Some(b) = self.edits.get(&p) {
+        let planet = &self.planets[self.here];
+        if let Some(b) = planet.edits.get(&p) {
             return *b;
         }
         let b = |n: &str| self.blocks.id(n).unwrap_or(BlockId::AIR);
+        let (top, under) = match planet.info.kind.as_str() {
+            "Arid" => ("sand", "sandstone"),
+            "Frozen" => ("snow", "soil"),
+            _ => ("turf", "soil"),
+        };
         // Gentle rolling ground away from the spawn clearing.
         let (dx, dz) = (p.x as f64 - SPAWN[0], p.z as f64 - SPAWN[2]);
         let far = ((dx * dx + dz * dz).sqrt() - 10.0).clamp(0.0, 6.0) / 6.0;
@@ -220,8 +298,8 @@ impl Demo {
         match p.y {
             0 => b("bedrock"),
             y if y < h - 3 => b("stone"),
-            y if y < h => b("soil"),
-            y if y == h => b("turf"),
+            y if y < h => b(under),
+            y if y == h => b(top),
             _ => BlockId::AIR,
         }
     }
@@ -249,6 +327,11 @@ impl Demo {
         let dt = self.last.elapsed().as_secs_f64();
         self.last = Instant::now();
         self.run_stations(dt);
+        if self.release.is_some_and(|r| Instant::now() >= r) {
+            self.release = None;
+            let held = std::mem::take(&mut self.held);
+            self.events.extend(held.into_iter().map(NetEvent::Msg));
+        }
         self.events.drain(..).collect()
     }
 
@@ -363,6 +446,7 @@ impl Demo {
                 }
             }
             ClientMsg::Edit { seq, pos, action, .. } => self.edit(seq, pos, action),
+            ClientMsg::Warp { planet, .. } => self.warp(planet),
             ClientMsg::StartBreak { .. } | ClientMsg::Hello { .. } => {}
         }
         self.slots_since(&before);
@@ -428,7 +512,7 @@ impl Demo {
             }
         };
         if accepted {
-            self.edits.insert(pos, block);
+            self.planets[self.here].edits.insert(pos, block);
         }
         self.events.push_back(NetEvent::Msg(ServerMsg::EditResult {
             seq,
@@ -437,6 +521,79 @@ impl Demo {
             accepted,
         }));
     }
+}
+
+/// The four demo planets, each with its kind's look, a shrine and, where
+/// the kind grows them, trees. Only the first has the stations.
+fn demo_planets(blocks: &BlockRegistry) -> Vec<DemoPlanet> {
+    let kinds: KindsFile = toml::from_str(include_str!("../../../assets/planets.toml")).expect("planets.toml is valid");
+    let b = |n: &str| blocks.id(n).expect("builtin block");
+    PLANETS
+        .iter()
+        .enumerate()
+        .map(|(i, (name, kind, width))| {
+            let k = kinds
+                .kind
+                .iter()
+                .find(|k| k.name == *kind)
+                .expect("kind in planets.toml");
+            let display = k.display.clone().unwrap_or_else(|| bm_core::items::title_case(&k.name));
+            let mut edits = HashMap::new();
+            let mut put = |x, y, z, block| {
+                edits.insert(BlockPos::new(x, y, z), block);
+            };
+            put(SHRINE[0], SHRINE[1], SHRINE[2], b("warp_shrine"));
+            if i == 0 {
+                put(128, 44, 126, b("workbench"));
+                put(130, 44, 126, b("furnace"));
+                put(126, 44, 131, b("claim_stone"));
+                put(124, 44, 125, b("glow_crystal"));
+            }
+            if *kind != "arid" {
+                for (tx, tz) in [(121, 120), (137, 119), (117, 135), (140, 138)] {
+                    for y in 44..48 {
+                        put(tx, y, tz, b("trunk"));
+                    }
+                    for dx in -2i64..=2 {
+                        for dz in -2i64..=2 {
+                            for y in 47..50 {
+                                if dx.abs() + dz.abs() + (y - 48i64).abs() <= 3 && !(dx == 0 && dz == 0 && y < 48) {
+                                    put(tx + dx, y, tz + dz, b("foliage"));
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            let id = i as u16;
+            DemoPlanet {
+                info: PlanetInfo {
+                    id,
+                    name: name.to_string(),
+                    kind: display.clone(),
+                    tier: k.tier,
+                    shape: shape(),
+                    // Days differ between planets, as on a real server.
+                    day: DayCycle {
+                        start_offset: DayCycle::default().start_offset + i as u64 * 9_000,
+                        ..DayCycle::default()
+                    },
+                    tints: k.look.resolve_tints(blocks).expect("tints name blocks"),
+                    look: k.look.clone(),
+                },
+                summary: PlanetSummary {
+                    id,
+                    name: name.to_string(),
+                    kind: display,
+                    tier: k.tier,
+                    color: k.look.color,
+                    width_blocks: *width,
+                    players: (i == 0) as u16 + [0, 3, 0, 7][i],
+                },
+                edits,
+            }
+        })
+        .collect()
 }
 
 fn recipe_index(book: &RecipeBook, items: &ItemRegistry, output: &str) -> u16 {
@@ -470,5 +627,31 @@ mod tests {
         let changes = slots.expect("slots sent");
         assert_eq!(changes.len(), 2);
         assert_eq!(changes.iter().find(|c| c.0 == 30).unwrap().1.unwrap().count, 10);
+    }
+
+    #[test]
+    fn the_demo_travels_between_its_planets() {
+        let mut d = Demo::new("Tester");
+        d.hold_arrivals(0.0);
+        let ev = d.poll();
+        let NetEvent::Connected(w) = &ev[0] else { panic!() };
+        assert_eq!(w.universe.len(), 4);
+        assert_eq!(w.planet.id, 0);
+        let shrine = BlockPos::new(SHRINE[0], SHRINE[1], SHRINE[2]);
+        d.send(ClientMsg::Warp { shrine, planet: 1 });
+        let ev = d.poll();
+        let NetEvent::Msg(ServerMsg::Travel(t)) = &ev[0] else {
+            panic!("travel first")
+        };
+        assert_eq!(t.planet.kind, "Arid");
+        assert_ne!(
+            t.planet.tints[d.blocks.id("sand").unwrap().0 as usize],
+            bm_core::NO_TINT
+        );
+        assert!(t.claims.is_empty());
+        assert!(ev.iter().any(|e| matches!(e, NetEvent::Msg(ServerMsg::Chunk { .. }))));
+        // Warping to where you are is refused with a notice.
+        d.send(ClientMsg::Warp { shrine, planet: 1 });
+        assert!(matches!(&d.poll()[0], NetEvent::Msg(ServerMsg::Notice { .. })));
     }
 }

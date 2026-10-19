@@ -82,6 +82,43 @@ pub(crate) fn copper_ramp() -> Ramp {
     ])
 }
 
+/// Rust: dull red-brown iron oxide, to a warm ochre where it catches light.
+pub(crate) fn rust_ramp() -> Ramp {
+    Ramp::from_hex(&[
+        0x2a1216, 0x4a1c1c, 0x6c2a22, 0x8c3c28, 0xaa5430, 0xc47040, 0xdc945c, 0xf0be8a,
+    ])
+}
+
+/// Iron and steel: a cool grey with a clear blue sheen, deeper and bluer
+/// than stone, to a near-white specular highlight.
+pub(crate) fn steel_ramp() -> Ramp {
+    Ramp::from_hex(&[
+        0x10142a, 0x1c2544, 0x2c3a62, 0x435680, 0x5f789e, 0x87a0c0, 0xb8cade, 0xeef6ff,
+    ])
+}
+
+/// Native iron in ore: the steel ramp a step brighter, so the nodules read
+/// as silver against the rust.
+pub(crate) fn native_iron_ramp() -> Ramp {
+    Ramp::from_hex(&[
+        0x1c2544, 0x2c3a62, 0x435680, 0x5f789e, 0x87a0c0, 0xb8cade, 0xe2ecf8, 0xffffff,
+    ])
+}
+
+/// Sandstone: warmer, redder and darker than loose sand.
+fn sandstone_ramp() -> Ramp {
+    Ramp::from_hex(&[
+        0x4e2428, 0x74382e, 0x985236, 0xb86e40, 0xd08c50, 0xe2aa66, 0xf0c886, 0xfae2b0,
+    ])
+}
+
+/// Ice: deep cold blue in the body to white in the cracks and bubbles.
+fn ice_ramp() -> Ramp {
+    Ramp::from_hex(&[
+        0x24508e, 0x326cae, 0x4688c8, 0x62a6dc, 0x86c2ec, 0xb0daf6, 0xdaf0fc, 0xffffff,
+    ])
+}
+
 pub(crate) fn coal_ramp() -> Ramp {
     Ramp::from_hex(&[
         0x0a0810, 0x13101c, 0x1d1a2a, 0x29263a, 0x3a3850, 0x5a5a78, 0x9a9cc8, 0xe0e4ff,
@@ -409,6 +446,167 @@ fn grains(ctx: Ctx, tex: &mut Tex, salt: u32, dark: Rgba, pale: Rgba) {
     }
 }
 
+// -------------------------------------------------------------- sandstone
+
+/// The sandstone beds down a side face, top to bottom, in pixels (sum 32):
+/// hard beds stand proud, soft ones are eroded back under them.
+const BEDS: [(usize, bool); 7] = [
+    (5, true),
+    (3, false),
+    (6, true),
+    (4, false),
+    (6, true),
+    (3, false),
+    (5, true),
+];
+
+/// Sandstone side: layered beds of warm sandstone, each its own shade (some
+/// pinker, some paler), the hard ones lit along their top lip, the soft ones
+/// shadowed under the overhang and pitted. The bed lines wander a little but
+/// tile both ways, so a cliff of sandstone reads as one run of strata.
+pub fn sandstone_side(_ctx: Ctx) -> Tex {
+    let salt = seed("sandstone_side");
+    let ramp = sandstone_ramp();
+    let n = BEDS.len();
+    let mut tops = vec![0.0f32; n + 1];
+    for i in 0..n {
+        tops[i + 1] = tops[i] + BEDS[i].0 as f32;
+    }
+    // Each bed line wobbles along x; the line at 32 is the line at 0.
+    let line = |i: usize, fx: f32| {
+        let w = crate::noise::fbm(hash2(salt, (i % n) as u32), 4, 1, 2, fx, 0.5) - 0.5;
+        tops[i] + w * 2.6
+    };
+    let pink = Rgba::hex(0xc0605a);
+    let cream = Rgba::hex(0xf8e4bc);
+    let mut tex = Tex::from_fn(|x, y| {
+        let (fx, fy) = (c(x), c(y));
+        let f = if fy < line(0, fx) { fy + SIZEF } else { fy };
+        let i = (0..n).find(|&i| f < line(i + 1, fx)).unwrap_or(n - 1);
+        let (depth, thick) = (f - line(i, fx), line(i + 1, fx) - line(i, fx));
+        let (_, hard) = BEDS[i];
+        let id = hash2(salt ^ 0x33, i as u32);
+        let mut t = if hard { 0.6 } else { 0.42 } + (unit(id) - 0.5) * 0.18;
+        // Fine laminae along the bed, in clumped streaks.
+        let lam = crate::noise::value(hash2(salt, i as u32 + 40), 4, 16, fx, fy);
+        t += (smoothstep(0.3, 0.7, lam) - 0.5) * 0.12;
+        // Cross-bedding in the thick hard beds: faint diagonal laminae.
+        if hard && thick > 5.5 {
+            let ph = (fx / SIZEF * 4.0 - depth / 3.0).rem_euclid(1.0);
+            if ph < 0.18 {
+                t -= 0.07;
+            }
+        }
+        if hard {
+            if depth < 1.0 {
+                t += 0.24;
+            } else if depth < 2.0 {
+                t += 0.08;
+            }
+            if thick - depth < 1.0 {
+                t -= 0.16;
+            }
+        } else {
+            // Under the hard bed's overhang.
+            if depth < 1.0 {
+                t = 0.08;
+            } else if depth < 2.0 {
+                t -= 0.16;
+            }
+        }
+        let mut col = ramp.pick(t, x, y);
+        // Some beds pinker, some paler, in the bed's own measure.
+        let tint = unit(hash2(id, 7));
+        if tint < 0.35 {
+            col = col.mix(pink, 0.22);
+        } else if tint > 0.75 {
+            col = col.mix(cream, 0.18);
+        }
+        col
+    });
+    // Pits in the soft beds, lit on their far (bottom-right) wall.
+    for s in Ctx::BASE.sites(salt ^ 0x71, 5.0) {
+        if s.r[0] > 0.6 {
+            continue;
+        }
+        let (x, y) = (s.x as usize % SIZE, s.y as usize % SIZE);
+        let f = if c(y) < line(0, c(x)) { c(y) + SIZEF } else { c(y) };
+        let i = (0..n).find(|&i| f < line(i + 1, c(x))).unwrap_or(n - 1);
+        if BEDS[i].1 || f - line(i, c(x)) < 1.5 {
+            continue;
+        }
+        let dark = ramp.at(1);
+        tex.set(x, y, dark);
+        if s.r[1] < 0.5 {
+            tex.set((x + 1) % SIZE, y, dark);
+            let (lx, ly) = ((x + 2) % SIZE, y);
+            tex.set(lx, ly, tex.get(lx, ly).mix(ramp.at(6), 0.5));
+        } else {
+            let (lx, ly) = ((x + 1) % SIZE, (y + 1) % SIZE);
+            tex.set(lx, ly, tex.get(lx, ly).mix(ramp.at(6), 0.5));
+        }
+    }
+    // A few joints split the hard beds top to bottom: a dark crack with a
+    // lit lip on its right.
+    for (i, &(_, hard)) in BEDS.iter().enumerate() {
+        let id = hash2(salt ^ 0x95, i as u32);
+        if !hard || unit(id) > 0.6 {
+            continue;
+        }
+        let x = (unit(hash(id)) * SIZEF) as usize % SIZE;
+        for y in 0..SIZE {
+            let fx = c(x);
+            let f = if c(y) < line(0, fx) { c(y) + SIZEF } else { c(y) };
+            let inside = f > line(i, fx) + 1.0 && f < line(i + 1, fx) - 0.5;
+            if inside {
+                tex.set(x, y, ramp.at(1));
+                let r = (x + 1) % SIZE;
+                tex.set(r, y, tex.get(r, y).mix(ramp.at(7), 0.35));
+            }
+        }
+    }
+    tex
+}
+
+/// Sandstone top: a smooth bed plane in broad, barely parted slabs, soft
+/// in tone, with rings of rust-pink staining wandering across it and a few
+/// grains. Calmer than the side, and redder and stiller than loose sand.
+pub fn sandstone_top(ctx: Ctx) -> Tex {
+    let salt = seed("sandstone_top");
+    let ramp = sandstone_ramp();
+    let style = RockStyle {
+        salt,
+        spacing: 15.0,
+        stretch: 1.0,
+        bevel: 2.2,
+        cracks: 0.2,
+        tone: 0.64,
+        spread: 0.08,
+        tilt: 0.012,
+        rim: 0.16,
+        mottle: 0.14,
+    };
+    let tone = rock(ctx, &style);
+    let rings = Field::from_fn(|x, y| ctx.fbm(salt ^ 2, 2, 2, 2, c(x), c(y))).blur();
+    let pink = Rgba::hex(0xb0504a);
+    let mut tex = Tex::from_fn(|x, y| {
+        let t = tone.at(x, y);
+        // Cracks are shallow in this soft stone.
+        let col = ramp.pick(if t < 0.1 { 0.24 } else { t }, x, y);
+        // Liesegang rings: bands of iron stain following the contours.
+        let band = (rings.at(x, y) * 5.0).fract();
+        if band < 0.1 {
+            col.mix(pink, 0.34)
+        } else if band < 0.2 {
+            col.mix(pink, 0.14)
+        } else {
+            col
+        }
+    });
+    grains(ctx, &mut tex, salt ^ 3, Rgba::hex(0x8a4a32), Rgba::hex(0xfff0d0));
+    tex
+}
+
 // ----------------------------------------------------------------- gravel
 
 /// Gravel: many small rounded pebbles of mixed kinds packed together, each
@@ -709,11 +907,21 @@ struct OreStyle {
 /// top-left rim and a dark bottom-right edge, a dark outline where it meets
 /// the rock, and a soft shadow cast below and right.
 fn ore(ctx: Ctx, host: Tex, style: &OreStyle, ramp: &Ramp) -> Tex {
-    let clusters: Vec<Site> = ctx
-        .sites(style.salt, style.spacing)
+    ore_with(ctx, host, style, |_| ramp)
+}
+
+/// The clusters an ore style keeps.
+fn ore_clusters(ctx: Ctx, style: &OreStyle) -> Vec<Site> {
+    ctx.sites(style.salt, style.spacing)
         .into_iter()
         .filter(|s| s.r[0] < style.keep)
-        .collect();
+        .collect()
+}
+
+/// `ore`, with the ramp chosen per facet (`ramp_of` gets the facet index):
+/// for ores of two minerals grown together.
+fn ore_with<'a>(ctx: Ctx, host: Tex, style: &OreStyle, ramp_of: impl Fn(usize) -> &'a Ramp) -> Tex {
+    let clusters = ore_clusters(ctx, style);
     let facets = ctx.sites(style.salt ^ 0x0f, style.facet);
     let in_cluster: Vec<bool> = facets
         .iter()
@@ -749,6 +957,7 @@ fn ore(ctx: Ctx, host: Tex, style: &OreStyle, ramp: &Ramp) -> Tex {
                 }
                 // A glint near the top-left corner of some facets.
                 let glint = f.r[3] < style.glints && (k.dx + 1.0).abs() < 0.6 && (k.dy + 1.0).abs() < 0.6;
+                let ramp = ramp_of(k.index);
                 let col = if glint { ramp.lightest() } else { ramp.pick(t, x, y) };
                 out.set(x, y, col);
             } else {
@@ -798,6 +1007,50 @@ pub fn coal_seam(ctx: Ctx) -> Tex {
         outline: Rgba::hex(0x14101c),
     };
     ore(ctx, stone(ctx), &style, &coal_ramp())
+}
+
+/// Iron vein: knots of rust-red ore grown through with silvery steel-blue
+/// nodules, the stone round them stained with rust. Redder and duller than
+/// copper's bright orange, with cold metal glints copper does not have.
+pub fn iron_vein(ctx: Ctx) -> Tex {
+    let style = OreStyle {
+        salt: seed("iron_vein"),
+        spacing: 10.0,
+        radius: 5.4,
+        keep: 0.9,
+        facet: 2.4,
+        tone: 0.46,
+        spread: 0.38,
+        rim_tone: 0.86,
+        glow: 0.1,
+        glints: 0.3,
+        outline: Rgba::hex(0x2a1418),
+    };
+    let salt = style.salt;
+    let clusters = ore_clusters(ctx, &style);
+    let rust = rust_ramp();
+    let steel = native_iron_ramp();
+    // Rust bleeds into the stone round each cluster, in soft clumps.
+    let mut host = stone(ctx);
+    let stain = rust.at(3);
+    for y in 0..SIZE {
+        for x in 0..SIZE {
+            let (fx, fy) = (c(x), c(y));
+            let d = clusters
+                .iter()
+                .map(|s| {
+                    let r = style.radius * (0.7 + 0.6 * s.r[1]);
+                    wrap_delta(fx - s.x).hypot(wrap_delta(fy - s.y) * 1.2) - r
+                })
+                .fold(f32::MAX, f32::min);
+            let k = (1.0 - smoothstep(-1.0, 3.5, d)) * (0.3 + ctx.fbm(salt ^ 3, 8, 8, 1, fx, fy) * 0.5);
+            if k > 0.18 {
+                host.set(x, y, host.get(x, y).mix(stain, k.min(0.55)));
+            }
+        }
+    }
+    let silver = |i: usize| unit(hash2(salt ^ 0x5e, i as u32)) < 0.4;
+    ore_with(ctx, host, &style, |i| if silver(i) { &steel } else { &rust })
 }
 
 // ---------------------------------------------------------------- crystal
@@ -883,6 +1136,69 @@ pub fn glass(_ctx: Ctx) -> Tex {
     })
 }
 
+// -------------------------------------------------------------------- ice
+
+/// Ice: clear cold blue in broad plates, each deeper in its middle and lit
+/// on its top-left rim, with white fracture lines along some of the joins,
+/// strings of trapped air bubbles and a frosty sheen across the upper left.
+/// Translucent: the body lets about a third of the light through, the white
+/// cracks and bubbles are nearly opaque.
+pub fn ice(ctx: Ctx) -> Tex {
+    let salt = seed("ice");
+    let ramp = ice_ramp();
+    let plates = ctx.sites(salt, 11.0);
+    // Depth in the ice: soft clouds of deeper and clearer blue.
+    let depth = Field::from_fn(|x, y| ctx.fbm(salt ^ 1, 2, 2, 3, c(x), c(y))).blur();
+    let mut tex = Tex::from_fn(|x, y| {
+        let (fx, fy) = (c(x), c(y));
+        let k = cell(&plates, fx, fy, 1.0);
+        let p = &plates[k.index];
+        let mut t = 0.5 + (p.r[0] - 0.5) * 0.1;
+        t += (depth.at(x, y) - 0.5) * 0.5;
+        let mut a = 0.62 + (0.5 - t) * 0.16;
+        // Fractures along a few of the joins: a white line, lit on the side
+        // facing the light, with a deep blue shadow beside it.
+        let open = ctx.value(salt ^ 2, 4, 4, fx, fy) < 0.34;
+        if open && k.edge < 0.55 {
+            t = if k.rim(1.0) > -0.2 { 0.97 } else { 0.84 };
+            a = 0.9;
+        } else if open && k.edge < 1.4 {
+            t += if k.rim(2.0) < 0.0 { -0.14 } else { 0.1 };
+            a += 0.05;
+        }
+        // Frost sheen in a diagonal band across the upper left.
+        let d = fx + fy;
+        if (14.0..16.0).contains(&d) || (19.0..20.0).contains(&d) {
+            t += 0.12;
+            a += 0.05;
+        }
+        ramp.pick(t, x, y).with_alpha(a.clamp(0.5, 0.95))
+    });
+    // Trapped air: little bubbles, lit white at the top left, a blue ring.
+    for b in ctx.sites(salt ^ 3, 5.0) {
+        if b.r[0] > 0.24 {
+            continue;
+        }
+        let (x, y) = (b.x as i32, b.y as i32);
+        let big = b.r[1] < 0.6;
+        let px = |dx: i32, dy: i32| (wrap_i(x + dx), wrap_i(y + dy));
+        let (hx, hy) = px(0, 0);
+        tex.set(hx, hy, ramp.at(7).with_alpha(0.92));
+        if big {
+            for (dx, dy) in [(1, 0), (0, 1)] {
+                let (qx, qy) = px(dx, dy);
+                tex.set(qx, qy, ramp.at(5).with_alpha(0.82));
+            }
+            let (qx, qy) = px(1, 1);
+            tex.set(qx, qy, ramp.at(2).with_alpha(0.8));
+        } else {
+            let (qx, qy) = px(1, 1);
+            tex.set(qx, qy, ramp.at(3).with_alpha(0.76));
+        }
+    }
+    tex
+}
+
 /// Every texture the game asks for, painted; `variant` is ignored by the
 /// materials that have no variants.
 pub fn paint_named(name: &str, variant: u32) -> Option<Tex> {
@@ -903,6 +1219,10 @@ pub fn paint_named(name: &str, variant: u32) -> Option<Tex> {
         "foliage" => foliage,
         "coal_seam" => coal_seam,
         "copper_vein" => copper_vein,
+        "iron_vein" => iron_vein,
+        "sandstone_top" => sandstone_top,
+        "sandstone_side" => sandstone_side,
+        "ice" => ice,
         "glow_crystal" => glow_crystal,
         "timber" => timber,
         "brick" => brick,
@@ -913,6 +1233,8 @@ pub fn paint_named(name: &str, variant: u32) -> Option<Tex> {
         "furnace_side" => stations::furnace_side,
         "claim_stone_top" => stations::claim_stone_top,
         "claim_stone_side" => stations::claim_stone_side,
+        "warp_shrine_top" => stations::warp_shrine_top,
+        "warp_shrine_side" => stations::warp_shrine_side,
         _ => return None,
     };
     Some(f(ctx))

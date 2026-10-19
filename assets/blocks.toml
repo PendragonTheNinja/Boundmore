@@ -287,3 +287,58 @@ hardness = 1.5
 textures = { top = "claim_stone_top", side = "claim_stone_side", bottom = "stone" }
 material = "rock"
 light = 6
+
+# M4: blocks of the other planet kinds. New blocks always go at the END of this
+# file: block ids are positions here, and saved chunks store ids.
+
+[[block]]
+name = "iron_vein"
+color = [150, 120, 108]
+solid = true
+opaque = true
+translucent = false
+breakable = true
+placeable = false
+hardness = 1.6
+textures = { all = "iron_vein" }
+material = "rock"
+drops = "iron_ore"
+
+[[block]]
+name = "sandstone"
+color = [214, 178, 120]
+solid = true
+opaque = true
+translucent = false
+breakable = true
+placeable = true
+hardness = 0.9
+textures = { top = "sandstone_top", side = "sandstone_side", bottom = "sandstone_top" }
+material = "rock"
+
+[[block]]
+name = "ice"
+color = [170, 210, 240]
+solid = true
+opaque = false
+translucent = true
+breakable = true
+placeable = true
+hardness = 0.5
+opacity = 0.7
+textures = { all = "ice" }
+material = "crystal"
+
+[[block]]
+name = "warp_shrine"
+color = [96, 84, 140]
+top_color = [200, 170, 255]
+solid = true
+opaque = true
+translucent = false
+breakable = false
+placeable = false
+hardness = 0.0
+textures = { top = "warp_shrine_top", side = "warp_shrine_side", bottom = "stone" }
+material = "rock"
+light = 10

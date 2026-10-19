@@ -1,32 +1,40 @@
-//! The authoritative simulation: one thread, a fixed 60 Hz tick.
+//! The authoritative simulation: one thread, a fixed 60 Hz tick, for every
+//! planet of the universe (ADR-0006).
 //!
 //! Each tick: take network events, move finished chunk loads in, step every
 //! player by the inputs they sent, advance station jobs, stream chunks, and
-//! every third tick send snapshots. The loop owns all game state (world,
+//! every third tick send snapshots. The loop owns all game state (worlds,
 //! inventories, stations, claims); nothing else mutates it, so no locks are
 //! needed and every rule is enforced in one place.
+//!
+//! Work follows players: a planet nobody is on holds no chunks (they are
+//! saved and dropped as the last player leaves) and costs only its running
+//! station jobs, which are timestamp driven. Nothing scans every planet's
+//! chunks per tick.
 
-use crate::claims::{ClaimError, Claims};
+use crate::claims::ClaimError;
 use crate::config::ServerConfig;
-use crate::crafting::{self, CraftError, MAX_CRAFT_COUNT, Stations};
+use crate::crafting::{self, CraftError, MAX_CRAFT_COUNT};
 use crate::net::{Event, Outbox};
+use crate::planet::Planet;
 use crate::store::{PlayerData, Store, WriteBatch, load_slots, save_slots};
-use crate::world::World;
-use anyhow::Result;
+use anyhow::{Context, Result};
 use bm_core::items::title_case;
 use bm_core::movement::{self, MoveConfig, PlayerInput, PlayerState};
 use bm_core::{
-    BlockId, BlockPos, CHUNK_SIZE, ChunkPos, DayCycle, HOTBAR_SLOTS, Inventory, ItemId, ItemRegistry, PlanetShape,
-    PlotPos, RecipeBook, Station, TICK_DT,
+    BlockId, BlockPos, CHUNK_SIZE, ChunkPos, HOTBAR_SLOTS, Inventory, ItemId, ItemRegistry, PlanetShape, PlotPos,
+    RecipeBook, Station, TICK_DT,
 };
 use bm_net::quinn::Connection;
-use bm_protocol::{ClientMsg, EditAction, PLAYERS_PER_SNAPSHOT, RemotePlayer, ServerDatagram, ServerMsg, Welcome};
-use bm_worldgen::Generator;
+use bm_protocol::{
+    ClientMsg, EditAction, PLAYERS_PER_SNAPSHOT, PlanetSummary, RemotePlayer, ServerDatagram, ServerMsg, Travel,
+    Welcome,
+};
 use crossbeam_channel::{Receiver, Sender, TryRecvError};
 use glam::DVec3;
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet, VecDeque};
-use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 /// Snapshots go out every this many ticks (20 Hz).
@@ -59,6 +67,12 @@ const MAX_QUEUED_EDITS: usize = 64;
 /// to absorb network jitter between the player's StartBreak and Break.
 const BREAK_SLACK_SECONDS: f64 = 0.12;
 const BREAK_SLACK_FRACTION: f64 = 0.2;
+/// The planet list goes out at most this often when player counts change.
+const UNIVERSE_EVERY: u64 = 60;
+/// After travel, edits and break holds tagged with an input up to this many
+/// past the last one the server had are refused: the client sent them about
+/// the planet it left, before it heard of the travel.
+const TRAVEL_GUARD_INPUTS: u32 = 30;
 
 /// What waits in a player's queue for the input it follows.
 #[derive(Clone, Copy, Debug)]
@@ -88,6 +102,8 @@ struct Mining {
 struct Player {
     /// Lowercased account name.
     account: String,
+    /// Index into `Game::planets` (its id).
+    planet: usize,
     name: String,
     conn: Connection,
     out: Outbox,
@@ -107,11 +123,15 @@ struct Player {
     edits: VecDeque<(u32, Queued)>,
     /// The station whose updates this player receives.
     watching: Option<BlockPos>,
+    /// Edits and holds tagged with an input up to this one came from before
+    /// the last travel (see `TRAVEL_GUARD_INPUTS`).
+    travel_guard: Option<u32>,
 }
 
 /// A player who left, held in memory until the save holding their last state
 /// is durable: a quick rejoin must not read an older copy from disk.
 struct Departed {
+    planet: usize,
     state: PlayerState,
     inventory: Inventory,
     /// Fires (or disconnects) once their save is written; None until sent.
@@ -157,23 +177,40 @@ enum Effect {
 
 pub struct Game {
     cfg: ServerConfig,
-    planet_name: String,
-    world: World,
+    planets: Vec<Planet>,
+    /// Where new players start.
+    start: usize,
     items: ItemRegistry,
     recipes: RecipeBook,
-    stations: Stations,
-    claims: Claims,
     claim_stone: BlockId,
+    warp_shrine: BlockId,
+    /// Claim ids are unique across the universe.
+    next_claim: u32,
     store: Store,
     writer: Sender<WriteBatch>,
     events: Receiver<Event>,
     players: HashMap<u32, Player>,
     departed: HashMap<String, Departed>,
     tick: u64,
-    day: DayCycle,
     movement: MoveConfig,
-    spawn: BlockPos,
     stats: Stats,
+    /// Player counts changed since the planet list last went out.
+    universe_dirty: bool,
+    universe_sent: u64,
+    load: Arc<Mutex<Vec<PlanetLoad>>>,
+}
+
+/// One planet's load, as the report shows it.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct PlanetLoad {
+    pub name: String,
+    pub players: usize,
+    /// Chunks in memory.
+    pub resident: usize,
+    /// Chunk loads in flight.
+    pub loading: usize,
+    /// Evicted chunks kept until their save is durable.
+    pub held: usize,
 }
 
 #[derive(Default)]
@@ -231,9 +268,9 @@ impl Game {
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         cfg: ServerConfig,
-        planet_name: String,
-        world: World,
-        generator: &Generator,
+        planets: Vec<Planet>,
+        start: usize,
+        next_claim: u32,
         items: ItemRegistry,
         recipes: RecipeBook,
         store: Store,
@@ -241,35 +278,32 @@ impl Game {
         events: Receiver<Event>,
     ) -> Result<Self> {
         let tick = store.clock().unwrap_or_else(|e| {
-            tracing::error!("reading the planet clock: {e:#}; starting at 0");
+            tracing::error!("reading the universe clock: {e:#}; starting at 0");
             0
         });
-        // Claims and stations are few and must work while nobody is near, so
-        // they live in memory. Failing to read them is fatal: running without
-        // them would leave claimed land open and stations empty.
-        let stations = Stations::load(store.stations()?, &items, &recipes);
-        let (claims, next_claim) = store.claims()?;
-        let claims = Claims::load(world.shape, claims, next_claim);
-        let claim_stone = world.registry.id("claim_stone")?;
+        let registry = &planets.first().context("no planets")?.world.registry;
+        let claim_stone = registry.id("claim_stone")?;
+        let warp_shrine = registry.id("warp_shrine")?;
         Ok(Self {
-            spawn: generator.spawn_point(),
             cfg,
-            planet_name,
-            world,
+            planets,
+            start,
             items,
             recipes,
-            stations,
-            claims,
             claim_stone,
+            warp_shrine,
+            next_claim: next_claim.max(1),
             store,
             writer,
             events,
             players: HashMap::new(),
             departed: HashMap::new(),
             tick,
-            day: DayCycle::default(),
             movement: MoveConfig::default(),
             stats: Stats::default(),
+            universe_dirty: false,
+            universe_sent: 0,
+            load: Arc::new(Mutex::new(Vec::new())),
         })
     }
 
@@ -303,12 +337,30 @@ impl Game {
 
     fn report(&mut self) {
         let s = &self.stats;
+        let planets: Vec<String> = self
+            .planets
+            .iter()
+            .map(|p| {
+                let held = p.world.held_for_saving();
+                format!(
+                    "{} {}p {}c{}{}",
+                    p.name,
+                    p.players,
+                    p.world.resident(),
+                    if p.world.pending_loads() > 0 {
+                        format!("+{}l", p.world.pending_loads())
+                    } else {
+                        String::new()
+                    },
+                    if held > 0 { format!("+{held}s") } else { String::new() },
+                )
+            })
+            .collect();
         tracing::info!(
-            "tick {} | {} players | {} chunks resident, {} loading | sent {} chunks ({} KiB) | edits {} ok {} refused | {} slow ticks",
+            "tick {} | {} players | {} | sent {} chunks ({} KiB) | edits {} ok {} refused | {} slow ticks",
             self.tick,
             self.players.len(),
-            self.world.resident(),
-            self.world.pending_loads(),
+            planets.join(", "),
             s.chunks_sent,
             s.bytes_sent / 1024,
             s.edits,
@@ -317,13 +369,35 @@ impl Game {
         );
     }
 
+    /// A handle on the per-planet load, refreshed every second.
+    pub fn load_handle(&self) -> Arc<Mutex<Vec<PlanetLoad>>> {
+        self.load.clone()
+    }
+
+    fn publish_load(&self) {
+        let now = self
+            .planets
+            .iter()
+            .map(|p| PlanetLoad {
+                name: p.name.clone(),
+                players: p.players,
+                resident: p.world.resident(),
+                loading: p.world.pending_loads(),
+                held: p.world.held_for_saving(),
+            })
+            .collect();
+        *self.load.lock().unwrap_or_else(|e| e.into_inner()) = now;
+    }
+
     /// One tick. Public so tests can drive the loop without real time.
     pub fn step(&mut self) {
         self.tick += 1;
         while let Ok(ev) = self.events.try_recv() {
             self.handle(ev);
         }
-        self.world.receive_loaded(self.tick);
+        for p in &mut self.planets {
+            p.world.receive_loaded(self.tick, p.players > 0);
+        }
         self.simulate();
         self.step_stations();
         let ids: Vec<u32> = self.players.keys().copied().collect();
@@ -337,14 +411,60 @@ impl Game {
             self.save(None);
         }
         if self.tick % EVICT_EVERY == 0 {
-            let chunks = self.world.evict_unwanted(self.tick.saturating_sub(EVICT_EVERY));
-            if !chunks.is_empty() {
-                let _ = self.writer.send(WriteBatch {
-                    chunks,
-                    ..Default::default()
-                });
+            let before = self.tick.saturating_sub(EVICT_EVERY);
+            self.evict(None, before);
+        }
+        if self.tick % 60 == 0 {
+            self.publish_load();
+        }
+        if self.universe_dirty && self.tick >= self.universe_sent + UNIVERSE_EVERY {
+            self.send_universe();
+        }
+    }
+
+    /// Evicts chunks unwanted since `before`, on one planet or all, saving
+    /// the dirty ones.
+    fn evict(&mut self, planet: Option<usize>, before: u64) {
+        let (tx, rx) = crossbeam_channel::bounded(1);
+        let mut chunks = Vec::new();
+        for (i, p) in self.planets.iter_mut().enumerate() {
+            if planet.is_none_or(|only| only == i) {
+                let id = p.id;
+                chunks.extend(
+                    p.world
+                        .evict_unwanted(before, &rx)
+                        .into_iter()
+                        .map(|(c, bytes)| (id, c, bytes)),
+                );
             }
         }
+        if !chunks.is_empty() {
+            let _ = self.writer.send(WriteBatch {
+                chunks,
+                done: vec![tx],
+                ..Default::default()
+            });
+        }
+    }
+
+    fn universe(&self) -> Vec<PlanetSummary> {
+        self.planets.iter().map(Planet::summary).collect()
+    }
+
+    fn send_universe(&mut self) {
+        let msg = ServerMsg::Universe {
+            planets: self.universe(),
+        };
+        for p in self.players.values() {
+            p.out.send(&msg);
+        }
+        self.universe_dirty = false;
+        self.universe_sent = self.tick;
+    }
+
+    /// Someone arrived on or left a planet.
+    fn counts_changed(&mut self) {
+        self.universe_dirty = true;
     }
 
     fn handle(&mut self, ev: Event) {
@@ -383,6 +503,7 @@ impl Game {
                 ClientMsg::CollectStation { pos } => self.collect(id, pos),
                 ClientMsg::ClaimPlot { claim, plot } => self.claim_plot(id, claim, plot),
                 ClientMsg::ReleasePlot { plot } => self.release_plot(id, plot),
+                ClientMsg::Warp { shrine, planet } => self.warp(id, shrine, planet),
                 ClientMsg::Hello { .. } => {}
             },
         }
@@ -406,19 +527,20 @@ impl Game {
             self.leave(old);
         }
         if self.players.len() >= self.cfg.max_players {
-            out.close("this planet is full");
+            out.close("this server is full");
             return;
         }
-        let (saved, mut inventory) = match self.departed.remove(&account) {
-            Some(d) => (Some(d.state), d.inventory),
+        let (planet, saved, mut inventory) = match self.departed.remove(&account) {
+            Some(d) => (d.planet, Some(d.state), d.inventory),
             None => match self.store.player(&account) {
                 Ok(Some(data)) => (
+                    data.planet as usize,
                     data.state,
                     Inventory {
                         slots: load_slots(&self.items, &data.inventory, &name),
                     },
                 ),
-                Ok(None) => (None, Inventory::default()),
+                Ok(None) => (self.start, None, Inventory::default()),
                 Err(e) => {
                     // Never start them afresh: the empty inventory would be
                     // saved over the real one.
@@ -428,27 +550,28 @@ impl Game {
                 }
             },
         };
+        let (planet, saved) = if planet < self.planets.len() {
+            (planet, saved)
+        } else {
+            tracing::warn!("{name} was on planet {planet}, which this server does not host; they start again");
+            (self.start, None)
+        };
         sanitize(&mut inventory, &self.items);
+        let pl = &self.planets[planet];
+        let shape = pl.world.shape;
         let state = saved
-            .filter(|s| s.pos.is_finite() && s.vel.is_finite() && self.world.shape.contains_y(s.pos.y as i64))
+            .filter(|s| s.pos.is_finite() && s.vel.is_finite() && shape.contains_y(s.pos.y as i64))
             .map(|s| PlayerState {
-                pos: self.world.shape.wrap_point(s.pos),
+                pos: shape.wrap_point(s.pos),
                 ..s
             })
-            .unwrap_or_else(|| PlayerState {
-                pos: DVec3::new(
-                    self.spawn.x as f64 + 0.5,
-                    self.spawn.y as f64,
-                    self.spawn.z as f64 + 0.5,
-                ),
-                ..Default::default()
-            });
+            .unwrap_or_else(|| pl.arrival());
         out.send(&ServerMsg::Welcome(Box::new(Welcome {
             player_id: id,
             account: name.clone(),
-            planet: self.world.shape,
-            planet_name: self.planet_name.clone(),
-            blocks: self.world.registry.defs().to_vec(),
+            planet: pl.info(),
+            universe: self.universe(),
+            blocks: pl.world.registry.defs().to_vec(),
             items: self.items.defs().to_vec(),
             recipes: self.recipes.recipes.clone(),
             inventory: inventory.clone(),
@@ -457,22 +580,27 @@ impl Game {
             tick: self.tick,
             view_radius: self.cfg.view_radius,
             reach: self.cfg.reach,
-            day: self.day,
-            claims: self.claims.views(),
+            claims: pl.claims.views(),
             plot_allowance: self.cfg.plot_allowance,
         })));
-        for (oid, other) in &self.players {
+        for (oid, other) in self.players.iter().filter(|(_, o)| o.planet == planet) {
             out.send(&ServerMsg::PlayerJoined {
                 id: *oid,
                 name: other.name.clone(),
             });
             other.out.send(&ServerMsg::PlayerJoined { id, name: name.clone() });
         }
-        tracing::info!("{name} (#{id}) joined at {:.1?}", state.pos);
+        if let Some(text) = shrine_hint(shape, &pl.name, pl.shrine, state.pos) {
+            out.send(&ServerMsg::Notice { text });
+        }
+        tracing::info!("{name} (#{id}) joined on {} at {:.1?}", pl.name, state.pos);
+        self.planets[planet].players += 1;
+        self.counts_changed();
         self.players.insert(
             id,
             Player {
                 account,
+                planet,
                 name,
                 conn,
                 out,
@@ -489,6 +617,7 @@ impl Game {
                 mining: None,
                 edits: VecDeque::new(),
                 watching: None,
+                travel_guard: None,
             },
         );
     }
@@ -496,9 +625,11 @@ impl Game {
     fn leave(&mut self, id: u32) {
         let Some(p) = self.players.remove(&id) else { return };
         tracing::info!("{} (#{id}) left", p.name);
+        let planet = p.planet;
         self.departed.insert(
             p.account,
             Departed {
+                planet,
                 state: p.state,
                 inventory: p.inventory,
                 written: None,
@@ -507,15 +638,27 @@ impl Game {
         // Everything, not just the player: what they gathered and built
         // must reach the disk in the same transaction as their inventory.
         self.save(None);
-        for other in self.players.values() {
+        for other in self.players.values().filter(|o| o.planet == planet) {
             other.out.send(&ServerMsg::PlayerLeft { id });
         }
+        self.left_planet(planet);
+    }
+
+    /// A player has gone from `planet` (left the server or travelled).
+    fn left_planet(&mut self, planet: usize) {
+        let pl = &mut self.planets[planet];
+        pl.players -= 1;
+        if pl.players == 0 {
+            // Nobody is there: it holds no chunks. Ones whose save is still
+            // in flight are kept until it is durable.
+            self.evict(Some(planet), u64::MAX);
+        }
+        self.counts_changed();
     }
 
     /// Applies each player's inputs in sequence order, one per tick of real
     /// time on average (ADR-0004).
     fn simulate(&mut self) {
-        let shape = self.world.shape;
         let ids: Vec<u32> = self.players.keys().copied().collect();
         for id in ids {
             {
@@ -542,7 +685,8 @@ impl Game {
                     // snapshot and corrects its prediction.
                     p.last_input
                 };
-                movement::step(&mut p.state, &input, &self.movement, shape, &self.world);
+                let world = &self.planets[p.planet].world;
+                movement::step(&mut p.state, &input, &self.movement, world.shape, world);
                 p.last_seq += 1;
                 p.last_input = input;
                 p.bank -= 1.0;
@@ -555,7 +699,12 @@ impl Game {
     /// overtake the break of the one before it.
     fn queue(&mut self, id: u32, at: u32, queued: Queued) {
         let Some(p) = self.players.get_mut(&id) else { return };
-        if at <= p.last_seq && p.edits.is_empty() {
+        if p.travel_guard.is_some_and(|g| at <= g) {
+            // Sent about the planet they left.
+            if let Queued::Edit { seq, pos, .. } = queued {
+                self.edit_refused(id, seq, pos, "edit from before travelling");
+            }
+        } else if at <= p.last_seq && p.edits.is_empty() {
             // Late (its input was already simulated, e.g. a lost input was
             // repeated): apply now.
             self.apply_queued(id, queued);
@@ -592,7 +741,7 @@ impl Game {
     /// bounded in height, so whole columns are sent and sky light is exact
     /// from the top down). Nearest columns first; within a column, the
     /// chunks nearest the player's height first.
-    fn view_list(&self, center: ChunkPos, eye_cy: i32) -> Vec<ChunkPos> {
+    fn view_list(&self, shape: PlanetShape, center: ChunkPos, eye_cy: i32) -> Vec<ChunkPos> {
         let r = self.cfg.view_radius as i32;
         let mut list = Vec::new();
         for dz in -r..=r {
@@ -601,14 +750,9 @@ impl Game {
                 if d2 > r * r {
                     continue;
                 }
-                for y in 0..self.world.shape.height_chunks as i32 {
+                for y in 0..shape.height_chunks as i32 {
                     let key = d2 * 16 + (y - eye_cy).abs();
-                    list.push((
-                        key,
-                        self.world
-                            .shape
-                            .wrap_chunk(ChunkPos::new(center.x + dx, y, center.z + dz)),
-                    ));
+                    list.push((key, shape.wrap_chunk(ChunkPos::new(center.x + dx, y, center.z + dz))));
                 }
             }
         }
@@ -618,16 +762,14 @@ impl Game {
 
     fn stream(&mut self, id: u32) {
         let Some(p) = self.players.get(&id) else { return };
-        let at = self
-            .world
-            .shape
-            .wrap_chunk(BlockPos::containing(p.state.pos.x, p.state.pos.y, p.state.pos.z).chunk());
+        let pi = p.planet;
+        let shape = self.planets[pi].world.shape;
+        let at = shape.wrap_chunk(BlockPos::containing(p.state.pos.x, p.state.pos.y, p.state.pos.z).chunk());
         // Only the column matters: whole columns are streamed.
         let here = ChunkPos::new(at.x, 0, at.z);
         if p.center != Some(here) {
-            let wanted = self.view_list(here, at.y);
+            let wanted = self.view_list(shape, here, at.y);
             let r = self.cfg.view_radius as i32 + 2;
-            let shape = self.world.shape;
             let p = self.players.get_mut(&id).expect("present");
             let forget: Vec<ChunkPos> = p
                 .sent
@@ -646,11 +788,14 @@ impl Game {
             p.center = Some(here);
         }
 
-        let mark = self.tick % MARK_WANTED_EVERY == 0;
+        // Spread over the second, a slice of the players each tick, so no
+        // tick marks everyone's view at once.
+        let mark = (self.tick + id as u64) % MARK_WANTED_EVERY == 0;
         let p = self.players.get_mut(&id).expect("present");
+        let world = &mut self.planets[pi].world;
         if mark {
             for c in &p.wanted {
-                if let Some(slot) = self.world.get_mut(*c) {
+                if let Some(slot) = world.get_mut(*c) {
                     slot.wanted_at = self.tick;
                 }
             }
@@ -666,7 +811,7 @@ impl Game {
                 continue;
             }
             scanned += 1;
-            match self.world.get_mut(c) {
+            match world.get_mut(c) {
                 Some(slot) => {
                     slot.wanted_at = self.tick;
                     let frame = slot.frame(c);
@@ -677,8 +822,8 @@ impl Game {
                     p.sent.insert(c);
                 }
                 None => {
-                    if self.world.pending_loads() < MAX_PENDING_LOADS {
-                        self.world.request(c);
+                    if world.pending_loads() < MAX_PENDING_LOADS {
+                        world.request(c, self.tick);
                     }
                 }
             }
@@ -686,18 +831,21 @@ impl Game {
     }
 
     fn snapshots(&self) {
-        let shape = self.world.shape;
         let range = (self.cfg.view_radius as f64 + 1.0) * CHUNK_SIZE as f64;
-        for p in self.players.values() {
-            let mut near: Vec<(f64, RemotePlayer)> = self
-                .players
-                .iter()
-                .filter(|(_, o)| !std::ptr::eq(*o, p))
-                .filter_map(|(oid, o)| {
-                    let d = shape.delta(p.state.pos, o.state.pos);
-                    let dist2 = d.x * d.x + d.z * d.z;
-                    (dist2 <= range * range).then_some({
-                        (
+        let mut by_planet: Vec<Vec<(u32, &Player)>> = vec![Vec::new(); self.planets.len()];
+        for (id, p) in &self.players {
+            by_planet[p.planet].push((*id, p));
+        }
+        for (pi, here) in by_planet.iter().enumerate() {
+            let shape = self.planets[pi].world.shape;
+            for (id, p) in here {
+                let mut near: Vec<(f64, RemotePlayer)> = here
+                    .iter()
+                    .filter(|(oid, _)| oid != id)
+                    .filter_map(|(oid, o)| {
+                        let d = shape.delta(p.state.pos, o.state.pos);
+                        let dist2 = d.x * d.x + d.z * d.z;
+                        (dist2 <= range * range).then_some((
                             dist2,
                             RemotePlayer {
                                 id: *oid,
@@ -705,19 +853,19 @@ impl Game {
                                 yaw: o.last_input.yaw,
                                 pitch: o.last_input.pitch,
                             },
-                        )
+                        ))
                     })
-                })
-                .collect();
-            near.sort_by(|a, b| a.0.total_cmp(&b.0));
-            near.truncate(PLAYERS_PER_SNAPSHOT * 4);
-            let others: Vec<RemotePlayer> = near.into_iter().map(|(_, r)| r).collect();
-            let mut parts = others.chunks(PLAYERS_PER_SNAPSHOT).peekable();
-            if parts.peek().is_none() {
-                self.send_snapshot(p, Vec::new());
-            }
-            for part in parts {
-                self.send_snapshot(p, part.to_vec());
+                    .collect();
+                near.sort_by(|a, b| a.0.total_cmp(&b.0));
+                near.truncate(PLAYERS_PER_SNAPSHOT * 4);
+                let others: Vec<RemotePlayer> = near.into_iter().map(|(_, r)| r).collect();
+                let mut parts = others.chunks(PLAYERS_PER_SNAPSHOT).peekable();
+                if parts.peek().is_none() {
+                    self.send_snapshot(p, Vec::new());
+                }
+                for part in parts {
+                    self.send_snapshot(p, part.to_vec());
+                }
             }
         }
     }
@@ -726,6 +874,7 @@ impl Game {
         bm_net::send_datagram(
             &p.conn,
             &ServerDatagram::Snapshot {
+                planet: self.planets[p.planet].id,
                 tick: self.tick,
                 ack: p.last_seq,
                 you: p.state,
@@ -749,10 +898,15 @@ impl Game {
         Some(r)
     }
 
+    /// The planet a player is on.
+    fn planet_of(&self, id: u32) -> Option<usize> {
+        self.players.get(&id).map(|p| p.planet)
+    }
+
     fn start_break(&mut self, id: u32, pos: BlockPos, slot: u8) {
-        let canon = self.world.shape.wrap_block(pos);
         let tick = self.tick;
         let Some(p) = self.players.get_mut(&id) else { return };
+        let canon = self.planets[p.planet].world.shape.wrap_block(pos);
         let tool = ((slot as usize) < HOTBAR_SLOTS)
             .then(|| p.inventory.get(slot as usize).map(|s| s.item))
             .flatten();
@@ -770,6 +924,19 @@ impl Game {
         }
     }
 
+    /// Plots `account` may still claim on planet `pi`: the universe-wide
+    /// allowance less what they hold on every other planet.
+    fn allowance_on(&self, account: &str, pi: usize) -> u32 {
+        let elsewhere: u32 = self
+            .planets
+            .iter()
+            .enumerate()
+            .filter(|(i, _)| *i != pi)
+            .map(|(_, p)| p.claims.used_by(account))
+            .sum();
+        self.cfg.plot_allowance.saturating_sub(elsewhere)
+    }
+
     fn edit(&mut self, id: u32, seq: u32, pos: BlockPos, action: EditAction) {
         let accepted = match self.check_edit(id, pos, action) {
             Ok(a) => a,
@@ -779,7 +946,10 @@ impl Game {
                 return self.edit_refused(id, seq, pos, &text);
             }
         };
-        let canon = self.world.shape.wrap_block(pos);
+        let Some(pi) = self.planet_of(id) else { return };
+        let allowance = self.players.get(&id).map_or(0, |p| self.allowance_on(&p.account, pi));
+        let planet = &mut self.planets[pi];
+        let canon = planet.world.shape.wrap_block(pos);
         let new = accepted.block;
         let Some(p) = self.players.get_mut(&id) else { return };
         p.out.send(&ServerMsg::EditResult {
@@ -810,14 +980,20 @@ impl Game {
                     }
                 }
                 if old == self.claim_stone {
-                    claim_removed = self.claims.remove_by_stone(canon);
+                    claim_removed = planet.claims.remove_by_stone(canon);
                 }
             }
             Effect::Placed { slot } => {
                 p.inventory.take_one(slot);
                 if new == self.claim_stone {
-                    match self.claims.create(&p.account, &p.name, canon, self.cfg.plot_allowance) {
-                        Ok(claim) => claim_created = Some(claim),
+                    match planet
+                        .claims
+                        .create(self.next_claim, &p.account, &p.name, canon, allowance)
+                    {
+                        Ok(claim) => {
+                            self.next_claim += 1;
+                            claim_created = Some(claim);
+                        }
                         Err(e) => tracing::error!("claim checked but not created: {e}"),
                     }
                 }
@@ -827,11 +1003,11 @@ impl Game {
         if let Some(text) = broke {
             p.out.send(&ServerMsg::Notice { text });
         }
-        self.world.set_block(pos, new);
+        planet.world.set_block(pos, new);
         self.stats.edits += 1;
         let chunk = canon.chunk();
         for (oid, o) in &self.players {
-            if *oid != id && o.sent.contains(&chunk) {
+            if *oid != id && o.planet == pi && o.sent.contains(&chunk) {
                 o.out.send(&ServerMsg::BlockChanged { pos: canon, block: new });
             }
         }
@@ -844,10 +1020,10 @@ impl Game {
                     ),
                 });
             }
-            self.broadcast_claim(claim);
+            self.broadcast_claim(pi, claim);
         }
         if let Some(claim) = claim_removed {
-            for o in self.players.values() {
+            for o in self.players.values().filter(|o| o.planet == pi) {
                 o.out.send(&ServerMsg::ClaimRemoved { id: claim });
             }
         }
@@ -856,21 +1032,28 @@ impl Game {
     fn edit_refused(&mut self, id: u32, seq: u32, pos: BlockPos, why: &str) {
         self.stats.refused_edits += 1;
         tracing::debug!("refused edit from #{id} at {pos:?}: {why}");
-        let actual = self.world.block(pos).unwrap_or(BlockId::AIR);
-        if let Some(p) = self.players.get(&id) {
-            p.out.send(&ServerMsg::EditResult {
-                seq,
-                pos,
-                block: actual,
-                accepted: false,
-            });
-        }
+        let Some(p) = self.players.get(&id) else { return };
+        // What the block is on the planet they are on now.
+        let actual = self.planets[p.planet].world.block(pos).unwrap_or(BlockId::AIR);
+        p.out.send(&ServerMsg::EditResult {
+            seq,
+            pos,
+            block: actual,
+            accepted: false,
+        });
     }
 
     /// Every rule an edit must pass. Changes nothing but the rate tokens and
     /// the break hold; `edit` applies what it returns.
     fn check_edit(&mut self, id: u32, pos: BlockPos, action: EditAction) -> Result<Accepted, Refusal> {
-        let shape = self.world.shape;
+        let pi = self.planet_of(id).ok_or("no such player")?;
+        let allowance = {
+            let account = &self.players[&id].account;
+            self.allowance_on(account, pi)
+        };
+        let planet = &self.planets[pi];
+        let world = &planet.world;
+        let shape = world.shape;
         let p = self.players.get_mut(&id).ok_or("no such player")?;
         if p.edit_tokens < 1.0 {
             return Err("editing too fast".into());
@@ -886,13 +1069,18 @@ impl Game {
         if !in_reach(shape, &self.movement, self.cfg.reach, &p.state, canon) {
             return Err("out of reach".into());
         }
-        let current = self.world.block(canon).ok_or("chunk not resident")?;
-        if let Some(c) = self.claims.at_block(canon)
+        let current = world.block(canon).ok_or("chunk not resident")?;
+        if planet.guarded(canon) {
+            return Err(Refusal::Told(
+                "The ground around a warp shrine cannot be changed".into(),
+            ));
+        }
+        if let Some(c) = planet.claims.at_block(canon)
             && c.owner != p.account
         {
             return Err(ClaimError::OwnedBy(c.owner_name.clone()).into());
         }
-        let reg = &self.world.registry;
+        let reg = &world.registry;
         match action {
             EditAction::Break => {
                 let def = reg.get(current);
@@ -914,7 +1102,7 @@ impl Game {
                         return Err("broken too fast".into());
                     }
                 }
-                if self.stations.has_contents(canon) {
+                if planet.stations.has_contents(canon) {
                     return Err(Refusal::Told(format!(
                         "Empty the {} before breaking it",
                         title_case(&def.name)
@@ -955,26 +1143,26 @@ impl Game {
                 if !reg.contains(block) || !reg.get(block).placeable {
                     return Err("cannot place that".into());
                 }
-                if !(current.is_air() || current == self.world.water) {
+                if !(current.is_air() || current == world.water) {
                     return Err("space is occupied".into());
                 }
                 let supported = [(1, 0, 0), (-1, 0, 0), (0, 1, 0), (0, -1, 0), (0, 0, 1), (0, 0, -1)]
                     .iter()
                     .any(|&(dx, dy, dz)| {
-                        self.world
+                        world
                             .block(canon.offset(dx, dy, dz))
-                            .is_some_and(|b| self.world.flags.solid(b))
+                            .is_some_and(|b| world.flags.solid(b))
                     });
                 if !supported {
                     return Err("nothing to place against".into());
                 }
                 if block == self.claim_stone {
-                    self.claims.can_create(&p.account, canon, self.cfg.plot_allowance)?;
+                    planet.claims.can_create(&p.account, canon, allowance)?;
                 }
                 if reg.get(block).solid {
                     let m = self.movement;
                     let centre = DVec3::new(canon.x as f64 + 0.5, canon.y as f64 + 0.5, canon.z as f64 + 0.5);
-                    let blocked = self.players.values().any(|o| {
+                    let blocked = self.players.values().filter(|o| o.planet == pi).any(|o| {
                         let st = PlayerState {
                             pos: shape.nearest_lap(centre, o.state.pos),
                             ..o.state
@@ -993,11 +1181,100 @@ impl Game {
         }
     }
 
+    /// Travel from a warp shrine within reach to another planet.
+    fn warp(&mut self, id: u32, shrine: BlockPos, dest: u16) {
+        let Some(p) = self.players.get(&id) else { return };
+        let from = &self.planets[p.planet];
+        let shape = from.world.shape;
+        let at_shrine = shape.contains_y(shrine.y) && {
+            let canon = shape.wrap_block(shrine);
+            p.sent.contains(&canon.chunk())
+                && from.world.block(canon) == Some(self.warp_shrine)
+                && in_reach(shape, &self.movement, self.cfg.reach, &p.state, canon)
+        };
+        if !at_shrine {
+            return self.notice(id, "Stand at a warp shrine to travel");
+        }
+        let Some(to) = self.planets.iter().position(|pl| pl.id == dest) else {
+            return self.tell(id, "no such planet".into());
+        };
+        if to == p.planet {
+            let text = format!("You are already on {}", from.name);
+            return self.notice(id, &text);
+        }
+        self.travel(id, to);
+    }
+
+    /// Moves a player to planet `to`, standing beside its shrine. The client
+    /// drops everything of the old planet on `Travel`, so nothing of it is
+    /// forgotten one by one; everything after `Travel` on the stream belongs
+    /// to the new planet.
+    fn travel(&mut self, id: u32, to: usize) {
+        let arrival = self.planets[to].arrival();
+        let Some(p) = self.players.get_mut(&id) else { return };
+        let from = p.planet;
+        p.planet = to;
+        p.state = arrival;
+        // Inputs and edits sent about the old planet are not replayed on the
+        // new one; inputs carry on from the newest seen, standing still.
+        let newest = p
+            .pending
+            .last_key_value()
+            .map_or(p.last_seq, |(s, _)| *s)
+            .max(p.last_seq);
+        p.pending.clear();
+        p.last_seq = newest;
+        p.last_input = PlayerInput {
+            yaw: p.last_input.yaw,
+            pitch: p.last_input.pitch,
+            ..Default::default()
+        };
+        p.bank = 0.0;
+        p.travel_guard = Some(newest.saturating_add(TRAVEL_GUARD_INPUTS));
+        p.edits.clear();
+        p.mining = None;
+        p.watching = None;
+        p.sent.clear();
+        p.wanted.clear();
+        p.center = None;
+        let name = p.name.clone();
+        let planet = &self.planets[to];
+        p.out.send(&ServerMsg::Travel(Box::new(Travel {
+            planet: planet.info(),
+            spawn: arrival,
+            tick: self.tick,
+            claims: planet.claims.views(),
+        })));
+        tracing::info!(
+            "{name} (#{id}) travelled from {} to {}",
+            self.planets[from].name,
+            planet.name
+        );
+        let traveller = &self.players[&id];
+        for (oid, o) in &self.players {
+            if *oid == id {
+                continue;
+            }
+            if o.planet == to {
+                traveller.out.send(&ServerMsg::PlayerJoined {
+                    id: *oid,
+                    name: o.name.clone(),
+                });
+                o.out.send(&ServerMsg::PlayerJoined { id, name: name.clone() });
+            } else if o.planet == from {
+                o.out.send(&ServerMsg::PlayerLeft { id });
+            }
+        }
+        self.planets[to].players += 1;
+        self.left_planet(from);
+    }
+
     /// The station at `pos` if this player may use it: loaded for them,
     /// within reach, and not on someone else's claim.
     fn station_access(&self, id: u32, pos: BlockPos) -> Result<(BlockPos, Station), Refusal> {
-        let shape = self.world.shape;
         let p = self.players.get(&id).ok_or("no such player")?;
+        let planet = &self.planets[p.planet];
+        let shape = planet.world.shape;
         if !shape.contains_y(pos.y) {
             return Err("outside the planet".into());
         }
@@ -1008,9 +1285,9 @@ impl Game {
         if !in_reach(shape, &self.movement, self.cfg.reach, &p.state, canon) {
             return Err(Refusal::Told("That is out of reach".into()));
         }
-        let block = self.world.block(canon).ok_or("chunk not resident")?;
-        let kind = self.world.registry.get(block).station.ok_or("not a station")?;
-        if let Some(c) = self.claims.at_block(canon)
+        let block = planet.world.block(canon).ok_or("chunk not resident")?;
+        let kind = planet.world.registry.get(block).station.ok_or("not a station")?;
+        if let Some(c) = planet.claims.at_block(canon)
             && c.owner != p.account
         {
             return Err(ClaimError::OwnedBy(c.owner_name.clone()).into());
@@ -1049,7 +1326,8 @@ impl Game {
             Ok(_) => return self.notice(id, &needs),
             Err(r) => return self.tell(id, r),
         };
-        if !self.stations.has_room(canon) {
+        let Some(pi) = self.planet_of(id) else { return };
+        if !self.planets[pi].stations.has_room(canon) {
             return self.notice(id, &CraftError::QueueFull.to_string());
         }
         match self.change_inventory(id, |inv, _| crafting::take_inputs(inv, &recipe, count)) {
@@ -1057,11 +1335,14 @@ impl Game {
             Some(false) => return self.notice(id, &CraftError::Materials.to_string()),
             None => return,
         }
-        if let Err(e) = self.stations.queue(canon, recipe.station, index, count, self.tick) {
+        if let Err(e) = self.planets[pi]
+            .stations
+            .queue(canon, recipe.station, index, count, self.tick)
+        {
             // Unreachable (room was checked), but never take inputs silently.
             tracing::error!("queueing at {canon:?} after taking inputs: {e}");
         }
-        self.push_station(canon);
+        self.push_station(pi, canon);
     }
 
     fn watch(&mut self, id: u32, pos: Option<BlockPos>) {
@@ -1075,7 +1356,8 @@ impl Game {
                 }
             },
         };
-        let view = target.and_then(|canon| self.station_view(canon));
+        let Some(pi) = self.planet_of(id) else { return };
+        let view = target.and_then(|canon| self.station_view(pi, canon));
         let Some(p) = self.players.get_mut(&id) else { return };
         p.watching = target;
         if let Some(view) = view {
@@ -1089,13 +1371,14 @@ impl Game {
             Err(r) => return self.tell(id, r),
         };
         let Some(p) = self.players.get_mut(&id) else { return };
+        let pi = p.planet;
+        let stations = &mut self.planets[pi].stations;
         let before = p.inventory.clone();
-        let moved = self.stations.collect(canon, &mut p.inventory, &self.items);
+        let moved = stations.collect(canon, &mut p.inventory, &self.items);
         send_slots(p, &before);
         if moved {
-            self.push_station(canon);
-        } else if self
-            .stations
+            self.push_station(pi, canon);
+        } else if stations
             .get(canon)
             .is_some_and(|s| s.output.slots.iter().any(Option::is_some))
         {
@@ -1103,23 +1386,28 @@ impl Game {
         }
     }
 
-    fn station_view(&self, canon: BlockPos) -> Option<bm_protocol::StationView> {
-        let kind = match self.stations.get(canon) {
+    fn station_view(&self, pi: usize, canon: BlockPos) -> Option<bm_protocol::StationView> {
+        let planet = &self.planets[pi];
+        let kind = match planet.stations.get(canon) {
             Some(s) => s.kind,
-            None => self
+            None => planet
                 .world
                 .block(canon)
-                .and_then(|b| self.world.registry.get(b).station)?,
+                .and_then(|b| planet.world.registry.get(b).station)?,
         };
-        Some(self.stations.view(canon, kind, self.tick, &self.recipes))
+        Some(planet.stations.view(canon, kind, self.tick, &self.recipes))
     }
 
-    /// Sends a station's state to everyone watching it.
-    fn push_station(&self, canon: BlockPos) {
+    /// Sends a station's state to everyone on its planet watching it.
+    fn push_station(&self, pi: usize, canon: BlockPos) {
         let mut view = None;
-        for p in self.players.values().filter(|p| p.watching == Some(canon)) {
+        for p in self
+            .players
+            .values()
+            .filter(|p| p.planet == pi && p.watching == Some(canon))
+        {
             if view.is_none() {
-                view = self.station_view(canon);
+                view = self.station_view(pi, canon);
             }
             if let Some(v) = &view {
                 p.out.send(&ServerMsg::Station(v.clone()));
@@ -1127,56 +1415,70 @@ impl Game {
         }
     }
 
+    /// Station jobs run on every planet, empty or not: they only look at the
+    /// stations with a job running.
     fn step_stations(&mut self) {
-        for pos in self.stations.step(self.tick, &self.items, &self.recipes) {
-            self.push_station(pos);
+        for pi in 0..self.planets.len() {
+            let changed = self.planets[pi].stations.step(self.tick, &self.items, &self.recipes);
+            for pos in changed {
+                self.push_station(pi, pos);
+            }
         }
         if self.tick % STATION_UPDATE_EVERY == 0 {
-            let watched: BTreeSet<BlockPos> = self.players.values().filter_map(|p| p.watching).collect();
-            let running: BTreeSet<BlockPos> = self.stations.running().collect();
-            for pos in watched.intersection(&running) {
-                self.push_station(*pos);
+            let watched: BTreeSet<(usize, BlockPos)> = self
+                .players
+                .values()
+                .filter_map(|p| p.watching.map(|w| (p.planet, w)))
+                .collect();
+            for (pi, pos) in watched {
+                if self.planets[pi].stations.running().any(|r| r == pos) {
+                    self.push_station(pi, pos);
+                }
             }
         }
     }
 
-    fn broadcast_claim(&self, claim: u32) {
-        if let Some(c) = self.claims.get(claim) {
+    fn broadcast_claim(&self, pi: usize, claim: u32) {
+        if let Some(c) = self.planets[pi].claims.get(claim) {
             let msg = ServerMsg::Claim(c.view());
-            for p in self.players.values() {
+            for p in self.players.values().filter(|p| p.planet == pi) {
                 p.out.send(&msg);
             }
         }
     }
 
     fn claim_plot(&mut self, id: u32, claim: u32, plot: PlotPos) {
-        let Some(account) = self.players.get(&id).map(|p| p.account.clone()) else {
+        let Some((account, pi)) = self.players.get(&id).map(|p| (p.account.clone(), p.planet)) else {
             return;
         };
-        match self.claims.add_plot(&account, claim, plot, self.cfg.plot_allowance) {
-            Ok(()) => self.broadcast_claim(claim),
+        let allowance = self.allowance_on(&account, pi);
+        match self.planets[pi].claims.add_plot(&account, claim, plot, allowance) {
+            Ok(()) => self.broadcast_claim(pi, claim),
             Err(e) => self.notice(id, &e.to_string()),
         }
     }
 
     fn release_plot(&mut self, id: u32, plot: PlotPos) {
-        let Some(account) = self.players.get(&id).map(|p| p.account.clone()) else {
+        let Some((account, pi)) = self.players.get(&id).map(|p| (p.account.clone(), p.planet)) else {
             return;
         };
-        match self.claims.release_plot(&account, plot) {
-            Ok(claim) => self.broadcast_claim(claim),
+        match self.planets[pi].claims.release_plot(&account, plot) {
+            Ok(claim) => self.broadcast_claim(pi, claim),
             Err(e) => self.notice(id, &e.to_string()),
         }
     }
 
-    /// Hands every dirty chunk, station and claim, every player's state and
-    /// every newly departed player's to the writer, in one batch.
+    /// Hands every planet's dirty chunks, stations and claims, every
+    /// player's state and every newly departed player's to the writer, in one
+    /// batch.
     fn save(&mut self, done: Option<Sender<()>>) {
         let items = &self.items;
         let now = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .map_or(0, |d| d.as_secs());
-        let data = |state: PlayerState, inv: &Inventory| PlayerData {
+        let planets = &self.planets;
+        let data = |planet: usize, state: PlayerState, inv: &Inventory| PlayerData {
+            planet: planets[planet].id,
             state: Some(state),
             inventory: save_slots(items, inv),
             last_seen: now,
@@ -1184,12 +1486,12 @@ impl Game {
         let mut players: Vec<(String, PlayerData)> = self
             .players
             .values()
-            .map(|p| (p.account.clone(), data(p.state, &p.inventory)))
+            .map(|p| (p.account.clone(), data(p.planet, p.state, &p.inventory)))
             .collect();
         let mut done: Vec<Sender<()>> = done.into_iter().collect();
         let mut written = None;
         for (account, d) in self.departed.iter_mut().filter(|(_, d)| d.written.is_none()) {
-            players.push((account.clone(), data(d.state, &d.inventory)));
+            players.push((account.clone(), data(d.planet, d.state, &d.inventory)));
             let rx = written.get_or_insert_with(|| {
                 let (tx, rx) = crossbeam_channel::bounded(1);
                 done.push(tx);
@@ -1197,15 +1499,34 @@ impl Game {
             });
             d.written = Some(rx.clone());
         }
+        // Chunks saved here stay resident; if they are evicted before this
+        // batch is durable, their world keeps them until it is.
+        let (tx, saved) = crossbeam_channel::bounded(1);
+        done.push(tx);
+        let mut chunks = Vec::new();
+        let mut stations = Vec::new();
+        let mut claims = Vec::new();
+        for p in &mut self.planets {
+            p.world.forget_saved();
+            let id = p.id;
+            chunks.extend(p.world.take_dirty(&saved).into_iter().map(|(c, b)| (id, c, b)));
+            stations.extend(
+                p.stations
+                    .take_dirty(&self.items, &self.recipes)
+                    .into_iter()
+                    .map(|(pos, s)| (id, pos, s)),
+            );
+            claims.extend(p.claims.take_dirty());
+        }
         let batch = WriteBatch {
-            chunks: self.world.take_dirty(),
+            chunks,
             players,
-            stations: self.stations.take_dirty(&self.items, &self.recipes),
-            claims: self.claims.take_dirty(),
+            stations,
+            claims,
             clock: Some(self.tick),
             done,
         };
-        if !batch.is_empty() || !batch.done.is_empty() {
+        if !batch.is_empty() || batch.done.len() > 1 {
             let _ = self.writer.send(batch);
         }
         // Departed players whose save is durable are read from disk again.
@@ -1227,5 +1548,54 @@ impl Game {
             tracing::error!("save did not finish within 30 s");
         }
         self.report();
+    }
+}
+
+/// Where the planet's warp shrine is, for a player who arrives far from it
+/// (characters kept from before shrines existed stand wherever they left).
+/// North is -Z.
+fn shrine_hint(shape: bm_core::PlanetShape, planet: &str, shrine: BlockPos, from: DVec3) -> Option<String> {
+    let to = DVec3::new(shrine.x as f64 + 0.5, shrine.y as f64, shrine.z as f64 + 0.5);
+    let d = shape.delta(from, to);
+    let dist = (d.x * d.x + d.z * d.z).sqrt();
+    if dist < 48.0 {
+        return None;
+    }
+    // Eight compass points, from the angle east of north.
+    let names = [
+        "north",
+        "north-east",
+        "east",
+        "south-east",
+        "south",
+        "south-west",
+        "west",
+        "north-west",
+    ];
+    let angle = d.x.atan2(-d.z).to_degrees().rem_euclid(360.0);
+    let dir = names[((angle + 22.5) / 45.0) as usize % 8];
+    Some(format!(
+        "The warp shrine of {planet} is {} blocks {dir} of you.",
+        dist.round() as i64
+    ))
+}
+
+#[cfg(test)]
+mod shrine_hint_tests {
+    use super::*;
+
+    #[test]
+    fn far_players_are_told_where_the_shrine_is() {
+        let shape = bm_core::PlanetShape::new(64, 12);
+        let shrine = BlockPos::new(100, 150, 100);
+        assert_eq!(
+            shrine_hint(shape, "Verdance", shrine, DVec3::new(110.0, 150.0, 110.0)),
+            None
+        );
+        let east = shrine_hint(shape, "Verdance", shrine, DVec3::new(0.5, 150.0, 100.5)).unwrap();
+        assert_eq!(east, "The warp shrine of Verdance is 100 blocks east of you.");
+        // Across the seam: from x 2000 on a 2048-block planet, x 100 is 148 east.
+        let seam = shrine_hint(shape, "Verdance", shrine, DVec3::new(2000.5, 150.0, 300.5)).unwrap();
+        assert!(seam.ends_with("blocks north-east of you."), "{seam}");
     }
 }

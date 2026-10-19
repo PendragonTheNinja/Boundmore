@@ -8,7 +8,7 @@ What a Boundless player expects to find, and where each stands. "Ours" is the Bo
 
 | Boundless system | What it is to players | Boundmore status |
 |---|---|---|
-| Many small planets | Distinct worlds by tier, climate, hazards, resources; seen hanging in each other's skies | One planet (M1). Planet types and many planets: M4 |
+| Many small planets | Distinct worlds by tier, climate, hazards, resources; seen hanging in each other's skies | **Done** for four kinds in one universe, visible in each other's skies (M4). More kinds and hazards later |
 | Worlds that wrap | No edge; walk round the world | **Done** (ADR-0002) |
 | Freeform building | Every block editable, huge palette, colours | **Done** for placing and breaking; palette and colours: M2 |
 | Shaped blocks (chisel) | Slopes, bevels, cuts on any block | M5 |
@@ -17,7 +17,7 @@ What a Boundless player expects to find, and where each stands. "Ours" is the Bo
 | Inventory and crafting | Gather, craft at machines that run over time, upgrade with power | **Done** for inventory, hand crafting, workbench and furnace (M3). Power and more machines later |
 | Plots and beacons | Claim land so builds are protected; costs upkeep | **Done** for claims (M3). **Changed on purpose:** no fuel; a claim lapses after 6 months without a visit and its contents go back to the owner (the research below) |
 | Settlements | Plots near each other form ranked settlements | M6 |
-| Portals and travel | Player-built portals link planets; warps; grapples | Portals: M4. Grapples: M5 |
+| Portals and travel | Player-built portals link planets; warps; grapples | Warp shrines at each spawn (M4, free for now). Player-built portals and their cost: to design with Nathan. Grapples: M5 |
 | Player economy | Shop stands and request baskets; almost nothing sold by NPCs | M6 |
 | Hunting and creatures | Creatures per planet with drops; world bosses | M7 |
 | Meteors and events | Meteor strikes with special drops; temporary worlds that appear for a while | M7 |
@@ -33,7 +33,7 @@ What a Boundless player expects to find, and where each stands. "Ours" is the Bo
 
 **M3: Gather, craft, claim.** Accounts (real login, so names cannot be taken), inventory, item drops, tools, crafting machines that work over time, plots/beacons protecting builds. Accounts, inventories, stations and claims live in the same crash-safe redb save as the world, written in one batch so a block broken into an inventory is saved with it (built 2026-10-18).
 
-**M4: Many worlds.** Planet types (tiers, climates, block sets), several planets per server cluster, portals between them, planets visible in the sky. Each planet its own process; a gateway routes players.
+**M4: Many worlds (built 2026-10-19).** Planet kinds (tiers, climates, block sets), a universe of planets in one process (ADR-0006), warp shrines between them, planets visible in the sky.
 
 **M5: Movement and shape.** Chisels and shaped blocks (slopes in terrain too), grapples, swimming improvements, far views (level-of-detail terrain).
 

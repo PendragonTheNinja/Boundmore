@@ -25,6 +25,14 @@ Every value here was chosen as a sensible starting point, not measured from Boun
 | View radius | 10 chunks (320 blocks) | How far can you see terrain detail? |
 | Edit rate | 12 per second, burst 24 | Fast building feel |
 
+## Planets (`bm-server/src/config.rs`, `assets/planets.toml`)
+
+| Value | Now | Check |
+|---|---|---|
+| Planet widths | Verdance and Wildmere 2 048 blocks, Emberdune and Rimehold 1 536 | Do small worlds feel small enough to know, big enough to explore? |
+| Day length | Verdance 20 min; the others 15, 30 and 25 min | Boundless days varied by planet; do these feel right? |
+| Shrine guard | 4 blocks around each warp shrine | Enough to keep it reachable without wasting the spawn |
+
 ## Not built yet, but to measure while playing
 
 - Break time by hand for soil, stone, wood; with a basic tool.

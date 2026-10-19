@@ -9,8 +9,8 @@ use bm_net::{read_msg, write_msg};
 use bm_protocol::{
     ClientDatagram, ClientMsg, EditAction, PROTOCOL_VERSION, ServerDatagram, ServerMsg, StationView, Welcome,
 };
-use bm_server::config::ServerConfig;
-use bm_server::store::{PlayerData, SavedStack, Store, WriteBatch};
+use bm_server::config::{PlanetSpec, ServerConfig};
+use bm_server::store::{PlayerData, SavedStack, Store, UNIVERSE_FILE, WriteBatch};
 use std::collections::HashMap;
 use std::path::Path;
 use std::time::Duration;
@@ -31,6 +31,9 @@ struct TestClient {
     notices: Vec<String>,
     chunks: HashMap<ChunkPos, Chunk>,
     seq: u32,
+    /// The planet the player is on now, and where they arrived on it.
+    planet: bm_protocol::PlanetInfo,
+    spawn: PlayerState,
 }
 
 /// Opens a connection and says hello; the welcome, or the refusal's reason.
@@ -87,6 +90,8 @@ async fn hello(
         msgs,
         snaps,
         inv: welcome.inventory.clone(),
+        planet: welcome.planet.clone(),
+        spawn: welcome.spawn,
         welcome,
         items,
         notices: Vec::new(),
@@ -121,10 +126,16 @@ impl TestClient {
         self.inv.count(self.item(name))
     }
 
-    /// The block under the player's feet at spawn.
+    /// The block under the player's feet where they arrived.
     fn feet(&self) -> BlockPos {
-        let s = self.welcome.spawn.pos;
+        let s = self.spawn.pos;
         BlockPos::containing(s.x, s.y - 0.5, s.z)
+    }
+
+    /// The warp shrine they arrived beside (the server puts arrivals two
+    /// blocks along +X from it).
+    fn shrine(&self) -> BlockPos {
+        self.feet().offset(-2, 1, 0)
     }
 
     /// Reads reliable messages until `pred` matches one (chunks, block
@@ -158,7 +169,7 @@ impl TestClient {
             }
             // An edit result carries what the block now is, as a change would.
             ServerMsg::BlockChanged { pos, block } | ServerMsg::EditResult { pos, block, .. } => {
-                let pos = self.welcome.planet.wrap_block(*pos);
+                let pos = self.shape().wrap_block(*pos);
                 if let Some(c) = self.chunks.get_mut(&pos.chunk()) {
                     c.set(pos.local(), *block);
                 }
@@ -169,8 +180,18 @@ impl TestClient {
                 }
             }
             ServerMsg::Notice { text } => self.notices.push(text.clone()),
+            // Everything of the old planet goes, as in the game.
+            ServerMsg::Travel(t) => {
+                self.chunks.clear();
+                self.planet = t.planet.clone();
+                self.spawn = t.spawn;
+            }
             _ => {}
         }
+    }
+
+    fn shape(&self) -> bm_core::PlanetShape {
+        self.planet.shape
     }
 
     /// Lets everything already sent arrive.
@@ -204,6 +225,7 @@ impl TestClient {
 
     async fn latest_snapshot(&mut self) -> (u64, u32, PlayerState, Vec<bm_protocol::RemotePlayer>) {
         let ServerDatagram::Snapshot {
+            planet: _,
             mut tick,
             mut ack,
             mut you,
@@ -213,6 +235,7 @@ impl TestClient {
             .unwrap()
             .unwrap();
         while let Ok(ServerDatagram::Snapshot {
+            planet: _,
             tick: t,
             ack: a,
             you: y,
@@ -274,20 +297,38 @@ impl TestClient {
     }
 }
 
+/// One small planet. These tests dig where they stand, beside the shrine, so
+/// its guard is off (the shrine tests use the default).
 fn config(dir: &Path) -> ServerConfig {
     ServerConfig {
         bind: "127.0.0.1:0".parse().unwrap(),
         data_dir: dir.to_path_buf(),
-        planet_name: "Testworld".into(),
-        seed: 7,
-        width_chunks: 16,
+        planets: vec![PlanetSpec::new("Testworld", "temperate", 7, 16)],
         height_chunks: 12,
         view_radius: 3,
+        shrine_guard: 0,
         ..Default::default()
     }
 }
 
+/// Two small planets, with the shrine guard on.
+fn universe(dir: &Path) -> ServerConfig {
+    ServerConfig {
+        planets: vec![
+            PlanetSpec::new("Testworld", "temperate", 7, 16),
+            PlanetSpec::new("Dryside", "arid", 8, 16),
+        ],
+        shrine_guard: 4,
+        ..config(dir)
+    }
+}
+
 fn planet_file(dir: &Path) -> std::path::PathBuf {
+    dir.join(UNIVERSE_FILE)
+}
+
+/// What save version 2 called the planet's file.
+fn old_planet_file(dir: &Path) -> std::path::PathBuf {
     dir.join("testworld.redb")
 }
 
@@ -309,6 +350,7 @@ fn seed(dir: &Path, name: &str, stacks: &[(usize, &str, u16, u16)]) {
             players: vec![(
                 account.key,
                 PlayerData {
+                    planet: 0,
                     state: None,
                     inventory,
                     last_seen: 0,
@@ -750,7 +792,7 @@ async fn claims_keep_other_players_out() {
         ServerMsg::Claim(c) => c,
         _ => unreachable!(),
     };
-    let shape = alice.welcome.planet;
+    let shape = alice.shape();
     let home = PlotPos::of(feet, shape);
     assert_eq!(
         (claim.owner.as_str(), claim.stone, claim.plots.clone()),
@@ -806,26 +848,17 @@ async fn claims_keep_other_players_out() {
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn a_version_1_planet_opens_and_keeps_its_players() {
-    use bm_server::store::PlanetMeta;
     let dir = tempfile::tempdir().unwrap();
     let cfg = config(dir.path());
     let pos = glam::DVec3::new(100.5, 300.0, 120.5);
     {
-        // Exactly what save version 1 wrote.
-        let db = redb::Database::create(planet_file(dir.path())).unwrap();
+        // Exactly what save version 1 wrote, by generator 1.
+        let db = redb::Database::create(old_planet_file(dir.path())).unwrap();
         let tx = db.begin_write().unwrap();
         {
-            let meta = PlanetMeta {
-                save_version: 1,
-                generator_version: bm_worldgen::GENERATOR_VERSION,
-                chunk_format: bm_core::CHUNK_FORMAT_VERSION,
-                name: cfg.planet_name.clone(),
-                shape: bm_core::PlanetShape::new(cfg.width_chunks, cfg.height_chunks),
-                generation: bm_worldgen::PlanetGenConfig {
-                    seed: cfg.seed,
-                    ..Default::default()
-                },
-            };
+            let mut meta =
+                bm_server::store::legacy::v2_meta("Testworld", bm_core::PlanetShape::new(16, cfg.height_chunks), 7, 1);
+            meta.save_version = 1;
             let meta_table: redb::TableDefinition<&str, &[u8]> = redb::TableDefinition::new("meta");
             let players: redb::TableDefinition<&str, &[u8]> = redb::TableDefinition::new("players");
             tx.open_table(meta_table)
@@ -851,20 +884,77 @@ async fn a_version_1_planet_opens_and_keeps_its_players() {
         alice.welcome.spawn.pos
     );
     assert!(alice.welcome.inventory.slots.iter().all(Option::is_none));
+    assert_eq!(alice.welcome.planet.name, "Testworld");
     drop(alice);
     server.stop();
     let store = Store::open(&planet_file(dir.path())).unwrap();
-    let meta = store
-        .planet_meta(PlanetMeta {
-            save_version: 0,
-            generator_version: 0,
-            chunk_format: 0,
-            name: String::new(),
-            shape: bm_core::PlanetShape::new(8, 1),
-            generation: Default::default(),
-        })
-        .unwrap();
-    assert_eq!(meta.save_version, bm_server::store::SAVE_VERSION);
+    let kinds = bm_worldgen::PlanetKinds::builtin(&BlockRegistry::builtin());
+    assert_eq!(store.universe(&kinds).unwrap(), None, "already version 3");
+    assert!(store.planet(0).unwrap().unwrap().shrine.is_some());
+    assert!(old_planet_file(dir.path()).exists(), "the old file is kept as a backup");
+}
+
+/// A save version 2 planet becomes planet 0 of the universe with everything
+/// kept: its builds, claims, characters and inventories.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn a_version_2_planet_opens_as_the_first_planet_with_everything_kept() {
+    use bm_server::store::legacy::{V2Player, v2_meta, write_v2_planet};
+    let dir = tempfile::tempdir().unwrap();
+    let mut cfg = universe(dir.path());
+    // A server.toml of version 2 named the planet like this.
+    cfg.planets[0].name = "Verdance".into();
+    let shape = bm_core::PlanetShape::new(16, cfg.height_chunks);
+    let blocks = BlockRegistry::builtin();
+    let glass = blocks.id("glass").unwrap();
+    // A build: one chunk high in the sky turned to glass.
+    let build = ChunkPos::new(3, 10, 3);
+    let pos = glam::DVec3::new(100.5, 300.0, 100.5);
+    write_v2_planet(
+        &old_planet_file(dir.path()),
+        &v2_meta("Testworld", shape, 7, 1),
+        &[(build, Chunk::filled(glass).encode())],
+        &[V2Player {
+            key: "alice",
+            state: Some(PlayerState {
+                pos,
+                ..Default::default()
+            }),
+            inventory: vec![Some(SavedStack {
+                item: "stone".into(),
+                count: 5,
+                wear: 0,
+            })],
+        }],
+        &[],
+        &[(
+            4,
+            "alice",
+            "Alice",
+            BlockPos::new(100, 300, 100),
+            vec![PlotPos::of(BlockPos::new(100, 300, 100), shape)],
+        )],
+        1000,
+    )
+    .unwrap();
+    let server = bm_server::start(cfg).unwrap();
+    let mut alice = TestClient::register(&server, "Alice").await;
+    assert_eq!(
+        (alice.welcome.planet.id, alice.welcome.planet.name.as_str()),
+        (0, "Testworld"),
+        "the old planet, its name kept"
+    );
+    assert_eq!(alice.welcome.universe.len(), 2);
+    assert!((alice.welcome.spawn.pos - pos).length() < 1e-9, "where she was");
+    assert_eq!(alice.count("stone"), 5, "her inventory");
+    assert_eq!(alice.welcome.claims.len(), 1);
+    assert_eq!(
+        (alice.welcome.claims[0].id, alice.welcome.claims[0].owner.as_str()),
+        (4, "Alice")
+    );
+    assert!(alice.welcome.tick >= 1000, "the clock carries on");
+    alice.wait_for_chunk(build).await;
+    assert_eq!(alice.chunks[&build].uniform(), Some(glass), "the build is there");
+    server.stop();
 }
 
 /// Holding break straight on from one block to the next, as the game does:
@@ -936,4 +1026,121 @@ async fn digging_block_after_block_keeps_every_break() {
         }
     }
     assert_eq!(results, vec![(1, true), (2, true)], "both breaks kept");
+}
+
+/// Travel by warp shrine: refused away from one, accepted beside one; the
+/// traveller is told, then streamed the new planet; others see them go and
+/// come; the planet left behind holds no chunks; the shrine and its ground
+/// cannot be changed.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn warp_shrines_take_players_between_planets() {
+    let dir = tempfile::tempdir().unwrap();
+    seed(dir.path(), "Alice", &[(1, "stone", 10, 0)]);
+    let server = bm_server::start(universe(dir.path())).unwrap();
+    let mut alice = TestClient::login(&server, "Alice").await;
+    let mut bob = TestClient::register(&server, "Bob").await;
+    assert_eq!(alice.welcome.planet.id, 0);
+    let names: Vec<&str> = alice.welcome.universe.iter().map(|p| p.name.as_str()).collect();
+    assert_eq!(names, ["Testworld", "Dryside"]);
+    assert_eq!(alice.welcome.universe[1].kind, "Arid");
+    assert_eq!(alice.welcome.planet.tints.len(), alice.welcome.blocks.len());
+    let shrine = alice.shrine();
+    alice.wait_for_chunk(shrine.chunk()).await;
+    alice.wait_for_chunk(alice.feet().chunk()).await;
+    assert_eq!(
+        alice.chunks[&shrine.chunk()].get(shrine.local()),
+        alice.block("warp_shrine"),
+        "she arrived beside the shrine"
+    );
+
+    // The shrine cannot be broken, nor its ground changed or built on.
+    let feet = alice.feet();
+    assert!(!alice.dig(1, shrine).await.0, "the shrine stands");
+    alice.notice("The ground around a warp shrine cannot be changed").await;
+    assert!(!alice.dig(2, feet).await.0, "nor the ground beside it");
+    assert!(
+        !alice
+            .edit(3, shrine.offset(0, 1, 0), EditAction::Place { slot: 1 })
+            .await
+            .0,
+        "nor can it be built over"
+    );
+    assert_eq!(alice.count("stone"), 10);
+
+    // Away from a shrine, travel is refused.
+    alice
+        .send(ClientMsg::Warp {
+            shrine: shrine.offset(40, 0, 0),
+            planet: 1,
+        })
+        .await;
+    alice.notice("Stand at a warp shrine to travel").await;
+    alice.send(ClientMsg::Warp { shrine, planet: 0 }).await;
+    alice.notice("You are already on Testworld").await;
+
+    // Beside it, she goes.
+    alice.send(ClientMsg::Warp { shrine, planet: 1 }).await;
+    let travel = match alice.until(|m| matches!(m, ServerMsg::Travel(_))).await {
+        ServerMsg::Travel(t) => t,
+        _ => unreachable!(),
+    };
+    assert_eq!((travel.planet.id, travel.planet.name.as_str()), (1, "Dryside"));
+    assert_eq!(travel.planet.kind, "Arid");
+    assert!(travel.claims.is_empty());
+    bob.until(|m| matches!(m, ServerMsg::PlayerLeft { id } if *id == alice.welcome.player_id))
+        .await;
+    // The new planet streams in, shrine and all.
+    let there = alice.shrine();
+    alice.wait_for_chunk(there.chunk()).await;
+    assert_eq!(
+        alice.chunks[&there.chunk()].get(there.local()),
+        alice.block("warp_shrine")
+    );
+    let snap_planet = loop {
+        let ServerDatagram::Snapshot { planet, .. } = alice.snaps.recv().await.unwrap();
+        if planet == 1 {
+            break planet;
+        }
+    };
+    assert_eq!(snap_planet, 1, "snapshots name the new planet");
+
+    // Bob follows and each sees the other arrive.
+    let bob_shrine = bob.shrine();
+    bob.send(ClientMsg::Warp {
+        shrine: bob_shrine,
+        planet: 1,
+    })
+    .await;
+    bob.until(|m| matches!(m, ServerMsg::Travel(_))).await;
+    bob.until(|m| matches!(m, ServerMsg::PlayerJoined { id, .. } if *id == alice.welcome.player_id))
+        .await;
+    alice
+        .until(|m| matches!(m, ServerMsg::PlayerJoined { id, .. } if *id == bob.welcome.player_id))
+        .await;
+    alice
+        .until(|m| matches!(m, ServerMsg::Universe { planets } if planets[1].players == 2 && planets[0].players == 0))
+        .await;
+
+    // Nobody is left on the first planet: it holds no chunks.
+    let deadline = std::time::Instant::now() + Duration::from_secs(10);
+    loop {
+        let load = server.planet_load();
+        if load[0].players == 0 && load[0].resident == 0 && load[0].held == 0 && load[1].resident > 0 {
+            break;
+        }
+        assert!(
+            std::time::Instant::now() < deadline,
+            "first planet still holds chunks: {load:?}"
+        );
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
+
+    // Her travel is saved: she logs in again where she went.
+    drop(alice);
+    tokio::time::sleep(Duration::from_millis(300)).await;
+    let alice = TestClient::login(&server, "Alice").await;
+    assert_eq!(alice.welcome.planet.id, 1);
+    assert_eq!(alice.count("stone"), 10);
+    drop(bob);
+    server.stop();
 }

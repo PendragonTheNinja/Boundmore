@@ -52,7 +52,7 @@ cargo clippy --workspace --all-targets -- -D warnings
 cargo test --workspace
 ```
 
-Expected test counts (M3, 2026-10-18): bm-core 62, bm-worldgen 13, bm-mesh 12, bm-protocol 6, bm-server 15 unit + 9 end-to-end, bm-client 35, bm-texgen 5 (157 in all). CI (`.github/workflows/ci.yml`) runs the same on Linux and builds on Windows.
+Expected test counts (M4, 2026-10-19): bm-core 63, bm-worldgen 23, bm-mesh 12, bm-protocol 6, bm-server 24 unit + 11 end-to-end, bm-client 46, bm-texgen 5 (190 in all). CI (`.github/workflows/ci.yml`) runs the same on Linux and builds on Windows.
 
 **Load test:** run a server, then `cargo run --release -p bm-server --example bots -- --count 50 --prefix Load`. Watch the server's 30-second report for slow ticks.
 
@@ -63,8 +63,8 @@ Xvfb :99 -screen 0 1280x720x24 &
 DISPLAY=:99 VK_ICD_FILENAMES=/usr/share/vulkan/icd.d/lvp_icd.json WGPU_BACKEND=vulkan target/release/boundmore --name Tester --password testerpass1 --register --cert data/server.cert.der &
 DISPLAY=:99 import -window root shot.png
 ```
-`--name` with `--password` skips the login screen (drop `--register` once the account exists). `--demo-ui login|hud|inventory|crafting|station|claims` opens a menu on an offline test patch, no server needed.
-Drive it with `xdotool` (`windowfocus --sync`, then plain `keydown`/`click`, not `--window`; to break, `mousedown 1`, wait the block's hardness, `mouseup 1`). `BOUNDMORE_TIME=0.77` (0 midnight, 0.5 noon) previews a time of day; `--assets DIR` points at another texture set. Frame rates there mean nothing; correctness and pictures do. Nathan's machine is the authority on performance and feel. Stop processes with `pkill -x boundmore`, never `pkill -f` (it matches your own shell).
+`--name` with `--password` skips the login screen (drop `--register` once the account exists). `--demo-ui login|hud|inventory|crafting|station|claims|shrine|travel|travelling|sky` opens a menu on an offline test patch, no server needed.
+Drive it with `xdotool` (`windowfocus --sync`, then plain `keydown`/`click`, not `--window`; to break, `mousedown 1`, wait the block's hardness, `mouseup 1`). `BOUNDMORE_TIME=0.77` (0 midnight, 0.5 noon) previews a time of day; `--assets DIR` points at another texture set. Frame rates there mean nothing; correctness and pictures do. Nathan's machine is the authority on performance and feel. Stop processes with `pkill -x boundmore`, never `pkill -f` (it matches your own shell); when parallel agents run servers, give each its own `--bind` port and data dir and stop processes by PID, or one agent kills another's server.
 
 ## Starting a session (do this first, every time)
 
@@ -94,6 +94,7 @@ Drive it with `xdotool` (`windowfocus --sync`, then plain `keydown`/`click`, not
 
 - **Milestone 1, Foundation: done** (2026-10-18). `docs/milestones/01-foundation.md`.
 - **Milestone 2, A World Worth Looking At: built** (2026-10-18), play-tested by Nathan (breaking, water fixed). `docs/milestones/02-a-world-worth-looking-at.md`.
-- **Milestone 3, Gather, Craft, Claim: built, awaiting Nathan's play-test.** `docs/milestones/03-gather-craft-claim.md`; its Status section is the live checklist.
+- **Milestone 3, Gather, Craft, Claim: built** (2026-10-18); Nathan's first test found the block-after-block break refusal (fixed, protocol 6). `docs/milestones/03-gather-craft-claim.md`.
+- **Milestone 4, Many Worlds: built, awaiting Nathan's play-test.** `docs/milestones/04-many-worlds.md`; its Status section is the live checklist. One process hosts the universe (ADR-0006), one save file `data/universe.redb`.
 - **Design research:** `docs/research/boundless-forum-feedback.md` (what Boundless players liked and disliked). Read it before designing any Boundless system. Decided from it so far: no beacon fuel; a claim lapses only after 6 months without a visit, and its contents go back to the owner (2026-10-18).
 - Update this section and the milestone's Status section at the end of every working session.

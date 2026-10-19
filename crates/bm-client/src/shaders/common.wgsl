@@ -13,8 +13,18 @@ struct Globals {
     sun_color: vec4<f32>,
     // x: fog start, y: fog end, z: time in seconds, w: star visibility
     params: vec4<f32>,
-    // x, y: framebuffer size in pixels
+    // x, y: framebuffer size in pixels; z: planets in the sky
     screen: vec4<f32>,
+    // The night sky's frame to the world's (stars and planets turn with it)
+    sky_rotation: mat4x4<f32>,
+    planets: array<SkyPlanet, 16>,
+};
+
+struct SkyPlanet {
+    // xyz: unit direction, w: apparent radius in radians
+    dir: vec4<f32>,
+    // rgb: linear colour
+    color: vec4<f32>,
 };
 
 @group(0) @binding(0) var<uniform> g: Globals;

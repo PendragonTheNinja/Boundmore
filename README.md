@@ -2,9 +2,9 @@
 
 A persistent online voxel universe in the spirit of *Boundless*: a world of planets that wrap around, built, shared and traded on by everyone in it. All art, names and code are Boundmore's own.
 
-![Day](docs/media/m2-day.png)
+![Arriving on four planets](docs/media/m4-real-arrivals.png)
 
-**Status:** milestone 3 (accounts, inventory, tools, crafting, workbench and furnace, land claims) is built and awaiting a play-test. Milestones 1 and 2 (foundation; light, day and night, textures) are done. See `docs/roadmap.md` for what comes next.
+**Status:** milestone 4 (a universe of four planets, warp shrines, iron) is built and awaiting a play-test. Milestones 1 to 3 (foundation; light and textures; accounts, inventory, crafting and claims) are built. See `docs/roadmap.md` for what comes next.
 
 ## Running it
 
@@ -29,9 +29,12 @@ Controls:
 - **I** (or Tab) opens the inventory: drag to move, right drag or Shift drag to split, drop on Throw away to discard.
 - **C** opens crafting: things you make by hand, or, looking at a workbench or furnace, what it makes. Stations keep working while you are away; collect from them later.
 - **P** toggles claim mode: left click a plot beside your claim to add it, right click to give it up. Place a claim stone to start a claim. A claim stays yours as long as you visit at least once every 6 months.
+- **E** at a warp shrine (the glowing violet block at each planet's spawn) opens the travel menu: pick a planet to go there.
 - F11 for fullscreen.
 
-Getting started: break tree trunks by hand, craft timber, then a workbench; break stone for a furnace and stone tools; coal and copper from the rocks make copper tools.
+Getting started: break tree trunks by hand, craft timber, then a workbench; break stone for a furnace and stone tools; coal and copper from the rocks make copper tools. Iron is only found on the tier 2 and 3 planets (Emberdune, Rimehold, Wildmere), deeper than copper; iron tools are the fastest yet.
+
+The server hosts four planets by default: Verdance (temperate, tier 1, where everyone starts), Emberdune (arid), Rimehold (frozen) and Wildmere (lush). `server.example.toml` shows how to change the list. An older save (`data/verdance.redb`) is upgraded into `data/universe.redb` on first start, keeping everything; the old file is left as a backup. If you log in far from the warp shrine, a notice tells you which way it is.
 
 To play across machines, open UDP port 7777 on the server and give each player the server's `data/server.cert.der`:
 
@@ -39,7 +42,7 @@ To play across machines, open UDP port 7777 on the server and give each player t
 cargo run --release -p bm-client -- --server 203.0.113.5:7777 --cert server.cert.der
 ```
 
-Load testing: `cargo run --release -p bm-server --example bots -- --count 50`.
+Load testing: `cargo run --release -p bm-server --example bots -- --count 50 --planets 2` (bots spread over the first two planets).
 
 ## Updating
 
