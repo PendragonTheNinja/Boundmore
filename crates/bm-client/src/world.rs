@@ -212,6 +212,17 @@ impl ClientWorld {
         out
     }
 
+    /// Chunks held, and edits still waiting for the server's answer.
+    #[cfg(test)]
+    pub fn chunk_count(&self) -> usize {
+        self.chunks.len()
+    }
+
+    #[cfg(test)]
+    pub fn pending_edits(&self) -> usize {
+        self.pending.len()
+    }
+
     pub fn dirty_count(&self) -> usize {
         self.mesher.dirty.len()
     }
