@@ -42,7 +42,7 @@ Item entities on the ground, trading and shops, guilds, claim permissions for fr
 - **Plot size** 8×8×8. Confirmed by Nathan, 2026-10-18.
 - **Inventory size** 40 slots, stacks of 100 for blocks. Confirmed by Nathan, 2026-10-18.
 - **Stations on someone else's claim** cannot be used (craft, watch or collect), so output can't be taken. Proposed by the server work; awaiting Nathan.
-- **Land upkeep:** decided by Nathan, 2026-10-18. No fuel. A claim lapses after 6 months (`claim_keep_days` = 183) without its owner visiting, and its contents go back to the owner, never destroyed; players must be told (a notice when a claim is placed now, the tutorial later). Each player's `last_seen` is saved from M3 on; lapsing itself is a later task. A schematic that saves the build so it can be placed again is wanted if it proves feasible.
+- **Land upkeep:** decided by Nathan, 2026-10-18. No fuel. A claim lapses after 6 months (`claim_keep_days` = 183) without its owner visiting, and its contents go back to the owner, never destroyed; players must be told (a notice when a claim is placed now, the tutorial later). Each player's `last_seen` is saved from M3 on; lapsing itself is a later task. A schematic that saves the build so it can be placed again is wanted if it proves feasible. **How a lapse looks (Nathan, 2026-10-19):** as in Boundless, the build disappears and every block the owner placed turns to ash, each ash block keeping the colour of the block it replaced; this needs block colours first.
 
 ## Status
 

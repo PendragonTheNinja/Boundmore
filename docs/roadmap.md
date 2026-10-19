@@ -17,7 +17,7 @@ What a Boundless player expects to find, and where each stands. "Ours" is the Bo
 | Inventory and crafting | Gather, craft at machines that run over time, upgrade with power | **Done** for inventory, hand crafting, workbench and furnace (M3). Power and more machines later |
 | Plots and beacons | Claim land so builds are protected; costs upkeep | **Done** for claims (M3). **Changed on purpose:** no fuel; a claim lapses after 6 months without a visit and its contents go back to the owner (the research below) |
 | Settlements | Plots near each other form ranked settlements | M7 |
-| Portals and travel | Player-built portals link planets; warps; grapples | Warp shrines at each spawn (M4, free for now). Player-built portals and their cost: to design with Nathan. Grapples: M6 |
+| Portals and travel | Player-built portals link planets; warps; grapples | Warp shrines at each spawn (M4, free for now). Player-built portals need fuel, less punishing than Boundless (Nathan, 2026-10-19); design from `research/boundless-mechanics.md`. Grapples: M6 |
 | Player economy | Shop stands and request baskets; almost nothing sold by NPCs | M7 |
 | Hunting and creatures | Creatures per planet with drops; world bosses | M8 |
 | Meteors and events | Meteor strikes with special drops; temporary worlds that appear for a while | M8 |
