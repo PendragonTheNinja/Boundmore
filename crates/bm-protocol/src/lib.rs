@@ -19,10 +19,11 @@ use bm_core::{
     BlockDef, BlockPos, BlockState, ChunkPos, ColourPalette, DayCycle, Inventory, ItemDef, ItemStack, MoveConfig,
     PlanetLook, PlanetShape, PlayerInput, PlayerState, PlotPos, Recipe, Station,
 };
+use glam::DVec3;
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
 
 /// Bump on any change to a message below. Client and server must match.
-pub const PROTOCOL_VERSION: u32 = 10;
+pub const PROTOCOL_VERSION: u32 = 11;
 
 /// QUIC application protocol name; also refuses non-Boundmore peers early.
 pub const ALPN: &[u8] = b"boundmore/1";
@@ -359,6 +360,23 @@ pub struct RemotePlayer {
     pub pos: [f32; 3],
     pub yaw: u16,
     pub pitch: i16,
+    /// Their grapple hook while one is out, from their feet in 1/256 blocks
+    /// (a hook never flies further than a grapple's range, well under 128).
+    pub hook: Option<[i16; 3]>,
+}
+
+impl RemotePlayer {
+    /// Packs a hook at `offset` blocks from the feet for [`RemotePlayer::hook`].
+    pub fn pack_hook(offset: DVec3) -> [i16; 3] {
+        offset
+            .to_array()
+            .map(|v| (v * 256.0).round().clamp(i16::MIN as f64, i16::MAX as f64) as i16)
+    }
+
+    /// The hook's offset from the feet, in blocks.
+    pub fn hook_offset(&self) -> Option<DVec3> {
+        self.hook.map(|h| DVec3::from_array(h.map(|v| v as f64 / 256.0)))
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -378,8 +396,8 @@ pub enum ServerDatagram {
 }
 
 /// Remote players per snapshot datagram, keeping each under the ~1200-byte
-/// path MTU QUIC assumes.
-pub const PLAYERS_PER_SNAPSHOT: usize = 40;
+/// path MTU QUIC assumes even when every one of them has a grapple out.
+pub const PLAYERS_PER_SNAPSHOT: usize = 28;
 
 #[derive(Debug, thiserror::Error)]
 pub enum DecodeError {
@@ -423,7 +441,6 @@ pub fn clean_name(name: &str) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use glam::DVec3;
 
     #[test]
     fn messages_round_trip() {
@@ -454,6 +471,12 @@ mod tests {
                 pos: DVec3::new(1e6, 1e3, 1e6),
                 vel: DVec3::splat(-50.0),
                 on_ground: true,
+                hook: Some(bm_core::Hook {
+                    pos: DVec3::new(1e6, 1e3, 1e6),
+                    vel: DVec3::splat(-50.0),
+                    rope: 1e3,
+                    stuck: Some(BlockPos::new(i32::MAX as i64, i32::MIN as i64, i32::MAX as i64)),
+                }),
             },
             others: vec![
                 RemotePlayer {
@@ -461,6 +484,7 @@ mod tests {
                     pos: [1e6; 3],
                     yaw: u16::MAX,
                     pitch: i16::MIN,
+                    hook: Some([i16::MIN; 3]),
                 };
                 PLAYERS_PER_SNAPSHOT
             ],
@@ -481,11 +505,16 @@ mod tests {
                     sprint: true,
                     yaw: 65535,
                     pitch: -16000,
+                    slot: 9,
+                    fire: true,
+                    reel: -1,
                 };
                 INPUT_REDUNDANCY
             ],
         };
-        assert!(encode(&d).len() < 80);
+        // Sent 60 times a second: about 6 KB/s up at this size.
+        let n = encode(&d).len();
+        assert!(n <= 100, "{n} bytes");
     }
 
     #[test]

@@ -198,7 +198,7 @@ async fn bot(
             jump: next() % 25 == 0,
             sprint: i % 2 == 0,
             yaw,
-            pitch: 0,
+            ..Default::default()
         };
         seq += 1;
         recent.push_front(input);

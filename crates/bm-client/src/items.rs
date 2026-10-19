@@ -141,6 +141,20 @@ impl Items {
                     lines.push(format!("{left} of {total} uses left"));
                 }
             }
+            ItemKind::Grapple { range, hookshot, .. } => {
+                lines.push(format!(
+                    "Fires a hook up to {} blocks with left click",
+                    trim_float(range)
+                ));
+                lines.push(if hookshot {
+                    "Pulls you in by itself; click again to let go".into()
+                } else {
+                    "R reels in, F lets out; click again to let go".into()
+                });
+                if let Some((left, total)) = self.durability(stack) {
+                    lines.push(format!("{left} of {total} uses left"));
+                }
+            }
             ItemKind::Block(_) => lines.push("A block you can place".into()),
             ItemKind::Material => lines.push("A crafting material".into()),
         }

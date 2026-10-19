@@ -25,6 +25,7 @@ use bm_core::{
 };
 use bm_worldgen::{GENERATOR_VERSION, PlanetGenConfig, PlanetGenConfigV1, PlanetKinds};
 use crossbeam_channel::{Receiver, Sender};
+use glam::DVec3;
 use redb::{Database, ReadableDatabase, ReadableTable, TableDefinition, WriteTransaction};
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
@@ -226,13 +227,45 @@ pub fn load_slots(items: &ItemRegistry, slots: &[Option<SavedStack>], what: &str
         .collect()
 }
 
+/// A player's body as saved: where they are and how they are moving. This
+/// is the layout `PlayerState` had before grapples (postcard is positional),
+/// kept apart from it so a hook in flight is never saved and new movement
+/// state never changes the save format.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Serialize, Deserialize)]
+pub struct SavedBody {
+    pub pos: DVec3,
+    pub vel: DVec3,
+    pub on_ground: bool,
+}
+
+impl From<PlayerState> for SavedBody {
+    fn from(s: PlayerState) -> Self {
+        Self {
+            pos: s.pos,
+            vel: s.vel,
+            on_ground: s.on_ground,
+        }
+    }
+}
+
+impl From<SavedBody> for PlayerState {
+    fn from(b: SavedBody) -> Self {
+        Self {
+            pos: b.pos,
+            vel: b.vel,
+            on_ground: b.on_ground,
+            hook: None,
+        }
+    }
+}
+
 /// Everything saved about one account's character.
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 pub struct PlayerData {
     /// The planet they are on (its id).
     pub planet: u16,
     /// Where on it. None: never placed there (starts at its shrine).
-    pub state: Option<PlayerState>,
+    pub state: Option<SavedBody>,
     pub inventory: Vec<Option<SavedStack>>,
     /// Unix seconds when the player was last connected; 0 if never recorded
     /// (the server then counts from when it first sees the 0). Their claims
@@ -296,7 +329,7 @@ mod v2 {
 
     #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
     pub struct PlayerData {
-        pub state: Option<PlayerState>,
+        pub state: Option<SavedBody>,
         pub inventory: Vec<Option<SavedStack>>,
         pub last_seen: u64,
     }
@@ -825,7 +858,7 @@ fn upgrade_1_to_2(tx: &WriteTransaction) -> Result<()> {
         let old = tx.open_table(V1_PLAYERS)?;
         for row in old.iter()? {
             let (k, v) = row?;
-            match postcard::from_bytes::<PlayerState>(v.value()) {
+            match postcard::from_bytes::<SavedBody>(v.value()) {
                 Ok(state) => moved.push((k.value().to_lowercase(), state)),
                 Err(e) => tracing::warn!("version 1 player `{}` is corrupt ({e}); not carried over", k.value()),
             }
@@ -1051,7 +1084,7 @@ pub mod legacy {
     /// One player of a version 2 save.
     pub struct V2Player<'a> {
         pub key: &'a str,
-        pub state: Option<PlayerState>,
+        pub state: Option<SavedBody>,
         pub inventory: Vec<Option<SavedStack>>,
     }
 
@@ -1134,14 +1167,13 @@ pub mod legacy {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use glam::DVec3;
 
     fn kinds() -> PlanetKinds {
         PlanetKinds::builtin(&bm_core::BlockRegistry::builtin())
     }
 
-    fn at(x: f64) -> PlayerState {
-        PlayerState {
+    fn at(x: f64) -> SavedBody {
+        SavedBody {
             pos: DVec3::new(x, 2.0, 3.0),
             ..Default::default()
         }
@@ -1389,7 +1421,7 @@ mod tests {
 
     /// Writes a planet exactly as save version 1 did: its meta, a chunk, and
     /// the old players table.
-    fn write_v1_planet(path: &Path, players: &[(&str, PlayerState)]) {
+    fn write_v1_planet(path: &Path, players: &[(&str, SavedBody)]) {
         let db = Database::create(path).unwrap();
         let tx = db.begin_write().unwrap();
         {

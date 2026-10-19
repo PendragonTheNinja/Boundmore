@@ -149,3 +149,21 @@ output = "precise_slope_chisel"
 inputs = [["iron_ingot", 2], ["slope_chisel", 1]]
 station = "workbench"
 seconds = 6.0
+
+[[recipe]]
+output = "copper_grapple"
+inputs = [["copper_ingot", 3], ["timber", 2]]
+station = "workbench"
+seconds = 5.0
+
+[[recipe]]
+output = "iron_grapple"
+inputs = [["iron_ingot", 3], ["copper_grapple", 1]]
+station = "workbench"
+seconds = 6.0
+
+[[recipe]]
+output = "iron_hookshot"
+inputs = [["iron_ingot", 3], ["copper_ingot", 2], ["timber", 2]]
+station = "workbench"
+seconds = 6.0

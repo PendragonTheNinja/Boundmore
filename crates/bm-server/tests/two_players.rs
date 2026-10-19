@@ -11,7 +11,7 @@ use bm_protocol::{
     StationView, StorageView, Welcome,
 };
 use bm_server::config::{PlanetSpec, ServerConfig};
-use bm_server::store::{PlayerData, SavedStack, Store, UNIVERSE_FILE, WriteBatch};
+use bm_server::store::{PlayerData, SavedBody, SavedStack, Store, UNIVERSE_FILE, WriteBatch};
 use std::collections::HashMap;
 use std::path::Path;
 use std::time::Duration;
@@ -916,7 +916,7 @@ async fn a_version_1_planet_opens_and_keeps_its_players() {
                 .unwrap()
                 .insert("planet", postcard::to_stdvec(&meta).unwrap().as_slice())
                 .unwrap();
-            let state = PlayerState {
+            let state = SavedBody {
                 pos,
                 ..Default::default()
             };
@@ -966,7 +966,7 @@ async fn a_version_2_planet_opens_as_the_first_planet_with_everything_kept() {
         &[(build, Chunk::filled(glass).encode())],
         &[V2Player {
             key: "alice",
-            state: Some(PlayerState {
+            state: Some(SavedBody {
                 pos,
                 ..Default::default()
             }),
@@ -1966,5 +1966,63 @@ async fn players_walk_up_half_slabs_on_the_server() {
         end.pos,
         start.pos
     );
+    server.stop();
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn grapples_fire_stick_wear_and_need_a_grapple_in_hand() {
+    let dir = tempfile::tempdir().unwrap();
+    seed(
+        dir.path(),
+        "Alice",
+        &[
+            (0, "copper_grapple", 1, 0),
+            (1, "iron_hookshot", 1, 499),
+            (2, "timber", 4, 0),
+        ],
+    );
+    let server = bm_server::start(config(dir.path())).unwrap();
+    let mut alice = TestClient::login(&server, "Alice").await;
+    let feet = alice.feet();
+    alice.wait_for_chunk(feet.chunk()).await;
+    let down = |slot: u8, fire: bool| PlayerInput {
+        pitch: -bm_core::movement::PITCH_LIMIT,
+        slot,
+        fire,
+        ..Default::default()
+    };
+    async fn play(c: &mut TestClient, input: PlayerInput, ticks: u32) {
+        for _ in 0..ticks {
+            c.send_inputs(1, input);
+            tokio::time::sleep(Duration::from_millis(16)).await;
+        }
+    }
+
+    // Fired at the ground underfoot: it sticks at once and wears by one.
+    play(&mut alice, down(0, true), 1).await;
+    play(&mut alice, down(0, false), 20).await;
+    alice.settle().await;
+    let (_, _, you, _) = alice.latest_snapshot().await;
+    let hook = you.hook.expect("the hook is out");
+    assert!(hook.stuck.is_some(), "stuck in the ground: {hook:?}");
+    assert!(hook.pos.y <= you.pos.y + 1e-9, "below the feet: {hook:?}");
+    assert_eq!(stack(&alice, 0).map(|s| s.wear), Some(1));
+
+    // Timber in hand holds no rope: it lets go and fires nothing.
+    play(&mut alice, down(2, true), 1).await;
+    play(&mut alice, down(2, false), 10).await;
+    alice.settle().await;
+    let (_, _, you, _) = alice.latest_snapshot().await;
+    assert_eq!(you.hook, None);
+    assert_eq!(stack(&alice, 2).map(|s| (s.count, s.wear)), Some((4, 0)));
+
+    // The hookshot's last shot breaks it.
+    play(&mut alice, down(1, true), 1).await;
+    play(&mut alice, down(1, false), 10).await;
+    alice.notice("Your Iron Hookshot broke").await;
+    alice.settle().await;
+    assert_eq!(stack(&alice, 1), None);
+    let (_, _, you, _) = alice.latest_snapshot().await;
+    assert_eq!(you.hook, None, "nothing left in hand to hold it");
     server.stop();
 }

@@ -6,6 +6,7 @@
 //! items are data the server sends to clients in the handshake.
 
 use crate::block::{BlockDef, BlockId, BlockRegistry, Colour, Material};
+use crate::movement::{self, GrappleSpec};
 use crate::shape::ShapeFamily;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -55,6 +56,15 @@ pub enum ItemKind {
         precise: bool,
         durability: u16,
     },
+    /// Fires a hook that sticks where it strikes, to swing from and climb
+    /// (`movement::step`). One use per shot.
+    Grapple {
+        range: f32,
+        shot_speed: f32,
+        reel_speed: f32,
+        hookshot: bool,
+        durability: u16,
+    },
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -100,10 +110,32 @@ impl ItemDef {
         }
     }
 
+    /// What a grapple does. The same on server and client: both widen the
+    /// same `f32`s from the catalogue.
+    pub fn grapple(&self) -> Option<GrappleSpec> {
+        match self.kind {
+            ItemKind::Grapple {
+                range,
+                shot_speed,
+                reel_speed,
+                hookshot,
+                ..
+            } => Some(GrappleSpec {
+                range: range as f64,
+                shot_speed: shot_speed as f64,
+                reel_speed: reel_speed as f64,
+                hookshot,
+            }),
+            _ => None,
+        }
+    }
+
     /// Uses before it breaks, for anything that wears.
     pub fn durability(&self) -> Option<u16> {
         match self.kind {
-            ItemKind::Tool { durability, .. } | ItemKind::Chisel { durability, .. } => Some(durability),
+            ItemKind::Tool { durability, .. }
+            | ItemKind::Chisel { durability, .. }
+            | ItemKind::Grapple { durability, .. } => Some(durability),
             _ => None,
         }
     }
@@ -178,7 +210,19 @@ struct ItemEntry {
     tool: Option<ToolEntry>,
     #[serde(default)]
     chisel: Option<ChiselEntry>,
+    #[serde(default)]
+    grapple: Option<GrappleEntry>,
     icon: Option<String>,
+}
+
+#[derive(Deserialize)]
+struct GrappleEntry {
+    range: f32,
+    shot_speed: f32,
+    reel_speed: f32,
+    #[serde(default)]
+    hookshot: bool,
+    durability: u16,
 }
 
 #[derive(Deserialize)]
@@ -240,19 +284,26 @@ impl ItemRegistry {
             }
         }
         for e in file.item {
-            let kind = match (e.tool, e.chisel) {
-                (Some(_), Some(_)) => return Err(ItemError::BadTool(e.name)),
-                (Some(t), None) => ItemKind::Tool {
+            let kind = match (e.tool, e.chisel, e.grapple) {
+                (Some(t), None, None) => ItemKind::Tool {
                     class: t.class,
                     speed: t.speed,
                     durability: t.durability,
                 },
-                (None, Some(c)) => ItemKind::Chisel {
+                (None, Some(c), None) => ItemKind::Chisel {
                     family: c.family,
                     precise: c.precise,
                     durability: c.durability,
                 },
-                (None, None) => ItemKind::Material,
+                (None, None, Some(g)) => ItemKind::Grapple {
+                    range: g.range,
+                    shot_speed: g.shot_speed,
+                    reel_speed: g.reel_speed,
+                    hookshot: g.hookshot,
+                    durability: g.durability,
+                },
+                (None, None, None) => ItemKind::Material,
+                _ => return Err(ItemError::BadTool(e.name)),
             };
             defs.push(ItemDef {
                 display: e.display.unwrap_or_else(|| title_case(&e.name)),
@@ -287,6 +338,20 @@ impl ItemRegistry {
                     return Err(ItemError::BadTool(d.name.clone()));
                 }
                 ItemKind::Chisel { durability, .. } if d.stack != 1 || durability == 0 => {
+                    return Err(ItemError::BadTool(d.name.clone()));
+                }
+                ItemKind::Grapple {
+                    range,
+                    shot_speed,
+                    reel_speed,
+                    durability,
+                    ..
+                } if d.stack != 1
+                    || durability == 0
+                    || !(range >= movement::ROPE_MIN as f32 && range <= 64.0)
+                    || !(shot_speed > 0.0 && shot_speed <= 200.0)
+                    || !(reel_speed > 0.0 && reel_speed <= 100.0) =>
+                {
                     return Err(ItemError::BadTool(d.name.clone()));
                 }
                 ItemKind::Block(b) if !blocks.contains(b) => return Err(ItemError::BadBlock(d.name.clone(), b.0)),
@@ -428,6 +493,43 @@ mod tests {
         ));
         // The builtin blocks name drops that only the builtin items define.
         assert!(matches!(ItemRegistry::build(&b, ""), Err(ItemError::UnknownDrop(..))));
+    }
+
+    #[test]
+    fn grapples_are_read_and_checked() {
+        let (_, items) = setup();
+        let def = items.get(items.id("iron_hookshot").unwrap()).unwrap();
+        let g = def.grapple().expect("a grapple");
+        assert!(g.hookshot && g.range > 0.0 && g.reel_speed > 0.0);
+        assert!(def.durability().is_some());
+        assert_eq!(
+            items
+                .get(items.id("copper_grapple").unwrap())
+                .unwrap()
+                .grapple()
+                .map(|g| g.hookshot),
+            Some(false)
+        );
+        let b = BlockRegistry::builtin();
+        let bad = |g: &str| {
+            let toml = format!(
+                "{}\n[[item]]\nname = \"g\"\nstack = 1\ngrapple = {g}\n",
+                include_str!("../../../assets/items.toml")
+            );
+            matches!(ItemRegistry::build(&b, &toml), Err(ItemError::BadTool(_)))
+        };
+        assert!(!bad(
+            "{ range = 10.0, shot_speed = 50.0, reel_speed = 5.0, durability = 9 }"
+        ));
+        assert!(bad(
+            "{ range = 500.0, shot_speed = 50.0, reel_speed = 5.0, durability = 9 }"
+        ));
+        assert!(bad(
+            "{ range = 10.0, shot_speed = 0.0, reel_speed = 5.0, durability = 9 }"
+        ));
+        assert!(bad(
+            "{ range = 10.0, shot_speed = 50.0, reel_speed = 5.0, durability = 0 }"
+        ));
     }
 
     #[test]

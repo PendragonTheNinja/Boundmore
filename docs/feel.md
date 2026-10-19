@@ -16,6 +16,20 @@ Every value here was chosen as a sensible starting point, not measured from Boun
 | Player size | 0.6 wide, collides 1.9 tall, drawn 2.0, eyes at 1.75 | **Set by Nathan (2026-10-18):** two blocks tall; nobody fits under less than two blocks. Height sliders in Boundless are visual only |
 | Reach | 7 blocks (`ServerConfig::reach`) | How far away can you break a block? |
 
+## Grapples (`assets/items.toml`; swing feel in `MoveConfig`)
+
+Seeded from a 2017 player measurement of Boundless's grapples (research §2.2), which the same thread later called out of date. Ranges are in blocks, speeds in blocks per second.
+
+| Value | Now | Check in Boundless |
+|---|---|---|
+| Copper grapple | range 16, shot 55, reel 4 | Boundless copper: about 11 to 13 range, reel 2.9. Too generous for a first grapple? |
+| Iron grapple | range 26, shot 65, reel 7 | Boundless's long ones reached 26 to 36 |
+| Iron hookshot | range 20, shot 70, reel 16, reels itself | Boundless gold and diamond hookshots: 16 to 26 range, reel 28 to 34 |
+| Swing lean | 9 blocks/s² (`swing_accel`) | How much can WASD pump a swing? |
+| Fling fade | 0.4 of the speed per second (`fling_drag`) | How far does letting go at the bottom of a swing carry you? |
+| Shortest rope | 1 block (`ROPE_MIN`) | How close does reeling in pull you to the hook? |
+| Durability | copper 300, iron 700, hookshot 500 shots | |
+
 ## World (`bm-server/src/config.rs`, `bm-worldgen`)
 
 | Value | Now | Check |

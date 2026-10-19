@@ -41,6 +41,8 @@ pub const CHEST: [i64; 3] = [126, 44, 126];
 pub const WALL: [i64; 3] = [120, 48, 114];
 /// Where `show_shapes` puts the player: on a pillar behind the rows.
 pub const SHAPES_VIEW: [f64; 3] = [128.5, 46.0, 130.5];
+/// The west end of the grapple demo's arch beam, which runs ten blocks east.
+pub const GRAPPLE_BEAM: [i64; 3] = [124, 56, 118];
 /// The demo's planets: name, kind, and the width shown for it in the sky and
 /// menu. (The demo's own patch is tiny; these are sizes real planets have.)
 const PLANETS: [(&str, &str, u32); 4] = [
@@ -252,6 +254,7 @@ impl Demo {
                 pos: DVec3::from_array(SPAWN),
                 vel: DVec3::ZERO,
                 on_ground: true,
+                hook: None,
             },
             tick: 0,
             view_radius: 4,
@@ -292,6 +295,7 @@ impl Demo {
                 pos: DVec3::from_array(SPAWN),
                 vel: DVec3::ZERO,
                 on_ground: true,
+                hook: None,
             },
             tick: 0,
             claims,
@@ -486,6 +490,37 @@ impl Demo {
             }
             self.slots_since(&before);
         }
+        let chunks = self.chunks_around_spawn();
+        self.events.extend(chunks.into_iter().map(NetEvent::Msg));
+    }
+
+    /// Level ground with a stone arch to swing from (its beam along
+    /// [`GRAPPLE_BEAM`]), and the three grapples in the hotbar's last
+    /// slots.
+    pub fn show_grapple(&mut self) {
+        let stone = BlockState::plain(self.blocks.id("stone").expect("builtin block"));
+        let [x0, y, z] = GRAPPLE_BEAM;
+        let mut put = Vec::new();
+        for x in x0..x0 + 11 {
+            put.push((BlockPos::new(x, y, z), stone));
+        }
+        for py in 44..y {
+            put.push((BlockPos::new(x0, py, z), stone));
+            put.push((BlockPos::new(x0 + 10, py, z), stone));
+        }
+        let planet = &mut self.planets[0];
+        planet.flat = true;
+        planet.edits.clear();
+        planet.edits.extend(put);
+        let id = |n: &str| self.items.id(n).expect("builtin item");
+        let before = self.inv.clone();
+        for (i, name) in ["copper_grapple", "iron_grapple", "iron_hookshot"]
+            .into_iter()
+            .enumerate()
+        {
+            self.inv.slots[7 + i] = Some(ItemStack::new(id(name), 1));
+        }
+        self.slots_since(&before);
         let chunks = self.chunks_around_spawn();
         self.events.extend(chunks.into_iter().map(NetEvent::Msg));
     }

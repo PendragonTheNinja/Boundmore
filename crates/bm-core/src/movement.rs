@@ -10,9 +10,14 @@
 //!   direction with `libm`, which is pure Rust and bit-identical everywhere,
 //!   never `f64::sin`, which calls the platform's maths library;
 //! - plain `f64` arithmetic only (Rust never fuses multiply-adds on its own).
+//!
+//! The grapple is part of movement for the same reason: where the hook
+//! sticks and how the rope swings decide where the player goes, so both
+//! sides run it in [`step`] from the same inputs and the same item.
 
 use crate::coords::BlockPos;
 use crate::planet::PlanetShape;
+use crate::raycast::raycast_shaped;
 use glam::DVec3;
 use serde::{Deserialize, Serialize};
 
@@ -43,6 +48,12 @@ pub struct MoveConfig {
     /// enough to clear a shore one block above the surface.
     pub water_exit_velocity: f64,
     pub max_fall_speed: f64,
+    /// Lean acceleration while hanging from a grapple in the air (WASD
+    /// pumps the swing; there is no speed cap, as in a real swing).
+    pub swing_accel: f64,
+    /// Horizontal speed lost per second (as a fraction) while flying faster
+    /// than a sprint after letting go of a grapple: the fling carries.
+    pub fling_drag: f64,
     pub half_width: f64,
     pub height: f64,
     pub eye_height: f64,
@@ -63,6 +74,8 @@ impl Default for MoveConfig {
             water_drag: 3.5,
             water_exit_velocity: 10.5,
             max_fall_speed: 55.0,
+            swing_accel: 9.0,
+            fling_drag: 0.4,
             // Nathan, 2026-10-18: a character reads as two blocks tall, and
             // no character fits under anything lower than two blocks. 1.9
             // passes a 2-block gap with room to spare and never a 1.5 one.
@@ -85,6 +98,12 @@ pub struct PlayerInput {
     /// Heading in 1/65536 turns. 0 faces -Z; a quarter turn faces +X.
     pub yaw: u16,
     pub pitch: i16,
+    /// The hotbar slot in hand this tick: a grapple there is what fires.
+    pub slot: u8,
+    /// Fire the grapple this tick, or let go (or recall) if one is out.
+    pub fire: bool,
+    /// Rope: 1 reels in, -1 pays out. Larger values are clamped.
+    pub reel: i8,
 }
 
 impl PlayerInput {
@@ -123,17 +142,70 @@ pub fn look_dir(yaw: u16, pitch: i16) -> DVec3 {
     DVec3::new(f.x * cp, sp, f.z * cp)
 }
 
+/// What a grapple does, from its item (`assets/items.toml`). Every number is
+/// a calibration target (`docs/feel.md`).
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+pub struct GrappleSpec {
+    /// How far the hook flies before it is lost; also the longest rope.
+    pub range: f64,
+    /// Hook flight speed, blocks per second.
+    pub shot_speed: f64,
+    /// Rope taken in or paid out per second.
+    pub reel_speed: f64,
+    /// Reels in by itself once stuck (a hookshot): pulls, swings poorly.
+    pub hookshot: bool,
+}
+
+/// A fired grapple hook. It flies straight (no gravity, as in the game this
+/// succeeds) until it strikes a block, then holds the rope.
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+pub struct Hook {
+    /// Canonical, like the player's position.
+    pub pos: DVec3,
+    /// Flight velocity; zero once stuck.
+    pub vel: DVec3,
+    /// Flying: the distance flown. Stuck: the rope's length.
+    pub rope: f64,
+    /// The block it is stuck in; None while it flies.
+    pub stuck: Option<BlockPos>,
+}
+
+/// Where the rope meets the body, above the feet: the hands.
+pub const ROPE_HEIGHT: f64 = 1.2;
+/// The shortest rope: reeling in stops here.
+pub const ROPE_MIN: f64 = 1.0;
+
 #[derive(Clone, Copy, Debug, Default, PartialEq, Serialize, Deserialize)]
 pub struct PlayerState {
     /// Centre of the feet. Canonical on the planet (ADR-0002).
     pub pos: DVec3,
     pub vel: DVec3,
     pub on_ground: bool,
+    /// The grapple hook, while one is out. Never saved: a player who leaves
+    /// lets go.
+    pub hook: Option<Hook>,
+}
+
+/// What happened in a tick that the caller acts on.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct StepEvents {
+    /// A grapple was fired (it wears by one).
+    pub fired: bool,
 }
 
 impl PlayerState {
     pub fn eye(&self, cfg: &MoveConfig) -> DVec3 {
         self.pos + DVec3::new(0.0, cfg.eye_height, 0.0)
+    }
+
+    /// Where the rope meets the body.
+    pub fn hands(&self) -> DVec3 {
+        self.pos + DVec3::new(0.0, ROPE_HEIGHT, 0.0)
+    }
+
+    /// The hook, if it is stuck: where, and the rope's length.
+    pub fn anchor(&self) -> Option<(DVec3, f64)> {
+        self.hook.filter(|h| h.stuck.is_some()).map(|h| (h.pos, h.rope))
     }
 
     /// Whether the body overlaps a block (used to refuse placing into players).
@@ -182,16 +254,40 @@ fn approach(v: DVec3, target: DVec3, max_delta: f64) -> DVec3 {
     }
 }
 
-/// Advances one tick. Deterministic: same state, input and world give the same
-/// result on every machine.
+/// Advances one tick. Deterministic: same state, input, grapple and world
+/// give the same result on every machine. `grapple` is what the item in
+/// `input.slot` can do, if it is a grapple; the caller looks it up in its own
+/// copy of the inventory.
 pub fn step(
     s: &mut PlayerState,
     input: &PlayerInput,
     cfg: &MoveConfig,
+    grapple: Option<&GrappleSpec>,
     planet: PlanetShape,
     world: &impl PhysicsWorld,
-) {
+) -> StepEvents {
     let dt = TICK_DT;
+    let mut events = StepEvents::default();
+    match grapple {
+        // Nothing in hand holds the rope: putting the grapple away lets go.
+        None => s.hook = None,
+        // Firing again lets go of a stuck hook or recalls a flying one.
+        Some(_) if input.fire && s.hook.is_some() => s.hook = None,
+        Some(g) if input.fire => {
+            s.hook = Some(Hook {
+                pos: s.eye(cfg),
+                vel: look_dir(input.yaw, input.pitch) * g.shot_speed,
+                rope: 0.0,
+                stuck: None,
+            });
+            events.fired = true;
+        }
+        Some(_) => {}
+    }
+    if let (Some(g), Some(h)) = (grapple, s.hook) {
+        s.hook = hook_tick(h, g, s.hands(), input.reel, planet, world);
+    }
+    let hooked = s.anchor().is_some();
     let in_water = world.liquid(BlockPos::containing(s.pos.x, s.pos.y + cfg.height * 0.4, s.pos.z));
 
     let (fwd, right) = heading(input.yaw);
@@ -209,8 +305,21 @@ pub fn step(
     } else {
         cfg.walk_speed
     };
-    let accel = if s.on_ground { cfg.ground_accel } else { cfg.air_accel };
-    let horiz = approach(DVec3::new(s.vel.x, 0.0, s.vel.z), wish * speed, accel * dt);
+    let flat = DVec3::new(s.vel.x, 0.0, s.vel.z);
+    let horiz = if s.on_ground || in_water {
+        let accel = if s.on_ground { cfg.ground_accel } else { cfg.air_accel };
+        approach(flat, wish * speed, accel * dt)
+    } else if hooked {
+        // Hanging on the rope: leaning pumps the swing, nothing brakes it.
+        flat + wish * cfg.swing_accel * dt
+    } else if flat.length() > cfg.sprint_speed {
+        // Flung by a grapple: steer, but keep the speed, which fades slowly.
+        let speed = flat.length() * (1.0 - cfg.fling_drag * dt);
+        let steered = flat + wish * cfg.air_accel * dt;
+        steered * (speed / steered.length())
+    } else {
+        approach(flat, wish * speed, cfg.air_accel * dt)
+    };
     s.vel.x = horiz.x;
     s.vel.z = horiz.z;
 
@@ -240,6 +349,22 @@ pub fn step(
             s.vel.y = cfg.jump_velocity;
         }
         s.vel.y = (s.vel.y - cfg.gravity * dt).max(-cfg.max_fall_speed);
+    }
+
+    // The rope: once taut it takes away any speed outwards from the hook and
+    // gives back what it takes to end the tick exactly at its length.
+    // Gravity turns into swing, and a shortened rope pulls.
+    if let Some((anchor, rope)) = s.anchor() {
+        let r = planet.delta(anchor, s.hands());
+        let dist = r.length();
+        if dist > 1e-9 {
+            let n = r / dist;
+            let out = s.vel.dot(n);
+            if dist + out * dt > rope {
+                let wanted = ((rope - dist) / dt).max(-cfg.max_fall_speed);
+                s.vel += n * (wanted - out);
+            }
+        }
     }
 
     // Stepping up (ADR-0008): only a walker on the ground who is not rising
@@ -287,6 +412,51 @@ pub fn step(
         s.on_ground = intersects(&probe, cfg, world);
     }
     s.pos = planet.wrap_point(s.pos);
+    events
+}
+
+/// One tick of the hook: flight until it strikes a block or flies its range,
+/// then the reel. None when it is lost, or the block it held is gone.
+fn hook_tick(
+    mut h: Hook,
+    g: &GrappleSpec,
+    hands: DVec3,
+    reel: i8,
+    planet: PlanetShape,
+    world: &impl PhysicsWorld,
+) -> Option<Hook> {
+    let dt = TICK_DT;
+    let Some(block) = h.stuck else {
+        let reach = (g.shot_speed * dt).min(g.range - h.rope);
+        let hit = raycast_shaped(h.pos, h.vel, reach, |p| world.solid(p).then(|| world.shape(p)));
+        if let Some(hit) = hit {
+            h.pos = planet.wrap_point(hit.point);
+            h.vel = DVec3::ZERO;
+            h.stuck = Some(planet.wrap_block(hit.block));
+            h.rope = planet.delta(h.pos, hands).length().clamp(ROPE_MIN, g.range);
+            return Some(h);
+        }
+        h.rope += reach;
+        if h.rope >= g.range {
+            return None;
+        }
+        h.pos = planet.wrap_point(h.pos + h.vel * (reach / g.shot_speed));
+        return Some(h);
+    };
+    if !world.solid(block) {
+        return None;
+    }
+    let reel = match reel.clamp(-1, 1) {
+        0 if g.hookshot => 1,
+        r => r,
+    };
+    if reel > 0 {
+        // Slack is taken up at once, so reeling in always pulls.
+        let dist = planet.delta(h.pos, hands).length();
+        h.rope = h.rope.min(dist);
+    }
+    h.rope = (h.rope - reel as f64 * g.reel_speed * dt).clamp(ROPE_MIN, g.range);
+    Some(h)
 }
 
 /// The horizontal move of one sub-step tried again from `STEP_HEIGHT` higher
@@ -549,7 +719,7 @@ mod tests {
                     ..Default::default()
                 };
                 for _ in 0..240 {
-                    step(&mut s, &PlayerInput::default(), &cfg, planet(), &w);
+                    step(&mut s, &PlayerInput::default(), &cfg, None, planet(), &w);
                 }
                 let want = if shape.keeps(octant(ox, 1, oz)) {
                     11.0
@@ -588,7 +758,7 @@ mod tests {
                 jump: i % 97 == 0,
                 sprint: i % 200 < 100,
                 yaw: (i * 311) as u16,
-                pitch: 0,
+                ..Default::default()
             })
             .collect();
         let cfg = MoveConfig::default();
@@ -599,7 +769,7 @@ mod tests {
             };
             let mut trace = Vec::new();
             for inp in &inputs {
-                step(&mut s, inp, &cfg, planet(), &w);
+                step(&mut s, inp, &cfg, None, planet(), &w);
                 trace.push((s.pos.x.to_bits(), s.pos.y.to_bits(), s.pos.z.to_bits()));
             }
             trace
@@ -614,7 +784,7 @@ mod tests {
     fn run(s: &mut PlayerState, input: PlayerInput, ticks: u32, w: &Flat) {
         let cfg = MoveConfig::default();
         for _ in 0..ticks {
-            step(s, &input, &cfg, planet(), w);
+            step(s, &input, &cfg, None, planet(), w);
         }
     }
 
@@ -639,7 +809,7 @@ mod tests {
         let mut s = PlayerState {
             pos: DVec3::new(5.5, 5.0, 5.5),
             vel: DVec3::new(0.0, -55.0, 0.0),
-            on_ground: false,
+            ..Default::default()
         };
         run(&mut s, PlayerInput::default(), 10, &w);
         assert!((s.pos.y - 1.0).abs() < 1e-9, "{}", s.pos.y);
@@ -813,7 +983,7 @@ mod tests {
                 jump: i % 37 == 0,
                 sprint: i % 2 == 0,
                 yaw: (i * 977) as u16,
-                pitch: 0,
+                ..Default::default()
             })
             .collect();
         let cfg = MoveConfig::default();
@@ -823,11 +993,237 @@ mod tests {
                 ..Default::default()
             };
             for inp in &inputs {
-                step(&mut s, inp, &cfg, planet(), &w);
+                step(&mut s, inp, &cfg, None, planet(), &w);
             }
             (s.pos.x.to_bits(), s.pos.y.to_bits(), s.pos.z.to_bits())
         };
         assert_eq!(simulate(), simulate());
+    }
+
+    const GRAPPLE: GrappleSpec = GrappleSpec {
+        range: 26.0,
+        shot_speed: 65.0,
+        reel_speed: 7.0,
+        hookshot: false,
+    };
+
+    /// A flat ceiling of blocks at `y` over the area around the player.
+    fn ceiling(w: &mut Flat, y: i64) {
+        for x in -20..30 {
+            for z in -20..30 {
+                w.solid.insert(BlockPos::new(x, y, z));
+            }
+        }
+    }
+
+    fn up() -> PlayerInput {
+        PlayerInput {
+            pitch: PITCH_LIMIT,
+            ..Default::default()
+        }
+    }
+
+    /// Runs `ticks` ticks holding `g`, returning how many shots were fired.
+    fn hold(s: &mut PlayerState, input: PlayerInput, ticks: u32, g: Option<&GrappleSpec>, w: &Flat) -> u32 {
+        let cfg = MoveConfig::default();
+        let mut fired = 0;
+        for _ in 0..ticks {
+            fired += step(s, &input, &cfg, g, planet(), w).fired as u32;
+        }
+        fired
+    }
+
+    fn fire(input: PlayerInput) -> PlayerInput {
+        PlayerInput { fire: true, ..input }
+    }
+
+    #[test]
+    fn a_hook_flies_and_sticks_in_the_first_block_it_meets() {
+        let mut w = world();
+        ceiling(&mut w, 22);
+        let mut s = standing(5.5, 10.0);
+        assert_eq!(hold(&mut s, fire(up()), 1, Some(&GRAPPLE), &w), 1);
+        assert!(s.hook.is_some_and(|h| h.stuck.is_none()), "flying after one tick");
+        hold(&mut s, up(), 20, Some(&GRAPPLE), &w);
+        let h = s.hook.expect("still out");
+        assert_eq!(h.stuck.map(|b| b.y), Some(22));
+        assert!((h.pos.y - 22.0).abs() < 1e-9, "on the ceiling's face: {}", h.pos.y);
+        assert!((h.rope - (22.0 - 11.2)).abs() < 0.2, "rope is the distance: {}", h.rope);
+    }
+
+    #[test]
+    fn a_hook_that_meets_nothing_in_range_is_lost() {
+        let w = world();
+        let mut s = standing(5.5, 10.0);
+        hold(&mut s, fire(up()), 1, Some(&GRAPPLE), &w);
+        // 26 blocks at 65 per second: gone within half a second.
+        hold(&mut s, up(), 30, Some(&GRAPPLE), &w);
+        assert_eq!(s.hook, None);
+    }
+
+    #[test]
+    fn firing_again_or_putting_the_grapple_away_lets_go() {
+        let mut w = world();
+        ceiling(&mut w, 22);
+        let mut s = standing(5.5, 10.0);
+        hold(&mut s, fire(up()), 1, Some(&GRAPPLE), &w);
+        hold(&mut s, up(), 20, Some(&GRAPPLE), &w);
+        assert!(s.anchor().is_some());
+        assert_eq!(
+            hold(&mut s, fire(up()), 1, Some(&GRAPPLE), &w),
+            0,
+            "letting go is not a shot"
+        );
+        assert_eq!(s.hook, None);
+        hold(&mut s, fire(up()), 1, Some(&GRAPPLE), &w);
+        hold(&mut s, up(), 20, Some(&GRAPPLE), &w);
+        hold(&mut s, up(), 1, None, &w);
+        assert_eq!(s.hook, None, "nothing in hand holds the rope");
+    }
+
+    #[test]
+    fn reeling_in_lifts_and_the_rope_then_holds() {
+        let mut w = world();
+        ceiling(&mut w, 22);
+        let mut s = standing(5.5, 10.0);
+        hold(&mut s, fire(up()), 1, Some(&GRAPPLE), &w);
+        hold(&mut s, up(), 20, Some(&GRAPPLE), &w);
+        let reel_in = PlayerInput { reel: 1, ..up() };
+        hold(&mut s, reel_in, 60, Some(&GRAPPLE), &w);
+        assert!(!s.on_ground);
+        assert!(s.pos.y > 15.0, "a second of reeling at 7 per second: {}", s.pos.y);
+        // Let go of the reel: hanging, not falling.
+        let y = s.pos.y;
+        hold(&mut s, up(), 120, Some(&GRAPPLE), &w);
+        assert!((s.pos.y - y).abs() < 0.3, "hangs where it was: {y} then {}", s.pos.y);
+        // Paying out lowers back to the ground.
+        let reel_out = PlayerInput { reel: -1, ..up() };
+        hold(&mut s, reel_out, 240, Some(&GRAPPLE), &w);
+        assert!(s.on_ground && (s.pos.y - 10.0).abs() < 1e-9, "{}", s.pos.y);
+    }
+
+    #[test]
+    fn a_hookshot_reels_by_itself() {
+        let mut w = world();
+        ceiling(&mut w, 22);
+        let shot = GrappleSpec {
+            hookshot: true,
+            reel_speed: 16.0,
+            ..GRAPPLE
+        };
+        let mut s = standing(5.5, 10.0);
+        hold(&mut s, fire(up()), 1, Some(&shot), &w);
+        hold(&mut s, up(), 90, Some(&shot), &w);
+        let (anchor, rope) = s.anchor().expect("stuck");
+        assert_eq!(rope, ROPE_MIN);
+        assert!(
+            (anchor.y - s.hands().y) < ROPE_MIN + 0.3,
+            "pulled up to the hook: {}",
+            s.pos.y
+        );
+    }
+
+    #[test]
+    fn a_swing_keeps_to_the_rope() {
+        let mut w = world();
+        w.floor = -100;
+        w.solid.insert(BlockPos::new(5, 40, 5));
+        // Hanging from a hook in the block's underside, released from the
+        // side with the rope taut: it swings, never falls away.
+        let anchor = DVec3::new(5.5, 40.0, 5.5);
+        let mut s = PlayerState {
+            pos: DVec3::new(15.5, 40.0 - ROPE_HEIGHT, 5.5),
+            hook: Some(Hook {
+                pos: anchor,
+                vel: DVec3::ZERO,
+                rope: 10.0,
+                stuck: Some(BlockPos::new(5, 40, 5)),
+            }),
+            ..Default::default()
+        };
+        let mut lowest = f64::MAX;
+        let mut far_side = f64::MAX;
+        for _ in 0..240 {
+            hold(&mut s, PlayerInput::default(), 1, Some(&GRAPPLE), &w);
+            let d = planet().delta(anchor, s.hands()).length();
+            assert!(d < 10.0 + 0.05, "the rope never stretches: {d}");
+            lowest = lowest.min(s.pos.y);
+            far_side = far_side.min(s.pos.x);
+        }
+        assert!(
+            lowest > 40.0 - ROPE_HEIGHT - 10.0 - 0.05,
+            "never below the rope: {lowest}"
+        );
+        assert!(far_side < 5.5 - 5.0, "swings through to the other side: {far_side}");
+    }
+
+    #[test]
+    fn breaking_the_block_lets_go() {
+        let mut w = world();
+        ceiling(&mut w, 22);
+        let mut s = standing(5.5, 10.0);
+        hold(&mut s, fire(up()), 1, Some(&GRAPPLE), &w);
+        hold(&mut s, up(), 20, Some(&GRAPPLE), &w);
+        let block = s.hook.and_then(|h| h.stuck).expect("stuck");
+        w.solid.remove(&block);
+        hold(&mut s, up(), 1, Some(&GRAPPLE), &w);
+        assert_eq!(s.hook, None);
+    }
+
+    #[test]
+    fn letting_go_mid_swing_flings() {
+        let mut w = world();
+        w.floor = -100;
+        let cfg = MoveConfig::default();
+        let mut s = PlayerState {
+            pos: DVec3::new(5.5, 50.0, 5.5),
+            vel: DVec3::new(18.0, 4.0, 0.0),
+            ..Default::default()
+        };
+        hold(&mut s, PlayerInput::default(), 30, Some(&GRAPPLE), &w);
+        assert!(
+            s.vel.x > 14.0,
+            "half a second later the fling still carries: {}",
+            s.vel.x
+        );
+        // An ordinary jump still stops when the keys are let go.
+        let mut j = standing(5.5, 10.0);
+        j.vel.x = cfg.walk_speed;
+        j.on_ground = false;
+        j.pos.y = 30.0;
+        hold(&mut j, PlayerInput::default(), 30, None, &w);
+        assert!(j.vel.x.abs() < 1e-9, "{}", j.vel.x);
+    }
+
+    #[test]
+    fn grappling_gives_bit_identical_results() {
+        let mut w = world();
+        ceiling(&mut w, 30);
+        let inputs: Vec<PlayerInput> = (0..900u32)
+            .map(|i| PlayerInput {
+                forward: (i / 50 % 3) as i8 - 1,
+                strafe: (i / 70 % 3) as i8 - 1,
+                fire: i % 150 == 0,
+                reel: (i / 40 % 3) as i8 - 1,
+                yaw: (i * 311) as u16,
+                pitch: 9000 + (i % 7000) as i16,
+                ..Default::default()
+            })
+            .collect();
+        let cfg = MoveConfig::default();
+        let simulate = || {
+            let mut s = standing(100.5, 10.0);
+            let mut trace = Vec::new();
+            for inp in &inputs {
+                step(&mut s, inp, &cfg, Some(&GRAPPLE), planet(), &w);
+                let h = s.hook.map(|h| (h.pos.x.to_bits(), h.pos.y.to_bits(), h.rope.to_bits()));
+                trace.push((s.pos.x.to_bits(), s.pos.y.to_bits(), s.pos.z.to_bits(), h));
+            }
+            trace
+        };
+        let a = simulate();
+        assert!(a.iter().filter(|t| t.3.is_some()).count() > 100, "the test grapples");
+        assert_eq!(a, simulate());
     }
 
     #[test]

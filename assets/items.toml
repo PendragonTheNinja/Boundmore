@@ -10,6 +10,11 @@
 #   chisel    { family = square | slope | bevel | round, precise, durability }
 #             cuts blocks into shapes (ADR-0008); precise cuts one eighth of
 #             a block at a time, otherwise an edge's two
+#   grapple   { range, shot_speed, reel_speed, hookshot, durability }
+#             fires a hook that sticks where it strikes; range is how far
+#             it flies and the longest rope (blocks), shot_speed how fast it
+#             flies and reel_speed how fast the rope comes in or goes out
+#             (blocks per second); a hookshot reels in by itself
 #   icon      texture in assets/textures/items/ (default: the name)
 
 [[item]]
@@ -101,3 +106,21 @@ chisel = { family = "square", precise = true, durability = 600 }
 name = "precise_slope_chisel"
 stack = 1
 chisel = { family = "slope", precise = true, durability = 600 }
+
+# Grapples: numbers are calibration targets (docs/feel.md), seeded from
+# player measurements of the game this succeeds (research section 2.2).
+
+[[item]]
+name = "copper_grapple"
+stack = 1
+grapple = { range = 16.0, shot_speed = 55.0, reel_speed = 4.0, durability = 300 }
+
+[[item]]
+name = "iron_grapple"
+stack = 1
+grapple = { range = 26.0, shot_speed = 65.0, reel_speed = 7.0, durability = 700 }
+
+[[item]]
+name = "iron_hookshot"
+stack = 1
+grapple = { range = 20.0, shot_speed = 70.0, reel_speed = 16.0, hookshot = true, durability = 500 }

@@ -53,6 +53,9 @@ const TARGET_LINE: [f32; 4] = [0.95, 0.95, 0.88, 1.0];
 /// Chisel previews: what a left click cuts, what a right click fills back.
 const CUT_LINE: [f32; 4] = [1.0, 0.82, 0.18, 1.0];
 const FILL_LINE: [f32; 4] = [0.45, 0.85, 1.0, 0.9];
+/// Grapple rope and hook (linear RGBA).
+const ROPE_LINE: [f32; 4] = [0.30, 0.20, 0.10, 1.0];
+const HOOK_COLOUR: [f32; 4] = [0.22, 0.22, 0.25, 1.0];
 const XRAY_ALPHA: f32 = 0.22;
 /// The travelling screen stays at least this long (seconds), so a quick
 /// arrival reads as a journey rather than a flicker, then fades out.
@@ -237,6 +240,7 @@ impl Session {
                         pos: DVec3::new(o.pos[0] as f64, o.pos[1] as f64, o.pos[2] as f64),
                         yaw: o.yaw,
                         pitch: o.pitch,
+                        hook: o.hook_offset(),
                     },
                 )
             }),
@@ -317,6 +321,11 @@ pub struct App {
     status: String,
     keys: HashSet<KeyCode>,
     mouse: [bool; 2],
+    /// A left click not yet sent as a grapple shot (clicks between ticks
+    /// wait for the next one).
+    fire_pending: bool,
+    /// `--demo-ui`: where to put us once the block its hook holds exists.
+    demo_pose: Option<bm_core::PlayerState>,
     grabbed: bool,
     yaw: f64,
     pitch: f64,
@@ -365,6 +374,8 @@ impl App {
             status: "logging in".into(),
             keys: HashSet::new(),
             mouse: [false; 2],
+            fire_pending: false,
+            demo_pose: None,
             grabbed: false,
             yaw: 0.0,
             pitch: 0.0,
@@ -857,6 +868,9 @@ impl App {
             sprint: k(KeyCode::ShiftLeft) || k(KeyCode::ControlLeft),
             yaw,
             pitch,
+            slot: self.session.as_ref().map_or(0, |s| s.selected as u8),
+            fire: false,
+            reel: k(KeyCode::KeyR) as i8 - k(KeyCode::KeyF) as i8,
         }
     }
 
@@ -881,6 +895,17 @@ impl App {
         s.update_journey(now_s);
         // Nothing is broken or placed on the way between planets.
         let mouse = if s.travelling() { [false; 2] } else { mouse };
+        // A grapple in hand fires (and lets go) with the left button, inside
+        // the simulation, instead of breaking or placing.
+        let grapple = s
+            .items
+            .slot(s.selected)
+            .and_then(|h| s.items.def(&h))
+            .and_then(|d| d.grapple());
+        if grapple.is_none() || !playing || claim_mode || s.travelling() {
+            self.fire_pending = false;
+        }
+        let mouse = if grapple.is_some() { [false; 2] } else { mouse };
 
         // Fixed-rate simulation, decoupled from frame rate. Keeps ticking when
         // the window is hidden or a menu is open, so the server keeps
@@ -892,11 +917,22 @@ impl App {
         if !s.world.has_chunks_around(s.me.state.pos) {
             self.accumulator = 0.0;
         }
+        if let Some(pose) = self.demo_pose.take_if(|p| {
+            p.hook
+                .and_then(|h| h.stuck)
+                .is_some_and(|b| s.world.block(b).is_some_and(|id| s.world.flags.solid(id)))
+        }) {
+            s.me.teleport(pose);
+        }
         let mut ticks = 0;
         while self.accumulator >= TICK_DT && ticks < MAX_TICKS_PER_FRAME {
             self.accumulator -= TICK_DT;
             ticks += 1;
-            let seq = s.me.tick(input, &s.movement, s.world.shape, &s.world);
+            let input = PlayerInput {
+                fire: std::mem::take(&mut self.fire_pending),
+                ..input
+            };
+            let seq = s.me.tick(input, grapple, &s.movement, s.world.shape, &s.world);
             link.send_datagram(ClientDatagram::Input {
                 latest: seq,
                 inputs: s.me.recent_inputs(INPUT_REDUNDANCY),
@@ -1343,11 +1379,10 @@ impl App {
             pitch,
             fov_y: 75f32.to_radians(),
         };
-        let boxes: Vec<BoxInstance> = s
-            .remotes
-            .sample(local, shape)
-            .into_iter()
-            .map(|(id, smp)| {
+        let remotes = s.remotes.sample(local, shape);
+        let mut boxes: Vec<BoxInstance> = remotes
+            .iter()
+            .map(|&(id, smp)| {
                 let pos = shape.nearest_lap(eye, smp.pos);
                 // Drawn two blocks tall, a touch above the collision box.
                 let half = Vec3::new(
@@ -1364,6 +1399,57 @@ impl App {
             })
             .collect();
         let (mut lines, xray) = self.claim_lines(eye);
+        // Grapple ropes: ours from just below and right of the eye (where a
+        // hand would be), everyone else's from their hands.
+        let mut ropes: Vec<(DVec3, DVec3)> = remotes
+            .iter()
+            .filter_map(|(_, smp)| {
+                let hands = shape.nearest_lap(eye, smp.pos) + DVec3::new(0.0, bm_core::movement::ROPE_HEIGHT, 0.0);
+                smp.hook
+                    .map(|h| (hands, hands + h - DVec3::new(0.0, bm_core::movement::ROPE_HEIGHT, 0.0)))
+            })
+            .collect();
+        if let Some(hook) = s.me.state.hook {
+            let to = shape.nearest_lap(eye, hook.pos);
+            // A flying hook is drawn between ticks, like the body.
+            let to = match s.me.previous.hook {
+                Some(was) if hook.stuck.is_none() => {
+                    let was = shape.nearest_lap(to, was.pos);
+                    was + (to - was) * alpha
+                }
+                _ => to,
+            };
+            let forward = camera.forward();
+            let right = forward.cross(DVec3::Y).normalize_or_zero();
+            ropes.push((eye + right * 0.3 - DVec3::Y * 0.35 + forward * 0.4, to));
+        }
+        // Lines are a pixel wide: a few strands side by side give the rope
+        // some body, thick near the eye and thin far off.
+        let strands = {
+            let forward = camera.forward();
+            let right = forward.cross(DVec3::Y).normalize_or_zero();
+            let up = right.cross(forward);
+            [DVec3::ZERO, right * 0.006, up * 0.006, (right + up) * 0.006]
+        };
+        for (from, to) in ropes {
+            for off in strands {
+                let (a, b) = ((from + off - eye).as_vec3(), (to + off - eye).as_vec3());
+                lines.push(LineVertex {
+                    pos: a.to_array(),
+                    color: ROPE_LINE,
+                });
+                lines.push(LineVertex {
+                    pos: b.to_array(),
+                    color: ROPE_LINE,
+                });
+            }
+            let b = (to - eye).as_vec3();
+            boxes.push(BoxInstance {
+                center: b.to_array(),
+                half_size: [0.09; 3],
+                color: HOOK_COLOUR,
+            });
+        }
         let highlight = if self.claim_mode || s.chisel.is_some() {
             None
         } else {
@@ -1518,12 +1604,41 @@ impl App {
                         pos: DVec3::from_array(crate::demo::SHAPES_VIEW),
                         vel: DVec3::ZERO,
                         on_ground: true,
+                        hook: None,
                     });
                     if in_hand {
                         s.selected = 6;
                     }
                 }
                 (self.yaw, self.pitch) = if in_hand { (0.075, -0.55) } else { (0.0, -0.62) };
+            }
+            // Hanging from a copper grapple hooked under a stone arch, part
+            // way through a swing towards it.
+            "grapple" => {
+                if let Some(Link::Demo(d)) = &mut self.link {
+                    d.show_grapple();
+                }
+                if let Some(s) = &mut self.session {
+                    let [x, y, z] = crate::demo::GRAPPLE_BEAM;
+                    let block = BlockPos::new(x + 5, y, z);
+                    let anchor = DVec3::new(x as f64 + 5.5, y as f64, z as f64 + 0.5);
+                    let pos = anchor + DVec3::new(0.0, -8.0 - bm_core::movement::ROPE_HEIGHT, 6.0);
+                    // Taken up once the arch has arrived: a hook in a block
+                    // that is not there yet lets go.
+                    self.demo_pose = Some(bm_core::PlayerState {
+                        pos,
+                        vel: DVec3::ZERO,
+                        on_ground: false,
+                        hook: Some(bm_core::Hook {
+                            pos: anchor,
+                            vel: DVec3::ZERO,
+                            rope: 10.0,
+                            stuck: Some(block),
+                        }),
+                    });
+                    s.selected = 7;
+                }
+                (self.yaw, self.pitch) = (0.1, 0.62);
             }
             // The shrine window on its Reclaim tab, with things waiting.
             "reclaim" => {
@@ -1765,7 +1880,12 @@ impl ApplicationHandler for App {
                     return;
                 }
                 match button {
-                    MouseButton::Left => self.mouse[0] = down,
+                    MouseButton::Left => {
+                        // Every press counts, however short: a grapple shot
+                        // must not be lost between two frames.
+                        self.fire_pending |= down && !self.mouse[0];
+                        self.mouse[0] = down;
+                    }
                     MouseButton::Right => self.mouse[1] = down,
                     _ => {}
                 }
@@ -1867,6 +1987,7 @@ mod tests {
                 pos: [120.0, 44.0, 120.0],
                 yaw: 0,
                 pitch: 0,
+                hook: None,
             }],
         }
     }
@@ -1899,7 +2020,7 @@ mod tests {
         let centre = BlockPos::new(128, 44, 128).chunk();
         s.world.schedule_meshing(centre, 64);
         for _ in 0..12 {
-            s.me.tick(PlayerInput::default(), &s.movement, s.world.shape, &s.world);
+            s.me.tick(PlayerInput::default(), None, &s.movement, s.world.shape, &s.world);
         }
         let seq = s.me.seq;
 

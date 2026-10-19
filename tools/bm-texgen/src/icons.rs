@@ -753,6 +753,104 @@ fn ingot(ramp: Ramp) -> Tex {
     icon.finish()
 }
 
+// ----------------------------------------------------------------- grapples
+
+/// A grapple: a three-clawed hook on a short shaft, pointing to the top
+/// right like every tool, its rope running back to a coil (or, on a
+/// hookshot, to a winch drum that reels it in).
+fn grapple(metal: Metal, hookshot: bool) -> Tex {
+    let salt = metal.salt(if hookshot { "hookshot" } else { "grapple" });
+    let f = Frame { ox: 4.5, oy: 27.5 };
+    let ramp = metal.ramp();
+    let cord = cord_ramp();
+    let mut icon = Icon::new();
+    // The rope from the coil or drum up to the shaft's eye.
+    icon.layer(false, |x, y| {
+        let (u, v) = f.uv(x, y);
+        let wave = (u * 0.9).sin() * 0.5;
+        if !(5.0..=13.0).contains(&u) || (v - wave).abs() > 0.75 {
+            return None;
+        }
+        let turn = ((u * FRAC_1_SQRT_2 * 2.0).round() as i32) % 2 == 0;
+        Some(cord.pick(if turn { 0.7 } else { 0.45 }, x, y))
+    });
+    if hookshot {
+        // The winch: a drum wound with rope between two metal cheeks, set
+        // square across the shaft line.
+        icon.layer(true, |x, y| {
+            let (u, v) = f.uv(x, y);
+            if rounded_box(u, v, 4.5, 0.0, 3.6, 5.4, 1.0) > 0.0 {
+                return None;
+            }
+            let side = -v / 5.4;
+            if (u - 4.5).abs() > 2.2 {
+                let t = 0.5 + side * 0.3 + metal.facet(salt, u, v);
+                return Some(ramp.pick(if u < 4.5 { t + 0.15 } else { t - 0.1 }, x, y));
+            }
+            let turn = ((v * FRAC_1_SQRT_2 * 2.0).round() as i32) % 2 == 0;
+            Some(cord.pick(0.5 + side * 0.25 + if turn { 0.12 } else { -0.15 }, x, y))
+        });
+        // The crank's knob.
+        icon.layer(true, |x, y| {
+            let (u, v) = f.uv(x, y);
+            if (u - 1.0).hypot(v - 4.6) > 1.3 {
+                return None;
+            }
+            Some(plank_ramp().pick(0.6 - (v - 4.6) * 0.2, x, y))
+        });
+    } else {
+        // A coil of rope: a ring wound in light and dark turns.
+        let (cx, cy, r0, r1) = (9.5f32, 22.0f32, 3.2f32, 7.2f32);
+        icon.layer(true, |x, y| {
+            let (dx, dy) = (c(x) - cx, (c(y) - cy) * 1.15);
+            let r = dx.hypot(dy);
+            if r < r0 || r > r1 {
+                return None;
+            }
+            let ring = ((r - r0) / (r1 - r0) * 3.0).floor() as i32;
+            let turn = (dy.atan2(dx) * 4.0).floor() as i32 + ring;
+            // Lit on the outer top left, shaded towards the hole.
+            let lit = -(dx + dy) / r * 0.18;
+            let t = 0.5 + lit + if turn % 2 == 0 { 0.12 } else { -0.12 } - if ring == 0 { 0.15 } else { 0.0 };
+            Some(cord.pick(t, x, y))
+        });
+    }
+    // The shaft, with an eye where the rope ties on.
+    let (s0, head) = (12.0f32, 23.5f32);
+    icon.layer(true, |x, y| {
+        let (u, v) = f.uv(x, y);
+        let eye = (u - s0).hypot(v) < 1.9;
+        if !eye && !((s0..=head + 4.0).contains(&u) && v.abs() <= 1.0) {
+            return None;
+        }
+        if eye && (u - s0).hypot(v) < 0.8 {
+            return Some(OUTLINE);
+        }
+        // The point beyond the claws narrows to a tip.
+        if u > head && v.abs() > 1.0 - (u - head) / 4.0 {
+            return None;
+        }
+        let t = 0.55 - v * 0.25 + metal.facet(salt, u, v);
+        Some(ramp.pick(if u > head + 2.5 { 0.92 } else { t }, x, y))
+    });
+    // Two claws arching out from the head and back towards the rope, like
+    // an umbrella's ribs, their points lit.
+    for side in [-1.0f32, 1.0] {
+        icon.layer(true, |x, y| {
+            let (u, v) = f.uv(x, y);
+            let (cu, r) = (head - 4.2, 4.6);
+            let d = (u - cu).hypot(v);
+            if (d - r).abs() > 1.0 || u < cu - 0.8 || v * side < 0.4 {
+                return None;
+            }
+            let tip = u < cu + 1.1;
+            let t = 0.55 - v * 0.08 - (d - r) * 0.2;
+            Some(ramp.pick(if tip { 0.92 } else { t }, x, y))
+        });
+    }
+    icon.finish()
+}
+
 /// Paints the icon called `name`, or `None` if no painter knows it.
 pub fn paint_icon(name: &str) -> Option<Tex> {
     Some(match name {
@@ -776,6 +874,9 @@ pub fn paint_icon(name: &str) -> Option<Tex> {
         "round_chisel" => chisel(Metal::Iron, Tip::Round, false),
         "precise_square_chisel" => chisel(Metal::Iron, Tip::Square, true),
         "precise_slope_chisel" => chisel(Metal::Iron, Tip::Slope, true),
+        "copper_grapple" => grapple(Metal::Copper, false),
+        "iron_grapple" => grapple(Metal::Iron, false),
+        "iron_hookshot" => grapple(Metal::Iron, true),
         _ => return None,
     })
 }

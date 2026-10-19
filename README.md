@@ -34,6 +34,7 @@ Controls:
 - Blocks have colours: what you break keeps its colour in your pack (stacks of different colours stay apart) and is placed in it. New planets colour their ground, rock and trees from a palette of 255 colours, in large patches worth exploring for.
 - A claim whose owner has not visited for 6 months crumbles to ash in the colours of what was built; anything stored in it waits in the owner's **Reclaim** tab at any warp shrine.
 - **Chisels** (workbench: square from stone, slope from copper, bevel, round and the precise ones from iron): left click cuts the part of the block you aim at (outlined in yellow), right click fills it back (blue). Natural ground takes slope chisels only. You can walk up half-block cuts without jumping.
+- **Grapples** (workbench: copper grapple, iron grapple, iron hookshot): left click fires the hook where you aim; it sticks in the first block it hits. **R** reels in (climbs), **F** lets rope out; WASD leans to pump a swing. Click again to let go: letting go at speed flings you. A hookshot reels in by itself. Putting the grapple away lets go too.
 - **Enter** or **T** opens chat. `/l`, `/p` and `/u` switch between local (nearby), planet and universe; `/w name text` whispers and `/r text` replies. Enter sends, Esc closes.
 - F11 for fullscreen.
 

@@ -41,6 +41,8 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
+/// The nearest players each player is told about (several snapshot datagrams).
+const MAX_SEEN_PLAYERS: usize = 160;
 /// Snapshots go out every this many ticks (20 Hz).
 const SNAPSHOT_EVERY: u64 = 3;
 const SAVE_EVERY: u64 = 60 * 5;
@@ -657,7 +659,7 @@ impl Game {
             None => match self.store.player(&account) {
                 Ok(Some(data)) => (
                     data.planet as usize,
-                    data.state,
+                    data.state.map(PlayerState::from),
                     Inventory {
                         slots: load_slots(&self.items, &data.inventory, &name),
                     },
@@ -777,7 +779,8 @@ impl Game {
             p.account,
             Departed {
                 planet,
-                state: p.state,
+                // A player who leaves lets go of their grapple.
+                state: PlayerState { hook: None, ..p.state },
                 inventory: p.inventory,
                 written: None,
             },
@@ -829,15 +832,56 @@ impl Game {
                     p.pending.pop_first().expect("present").1
                 } else {
                     // The next input was lost beyond what redundancy covers:
-                    // repeat the last one. The client sees our answer in the
-                    // snapshot and corrects its prediction.
-                    p.last_input
+                    // repeat the last one, but never its shot (a repeated
+                    // shot would let go of the hook it just fired). The
+                    // client sees our answer in the snapshot and corrects
+                    // its prediction.
+                    PlayerInput {
+                        fire: false,
+                        ..p.last_input
+                    }
                 };
+                // The grapple in the hand the input names, from our own copy
+                // of the inventory: the client's word is only which slot.
+                let slot = input.slot as usize;
+                let grapple = p
+                    .inventory
+                    .slots
+                    .get(slot)
+                    .filter(|_| slot < HOTBAR_SLOTS)
+                    .copied()
+                    .flatten()
+                    .and_then(|s| self.items.get(s.item))
+                    .and_then(|d| d.grapple());
                 let world = &self.planets[p.planet].world;
-                movement::step(&mut p.state, &input, &self.movement, world.shape, world);
+                let events = movement::step(
+                    &mut p.state,
+                    &input,
+                    &self.movement,
+                    grapple.as_ref(),
+                    world.shape,
+                    world,
+                );
                 p.last_seq += 1;
                 p.last_input = input;
                 p.bank -= 1.0;
+                if events.fired {
+                    let before = p.inventory.clone();
+                    let mut broke = None;
+                    if let Some(s) = p.inventory.slots[slot].as_mut() {
+                        s.wear += 1;
+                        if let Some(def) = self.items.get(s.item)
+                            && def.durability().is_some_and(|d| s.wear >= d)
+                        {
+                            broke = Some(format!("Your {} broke", def.display));
+                            p.inventory.slots[slot] = None;
+                        }
+                    }
+                    send_slots(p, &before);
+                    if let Some(text) = broke {
+                        p.out.send(&ServerMsg::Notice { text });
+                    }
+                }
             }
         }
     }
@@ -1000,12 +1044,16 @@ impl Game {
                                 pos: [o.state.pos.x as f32, o.state.pos.y as f32, o.state.pos.z as f32],
                                 yaw: o.last_input.yaw,
                                 pitch: o.last_input.pitch,
+                                hook: o
+                                    .state
+                                    .hook
+                                    .map(|h| RemotePlayer::pack_hook(shape.delta(o.state.pos, h.pos))),
                             },
                         ))
                     })
                     .collect();
                 near.sort_by(|a, b| a.0.total_cmp(&b.0));
-                near.truncate(PLAYERS_PER_SNAPSHOT * 4);
+                near.truncate(MAX_SEEN_PLAYERS);
                 let others: Vec<RemotePlayer> = near.into_iter().map(|(_, r)| r).collect();
                 let mut parts = others.chunks(PLAYERS_PER_SNAPSHOT).peekable();
                 if parts.peek().is_none() {
@@ -2214,7 +2262,7 @@ impl Game {
         let planets = &self.planets;
         let data = |planet: usize, state: PlayerState, inv: &Inventory| PlayerData {
             planet: planets[planet].id,
-            state: Some(state),
+            state: Some(state.into()),
             inventory: save_slots(items, inv),
             last_seen: now,
         };
