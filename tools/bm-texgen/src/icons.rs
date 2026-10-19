@@ -851,6 +851,166 @@ fn grapple(metal: Metal, hookshot: bool) -> Tex {
     icon.finish()
 }
 
+// ----------------------------------------------------------------- portals
+
+/// A crystal blade from its foot at (x, y) at angle `ang` (screen
+/// radians, 0 = right, y down), `len` long and `half` wide: a long hexagonal
+/// prism, three faces visible (the one towards the top left in the light,
+/// the far one in shade, a front face between them under a bright ridge),
+/// a faceted point at the far end and a short worn point at the foot.
+fn blade(icon: &mut Icon, foot: P, ang: f32, len: f32, half: f32, ramp: &Ramp) {
+    let (ax, ay) = (ang.cos(), ang.sin());
+    // Which side of the axis faces the light: +1 when the -v side does.
+    let lit = if ax - ay > 0.0 { 1.0 } else { -1.0 };
+    let (tip, heel) = (half * 2.0, half * 0.9);
+    icon.layer(true, |x, y| {
+        let (dx, dy) = (c(x) - foot.0, c(y) - foot.1);
+        let u = dx * ax + dy * ay;
+        let v = (-dx * ay + dy * ax) * lit;
+        if u < 0.0 || u > len {
+            return None;
+        }
+        let w = half * ((len - u) / tip).min(1.0).min(u / heel + 0.25);
+        if v.abs() > w {
+            return None;
+        }
+        let third = w / 3.0;
+        let mut t = if v < -third {
+            0.74
+        } else if v > third {
+            0.28
+        } else {
+            0.5
+        };
+        // Brighter towards the point, as if lit from inside.
+        t += u / len * 0.16;
+        if (v + third).abs() < 0.5 {
+            t += 0.16;
+        }
+        // The point's facets: the lit ones flare.
+        if u > len - tip && v < third {
+            t += 0.14;
+        }
+        if u < heel {
+            t -= 0.14;
+        }
+        Some(ramp.pick(t, x, y))
+    });
+}
+
+/// Wayshard: a long violet-blue crystal blade pointing to the top right,
+/// a shorter one grown against its foot standing more upright, and a white
+/// glint near the long one's point. Slim and pointed, where copper and iron
+/// ore are rounded lumps of rock.
+fn wayshard() -> Tex {
+    let ramp = crate::materials::wayshard_ramp();
+    let mut icon = Icon::new();
+    let up = -std::f32::consts::FRAC_PI_4;
+    blade(&mut icon, (8.0, 27.0), up - 0.55, 16.0, 3.2, &ramp);
+    blade(&mut icon, (6.0, 27.5), up, 29.0, 4.4, &ramp);
+    blade(&mut icon, (10.0, 28.5), up + 0.62, 13.0, 2.6, &ramp);
+    icon.layer(false, |x, y| {
+        let (dx, dy) = (c(x) - 22.5, c(y) - 10.5);
+        (dx.abs() + dy.abs() < 1.1).then(|| ramp.lightest())
+    });
+    icon.finish()
+}
+
+/// Portal token: a stone tag like a key's bow, framed in copper, a wayshard
+/// set in its middle, hung from a copper ring at the top and cut with a
+/// key's bit of teeth along its foot, so it reads as a key to a place.
+fn portal_token() -> Tex {
+    let salt = seed("portal_token");
+    let stone = crate::materials::conduit_stone_ramp();
+    let copper = copper_ramp();
+    let shard = crate::materials::wayshard_ramp();
+    let mut icon = Icon::new();
+    // The ring at the top, behind the tag.
+    icon.layer(true, |x, y| {
+        let (dx, dy) = (c(x) - 16.0, c(y) - 6.0);
+        let r = dx.hypot(dy);
+        if !(2.0..=4.4).contains(&r) {
+            return None;
+        }
+        Some(copper.pick(0.55 - (dx + dy) / r * 0.28, x, y))
+    });
+    // The tag: a shield-like slab with chamfered top corners and teeth at
+    // the foot.
+    let (x0, x1, y0, y1) = (6.0f32, 26.0f32, 8.0f32, 27.0f32);
+    let tooth = |x: f32| -> f32 {
+        // Foot line: three teeth of different depths.
+        match ((x - x0) / 4.0).floor() as i32 {
+            0 => y1 + 2.0,
+            1 => y1,
+            2 => y1 + 3.0,
+            3 => y1 + 1.0,
+            _ => y1 + 2.5,
+        }
+    };
+    let inside = move |px: f32, py: f32| {
+        px >= x0
+            && px <= x1
+            && py >= y0
+            && py <= tooth(px)
+            && (px - x0) + (py - y0) >= 3.0
+            && (x1 - px) + (py - y0) >= 3.0
+    };
+    icon.layer(true, |x, y| {
+        let (px, py) = (c(x), c(y));
+        if !inside(px, py) {
+            return None;
+        }
+        // The copper frame: 2 pixels in from every edge.
+        let near = |dx: f32, dy: f32| !inside(px + dx, py + dy);
+        let rim = near(-2.0, 0.0) || near(2.0, 0.0) || near(0.0, -2.0) || near(0.0, 2.0);
+        let lead = near(-1.0, 0.0) || near(0.0, -1.0) || near(-1.0, -1.0);
+        let trail = near(1.0, 0.0) || near(0.0, 1.0) || near(1.0, 1.0);
+        if rim {
+            let t = if lead {
+                0.82
+            } else if trail {
+                0.28
+            } else {
+                0.56
+            };
+            return Some(copper.pick(t, x, y));
+        }
+        // Stone face, a little mottled, shaded under the frame's top lip.
+        let mut t = 0.5 + (unit(hash2(salt, (x / 3 + y / 3 * 11) as u32)) - 0.5) * 0.12;
+        if near(-3.0, 0.0) || near(0.0, -3.0) {
+            t -= 0.18;
+        }
+        if near(3.0, 0.0) || near(0.0, 3.0) {
+            t += 0.1;
+        }
+        Some(stone.pick(t, x, y))
+    });
+    // The wayshard, cut on its point, in a copper bezel.
+    let (gx, gy) = (16.0f32, 17.0f32);
+    icon.layer(true, |x, y| {
+        let (dx, dy) = (c(x) - gx, c(y) - gy);
+        let d = dx.abs() + dy.abs() * 0.8;
+        if d > 6.2 {
+            return None;
+        }
+        if d > 4.6 {
+            let facing = -(dx + dy) / (dx.abs() + dy.abs()).max(0.1);
+            return Some(copper.pick(0.55 + facing * 0.3, x, y));
+        }
+        let t = match (dx < 0.0, dy < 0.0) {
+            (true, true) => 0.74,
+            (false, true) => 0.56,
+            (true, false) => 0.44,
+            (false, false) => 0.26,
+        };
+        if (dx + 1.5).abs() < 0.6 && (dy + 1.5).abs() < 0.6 {
+            return Some(shard.lightest());
+        }
+        Some(shard.pick(if d < 1.2 { 0.86 } else { t }, x, y))
+    });
+    icon.finish()
+}
+
 /// Paints the icon called `name`, or `None` if no painter knows it.
 pub fn paint_icon(name: &str) -> Option<Tex> {
     Some(match name {
@@ -877,6 +1037,8 @@ pub fn paint_icon(name: &str) -> Option<Tex> {
         "copper_grapple" => grapple(Metal::Copper, false),
         "iron_grapple" => grapple(Metal::Iron, false),
         "iron_hookshot" => grapple(Metal::Iron, true),
+        "wayshard" => wayshard(),
+        "portal_token" => portal_token(),
         _ => return None,
     })
 }
