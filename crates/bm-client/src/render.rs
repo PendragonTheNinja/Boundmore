@@ -9,8 +9,9 @@
 //! - One vertex buffer per chunk and per pass, a shared quad index buffer, and
 //!   one instance record per visible chunk carrying its offset and origin.
 
+use crate::sky::{MAX_SKY_PLANETS, SkyPlanet};
 use crate::textures::{self, TextureSet};
-use bm_core::{BlockPos, BlockRegistry, CHUNK_SIZE, ChunkPos, PlanetShape};
+use bm_core::{BlockPos, BlockRegistry, CHUNK_SIZE, ChunkPos, NO_TINT, PlanetShape};
 use bm_mesh::{ChunkMesh, Vertex};
 use glam::{DVec3, Mat4, Vec3, Vec4};
 use std::collections::HashMap;
@@ -35,6 +36,18 @@ struct Globals {
     sun_color: [f32; 4],
     params: [f32; 4],
     screen: [f32; 4],
+    sky_rotation: [[f32; 4]; 4],
+    planets: [SkyPlanetGpu; MAX_SKY_PLANETS],
+}
+
+/// One planet in the sky. Must match `SkyPlanet` in shaders/common.wgsl.
+#[repr(C)]
+#[derive(Clone, Copy, Default, bytemuck::Pod, bytemuck::Zeroable)]
+struct SkyPlanetGpu {
+    /// xyz: unit direction, w: apparent radius in radians.
+    dir: [f32; 4],
+    /// rgb: linear colour.
+    color: [f32; 4],
 }
 
 /// Every shader is `common.wgsl` followed by its own file.
@@ -122,6 +135,8 @@ impl Camera {
 pub struct Scene<'a> {
     pub camera: &'a Camera,
     pub sky: &'a crate::sky::Sky,
+    /// The other planets of the universe, where this sky shows them.
+    pub planets: &'a [SkyPlanet],
     pub shape: PlanetShape,
     pub boxes: &'a [BoxInstance],
     pub highlight: Option<BlockPos>,
@@ -173,6 +188,10 @@ pub struct Renderer {
     crack_base: Option<u32>,
     bind_layout: wgpu::BindGroupLayout,
     faces: wgpu::Buffer,
+    /// The face table as last uploaded, and each block's tint (sRGB), which
+    /// rides in the table's spare column.
+    face_table: Vec<[u32; 4]>,
+    tints: Vec<[u8; 3]>,
     sampler: wgpu::Sampler,
     quad_indices: wgpu::Buffer,
     quad_capacity: u32,
@@ -540,11 +559,14 @@ impl Renderer {
             crack_base: None,
             bind_layout: layout,
             faces,
+            face_table: vec![[textures::NO_TEXTURE, textures::NO_TEXTURE, textures::NO_TEXTURE, 0]; PALETTE_BLOCKS],
+            tints: Vec::new(),
             sampler,
             chunks: HashMap::new(),
             stats: FrameStats::default(),
         };
         r.write_palette(&BlockRegistry::builtin());
+        r.write_faces();
         Ok(r)
     }
 
@@ -573,7 +595,8 @@ impl Renderer {
         for (i, f) in set.faces.iter().take(PALETTE_BLOCKS).enumerate() {
             table[i] = *f;
         }
-        self.queue.write_buffer(&self.faces, 0, bytemuck::cast_slice(&table));
+        self.face_table = table;
+        self.write_faces();
         let view = make_block_texture(&self.device, &self.queue, set);
         self.bind_group = make_bind_group(
             &self.device,
@@ -584,6 +607,19 @@ impl Renderer {
         );
         self.crack_base = set.crack_base;
         tracing::info!("{} texture layers uploaded", set.layers.len());
+    }
+
+    /// This planet's block tints: one sRGB colour per block id multiplying
+    /// its texture or colour (`PlanetInfo::tints`; white or missing is none).
+    /// Applied in the shader, so changing planets re-meshes nothing.
+    pub fn set_tints(&mut self, tints: &[[u8; 3]]) {
+        self.tints = tints.to_vec();
+        self.write_faces();
+    }
+
+    fn write_faces(&mut self) {
+        let table = with_tints(&self.face_table, &self.tints);
+        self.queue.write_buffer(&self.faces, 0, bytemuck::cast_slice(&table));
     }
 
     pub fn resize(&mut self, width: u32, height: u32) {
@@ -663,7 +699,14 @@ impl Renderer {
                 sky_horizon: v4(sky.horizon, 1.0),
                 sun_color: v4(sky.sun_color, sky.sky_light),
                 params: [fog_start, scene.fog_end, scene.time, sky.stars],
-                screen: [self.config.width as f32, self.config.height as f32, 0.0, 0.0],
+                screen: [
+                    self.config.width as f32,
+                    self.config.height as f32,
+                    scene.planets.len().min(MAX_SKY_PLANETS) as f32,
+                    0.0,
+                ],
+                sky_rotation: Mat4::from_mat3(sky.sky_rotation).to_cols_array_2d(),
+                planets: sky_planets(scene.planets),
             }),
         );
 
@@ -885,6 +928,34 @@ impl Renderer {
         self.queue.present(frame);
         self.stats = stats;
     }
+}
+
+/// The face table with each block's tint packed into its spare column as
+/// `r | g << 8 | b << 16 | 0xff << 24` (sRGB). The top byte marks it set, so
+/// a zero column (no tint written) still reads as white in the shader.
+fn with_tints(table: &[[u32; 4]], tints: &[[u8; 3]]) -> Vec<[u32; 4]> {
+    table
+        .iter()
+        .enumerate()
+        .map(|(i, f)| {
+            let [r, g, b] = tints.get(i).copied().unwrap_or(NO_TINT);
+            [
+                f[0],
+                f[1],
+                f[2],
+                r as u32 | (g as u32) << 8 | (b as u32) << 16 | 0xff << 24,
+            ]
+        })
+        .collect()
+}
+
+fn sky_planets(list: &[SkyPlanet]) -> [SkyPlanetGpu; MAX_SKY_PLANETS] {
+    let mut out = [SkyPlanetGpu::default(); MAX_SKY_PLANETS];
+    for (o, p) in out.iter_mut().zip(list) {
+        o.dir = [p.dir[0], p.dir[1], p.dir[2], p.radius];
+        o.color = [p.color[0], p.color[1], p.color[2], 1.0];
+    }
+    out
 }
 
 /// Right-handed perspective with reversed-Z and an infinite far plane: view
@@ -1215,9 +1286,19 @@ mod tests {
 
     #[test]
     fn layouts_match_the_shaders() {
-        assert_eq!(std::mem::size_of::<Globals>(), 64 * 2 + 16 * 6);
+        assert_eq!(std::mem::size_of::<Globals>(), 64 * 3 + 16 * 6 + 32 * MAX_SKY_PLANETS);
         assert_eq!(std::mem::size_of::<ChunkInstance>(), 24);
         assert_eq!(std::mem::size_of::<Vertex>(), 8);
         assert_eq!(std::mem::size_of::<LineVertex>(), 28);
+    }
+
+    #[test]
+    fn tints_ride_in_the_face_tables_spare_column() {
+        let table = vec![[1, 2, 3, 0]; 3];
+        let t = with_tints(&table, &[[255, 255, 255], [200, 120, 80]]);
+        assert_eq!(t[0], [1, 2, 3, 0xffff_ffff], "white");
+        assert_eq!(t[1][..3], [1, 2, 3], "layers untouched");
+        assert_eq!(t[1][3], 200 | 120 << 8 | 80 << 16 | 0xff << 24);
+        assert_eq!(t[2][3], 0xffff_ffff, "a block past the list is untinted");
     }
 }

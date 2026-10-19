@@ -47,6 +47,17 @@ impl Predictor {
         }
     }
 
+    /// Puts us at `spawn` on another planet. Input sequences carry on (the
+    /// server counts them across the journey); what we predicted on the old
+    /// planet means nothing on the new one, so it is forgotten, and the next
+    /// snapshots are taken as they come until we predict again.
+    pub fn teleport(&mut self, spawn: PlayerState) {
+        self.state = spawn;
+        self.previous = spawn;
+        self.history.clear();
+        self.correction = DVec3::ZERO;
+    }
+
     /// Runs one tick on a fresh input. Returns its sequence number.
     pub fn tick(&mut self, input: PlayerInput, cfg: &MoveConfig, shape: PlanetShape, world: &impl PhysicsWorld) -> u32 {
         self.seq += 1;
@@ -82,11 +93,19 @@ impl Predictor {
         while self.history.front().is_some_and(|(s, _, _)| *s < ack) {
             self.history.pop_front();
         }
+        if self.history.is_empty() {
+            // Nothing predicted since joining or arriving: the server's state
+            // is simply where we are, not a correction.
+            self.state = server;
+            self.previous = server;
+            self.seq = self.seq.max(ack);
+            return;
+        }
         let agrees = match self.history.front() {
             Some((s, _, predicted)) if *s == ack => same(predicted, &server, shape),
-            // The server is ahead of anything we remember (we just joined,
-            // or fell far behind): its state is all we have.
-            _ => ack == 0 && self.seq == 0,
+            // The server is ahead of anything we remember (fell far behind):
+            // its state is all we have.
+            _ => false,
         };
         if agrees {
             return;
@@ -335,6 +354,34 @@ mod tests {
         p.reconcile(9, 20, spawn(), &cfg, shape(), &w); // older, and wrong
         assert_eq!(p.corrections, 0);
         assert_eq!(p.state, now);
+    }
+
+    #[test]
+    fn after_a_teleport_snapshots_are_adopted_until_we_predict_again() {
+        let (cfg, w) = (MoveConfig::default(), Floor(10));
+        let mut p = Predictor::new(spawn());
+        for i in 1..=20 {
+            p.tick(walk(i), &cfg, shape(), &w);
+        }
+        let elsewhere = PlayerState {
+            pos: DVec3::new(3.5, 11.0, 4.5),
+            ..Default::default()
+        };
+        p.teleport(elsewhere);
+        assert_eq!(p.seq, 20, "sequences carry on");
+        assert_eq!(p.state, elsewhere);
+        assert!(p.recent_inputs(6).is_empty(), "the old planet's inputs are forgotten");
+        // The server applied a few inputs that were in flight, on the new
+        // planet: take its word, silently.
+        let moved = PlayerState {
+            pos: DVec3::new(3.6, 11.0, 4.5),
+            ..elsewhere
+        };
+        p.reconcile(100, 20, moved, &cfg, shape(), &w);
+        assert_eq!(p.state, moved);
+        assert_eq!(p.corrections, 0);
+        // Then prediction carries on from there, numbered after the old inputs.
+        assert_eq!(p.tick(walk(1), &cfg, shape(), &w), 21);
     }
 
     #[test]

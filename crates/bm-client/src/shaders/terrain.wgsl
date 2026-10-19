@@ -124,9 +124,29 @@ fn palette_colour(in: VsOut) -> vec3<f32> {
     return palette[i].rgb;
 }
 
+fn srgb_to_linear(c: vec3<f32>) -> vec3<f32> {
+    return select(pow((c + 0.055) / 1.055, vec3<f32>(2.4)), c / 12.92, c <= vec3<f32>(0.04045));
+}
+
+// This planet's tint on a block, packed sRGB in the face table's fourth
+// column (`Renderer::set_tints`); unset reads as white.
+fn tint(block: u32) -> vec3<f32> {
+    let packed = faces[block].w;
+    if ((packed >> 24u) == 0u) {
+        return vec3<f32>(1.0);
+    }
+    return srgb_to_linear(unpack4x8unorm(packed).rgb);
+}
+
 // Base colour and alpha of the face at this fragment: the block's texture
-// (one of its variants, chosen per block position), or its palette colour.
+// (one of its variants, chosen per block position), or its palette colour,
+// times the planet's tint for that block.
 fn albedo(in: VsOut) -> vec4<f32> {
+    let a = untinted_albedo(in);
+    return vec4<f32>(a.rgb * tint(in.block), a.a);
+}
+
+fn untinted_albedo(in: VsOut) -> vec4<f32> {
     let n = NORMALS[in.face];
     let inside = in.local - n * 0.01;
     let block = in.origin + vec3<i32>(floor(inside));

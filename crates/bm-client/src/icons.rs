@@ -11,7 +11,7 @@
 
 use crate::items::{fallback_colour, initials};
 use crate::textures::{self, NO_TEXTURE, TextureSet};
-use bm_core::{BlockDef, BlockRegistry, ItemDef, ItemKind};
+use bm_core::{BlockDef, BlockRegistry, ItemDef, ItemKind, NO_TINT};
 use std::path::Path;
 
 /// Icon images are this many pixels square (shown at ~40 px, so a little
@@ -29,12 +29,21 @@ pub enum IconSource {
 /// Face shades: top, left, right, as in the M2 hotbar.
 const SHADES: [f32; 3] = [1.0, 0.80, 0.62];
 
-pub fn icon_for(def: &ItemDef, blocks: &BlockRegistry, set: &TextureSet, items_dir: &Path) -> IconSource {
+/// `tints` is the planet's block tints (`PlanetInfo::tints`), so a block
+/// item looks in the hand as it does in the ground here.
+pub fn icon_for(
+    def: &ItemDef,
+    blocks: &BlockRegistry,
+    set: &TextureSet,
+    items_dir: &Path,
+    tints: &[[u8; 3]],
+) -> IconSource {
     if let ItemKind::Block(b) = def.kind
         && blocks.contains(b)
     {
         let faces = set.faces.get(b.0 as usize).copied().unwrap_or([NO_TEXTURE; 4]);
-        return IconSource::Image(block_icon(blocks.get(b), faces, &set.layers));
+        let tint = tints.get(b.0 as usize).copied().unwrap_or(NO_TINT);
+        return IconSource::Image(block_icon(blocks.get(b), faces, &set.layers, tint));
     }
     let file = def.icon.as_deref().unwrap_or(&def.name);
     match load_item_png(&items_dir.join(format!("{file}.png"))) {
@@ -121,9 +130,11 @@ fn faces() -> [Face; 3] {
 }
 
 /// Rasterises a block's isometric icon. `faces` is the block's entry in the
-/// texture face table (`first_layer | variants << 16`, ADR on textures).
-pub fn block_icon(def: &BlockDef, faces_entry: [u32; 4], layers: &[textures::Layer]) -> Vec<u8> {
+/// texture face table (`first_layer | variants << 16`, ADR on textures);
+/// `tint` multiplies its colour (sRGB, white for none).
+pub fn block_icon(def: &BlockDef, faces_entry: [u32; 4], layers: &[textures::Layer], tint: [u8; 3]) -> Vec<u8> {
     let n = ICON_SIZE;
+    let tint = tint.map(textures::srgb_to_linear);
     let geometry = faces();
     // Top, side, side: the two visible sides share the side texture.
     let entry = [faces_entry[0], faces_entry[1], faces_entry[1]];
@@ -156,7 +167,7 @@ pub fn block_icon(def: &BlockDef, faces_entry: [u32; 4], layers: &[textures::Lay
                     };
                     // Shade in linear light, weighted by coverage and alpha.
                     for c in 0..3 {
-                        acc[c] += textures::srgb_to_linear(rgb[c]) * SHADES[f] * alpha;
+                        acc[c] += textures::srgb_to_linear(rgb[c]) * tint[c] * SHADES[f] * alpha;
                     }
                     acc[3] += alpha;
                 }
@@ -196,7 +207,7 @@ mod tests {
     fn block_icons_are_cubes_lit_from_the_top_left() {
         let blocks = BlockRegistry::builtin();
         let stone = blocks.get(blocks.id("stone").unwrap());
-        let img = block_icon(stone, [NO_TEXTURE; 4], &[]);
+        let img = block_icon(stone, [NO_TEXTURE; 4], &[], NO_TINT);
         assert_eq!(img.len(), ICON_SIZE * ICON_SIZE * 4);
         let c = ICON_SIZE / 2;
         assert_eq!(px(&img, 0, 0)[3], 0, "corners are transparent");
@@ -219,6 +230,7 @@ mod tests {
             stone,
             [3 | 3 << 16, 3 | 3 << 16, 3 | 3 << 16, 0],
             &[vec![], vec![], vec![], red],
+            NO_TINT,
         );
         let c = ICON_SIZE / 2;
         assert_eq!(px(&img, c, c / 2), [200, 10, 10, 255]);
@@ -232,23 +244,35 @@ mod tests {
         let dir = std::env::temp_dir().join(format!("bm-icons-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
         let def = |n: &str| items.get(items.id(n).unwrap()).unwrap();
-        match icon_for(def("copper_ore"), &blocks, &set, &dir) {
+        match icon_for(def("copper_ore"), &blocks, &set, &dir, &[]) {
             IconSource::Initials { text, .. } => assert_eq!(text, "CO"),
             other => panic!("{other:?}"),
         }
         // Block items never need a picture file.
         assert!(matches!(
-            icon_for(def("stone"), &blocks, &set, &dir),
+            icon_for(def("stone"), &blocks, &set, &dir, &[]),
             IconSource::Image(_)
         ));
         // A dropped-in picture of any size is used, scaled to the icon size.
         image::RgbaImage::from_pixel(16, 16, image::Rgba([1, 2, 3, 255]))
             .save(dir.join("coal.png"))
             .unwrap();
-        match icon_for(def("coal"), &blocks, &set, &dir) {
+        match icon_for(def("coal"), &blocks, &set, &dir, &[]) {
             IconSource::Image(px) => assert_eq!(&px[..4], &[1, 2, 3, 255]),
             other => panic!("{other:?}"),
         }
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn block_icons_wear_the_planets_tint() {
+        let blocks = BlockRegistry::builtin();
+        let stone = blocks.get(blocks.id("stone").unwrap());
+        let plain = block_icon(stone, [NO_TEXTURE; 4], &[], NO_TINT);
+        let red = block_icon(stone, [NO_TEXTURE; 4], &[], [255, 128, 128]);
+        let c = ICON_SIZE / 2;
+        let (a, b) = (px(&plain, c, c / 2), px(&red, c, c / 2));
+        assert_eq!(a[0], b[0], "full red is kept");
+        assert!(b[1] < a[1] && b[2] < a[2], "{a:?} {b:?}");
     }
 }

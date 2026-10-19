@@ -4,7 +4,9 @@
 use crate::claims::{Claims, outline};
 use crate::icons::icon_for;
 use crate::items::Items;
-use crate::menus::{self, CraftingView, Drag, Hud, ItemIcons, LiveStation, LoginForm, Menu, Notices, UiAction};
+use crate::menus::{
+    self, Arrival, CraftingView, Drag, Hud, ItemIcons, LiveStation, LoginForm, Menu, Notices, TravelView, UiAction,
+};
 use crate::net::{self, ConnectOptions, Link, NetEvent};
 use crate::predict::{Predictor, RemoteSample, Remotes};
 use crate::render::{BoxInstance, Camera, EguiFrame, LineVertex, Renderer, Scene};
@@ -14,11 +16,12 @@ use crate::textures::TextureSet;
 use crate::world::ClientWorld;
 use bm_core::movement::{MoveConfig, PlayerInput};
 use bm_core::{
-    BlockId, BlockPos, BlockRegistry, Chunk, DayCycle, HOTBAR_SLOTS, ItemId, PlanetShape, PlotPos, RayHit, TICK_DT,
-    raycast,
+    BlockId, BlockPos, BlockRegistry, Chunk, DayCycle, HOTBAR_SLOTS, ItemId, PlanetLook, PlanetShape, PlotPos, RayHit,
+    TICK_DT, raycast,
 };
 use bm_protocol::{
-    ClientDatagram, ClientMsg, EditAction, INPUT_REDUNDANCY, MIN_PASSWORD_LEN, ServerDatagram, ServerMsg,
+    ClientDatagram, ClientMsg, EditAction, INPUT_REDUNDANCY, MIN_PASSWORD_LEN, PlanetInfo, PlanetSummary,
+    ServerDatagram, ServerMsg, Travel,
 };
 use glam::{DVec3, Vec3};
 use std::collections::HashSet;
@@ -46,6 +49,10 @@ const OWN_LINE: [f32; 4] = [1.0, 0.55, 0.10, 0.95];
 const OTHER_LINE: [f32; 4] = [0.95, 0.10, 0.06, 0.95];
 const TARGET_LINE: [f32; 4] = [0.95, 0.95, 0.88, 1.0];
 const XRAY_ALPHA: f32 = 0.22;
+/// The travelling screen stays at least this long (seconds), so a quick
+/// arrival reads as a journey rather than a flicker, then fades out.
+const ARRIVAL_MIN: f64 = 0.8;
+const ARRIVAL_FADE: f64 = 0.5;
 
 pub struct Options {
     /// Server address, name and password from the command line; with a
@@ -73,11 +80,22 @@ struct Mining {
     progress: f64,
 }
 
+/// The journey to another planet, shown until its ground has arrived.
+struct Journey {
+    to: Arrival,
+    started: f64,
+    /// When the chunks around us had arrived; the screen fades from here.
+    landed: Option<f64>,
+}
+
 /// Everything that exists once the server has welcomed us.
 struct Session {
-    planet_name: String,
+    /// The planet we are on: everything in `world`, `claims` and `remotes`
+    /// belongs to it.
+    planet: PlanetInfo,
+    /// Every planet on the server, for the travel menu and the sky.
+    universe: Vec<PlanetSummary>,
     account: String,
-    day: DayCycle,
     /// Server tick in the welcome and our clock when it arrived, for the time
     /// of day before the first snapshot.
     welcome_tick: u64,
@@ -100,6 +118,151 @@ struct Session {
     /// The plot claim mode points at.
     claim_target: Option<PlotPos>,
     mining: Option<Mining>,
+    warp_shrine: BlockId,
+    /// Kept to repaint item icons in a new planet's tints.
+    textures: TextureSet,
+    journey: Option<Journey>,
+}
+
+impl Session {
+    #[allow(clippy::too_many_arguments)]
+    fn new(
+        w: bm_protocol::Welcome,
+        registry: BlockRegistry,
+        items: Items,
+        textures: TextureSet,
+        icons: ItemIcons,
+        local_ticks: f64,
+    ) -> Result<Self, String> {
+        let warp_shrine = registry
+            .id("warp_shrine")
+            .map_err(|e| format!("the server sent a block catalogue without a warp shrine: {e}"))?;
+        let shape = w.planet.shape;
+        Ok(Self {
+            account: w.account,
+            welcome_tick: w.tick,
+            welcome_local: local_ticks,
+            movement: w.movement,
+            reach: w.reach,
+            view_radius: w.view_radius,
+            claims: Claims::new(shape, w.claims),
+            world: ClientWorld::new(shape, registry),
+            me: Predictor::new(w.spawn),
+            remotes: Remotes::default(),
+            items,
+            icons,
+            plot_allowance: w.plot_allowance,
+            selected: 0,
+            edit_seq: 0,
+            place_cooldown: 0.0,
+            target: None,
+            claim_target: None,
+            mining: None,
+            warp_shrine,
+            textures,
+            journey: None,
+            planet: w.planet,
+            universe: w.universe,
+        })
+    }
+
+    /// Moves us to another planet. Everything of the old one goes: chunks,
+    /// meshes in flight (the new world has its own mesher), light, edits
+    /// waiting for an answer, remote players, claims, aim and mining.
+    /// Inventory, hotbar choice and input sequences carry on.
+    fn arrive(&mut self, t: Travel, now: f64, local_ticks: f64) {
+        let shape = t.planet.shape;
+        let registry = self.world.registry.clone();
+        self.world = ClientWorld::new(shape, registry);
+        self.claims = Claims::new(shape, t.claims);
+        self.remotes = Remotes::default();
+        self.me.teleport(t.spawn);
+        self.welcome_tick = t.tick;
+        self.welcome_local = local_ticks;
+        self.target = None;
+        self.claim_target = None;
+        self.mining = None;
+        self.place_cooldown = 0.0;
+        self.journey = Some(Journey {
+            to: Arrival {
+                name: t.planet.name.clone(),
+                kind: t.planet.kind.clone(),
+                tier: t.planet.tier,
+                color: t.planet.look.color,
+            },
+            started: now,
+            landed: None,
+        });
+        self.planet = t.planet;
+    }
+
+    /// Applies a snapshot; one about another planet (sent before we
+    /// travelled, overtaking the stream) is dropped. Returns whether it was used.
+    fn snapshot(&mut self, d: ServerDatagram, local: f64) -> bool {
+        let ServerDatagram::Snapshot {
+            planet,
+            tick,
+            ack,
+            you,
+            others,
+        } = d;
+        if planet != self.planet.id {
+            return false;
+        }
+        let shape = self.world.shape;
+        self.me.reconcile(tick, ack, you, &self.movement, shape, &self.world);
+        self.remotes.record(
+            tick,
+            local,
+            others.into_iter().map(|o| {
+                (
+                    o.id,
+                    RemoteSample {
+                        tick,
+                        pos: DVec3::new(o.pos[0] as f64, o.pos[1] as f64, o.pos[2] as f64),
+                        yaw: o.yaw,
+                        pitch: o.pitch,
+                    },
+                )
+            }),
+        );
+        true
+    }
+
+    /// Still on the way: the new planet's ground has not arrived yet.
+    fn travelling(&self) -> bool {
+        self.journey.as_ref().is_some_and(|j| j.landed.is_none())
+    }
+
+    /// Lands the journey once the ground is here, and ends its fade.
+    fn update_journey(&mut self, now: f64) {
+        let ready = self.world.has_chunks_around(self.me.state.pos);
+        let Some(j) = &mut self.journey else { return };
+        if j.landed.is_none() && ready && now - j.started >= ARRIVAL_MIN {
+            j.landed = Some(now);
+        }
+        if j.landed.is_some_and(|l| now - l >= ARRIVAL_FADE) {
+            self.journey = None;
+        }
+    }
+
+    /// The server tick the sky shows now.
+    fn sky_tick(&self, local: f64) -> f64 {
+        // A development override for judging the sky: BOUNDMORE_TIME=0.75 is
+        // sunset. Visual only; the server's clock is untouched.
+        if let Some(tod) = std::env::var("BOUNDMORE_TIME").ok().and_then(|v| v.parse::<f64>().ok()) {
+            return tod * self.planet.day.day_ticks as f64 - self.planet.day.start_offset as f64;
+        }
+        self.remotes
+            .server_tick(local)
+            .unwrap_or(self.welcome_tick as f64 + (local - self.welcome_local))
+    }
+
+    /// Whether the block aimed at is a warp shrine.
+    fn aiming_at_shrine(&self) -> Option<BlockPos> {
+        let hit = self.target?;
+        (self.world.block(hit.block) == Some(self.warp_shrine)).then_some(hit.block)
+    }
 }
 
 struct EguiState {
@@ -369,19 +532,12 @@ impl App {
             r.write_palette(&registry);
             r.set_textures(&set);
         }
-        let items_dir = self.opts.assets.join("textures").join("items");
-        let sources = items
-            .registry
-            .defs()
-            .iter()
-            .map(|d| icon_for(d, &registry, &set, &items_dir))
-            .collect();
-        let icons = match &self.egui {
-            Some(e) => ItemIcons::build(&e.ctx, sources),
-            None => ItemIcons::default(),
-        };
-        tracing::info!("welcomed to {} as {} (#{})", w.planet_name, w.account, w.player_id);
-        self.status = format!("on {}", w.planet_name);
+        if let Some(r) = &mut self.renderer {
+            r.set_tints(&w.planet.tints);
+        }
+        let icons = self.build_icons(&items, &registry, &set, &w.planet.tints);
+        tracing::info!("welcomed to {} as {} (#{})", w.planet.name, w.account, w.player_id);
+        self.status = format!("on {}", w.planet.name);
         // Remember who and where, never the password; and forget it here too.
         self.login.busy = false;
         self.login.error = None;
@@ -393,31 +549,47 @@ impl App {
                 tracing::warn!("cannot save settings to {}: {e}", self.opts.settings_path.display());
             }
         }
-        self.session = Some(Session {
-            planet_name: w.planet_name.clone(),
-            account: w.account.clone(),
-            day: w.day,
-            welcome_tick: w.tick,
-            welcome_local: self.local_ticks(),
-            movement: w.movement,
-            reach: w.reach,
-            view_radius: w.view_radius,
-            claims: Claims::new(w.planet, w.claims),
-            world: ClientWorld::new(w.planet, registry),
-            me: Predictor::new(w.spawn),
-            remotes: Remotes::default(),
-            items,
-            icons,
-            plot_allowance: w.plot_allowance,
-            selected: 0,
-            edit_seq: 0,
-            place_cooldown: 0.0,
-            target: None,
-            claim_target: None,
-            mining: None,
-        });
+        match Session::new(w, registry, items, set, icons, self.local_ticks()) {
+            Ok(s) => self.session = Some(s),
+            Err(e) => return self.refuse_catalogue(e),
+        }
         self.set_grab(true);
         self.open_demo_screen();
+    }
+
+    /// Item icons, block items painted in this planet's tints.
+    fn build_icons(&self, items: &Items, registry: &BlockRegistry, set: &TextureSet, tints: &[[u8; 3]]) -> ItemIcons {
+        let items_dir = self.opts.assets.join("textures").join("items");
+        let sources = items
+            .registry
+            .defs()
+            .iter()
+            .map(|d| icon_for(d, registry, set, &items_dir, tints))
+            .collect();
+        match &self.egui {
+            Some(e) => ItemIcons::build(&e.ctx, sources),
+            None => ItemIcons::default(),
+        }
+    }
+
+    /// The server moved us to another planet (`ServerMsg::Travel`).
+    fn travel(&mut self, t: Travel) {
+        let (now, local) = (self.now(), self.local_ticks());
+        self.close_menu(false);
+        self.live_station = None;
+        self.claim_mode = false;
+        self.mouse = [false; 2];
+        let Some(s) = &mut self.session else { return };
+        tracing::info!("travelling to {} ({})", t.planet.name, t.planet.kind);
+        s.arrive(t, now, local);
+        self.status = format!("on {}", s.planet.name);
+        if let Some(r) = &mut self.renderer {
+            r.clear_chunks();
+            r.set_tints(&s.planet.tints);
+        }
+        let Some(s) = self.session.take() else { return };
+        let icons = self.build_icons(&s.items, &s.world.registry, &s.textures, &s.planet.tints);
+        self.session = Some(Session { icons, ..s });
     }
 
     fn refuse_catalogue(&mut self, why: String) {
@@ -428,6 +600,10 @@ impl App {
     }
 
     fn handle_msg(&mut self, m: ServerMsg) {
+        let m = match m {
+            ServerMsg::Travel(t) => return self.travel(*t),
+            m => m,
+        };
         let now = self.now();
         let Some(s) = &mut self.session else { return };
         match m {
@@ -454,31 +630,16 @@ impl App {
             ServerMsg::Claim(c) => s.claims.upsert(c),
             ServerMsg::ClaimRemoved { id } => s.claims.remove(id),
             ServerMsg::Notice { text } => self.notices.push(text, now),
-            ServerMsg::Welcome(_) | ServerMsg::Refused { .. } => {}
+            ServerMsg::Universe { planets } => s.universe = planets,
+            ServerMsg::Welcome(_) | ServerMsg::Refused { .. } | ServerMsg::Travel(_) => {}
         }
     }
 
     fn handle_snapshot(&mut self, d: ServerDatagram) {
         let local = self.local_ticks();
-        let Some(s) = &mut self.session else { return };
-        let ServerDatagram::Snapshot { tick, ack, you, others } = d;
-        let shape = s.world.shape;
-        s.me.reconcile(tick, ack, you, &s.movement, shape, &s.world);
-        s.remotes.record(
-            tick,
-            local,
-            others.into_iter().map(|o| {
-                (
-                    o.id,
-                    RemoteSample {
-                        tick,
-                        pos: DVec3::new(o.pos[0] as f64, o.pos[1] as f64, o.pos[2] as f64),
-                        yaw: o.yaw,
-                        pitch: o.pitch,
-                    },
-                )
-            }),
-        );
+        if let Some(s) = &mut self.session {
+            s.snapshot(d, local);
+        }
     }
 
     // ---- claims ----
@@ -545,8 +706,12 @@ impl App {
         };
         let claim_mode = self.claim_mode;
         let (yaw, pitch) = (self.yaw, self.pitch);
+        let now_s = self.now();
         let Some(s) = &mut self.session else { return };
         let Some(link) = &mut self.link else { return };
+        s.update_journey(now_s);
+        // Nothing is broken or placed on the way between planets.
+        let mouse = if s.travelling() { [false; 2] } else { mouse };
 
         // Fixed-rate simulation, decoupled from frame rate. Keeps ticking when
         // the window is hidden or a menu is open, so the server keeps
@@ -729,6 +894,7 @@ impl App {
                     s.plot_allowance
                 )
             });
+            let aim_hint = (menu.is_none() && !claim_mode && s.aiming_at_shrine().is_some()).then_some(("E", "travel"));
             menus::hud(
                 &ctx,
                 &Hud {
@@ -738,6 +904,7 @@ impl App {
                     notices: notices.clone(),
                     owner,
                     claim_mode: claim_help,
+                    aim_hint,
                 },
             );
             match menu {
@@ -760,7 +927,23 @@ impl App {
                         &mut actions,
                     );
                 }
+                Some(Menu::Travel(shrine)) => menus::travel(
+                    &ctx,
+                    &TravelView {
+                        planets: &s.universe,
+                        here: s.planet.id,
+                        shrine,
+                    },
+                    &mut actions,
+                ),
                 None => {}
+            }
+            if let Some(j) = &s.journey {
+                let alpha = match j.landed {
+                    Some(l) => (1.0 - (now - l) / ARRIVAL_FADE).clamp(0.0, 1.0) as f32,
+                    None => 1.0,
+                };
+                menus::travelling(&ctx, &j.to, alpha, now);
             }
         });
         e.winit.handle_platform_output(&window, out.platform_output);
@@ -842,7 +1025,8 @@ impl App {
             let day = DayCycle::default();
             r.render(&Scene {
                 camera: &cam,
-                sky: &Sky::at(&day, day.day_ticks as f64 * 0.18),
+                sky: &Sky::at(&day, &PlanetLook::default(), day.day_ticks as f64 * 0.18),
+                planets: &[],
                 shape: PlanetShape::new(8, 1),
                 boxes: &[],
                 highlight: None,
@@ -856,16 +1040,8 @@ impl App {
             return;
         };
         let shape = s.world.shape;
-        let mut tick = s
-            .remotes
-            .server_tick(local)
-            .unwrap_or(s.welcome_tick as f64 + (local - s.welcome_local));
-        // A development override for judging the sky: BOUNDMORE_TIME=0.75 is
-        // sunset. Visual only; the server's clock is untouched.
-        if let Some(tod) = std::env::var("BOUNDMORE_TIME").ok().and_then(|v| v.parse::<f64>().ok()) {
-            tick = tod * s.day.day_ticks as f64 - s.day.start_offset as f64;
-        }
-        let sky = Sky::at(&s.day, tick);
+        let sky = Sky::at(&s.planet.day, &s.planet.look, s.sky_tick(local));
+        let planets = sky.planets(&s.universe, s.planet.id);
         let feet = s.me.render_pos(alpha, shape);
         let eye = shape.wrap_point(feet + DVec3::new(0.0, s.movement.eye_height, 0.0));
         let camera = Camera {
@@ -906,6 +1082,7 @@ impl App {
         r.render(&Scene {
             camera: &camera,
             sky: &sky,
+            planets: &planets,
             ui: ui_frame,
             shape,
             boxes: &boxes,
@@ -944,7 +1121,7 @@ impl App {
                     .unwrap_or_default();
                 format!(
                     "Boundmore | {} | {:.0} fps | {:.0} ms | {:.0} {:.0} {:.0} | {} chunks, {} drawn, {}k quads, {} to mesh | {} corrections | [{}] {}",
-                    s.planet_name,
+                    s.planet.name,
                     self.fps,
                     self.link.as_ref().map(|n| n.rtt_ms()).unwrap_or(0.0),
                     p.x,
@@ -985,6 +1162,42 @@ impl App {
                 self.yaw = 0.7;
                 self.pitch = -0.32;
                 self.claim_mode = true;
+            }
+            // Facing the shrine by the spawn: its hint, its menu, or the
+            // journey after choosing the second planet (held for good).
+            "shrine" | "travel" | "travelling" => {
+                self.yaw = std::f64::consts::PI;
+                self.pitch = -0.38;
+                let shrine = BlockPos::new(crate::demo::SHRINE[0], crate::demo::SHRINE[1], crate::demo::SHRINE[2]);
+                if screen == "travel" {
+                    self.open_menu(Menu::Travel(shrine));
+                } else if screen == "travelling" {
+                    if let Some(Link::Demo(d)) = &mut self.link {
+                        d.hold_arrivals(f64::INFINITY);
+                    }
+                    self.send(ClientMsg::Warp { shrine, planet: 1 });
+                }
+            }
+            // Looking up at the other planets (pair with BOUNDMORE_TIME).
+            "sky" => {
+                let local = self.local_ticks();
+                if let Some(s) = &self.session {
+                    let sky = Sky::at(&s.planet.day, &s.planet.look, s.sky_tick(local));
+                    let up: Vec<Vec3> = sky
+                        .planets(&s.universe, s.planet.id)
+                        .iter()
+                        .map(|p| Vec3::from(p.dir))
+                        .filter(|d| d.y > 0.05)
+                        .collect();
+                    let aim = up
+                        .iter()
+                        .copied()
+                        .sum::<Vec3>()
+                        .normalize_or(Vec3::new(0.0, 0.5, -1.0).normalize());
+                    let limit = bm_core::movement::pitch_radians(bm_core::movement::PITCH_LIMIT);
+                    self.yaw = (aim.x as f64).atan2(-aim.z as f64).rem_euclid(std::f64::consts::TAU);
+                    self.pitch = (aim.y as f64).asin().clamp(-limit, limit);
+                }
             }
             _ => {
                 self.pitch = -0.12;
@@ -1127,6 +1340,18 @@ impl ApplicationHandler for App {
                         let m = self.crafting_menu();
                         self.toggle(m);
                     }
+                    KeyCode::KeyE => {
+                        if matches!(self.menu, Some(Menu::Travel(_))) {
+                            self.close_menu(true);
+                        } else if self.menu.is_none()
+                            && !self.claim_mode
+                            && let Some(s) = &self.session
+                            && !s.travelling()
+                            && let Some(shrine) = s.aiming_at_shrine()
+                        {
+                            self.open_menu(Menu::Travel(shrine));
+                        }
+                    }
                     KeyCode::KeyP if self.menu.is_none() => {
                         self.claim_mode = !self.claim_mode;
                         self.mouse = [false; 2];
@@ -1205,5 +1430,154 @@ impl ApplicationHandler for App {
         if let Some(w) = &self.window {
             w.request_redraw();
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::demo::Demo;
+    use crate::net::NetEvent;
+    use bm_protocol::RemotePlayer;
+
+    fn session_on_the_demo() -> (Session, Demo, Vec<ServerMsg>) {
+        let mut demo = Demo::new("Tester");
+        demo.hold_arrivals(0.0);
+        let mut events = demo.poll().into_iter();
+        let Some(NetEvent::Connected(w)) = events.next() else {
+            panic!("welcome first")
+        };
+        let registry = BlockRegistry::from_defs(w.blocks.clone()).unwrap();
+        let items = Items::new(w.items.clone(), w.recipes.clone(), w.inventory.clone(), &registry).unwrap();
+        let set = TextureSet {
+            layers: vec![],
+            faces: vec![],
+            crack_base: None,
+            missing: vec![],
+        };
+        let s = Session::new(*w, registry, items, set, ItemIcons::default(), 0.0).unwrap();
+        let rest = events
+            .filter_map(|e| match e {
+                NetEvent::Msg(m) => Some(m),
+                _ => None,
+            })
+            .collect();
+        (s, demo, rest)
+    }
+
+    fn snapshot(planet: u16, tick: u64, ack: u32, x: f64) -> ServerDatagram {
+        ServerDatagram::Snapshot {
+            planet,
+            tick,
+            ack,
+            you: PlayerState {
+                pos: DVec3::new(x, 44.0, 128.5),
+                ..Default::default()
+            },
+            others: vec![RemotePlayer {
+                id: 9,
+                pos: [120.0, 44.0, 120.0],
+                yaw: 0,
+                pitch: 0,
+            }],
+        }
+    }
+
+    use bm_core::PlayerState;
+
+    #[test]
+    fn nothing_of_the_old_planet_survives_travel() {
+        let (mut s, mut demo, msgs) = session_on_the_demo();
+        for m in msgs {
+            if let ServerMsg::Chunk { pos, data } = m {
+                s.world.insert_chunk(pos, Chunk::decode(&data).unwrap());
+            }
+        }
+        // Life on the first planet: chunks, a remote player, claims, an edit
+        // in flight, a block half broken, meshes being made.
+        assert!(s.world.chunk_count() > 0);
+        assert!(s.snapshot(snapshot(0, 10, 0, 128.5), 10.0));
+        s.remotes.joined(9, "Wren".into());
+        assert!(!s.remotes.sample(30.0, s.world.shape).is_empty());
+        assert!(s.claims.iter().count() > 0);
+        s.world.predict_edit(1, BlockPos::new(128, 43, 128), BlockId::AIR);
+        assert_eq!(s.world.pending_edits(), 1);
+        s.mining = Some(Mining {
+            pos: BlockPos::new(129, 43, 128),
+            slot: 0,
+            item: None,
+            progress: 0.5,
+        });
+        let centre = BlockPos::new(128, 44, 128).chunk();
+        s.world.schedule_meshing(centre, 64);
+        for _ in 0..12 {
+            s.me.tick(PlayerInput::default(), &s.movement, s.world.shape, &s.world);
+        }
+        let seq = s.me.seq;
+
+        let shrine = BlockPos::new(crate::demo::SHRINE[0], crate::demo::SHRINE[1], crate::demo::SHRINE[2]);
+        demo.send(ClientMsg::Warp { shrine, planet: 2 });
+        let mut after = demo.poll().into_iter();
+        let Some(NetEvent::Msg(ServerMsg::Travel(t))) = after.next() else {
+            panic!("travel")
+        };
+        let spawn = t.spawn;
+        s.arrive(*t, 1.0, 60.0);
+
+        assert_eq!(s.planet.id, 2);
+        assert_eq!(s.planet.kind, "Frozen");
+        assert_eq!(s.world.chunk_count(), 0, "chunks");
+        assert_eq!(s.world.pending_edits(), 0, "predicted edits");
+        assert_eq!(s.world.dirty_count(), 0, "meshing queue");
+        assert!(
+            s.remotes.names.is_empty() && s.remotes.sample(90.0, s.world.shape).is_empty(),
+            "players"
+        );
+        assert_eq!(s.claims.iter().count(), 0, "claims");
+        assert!(s.mining.is_none() && s.target.is_none());
+        assert_eq!(s.me.state, spawn);
+        assert_eq!(s.me.seq, seq, "input sequences carry on");
+        assert!(s.travelling());
+        // Meshes started on the old planet never come out of the new world.
+        std::thread::sleep(std::time::Duration::from_millis(300));
+        assert!(s.world.take_meshes().is_empty());
+        // A late snapshot of the old planet is dropped; the new one's is used.
+        assert!(!s.snapshot(snapshot(0, 20, seq, 1.5), 61.0));
+        assert_eq!(s.me.state, spawn);
+        assert!(s.remotes.sample(90.0, s.world.shape).is_empty());
+        assert!(s.snapshot(snapshot(2, 21, seq, 128.5), 62.0));
+        assert_eq!(s.me.corrections, 0);
+
+        // The ground arrives; after the screen's minimum the journey lands
+        // and then fades away.
+        for e in after {
+            if let NetEvent::Msg(ServerMsg::Chunk { pos, data }) = e {
+                s.world.insert_chunk(pos, Chunk::decode(&data).unwrap());
+            }
+        }
+        s.update_journey(1.2);
+        assert!(s.travelling(), "shown for its minimum");
+        s.update_journey(1.0 + ARRIVAL_MIN);
+        assert!(!s.travelling());
+        s.update_journey(1.01 + ARRIVAL_MIN + ARRIVAL_FADE);
+        assert!(s.journey.is_none());
+    }
+
+    #[test]
+    fn the_shrine_is_found_by_name_and_aimed_at() {
+        let (mut s, _, msgs) = session_on_the_demo();
+        for m in msgs {
+            if let ServerMsg::Chunk { pos, data } = m {
+                s.world.insert_chunk(pos, Chunk::decode(&data).unwrap());
+            }
+        }
+        let shrine = BlockPos::new(crate::demo::SHRINE[0], crate::demo::SHRINE[1], crate::demo::SHRINE[2]);
+        let eye = DVec3::new(128.5, 45.6, 128.5);
+        let to = DVec3::new(128.5, 44.5, 131.5) - eye;
+        let world = &s.world;
+        s.target = raycast(eye, to.normalize(), s.reach, |p| {
+            world.block(p).is_some_and(|b| world.flags.solid(b))
+        });
+        assert_eq!(s.aiming_at_shrine(), Some(shrine));
     }
 }

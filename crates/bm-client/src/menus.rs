@@ -8,7 +8,7 @@
 use crate::icons::{ICON_SIZE, IconSource};
 use crate::items::Items;
 use bm_core::{BlockPos, BlockRegistry, HOTBAR_SLOTS, INVENTORY_SLOTS, ItemStack, Station};
-use bm_protocol::{ClientMsg, StationView};
+use bm_protocol::{ClientMsg, PlanetSummary, StationView};
 use egui::{
     Align, Align2, Color32, CornerRadius, FontId, Id, Layout, Rect, Sense, Stroke, StrokeKind, Ui, Vec2, pos2, vec2,
 };
@@ -41,6 +41,8 @@ pub enum Menu {
     Inventory,
     /// Hand crafting, or the station at this block.
     Crafting(Option<BlockPos>),
+    /// The travel menu of the warp shrine at this block.
+    Travel(BlockPos),
 }
 
 #[derive(Default)]
@@ -385,6 +387,9 @@ pub struct Hud<'a> {
     pub owner: Option<(String, bool)>,
     /// Claim mode's help and allowance, when it is on.
     pub claim_mode: Option<String>,
+    /// What a key does to the block aimed at ("E", "travel"), shown under
+    /// the crosshair.
+    pub aim_hint: Option<(&'static str, &'static str)>,
 }
 
 pub fn hud(ctx: &egui::Context, h: &Hud) {
@@ -463,6 +468,31 @@ pub fn hud(ctx: &egui::Context, h: &Hud) {
                     ui.label(egui::RichText::new(text).color(colour).size(14.0));
                 });
         });
+    }
+    if let Some((key, what)) = h.aim_hint {
+        egui::Area::new(Id::unique("aim-hint"))
+            .anchor(Align2::CENTER_CENTER, vec2(0.0, 44.0))
+            .interactable(false)
+            .order(egui::Order::Background)
+            .show(ctx, |ui| {
+                egui::Frame::new()
+                    .fill(Color32::from_black_alpha(130))
+                    .corner_radius(CornerRadius::same(10))
+                    .inner_margin(egui::Margin::symmetric(8, 4))
+                    .show(ui, |ui| {
+                        ui.horizontal(|ui| {
+                            ui.spacing_mut().item_spacing.x = 7.0;
+                            egui::Frame::new()
+                                .stroke(Stroke::new(1.5, GOLD))
+                                .corner_radius(CornerRadius::same(5))
+                                .inner_margin(egui::Margin::symmetric(6, 0))
+                                .show(ui, |ui| {
+                                    ui.label(egui::RichText::new(key).color(GOLD).strong().size(14.0));
+                                });
+                            ui.label(egui::RichText::new(what).size(15.0));
+                        });
+                    });
+            });
     }
     if let Some(help) = &h.claim_mode {
         top_area("claim-help", 14.0).show(ctx, |ui| {
@@ -860,6 +890,168 @@ fn station_panel(ui: &mut Ui, v: &CraftingView, pos: BlockPos, actions: &mut Vec
     }
 }
 
+// ---- travel ----
+
+fn planet_colour(c: [f32; 3]) -> Color32 {
+    let s = c.map(crate::textures::linear_to_srgb);
+    Color32::from_rgb(s[0], s[1], s[2])
+}
+
+/// A small planet: a disc in its colour, lit from the upper left, with a
+/// thin atmosphere ring. Matches how planets look in the sky.
+fn paint_planet(painter: &egui::Painter, centre: egui::Pos2, radius: f32, colour: [f32; 3]) {
+    let base = planet_colour(colour);
+    let air = planet_colour([colour[0] * 0.45 + 0.4, colour[1] * 0.45 + 0.46, colour[2] * 0.45 + 0.55]);
+    painter.circle_filled(centre, radius + 2.5, air.gamma_multiply(0.25));
+    painter.circle_filled(centre, radius, base.gamma_multiply(0.35));
+    // The lit side: discs stepping towards the light.
+    for (k, f) in [(0.86f32, 0.6f32), (0.7, 0.8), (0.5, 1.0)] {
+        let shift = vec2(-1.0, -0.8) * radius * (1.0 - k) * 0.9;
+        painter.circle_filled(centre + shift, radius * k, base.gamma_multiply(f));
+    }
+    painter.circle_stroke(centre, radius, Stroke::new(1.0, air.gamma_multiply(0.7)));
+}
+
+fn players_there(n: u16) -> String {
+    match n {
+        0 => "Nobody there".into(),
+        1 => "1 player".into(),
+        n => format!("{n} players"),
+    }
+}
+
+pub struct TravelView<'a> {
+    pub planets: &'a [PlanetSummary],
+    /// The planet we are on.
+    pub here: u16,
+    /// The shrine the menu was opened at.
+    pub shrine: BlockPos,
+}
+
+pub fn travel(ctx: &egui::Context, v: &TravelView, actions: &mut Vec<UiAction>) {
+    let mut open = true;
+    let mut list: Vec<&PlanetSummary> = v.planets.iter().collect();
+    list.sort_by_key(|p| (p.id != v.here, p.tier, p.id));
+    window("Warp Shrine").open(&mut open).show(ctx, |ui| {
+        ui.set_width(430.0);
+        ui.label(
+            egui::RichText::new("The shrine opens a way to any world it knows.")
+                .color(MUTED)
+                .small(),
+        );
+        ui.add_space(4.0);
+        egui::ScrollArea::vertical().max_height(420.0).show(ui, |ui| {
+            for p in list {
+                let here = p.id == v.here;
+                egui::Frame::new()
+                    .fill(if here {
+                        Color32::from_rgba_unmultiplied(240, 186, 84, 18)
+                    } else {
+                        Color32::from_white_alpha(7)
+                    })
+                    .stroke(if here { Stroke::new(1.0, GOLD_DIM) } else { Stroke::NONE })
+                    .corner_radius(CornerRadius::same(10))
+                    .inner_margin(egui::Margin::same(8))
+                    .show(ui, |ui| {
+                        ui.set_width(ui.available_width());
+                        ui.horizontal(|ui| {
+                            let (rect, _) = ui.allocate_exact_size(Vec2::splat(44.0), Sense::hover());
+                            paint_planet(ui.painter(), rect.center(), 17.0, p.color);
+                            ui.vertical(|ui| {
+                                ui.spacing_mut().item_spacing.y = 2.0;
+                                ui.label(egui::RichText::new(&p.name).strong().size(17.0));
+                                ui.label(
+                                    egui::RichText::new(format!("{}, tier {}", p.kind, p.tier))
+                                        .color(MUTED)
+                                        .small(),
+                                );
+                                ui.label(egui::RichText::new(players_there(p.players)).color(MUTED).small());
+                            });
+                            ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                                if here {
+                                    ui.label(egui::RichText::new("You are here").color(GOLD));
+                                } else if ui
+                                    .add_sized(
+                                        [86.0, 32.0],
+                                        egui::Button::new(egui::RichText::new("Travel").strong())
+                                            .fill(Color32::from_rgb(120, 86, 34)),
+                                    )
+                                    .clicked()
+                                {
+                                    actions.push(UiAction::Send(ClientMsg::Warp {
+                                        shrine: v.shrine,
+                                        planet: p.id,
+                                    }));
+                                    actions.push(UiAction::CloseMenu);
+                                }
+                            });
+                        });
+                    });
+            }
+        });
+    });
+    if !open {
+        actions.push(UiAction::CloseMenu);
+    }
+}
+
+/// Where we are going, for the screen shown on the way.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Arrival {
+    pub name: String,
+    pub kind: String,
+    pub tier: u8,
+    pub color: [f32; 3],
+}
+
+/// The screen shown while the ground of a new planet arrives. `alpha` fades
+/// it out once we have landed; `time` turns the little planet's light.
+pub fn travelling(ctx: &egui::Context, a: &Arrival, alpha: f32, time: f64) {
+    let screen = ctx.content_rect();
+    egui::Area::new(Id::unique("travelling"))
+        .fixed_pos(screen.min)
+        .order(egui::Order::Foreground)
+        .interactable(false)
+        .show(ctx, |ui| {
+            let painter = ui.painter();
+            painter.rect_filled(
+                screen,
+                0,
+                Color32::from_rgba_unmultiplied(6, 5, 12, (240.0 * alpha) as u8),
+            );
+            let centre = screen.center() - vec2(0.0, 60.0);
+            // A slow ring of motes around the destination.
+            for i in 0..12 {
+                let t = time as f32 * 0.6 + i as f32 * std::f32::consts::TAU / 12.0;
+                let p = centre + vec2(t.cos(), t.sin() * 0.35) * 92.0;
+                let fade = 0.35 + 0.65 * (0.5 + 0.5 * (t * 0.5).sin());
+                painter.circle_filled(p, 2.5, GOLD.gamma_multiply(fade * alpha));
+            }
+            paint_planet_faded(painter, centre, 46.0, a.color, alpha);
+            let text = |y: f32, s: &str, size: f32, colour: Color32| {
+                painter.text(
+                    pos2(screen.center().x, centre.y + y),
+                    Align2::CENTER_CENTER,
+                    s,
+                    FontId::proportional(size),
+                    colour.gamma_multiply(alpha),
+                );
+            };
+            text(84.0, "Travelling to", 16.0, MUTED);
+            text(118.0, &a.name, 36.0, GOLD);
+            text(152.0, &format!("{}, tier {}", a.kind, a.tier), 15.0, MUTED);
+        });
+}
+
+fn paint_planet_faded(painter: &egui::Painter, centre: egui::Pos2, radius: f32, colour: [f32; 3], alpha: f32) {
+    if alpha >= 0.999 {
+        paint_planet(painter, centre, radius, colour);
+    } else {
+        // Fade the whole planet by darkening its colour towards the backdrop.
+        paint_planet(painter, centre, radius, colour.map(|c| c * alpha));
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -889,5 +1081,12 @@ mod tests {
         let b = BlockRegistry::builtin();
         assert_eq!(station_name(&b, Station::Workbench), "Workbench");
         assert_eq!(station_name(&b, Station::Furnace), "Furnace");
+    }
+
+    #[test]
+    fn players_are_counted_in_words() {
+        assert_eq!(players_there(0), "Nobody there");
+        assert_eq!(players_there(1), "1 player");
+        assert_eq!(players_there(12), "12 players");
     }
 }
