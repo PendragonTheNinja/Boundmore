@@ -4,7 +4,7 @@ A persistent online voxel universe in the spirit of *Boundless*: a world of plan
 
 ![Arriving on four planets](docs/media/m4-real-arrivals.png)
 
-**Status:** milestone 4 (a universe of four planets, warp shrines, iron) is built and awaiting a play-test. Milestones 1 to 3 (foundation; light and textures; accounts, inventory, crafting and claims) are built. See `docs/roadmap.md` for what comes next.
+**Status:** milestones 4 and 5 (a universe of four planets, warp shrines, iron; storage chests and chat) are built and awaiting a play-test. Milestones 1 to 3 (foundation; light and textures; accounts, inventory, crafting and claims) are built. See `docs/roadmap.md` for what comes next.
 
 ## Running it
 
@@ -30,6 +30,8 @@ Controls:
 - **C** opens crafting: things you make by hand, or, looking at a workbench or furnace, what it makes. Stations keep working while you are away; collect from them later.
 - **P** toggles claim mode: left click a plot beside your claim to add it, right click to give it up. Place a claim stone to start a claim. A claim stays yours as long as you visit at least once every 6 months.
 - **E** at a warp shrine (the glowing violet block at each planet's spawn) opens the travel menu: pick a planet to go there.
+- **E** on a storage chest (workbench, 8 timber) opens it beside your inventory: drag between them, or Shift-click to send a whole stack across.
+- **Enter** or **T** opens chat. `/l`, `/p` and `/u` switch between local (nearby), planet and universe; `/w name text` whispers and `/r text` replies. Enter sends, Esc closes.
 - F11 for fullscreen.
 
 Getting started: break tree trunks by hand, craft timber, then a workbench; break stone for a furnace and stone tools; coal and copper from the rocks make copper tools. Iron is only found on the tier 2 and 3 planets (Emberdune, Rimehold, Wildmere), deeper than copper; iron tools are the fastest yet.

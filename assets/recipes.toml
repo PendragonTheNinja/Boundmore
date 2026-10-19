@@ -107,3 +107,9 @@ count = 4
 inputs = [["sand", 4]]
 station = "workbench"
 seconds = 2.0
+
+[[recipe]]
+output = "storage_chest"
+inputs = [["timber", 8]]
+station = "workbench"
+seconds = 3.0

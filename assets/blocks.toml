@@ -21,6 +21,7 @@
 #   material    rock | soil | wood | plant | crystal: which tools break it faster
 #   drops       the item it yields (default: its own item; "" for nothing)
 #   station     workbench | furnace: a crafting station
+#   storage     slots of storage inside (0, the default: none)
 
 [[block]]
 name = "air"
@@ -342,3 +343,19 @@ hardness = 0.0
 textures = { top = "warp_shrine_top", side = "warp_shrine_side", bottom = "stone" }
 material = "rock"
 light = 10
+
+# M5: storage.
+
+[[block]]
+name = "storage_chest"
+color = [150, 104, 62]
+top_color = [176, 128, 80]
+solid = true
+opaque = true
+translucent = false
+breakable = true
+placeable = true
+hardness = 0.8
+textures = { top = "storage_chest_top", side = "storage_chest_side", bottom = "timber" }
+material = "wood"
+storage = 20

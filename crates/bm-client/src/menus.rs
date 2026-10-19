@@ -8,7 +8,7 @@
 use crate::icons::{ICON_SIZE, IconSource};
 use crate::items::Items;
 use bm_core::{BlockPos, BlockRegistry, HOTBAR_SLOTS, INVENTORY_SLOTS, ItemStack, Station};
-use bm_protocol::{ClientMsg, PlanetSummary, StationView};
+use bm_protocol::{ClientMsg, PlanetSummary, SlotRef, StationView};
 use egui::{
     Align, Align2, Color32, CornerRadius, FontId, Id, Layout, Rect, Sense, Stroke, StrokeKind, Ui, Vec2, pos2, vec2,
 };
@@ -43,6 +43,8 @@ pub enum Menu {
     Crafting(Option<BlockPos>),
     /// The travel menu of the warp shrine at this block.
     Travel(BlockPos),
+    /// The storage block at this block, beside the inventory.
+    Storage(BlockPos),
 }
 
 #[derive(Default)]
@@ -55,10 +57,10 @@ pub struct LoginForm {
     pub busy: bool,
 }
 
-/// An item being dragged in the inventory.
+/// An item being dragged in the inventory or an open storage block.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Drag {
-    pub from: usize,
+    pub from: SlotRef,
     pub half: bool,
 }
 
@@ -516,12 +518,165 @@ pub fn hud(ctx: &egui::Context, h: &Hud) {
     }
 }
 
-// ---- the inventory screen ----
+// ---- the inventory and storage screens ----
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum Target {
-    Slot(usize),
+    Slot(SlotRef),
     Discard,
+}
+
+/// What the inventory and storage screens draw their slots from: the
+/// inventory, and the open chest's slots (empty for the inventory alone).
+struct SlotSource<'a> {
+    items: &'a Items,
+    icons: &'a ItemIcons,
+    selected: usize,
+    chest: &'a [Option<ItemStack>],
+}
+
+impl SlotSource<'_> {
+    fn stack(&self, r: SlotRef) -> Option<ItemStack> {
+        crate::storage::stack_at(&self.items.inventory.slots, self.chest, r)
+    }
+}
+
+/// One slot of either grid. Returns whether it was Shift-clicked (with a
+/// stack in it); a press that moves is a drag instead.
+fn item_slot(
+    ui: &mut Ui,
+    src: &SlotSource,
+    r: SlotRef,
+    drag: &mut Option<Drag>,
+    targets: &mut Vec<(Rect, Target)>,
+) -> bool {
+    let (rect, resp) = ui.allocate_exact_size(Vec2::splat(SLOT), Sense::click_and_drag());
+    targets.push((rect, Target::Slot(r)));
+    let hotbar = match r {
+        SlotRef::Inventory(i) => (i as usize) < HOTBAR_SLOTS,
+        SlotRef::Storage(_) => false,
+    };
+    let selected = r == SlotRef::Inventory(src.selected as u8);
+    let hovering_drop = drag.is_some() && resp.contains_pointer();
+    let rim = if hovering_drop || (hotbar && selected) {
+        Stroke::new(2.5, GOLD)
+    } else if hotbar {
+        Stroke::new(1.5, GOLD_DIM)
+    } else {
+        Stroke::new(1.5, SLOT_RIM)
+    };
+    let painter = ui.painter();
+    paint_slot_back(painter, rect, rim);
+    if let SlotRef::Inventory(i) = r
+        && hotbar
+    {
+        painter.text(
+            rect.left_top() + vec2(5.0, 3.0),
+            Align2::LEFT_TOP,
+            ((i + 1) % 10).to_string(),
+            FontId::proportional(11.0),
+            MUTED,
+        );
+    }
+    let Some(stack) = src.stack(r) else { return false };
+    let dragging_this = drag.is_some_and(|d| d.from == r);
+    paint_stack(
+        painter,
+        rect,
+        &stack,
+        src.items,
+        src.icons,
+        if dragging_this { 0.35 } else { 1.0 },
+    );
+    let shift_click = resp.clicked() && ui.input(|i| i.modifiers.shift);
+    if resp.drag_started() {
+        let half = ui.input(|inp| inp.pointer.button_down(egui::PointerButton::Secondary) || inp.modifiers.shift);
+        *drag = Some(Drag { from: r, half });
+    }
+    if drag.is_none() {
+        resp.on_hover_text(src.items.tooltip(&stack));
+    }
+    shift_click
+}
+
+/// The hotbar row and the pack below it. Returns a slot Shift-clicked.
+fn inventory_grid(
+    ui: &mut Ui,
+    src: &SlotSource,
+    drag: &mut Option<Drag>,
+    targets: &mut Vec<(Rect, Target)>,
+) -> Option<SlotRef> {
+    let cols = HOTBAR_SLOTS;
+    let mut shifted = None;
+    ui.horizontal(|ui| {
+        ui.label(egui::RichText::new("Hotbar").color(GOLD).small());
+        ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+            ui.label(
+                egui::RichText::new("Keys 1 to 0 pick a hotbar slot")
+                    .color(MUTED)
+                    .small(),
+            );
+        });
+    });
+    ui.spacing_mut().item_spacing = vec2(GAP, GAP);
+    let mut row = |ui: &mut Ui, first: usize, shifted: &mut Option<SlotRef>| {
+        ui.horizontal(|ui| {
+            for i in first..first + cols {
+                let r = SlotRef::Inventory(i as u8);
+                if item_slot(ui, src, r, drag, targets) {
+                    *shifted = Some(r);
+                }
+            }
+        });
+    };
+    row(ui, 0, &mut shifted);
+    ui.add_space(10.0);
+    ui.label(egui::RichText::new("Pack").color(MUTED).small());
+    for r in 1..INVENTORY_SLOTS / cols {
+        row(ui, r * cols, &mut shifted);
+    }
+    ui.spacing_mut().item_spacing = vec2(8.0, 7.0);
+    shifted
+}
+
+const GRID_WIDTH: f32 = HOTBAR_SLOTS as f32 * SLOT + (HOTBAR_SLOTS - 1) as f32 * GAP;
+
+/// Draws the dragged stack under the pointer and, when it is let go,
+/// returns where it was dropped.
+fn drag_and_drop(
+    ctx: &egui::Context,
+    src: &SlotSource,
+    drag: &mut Option<Drag>,
+    targets: &[(Rect, Target)],
+) -> Option<(Drag, Option<Target>)> {
+    let pointer = ctx.input(|i| i.pointer.latest_pos());
+    if let (Some(d), Some(p)) = (*drag, pointer)
+        && let Some(stack) = src.stack(d.from)
+    {
+        let shown = ItemStack {
+            count: if d.half {
+                crate::items::half(stack.count)
+            } else {
+                stack.count
+            },
+            ..stack
+        };
+        egui::Area::new(Id::unique("dragged"))
+            .order(egui::Order::Tooltip)
+            .fixed_pos(p - Vec2::splat(SLOT / 2.0))
+            .interactable(false)
+            .show(ctx, |ui| {
+                let (rect, _) = ui.allocate_exact_size(Vec2::splat(SLOT), Sense::hover());
+                paint_stack(ui.painter(), rect, &shown, src.items, src.icons, 1.0);
+            });
+    }
+    let d = (*drag)?;
+    if !ctx.input(|i| i.pointer.any_released()) {
+        return None;
+    }
+    *drag = None;
+    let target = pointer.and_then(|p| targets.iter().find(|(r, _)| r.contains(p)).map(|(_, t)| *t));
+    Some((d, target))
 }
 
 pub fn inventory(
@@ -532,79 +687,17 @@ pub fn inventory(
     drag: &mut Option<Drag>,
     actions: &mut Vec<UiAction>,
 ) {
+    let src = SlotSource {
+        items,
+        icons,
+        selected,
+        chest: &[],
+    };
     let mut targets: Vec<(Rect, Target)> = Vec::new();
     let mut open = true;
     window("Inventory").open(&mut open).show(ctx, |ui| {
-        let cols = HOTBAR_SLOTS;
-        let painter_slot = |ui: &mut Ui, i: usize, targets: &mut Vec<(Rect, Target)>, drag: &mut Option<Drag>| {
-            let (rect, resp) = ui.allocate_exact_size(Vec2::splat(SLOT), Sense::click_and_drag());
-            targets.push((rect, Target::Slot(i)));
-            let hot = i < HOTBAR_SLOTS;
-            let hovering_drop = drag.is_some() && resp.contains_pointer();
-            let rim = if hovering_drop || (hot && i == selected) {
-                Stroke::new(2.5, GOLD)
-            } else if hot {
-                Stroke::new(1.5, GOLD_DIM)
-            } else {
-                Stroke::new(1.5, SLOT_RIM)
-            };
-            let painter = ui.painter();
-            paint_slot_back(painter, rect, rim);
-            if hot {
-                painter.text(
-                    rect.left_top() + vec2(5.0, 3.0),
-                    Align2::LEFT_TOP,
-                    ((i + 1) % 10).to_string(),
-                    FontId::proportional(11.0),
-                    MUTED,
-                );
-            }
-            let Some(stack) = items.slot(i) else { return };
-            let dragging_this = drag.is_some_and(|d| d.from == i);
-            paint_stack(
-                painter,
-                rect,
-                &stack,
-                items,
-                icons,
-                if dragging_this { 0.35 } else { 1.0 },
-            );
-            if resp.drag_started() {
-                let half =
-                    ui.input(|inp| inp.pointer.button_down(egui::PointerButton::Secondary) || inp.modifiers.shift);
-                *drag = Some(Drag { from: i, half });
-            }
-            if drag.is_none() {
-                resp.on_hover_text(items.tooltip(&stack));
-            }
-        };
-        ui.horizontal(|ui| {
-            ui.label(egui::RichText::new("Hotbar").color(GOLD).small());
-            ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                ui.label(
-                    egui::RichText::new("Keys 1 to 0 pick a hotbar slot")
-                        .color(MUTED)
-                        .small(),
-                );
-            });
-        });
-        ui.spacing_mut().item_spacing = vec2(GAP, GAP);
-        ui.horizontal(|ui| {
-            for i in 0..cols {
-                painter_slot(ui, i, &mut targets, drag);
-            }
-        });
-        ui.add_space(10.0);
-        ui.label(egui::RichText::new("Pack").color(MUTED).small());
-        for row in 1..INVENTORY_SLOTS / cols {
-            ui.horizontal(|ui| {
-                for c in 0..cols {
-                    painter_slot(ui, row * cols + c, &mut targets, drag);
-                }
-            });
-        }
+        inventory_grid(ui, &src, drag, &mut targets);
         ui.add_space(8.0);
-        ui.spacing_mut().item_spacing = vec2(8.0, 7.0);
         ui.horizontal(|ui| {
             let (rect, resp) = ui.allocate_exact_size(vec2(180.0, 40.0), Sense::hover());
             targets.push((rect, Target::Discard));
@@ -649,43 +742,106 @@ pub fn inventory(
     if !open {
         actions.push(UiAction::CloseMenu);
     }
-
-    // The dragged stack follows the pointer, over everything.
-    let pointer = ctx.input(|i| i.pointer.latest_pos());
-    if let (Some(d), Some(p)) = (*drag, pointer)
-        && let Some(stack) = items.slot(d.from)
-    {
-        let shown = ItemStack {
-            count: if d.half {
-                crate::items::half(stack.count)
-            } else {
-                stack.count
-            },
-            ..stack
-        };
-        egui::Area::new(Id::unique("dragged"))
-            .order(egui::Order::Tooltip)
-            .fixed_pos(p - Vec2::splat(SLOT / 2.0))
-            .interactable(false)
-            .show(ctx, |ui| {
-                let (rect, _) = ui.allocate_exact_size(Vec2::splat(SLOT), Sense::hover());
-                paint_stack(ui.painter(), rect, &shown, items, icons, 1.0);
-            });
-    }
-    if let Some(d) = *drag
-        && ctx.input(|i| i.pointer.any_released())
-    {
-        *drag = None;
-        let target = pointer.and_then(|p| targets.iter().find(|(r, _)| r.contains(p)).map(|(_, t)| *t));
-        match target {
-            Some(Target::Slot(to)) => {
-                if let Some(msg) = items.move_request(d.from, to, d.half) {
-                    actions.push(UiAction::Send(msg));
-                }
+    let Some((d, target)) = drag_and_drop(ctx, &src, drag, &targets) else {
+        return;
+    };
+    let SlotRef::Inventory(from) = d.from else { return };
+    match target {
+        Some(Target::Slot(SlotRef::Inventory(to))) => {
+            if let Some(msg) = items.move_request(from as usize, to as usize, d.half) {
+                actions.push(UiAction::Send(msg));
             }
-            Some(Target::Discard) => actions.push(UiAction::Send(ClientMsg::Discard { slot: d.from as u8 })),
-            None => {}
         }
+        Some(Target::Discard) => actions.push(UiAction::Send(ClientMsg::Discard { slot: from })),
+        _ => {}
+    }
+}
+
+/// An open storage block: its name, where it is, and what the server last
+/// said is inside (None until the first `Storage` arrives).
+pub struct StorageWindow<'a> {
+    pub items: &'a Items,
+    pub icons: &'a ItemIcons,
+    pub selected: usize,
+    pub title: String,
+    pub pos: BlockPos,
+    pub slots: Option<&'a [Option<ItemStack>]>,
+}
+
+pub fn storage(ctx: &egui::Context, v: &StorageWindow, drag: &mut Option<Drag>, actions: &mut Vec<UiAction>) {
+    let chest = v.slots.unwrap_or(&[]);
+    let src = SlotSource {
+        items: v.items,
+        icons: v.icons,
+        selected: v.selected,
+        chest,
+    };
+    let mut targets: Vec<(Rect, Target)> = Vec::new();
+    let mut shifted = None;
+    let mut open = true;
+    let cols = if chest.len() <= 20 { 5 } else { 10 };
+    let chest_width = cols as f32 * SLOT + (cols - 1) as f32 * GAP;
+    window(&v.title).open(&mut open).show(ctx, |ui| {
+        ui.horizontal_top(|ui| {
+            ui.vertical(|ui| {
+                ui.set_width(GRID_WIDTH);
+                heading(ui, "Inventory");
+                shifted = inventory_grid(ui, &src, drag, &mut targets);
+            });
+            // A separator here would stretch the window to the screen's height.
+            ui.add_space(14.0);
+            ui.vertical(|ui| {
+                ui.set_width(chest_width);
+                heading(ui, "Inside");
+                if v.slots.is_none() {
+                    ui.horizontal(|ui| {
+                        ui.spinner();
+                        ui.label(egui::RichText::new("Opening").color(MUTED));
+                    });
+                    return;
+                }
+                ui.label(
+                    egui::RichText::new(format!("{} slots", chest.len()))
+                        .color(MUTED)
+                        .small(),
+                );
+                ui.spacing_mut().item_spacing = vec2(GAP, GAP);
+                for first in (0..chest.len()).step_by(cols) {
+                    ui.horizontal(|ui| {
+                        for i in first..(first + cols).min(chest.len()) {
+                            let r = SlotRef::Storage(i as u8);
+                            if item_slot(ui, &src, r, drag, &mut targets) {
+                                shifted = Some(r);
+                            }
+                        }
+                    });
+                }
+            });
+        });
+        ui.add_space(6.0);
+        ui.label(
+            egui::RichText::new(
+                "Drag to move a stack. Shift click sends a whole stack across. Right drag or Shift drag moves half.",
+            )
+            .color(MUTED)
+            .small(),
+        );
+    });
+    if !open {
+        actions.push(UiAction::CloseMenu);
+    }
+    let Some(slots) = v.slots else { return };
+    let inv = &v.items.inventory.slots;
+    let reg = &v.items.registry;
+    if let Some(from) = shifted
+        && let Some(msg) = crate::storage::shift_request(reg, inv, slots, v.pos, from)
+    {
+        actions.push(UiAction::Send(msg));
+    }
+    if let Some((d, Some(Target::Slot(to)))) = drag_and_drop(ctx, &src, drag, &targets)
+        && let Some(msg) = crate::storage::move_request(reg, inv, slots, v.pos, d.from, to, d.half)
+    {
+        actions.push(UiAction::Send(msg));
     }
 }
 

@@ -44,6 +44,11 @@ const PLAYER_DATA: TableDefinition<&str, &[u8]> = TableDefinition::new("player_d
 const STATIONS: TableDefinition<&[u8], &[u8]> = TableDefinition::new("planet_stations");
 /// Claim id (unique in the universe) -> [`SavedClaim`].
 const CLAIMS: TableDefinition<u32, &[u8]> = TableDefinition::new("claims");
+/// Planet id and canonical block position ([`block_key`]) -> the slots of a
+/// storage block with something in it ([`SavedSlots`]). Added in
+/// M5 without a version bump: a new table changes nothing already saved, and
+/// `Store::open` creates it in an older save.
+const STORAGE: TableDefinition<&[u8], &[u8]> = TableDefinition::new("planet_storage");
 
 /// Save version 1 and 2 tables, read only to upgrade, then deleted.
 const V1_PLAYERS: TableDefinition<&str, &[u8]> = TableDefinition::new("players");
@@ -179,7 +184,10 @@ impl SavedStack {
     }
 }
 
-pub fn save_slots(items: &ItemRegistry, inv: &Inventory) -> Vec<Option<SavedStack>> {
+/// A row of slots as saved (an inventory, a station's output, a storage block).
+pub type SavedSlots = Vec<Option<SavedStack>>;
+
+pub fn save_slots(items: &ItemRegistry, inv: &Inventory) -> SavedSlots {
     inv.slots
         .iter()
         .map(|s| s.as_ref().and_then(|s| SavedStack::new(items, s)))
@@ -415,6 +423,7 @@ impl Store {
         tx.open_table(PLAYER_DATA)?;
         tx.open_table(STATIONS)?;
         tx.open_table(CLAIMS)?;
+        tx.open_table(STORAGE)?;
         tx.commit()?;
         Ok(Self { db: Arc::new(db) })
     }
@@ -620,6 +629,23 @@ impl Store {
         Ok(out)
     }
 
+    /// Every storage block of a planet with something in it, as saved. A
+    /// corrupt record is reported and skipped (left on disk untouched).
+    pub fn storage(&self, planet: u16) -> Result<Vec<(BlockPos, SavedSlots)>> {
+        let tx = self.db.begin_read()?;
+        let t = tx.open_table(STORAGE)?;
+        let (lo, hi) = planet_range(planet);
+        let mut out = Vec::new();
+        for row in t.range(lo.as_slice()..hi.as_slice())? {
+            let (k, v) = row?;
+            match (block_from_key(k.value()), postcard::from_bytes(v.value())) {
+                (Some(p), Ok(s)) => out.push((p, s)),
+                _ => tracing::error!("a saved storage block is corrupt; skipped"),
+            }
+        }
+        Ok(out)
+    }
+
     /// Every claim in the universe, and the next free claim id (above every
     /// stored key, even a corrupt one, so a new claim never overwrites a
     /// record).
@@ -671,6 +697,14 @@ impl Store {
                 match s {
                     Some(s) => stations.insert(key.as_slice(), postcard::to_stdvec(s)?.as_slice())?,
                     None => stations.remove(key.as_slice())?,
+                };
+            }
+            let mut storage = tx.open_table(STORAGE)?;
+            for (planet, p, slots) in &batch.storage {
+                let key = block_key(*planet, *p);
+                match slots {
+                    Some(slots) => storage.insert(key.as_slice(), postcard::to_stdvec(slots)?.as_slice())?,
+                    None => storage.remove(key.as_slice())?,
                 };
             }
             let mut claims = tx.open_table(CLAIMS)?;
@@ -889,6 +923,8 @@ pub struct WriteBatch {
     pub stations: Vec<(u16, BlockPos, Option<SavedStation>)>,
     /// None deletes (the claim was released).
     pub claims: Vec<(u32, Option<SavedClaim>)>,
+    /// Storage block slots by planet id; None deletes (it was emptied).
+    pub storage: Vec<(u16, BlockPos, Option<SavedSlots>)>,
     /// The universe clock, so days and station jobs continue across restarts.
     pub clock: Option<u64>,
     /// Each is signalled once the batch is durable (shutdown waits on one;
@@ -899,7 +935,11 @@ pub struct WriteBatch {
 
 impl WriteBatch {
     pub fn is_empty(&self) -> bool {
-        self.chunks.is_empty() && self.players.is_empty() && self.stations.is_empty() && self.claims.is_empty()
+        self.chunks.is_empty()
+            && self.players.is_empty()
+            && self.stations.is_empty()
+            && self.claims.is_empty()
+            && self.storage.is_empty()
     }
 }
 
@@ -1095,6 +1135,7 @@ mod tests {
                 )],
                 stations: vec![(2, spot, Some(station.clone()))],
                 claims: vec![(4, Some(claim.clone()))],
+                storage: vec![(2, spot, Some(vec![None, Some(stack.clone())]))],
                 clock: Some(777),
                 done: Vec::new(),
             })
@@ -1120,8 +1161,10 @@ mod tests {
         let p = s.player("pendragon").unwrap().unwrap();
         assert_eq!(p.planet, 2);
         assert_eq!(p.state.unwrap().pos, DVec3::new(1.0, 2.0, 3.0));
-        assert_eq!(p.inventory, vec![Some(stack)]);
+        assert_eq!(p.inventory, vec![Some(stack.clone())]);
         assert_eq!(s.stations(2).unwrap(), vec![(spot, station)]);
+        assert_eq!(s.storage(2).unwrap(), vec![(spot, vec![None, Some(stack)])]);
+        assert!(s.storage(3).unwrap().is_empty());
         assert!(s.stations(1).unwrap().is_empty() && s.stations(3).unwrap().is_empty());
         assert_eq!(s.claims().unwrap(), (vec![(4, claim)], 5));
         assert_eq!(s.clock().unwrap(), 777);
@@ -1130,10 +1173,12 @@ mod tests {
         s.write(&WriteBatch {
             stations: vec![(2, spot, None)],
             claims: vec![(4, None)],
+            storage: vec![(2, spot, None)],
             ..Default::default()
         })
         .unwrap();
         assert!(s.stations(2).unwrap().is_empty());
+        assert!(s.storage(2).unwrap().is_empty());
         assert_eq!(s.claims().unwrap(), (vec![], 1));
     }
 

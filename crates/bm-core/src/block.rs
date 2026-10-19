@@ -62,6 +62,10 @@ pub struct BlockDef {
     /// recipes, which then run over time inside it.
     #[serde(default)]
     pub station: Option<Station>,
+    /// Slots of storage inside (0: none). A storage block with anything in
+    /// it cannot be broken.
+    #[serde(default)]
+    pub storage: u8,
 }
 
 /// What a block is made of, for tools (`ToolClass::suits`).

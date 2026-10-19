@@ -3,6 +3,7 @@
 //! `boundmore [--server HOST:PORT] [--name NAME] [--password PW] [--register] [--cert PATH]`
 
 mod app;
+mod chat;
 mod claims;
 mod demo;
 mod icons;
@@ -13,6 +14,7 @@ mod predict;
 mod render;
 mod settings;
 mod sky;
+mod storage;
 mod textures;
 mod world;
 
