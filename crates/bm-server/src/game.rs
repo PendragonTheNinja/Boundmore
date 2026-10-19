@@ -4,31 +4,33 @@
 //! Each tick: take network events, move finished chunk loads in, step every
 //! player by the inputs they sent, advance station jobs, stream chunks, and
 //! every third tick send snapshots. The loop owns all game state (worlds,
-//! inventories, stations, claims); nothing else mutates it, so no locks are
-//! needed and every rule is enforced in one place.
+//! inventories, stations, storage, claims, chat); nothing else mutates it, so
+//! no locks are needed and every rule is enforced in one place.
 //!
 //! Work follows players: a planet nobody is on holds no chunks (they are
 //! saved and dropped as the last player leaves) and costs only its running
 //! station jobs, which are timestamp driven. Nothing scans every planet's
 //! chunks per tick.
 
+use crate::chat::{self, ChatLimit, Verdict};
 use crate::claims::ClaimError;
 use crate::config::ServerConfig;
 use crate::crafting::{self, CraftError, MAX_CRAFT_COUNT};
 use crate::net::{Event, Outbox};
 use crate::planet::Planet;
+use crate::storage::move_stack;
 use crate::store::{PlayerData, Store, WriteBatch, load_slots, save_slots};
 use anyhow::{Context, Result};
 use bm_core::items::title_case;
 use bm_core::movement::{self, MoveConfig, PlayerInput, PlayerState};
 use bm_core::{
-    BlockId, BlockPos, CHUNK_SIZE, ChunkPos, HOTBAR_SLOTS, Inventory, ItemId, ItemRegistry, PlanetShape, PlotPos,
-    RecipeBook, Station, TICK_DT,
+    BlockId, BlockPos, CHUNK_SIZE, ChunkPos, HOTBAR_SLOTS, Inventory, ItemId, ItemRegistry, ItemStack, PlanetShape,
+    PlotPos, RecipeBook, Station, TICK_DT,
 };
 use bm_net::quinn::Connection;
 use bm_protocol::{
-    ClientMsg, EditAction, PLAYERS_PER_SNAPSHOT, PlanetSummary, RemotePlayer, ServerDatagram, ServerMsg, Travel,
-    Welcome,
+    Channel, ChatLine, ClientMsg, EditAction, LOCAL_CHAT_RANGE, MAX_NAME_LEN, PLAYERS_PER_SNAPSHOT, PlanetSummary,
+    RemotePlayer, ServerDatagram, ServerMsg, SlotRef, StorageView, Travel, Welcome,
 };
 use crossbeam_channel::{Receiver, Sender, TryRecvError};
 use glam::DVec3;
@@ -69,6 +71,8 @@ const BREAK_SLACK_SECONDS: f64 = 0.12;
 const BREAK_SLACK_FRACTION: f64 = 0.2;
 /// The planet list goes out at most this often when player counts change.
 const UNIVERSE_EVERY: u64 = 60;
+/// How often open storage blocks are checked still to be in reach (4 Hz).
+const STORAGE_CHECK_EVERY: u64 = 15;
 /// After travel, edits and break holds tagged with an input up to this many
 /// past the last one the server had are refused: the client sent them about
 /// the planet it left, before it heard of the travel.
@@ -123,6 +127,9 @@ struct Player {
     edits: VecDeque<(u32, Queued)>,
     /// The station whose updates this player receives.
     watching: Option<BlockPos>,
+    /// The storage block this player has open (canonical).
+    storage: Option<BlockPos>,
+    chat: ChatLimit,
     /// Edits and holds tagged with an input up to this one came from before
     /// the last travel (see `TRAVEL_GUARD_INPUTS`).
     travel_guard: Option<u32>,
@@ -198,6 +205,8 @@ pub struct Game {
     universe_dirty: bool,
     universe_sent: u64,
     load: Arc<Mutex<Vec<PlanetLoad>>>,
+    /// The last `chat::HISTORY` universe lines, oldest first (memory only).
+    history: VecDeque<ChatLine>,
 }
 
 /// One planet's load, as the report shows it.
@@ -227,6 +236,63 @@ fn station_name(kind: Station) -> &'static str {
         Station::Hand => "hand",
         Station::Workbench => "Workbench",
         Station::Furnace => "Furnace",
+    }
+}
+
+fn unix_now() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |d| d.as_secs())
+}
+
+/// A closed storage view: the client closes its window for `pos`.
+fn closed_storage(pos: BlockPos) -> ServerMsg {
+    ServerMsg::Storage(StorageView {
+        pos,
+        slots: Vec::new(),
+        closed: true,
+    })
+}
+
+/// The slot a `SlotRef` names, if it exists.
+fn slot_of(inv: &[Option<ItemStack>], storage: &[Option<ItemStack>], r: SlotRef) -> Option<Option<ItemStack>> {
+    match r {
+        SlotRef::Inventory(i) => inv.get(i as usize).copied(),
+        SlotRef::Storage(i) => storage.get(i as usize).copied(),
+    }
+}
+
+fn set_slot(inv: &mut [Option<ItemStack>], storage: &mut [Option<ItemStack>], r: SlotRef, v: Option<ItemStack>) {
+    match r {
+        SlotRef::Inventory(i) => inv[i as usize] = v,
+        SlotRef::Storage(i) => storage[i as usize] = v,
+    }
+}
+
+/// Moves between two slots of a pack and a storage block (either may be in
+/// either), with the rules of `Inventory::move_items`. Every index is
+/// checked; all or nothing. Returns whether anything changed.
+fn storage_move_slots(
+    items: &ItemRegistry,
+    inv: &mut [Option<ItemStack>],
+    storage: &mut [Option<ItemStack>],
+    from: SlotRef,
+    to: SlotRef,
+    count: u16,
+) -> bool {
+    if from == to {
+        return false;
+    }
+    let (Some(src), Some(dst)) = (slot_of(inv, storage, from), slot_of(inv, storage, to)) else {
+        return false;
+    };
+    match move_stack(items, src, dst, count) {
+        Some((a, b)) if (a, b) != (src, dst) => {
+            set_slot(inv, storage, from, a);
+            set_slot(inv, storage, to, b);
+            true
+        }
+        _ => false,
     }
 }
 
@@ -304,6 +370,7 @@ impl Game {
             universe_dirty: false,
             universe_sent: 0,
             load: Arc::new(Mutex::new(Vec::new())),
+            history: VecDeque::new(),
         })
     }
 
@@ -400,6 +467,9 @@ impl Game {
         }
         self.simulate();
         self.step_stations();
+        if self.tick % STORAGE_CHECK_EVERY == 0 {
+            self.check_open_storage();
+        }
         let ids: Vec<u32> = self.players.keys().copied().collect();
         for id in &ids {
             self.stream(*id);
@@ -504,6 +574,9 @@ impl Game {
                 ClientMsg::ClaimPlot { claim, plot } => self.claim_plot(id, claim, plot),
                 ClientMsg::ReleasePlot { plot } => self.release_plot(id, plot),
                 ClientMsg::Warp { shrine, planet } => self.warp(id, shrine, planet),
+                ClientMsg::OpenStorage { pos } => self.open_storage(id, pos),
+                ClientMsg::StorageMove { pos, from, to, count } => self.storage_move(id, pos, from, to, count),
+                ClientMsg::Chat { channel, text } => self.chat(id, channel, text),
                 ClientMsg::Hello { .. } => {}
             },
         }
@@ -590,10 +663,16 @@ impl Game {
             });
             other.out.send(&ServerMsg::PlayerJoined { id, name: name.clone() });
         }
+        if !self.history.is_empty() {
+            out.send(&ServerMsg::Chat {
+                lines: self.history.iter().cloned().collect(),
+            });
+        }
         if let Some(text) = shrine_hint(shape, &pl.name, pl.shrine, state.pos) {
             out.send(&ServerMsg::Notice { text });
         }
         tracing::info!("{name} (#{id}) joined on {} at {:.1?}", pl.name, state.pos);
+        let arrived = format!("{name} arrived on {}", pl.name);
         self.planets[planet].players += 1;
         self.counts_changed();
         self.players.insert(
@@ -617,9 +696,12 @@ impl Game {
                 mining: None,
                 edits: VecDeque::new(),
                 watching: None,
+                storage: None,
+                chat: ChatLimit::new(self.tick),
                 travel_guard: None,
             },
         );
+        self.server_line(planet, arrived);
     }
 
     fn leave(&mut self, id: u32) {
@@ -641,6 +723,7 @@ impl Game {
         for other in self.players.values().filter(|o| o.planet == planet) {
             other.out.send(&ServerMsg::PlayerLeft { id });
         }
+        self.server_line(planet, format!("{} left", p.name));
         self.left_planet(planet);
     }
 
@@ -960,10 +1043,12 @@ impl Game {
         });
         let before = p.inventory.clone();
         let mut broke = None;
+        let mut storage_gone = false;
         let mut claim_created = None;
         let mut claim_removed = None;
         match accepted.effect {
             Effect::Broke { old, drop, wear } => {
+                storage_gone = planet.world.registry.get(old).storage > 0;
                 if let Some(item) = drop {
                     // Checked to fit.
                     p.inventory.add(&self.items, item, 1);
@@ -1010,6 +1095,9 @@ impl Game {
             if *oid != id && o.planet == pi && o.sent.contains(&chunk) {
                 o.out.send(&ServerMsg::BlockChanged { pos: canon, block: new });
             }
+        }
+        if storage_gone {
+            self.close_storage_at(pi, canon);
         }
         if let Some(claim) = claim_created {
             if let Some(p) = self.players.get(&id) {
@@ -1102,7 +1190,7 @@ impl Game {
                         return Err("broken too fast".into());
                     }
                 }
-                if planet.stations.has_contents(canon) {
+                if planet.stations.has_contents(canon) || planet.storage.has_contents(canon) {
                     return Err(Refusal::Told(format!(
                         "Empty the {} before breaking it",
                         title_case(&def.name)
@@ -1234,6 +1322,10 @@ impl Game {
         p.edits.clear();
         p.mining = None;
         p.watching = None;
+        // Closed before `Travel`: after it, everything is the new planet's.
+        if let Some(pos) = p.storage.take() {
+            p.out.send(&closed_storage(pos));
+        }
         p.sent.clear();
         p.wanted.clear();
         p.center = None;
@@ -1265,13 +1357,39 @@ impl Game {
                 o.out.send(&ServerMsg::PlayerLeft { id });
             }
         }
+        let (left, arrived) = (
+            format!("{name} left"),
+            format!("{name} arrived on {}", self.planets[to].name),
+        );
         self.planets[to].players += 1;
+        self.server_line(from, left);
+        self.server_line(to, arrived);
         self.left_planet(from);
     }
 
     /// The station at `pos` if this player may use it: loaded for them,
     /// within reach, and not on someone else's claim.
     fn station_access(&self, id: u32, pos: BlockPos) -> Result<(BlockPos, Station), Refusal> {
+        let (canon, block) = self.block_access(id, pos)?;
+        let planet = &self.planets[self.planet_of(id).ok_or("no such player")?];
+        let kind = planet.world.registry.get(block).station.ok_or("not a station")?;
+        Ok((canon, kind))
+    }
+
+    /// The storage block at `pos` and its slots, if this player may use it
+    /// (the rules of stations).
+    fn storage_access(&self, id: u32, pos: BlockPos) -> Result<(BlockPos, usize), Refusal> {
+        let (canon, block) = self.block_access(id, pos)?;
+        let planet = &self.planets[self.planet_of(id).ok_or("no such player")?];
+        match planet.world.registry.get(block).storage {
+            0 => Err("not a storage block".into()),
+            n => Ok((canon, n as usize)),
+        }
+    }
+
+    /// The block at `pos` if this player may use what it is: loaded for
+    /// them, within reach, and not on someone else's claim.
+    fn block_access(&self, id: u32, pos: BlockPos) -> Result<(BlockPos, BlockId), Refusal> {
         let p = self.players.get(&id).ok_or("no such player")?;
         let planet = &self.planets[p.planet];
         let shape = planet.world.shape;
@@ -1286,13 +1404,12 @@ impl Game {
             return Err(Refusal::Told("That is out of reach".into()));
         }
         let block = planet.world.block(canon).ok_or("chunk not resident")?;
-        let kind = planet.world.registry.get(block).station.ok_or("not a station")?;
         if let Some(c) = planet.claims.at_block(canon)
             && c.owner != p.account
         {
             return Err(ClaimError::OwnedBy(c.owner_name.clone()).into());
         }
-        Ok((canon, kind))
+        Ok((canon, block))
     }
 
     fn tell(&self, id: u32, r: Refusal) {
@@ -1468,6 +1585,209 @@ impl Game {
         }
     }
 
+    fn storage_view(&self, pi: usize, canon: BlockPos, size: usize) -> StorageView {
+        StorageView {
+            pos: canon,
+            slots: self.planets[pi].storage.slots(canon, size),
+            closed: false,
+        }
+    }
+
+    /// Sends a storage block's contents to everyone on its planet with it open.
+    fn push_storage(&self, pi: usize, canon: BlockPos, size: usize) {
+        let mut frame = None;
+        for p in self
+            .players
+            .values()
+            .filter(|p| p.planet == pi && p.storage == Some(canon))
+        {
+            let f = frame.get_or_insert_with(|| {
+                Arc::new(bm_protocol::encode_frame(&ServerMsg::Storage(
+                    self.storage_view(pi, canon, size),
+                )))
+            });
+            p.out.send_shared(f.clone());
+        }
+    }
+
+    /// Closes the storage block a player has open, telling them.
+    fn close_storage(&mut self, id: u32) {
+        if let Some(p) = self.players.get_mut(&id)
+            && let Some(pos) = p.storage.take()
+        {
+            p.out.send(&closed_storage(pos));
+        }
+    }
+
+    /// Closes a storage block for everyone who has it open (it is gone).
+    fn close_storage_at(&mut self, pi: usize, canon: BlockPos) {
+        for p in self
+            .players
+            .values_mut()
+            .filter(|p| p.planet == pi && p.storage == Some(canon))
+        {
+            p.storage = None;
+            p.out.send(&closed_storage(canon));
+        }
+    }
+
+    /// Closes every open storage block its viewer may no longer use: out of
+    /// reach, or now on someone else's claim.
+    fn check_open_storage(&mut self) {
+        let open: Vec<(u32, BlockPos)> = self
+            .players
+            .iter()
+            .filter_map(|(id, p)| p.storage.map(|s| (*id, s)))
+            .collect();
+        for (id, pos) in open {
+            if self.storage_access(id, pos).is_err() {
+                self.close_storage(id);
+            }
+        }
+    }
+
+    fn open_storage(&mut self, id: u32, pos: Option<BlockPos>) {
+        let Some(pos) = pos else {
+            return self.close_storage(id);
+        };
+        let Some(pi) = self.planet_of(id) else { return };
+        match self.storage_access(id, pos) {
+            Ok((canon, size)) => {
+                if self.players[&id].storage.is_some_and(|open| open != canon) {
+                    self.close_storage(id);
+                }
+                let view = self.storage_view(pi, canon, size);
+                let Some(p) = self.players.get_mut(&id) else { return };
+                p.storage = Some(canon);
+                p.out.send(&ServerMsg::Storage(view));
+            }
+            Err(r) => {
+                let shape = self.planets[pi].world.shape;
+                let canon = if shape.contains_y(pos.y) {
+                    shape.wrap_block(pos)
+                } else {
+                    pos
+                };
+                self.tell(id, r);
+                if self.players[&id].storage == Some(canon) {
+                    self.close_storage(id);
+                } else if let Some(p) = self.players.get(&id) {
+                    p.out.send(&closed_storage(canon));
+                }
+            }
+        }
+    }
+
+    /// A move between the pack and the open storage block, or within either.
+    /// Answered with `Slots` for the pack and `Storage` (to every viewer) for
+    /// the block; a move that changes nothing is answered with the block's
+    /// contents, so a client that guessed can put things back.
+    fn storage_move(&mut self, id: u32, pos: BlockPos, from: SlotRef, to: SlotRef, count: u16) {
+        let (canon, size) = match self.storage_access(id, pos) {
+            Ok(a) => a,
+            Err(r) => return self.tell(id, r),
+        };
+        let Some(p) = self.players.get_mut(&id) else { return };
+        if p.storage != Some(canon) {
+            return tracing::debug!("#{id} moved items in a storage block it has not open");
+        }
+        let pi = p.planet;
+        let mut slots = self.planets[pi].storage.slots(canon, size);
+        let before = p.inventory.clone();
+        let stored = slots.clone();
+        let moved = storage_move_slots(&self.items, &mut p.inventory.slots, &mut slots, from, to, count);
+        send_slots(p, &before);
+        if !moved {
+            let view = ServerMsg::Storage(self.storage_view(pi, canon, size));
+            if let Some(p) = self.players.get(&id) {
+                p.out.send(&view);
+            }
+            return;
+        }
+        if slots != stored {
+            self.planets[pi].storage.set(canon, slots);
+            self.push_storage(pi, canon, size);
+        }
+    }
+
+    /// Sends one chat line to every player `hears` picks, encoded once.
+    fn send_line(&self, line: ChatLine, hears: impl Fn(&Player) -> bool) {
+        let frame = Arc::new(bm_protocol::encode_frame(&ServerMsg::Chat { lines: vec![line] }));
+        for p in self.players.values().filter(|p| hears(p)) {
+            p.out.send_shared(frame.clone());
+        }
+    }
+
+    /// A line from the server itself to everyone on a planet.
+    fn server_line(&self, pi: usize, text: String) {
+        let line = ChatLine {
+            channel: Channel::Planet,
+            from: String::new(),
+            text,
+            time: unix_now(),
+        };
+        self.send_line(line, |p| p.planet == pi);
+    }
+
+    fn chat(&mut self, id: u32, channel: Channel, text: String) {
+        let Some(text) = chat::clean_text(&text) else { return };
+        let tick = self.tick;
+        let Some(p) = self.players.get_mut(&id) else { return };
+        if let Verdict::TooFast { tell } = p.chat.check(tick) {
+            if tell {
+                p.out.send(&ServerMsg::Notice {
+                    text: "You are talking too fast".into(),
+                });
+            }
+            return;
+        }
+        let (from, pi, at) = (p.name.clone(), p.planet, p.state.pos);
+        let mut line = ChatLine {
+            channel: channel.clone(),
+            from: from.clone(),
+            text,
+            time: unix_now(),
+        };
+        match channel {
+            Channel::Local => {
+                tracing::info!("chat local {} {from}: {}", self.planets[pi].name, line.text);
+                let shape = self.planets[pi].world.shape;
+                self.send_line(line, |o| {
+                    o.planet == pi && shape.delta(at, o.state.pos).length() <= LOCAL_CHAT_RANGE
+                });
+            }
+            Channel::Planet => {
+                tracing::info!("chat planet {} {from}: {}", self.planets[pi].name, line.text);
+                self.send_line(line, |o| o.planet == pi);
+            }
+            Channel::Universe => {
+                tracing::info!("chat universe {from}: {}", line.text);
+                self.history.push_back(line.clone());
+                while self.history.len() > chat::HISTORY {
+                    self.history.pop_front();
+                }
+                self.send_line(line, |_| true);
+            }
+            Channel::Whisper(to) => {
+                let key = to.trim().to_lowercase();
+                let Some(target) = self.players.values().find(|o| o.account == key).map(|o| o.name.clone()) else {
+                    let shown: String = chat::clean_text(&to)
+                        .unwrap_or_default()
+                        .chars()
+                        .take(MAX_NAME_LEN)
+                        .collect();
+                    return self.notice(id, &format!("Nobody called {shown} is here"));
+                };
+                // Whispered text is private: only that it happened is logged.
+                tracing::info!("{from} whispered to {target}");
+                line.channel = Channel::Whisper(target);
+                let sender = self.players[&id].account.clone();
+                // The sender gets a copy (once, if they whisper to themselves).
+                self.send_line(line, |o| o.account == key || o.account == sender);
+            }
+        }
+    }
+
     /// Hands every planet's dirty chunks, stations and claims, every
     /// player's state and every newly departed player's to the writer, in one
     /// batch.
@@ -1506,6 +1826,7 @@ impl Game {
         let mut chunks = Vec::new();
         let mut stations = Vec::new();
         let mut claims = Vec::new();
+        let mut storage = Vec::new();
         for p in &mut self.planets {
             p.world.forget_saved();
             let id = p.id;
@@ -1517,12 +1838,19 @@ impl Game {
                     .map(|(pos, s)| (id, pos, s)),
             );
             claims.extend(p.claims.take_dirty());
+            storage.extend(
+                p.storage
+                    .take_dirty(&self.items)
+                    .into_iter()
+                    .map(|(pos, s)| (id, pos, s)),
+            );
         }
         let batch = WriteBatch {
             chunks,
             players,
             stations,
             claims,
+            storage,
             clock: Some(self.tick),
             done,
         };
@@ -1597,5 +1925,51 @@ mod shrine_hint_tests {
         // Across the seam: from x 2000 on a 2048-block planet, x 100 is 148 east.
         let seam = shrine_hint(shape, "Verdance", shrine, DVec3::new(2000.5, 150.0, 300.5)).unwrap();
         assert!(seam.ends_with("blocks north-east of you."), "{seam}");
+    }
+}
+
+#[cfg(test)]
+mod storage_move_tests {
+    use super::*;
+    use bm_core::BlockRegistry;
+    use bm_protocol::SlotRef::{Inventory as I, Storage as S};
+
+    #[test]
+    fn moves_cross_between_pack_and_storage_all_or_nothing() {
+        let items = ItemRegistry::builtin(&BlockRegistry::builtin());
+        let stone = items.id("stone").unwrap();
+        let sand = items.id("sand").unwrap();
+        let st = |item, count| Some(ItemStack::new(item, count));
+        let mut inv = vec![None; 40];
+        let mut chest = vec![None; 20];
+        inv[0] = st(stone, 30);
+
+        // Split into the chest, merge more onto it, then take some back.
+        assert!(storage_move_slots(&items, &mut inv, &mut chest, I(0), S(19), 10));
+        assert_eq!((inv[0], chest[19]), (st(stone, 20), st(stone, 10)));
+        assert!(storage_move_slots(&items, &mut inv, &mut chest, I(0), S(19), 500));
+        assert_eq!((inv[0], chest[19]), (None, st(stone, 30)));
+        assert!(storage_move_slots(&items, &mut inv, &mut chest, S(19), I(5), 5));
+        assert_eq!((inv[5], chest[19]), (st(stone, 5), st(stone, 25)));
+        // Within the chest, and within the pack.
+        assert!(storage_move_slots(&items, &mut inv, &mut chest, S(19), S(0), 25));
+        assert_eq!((chest[0], chest[19]), (st(stone, 25), None));
+        assert!(storage_move_slots(&items, &mut inv, &mut chest, I(5), I(6), 2));
+        assert_eq!((inv[5], inv[6]), (st(stone, 3), st(stone, 2)));
+        // A whole-stack swap across.
+        inv[7] = st(sand, 4);
+        assert!(storage_move_slots(&items, &mut inv, &mut chest, I(7), S(0), 4));
+        assert_eq!((inv[7], chest[0]), (st(stone, 25), st(sand, 4)));
+        // Refused, changing nothing: a part of a stack onto another item,
+        // bad indices either side, the same slot, nothing in the source.
+        let (i0, c0) = (inv.clone(), chest.clone());
+        assert!(!storage_move_slots(&items, &mut inv, &mut chest, I(7), S(0), 3));
+        assert!(!storage_move_slots(&items, &mut inv, &mut chest, I(7), S(20), 1));
+        assert!(!storage_move_slots(&items, &mut inv, &mut chest, S(200), I(9), 1));
+        assert!(!storage_move_slots(&items, &mut inv, &mut chest, I(40), S(1), 1));
+        assert!(!storage_move_slots(&items, &mut inv, &mut chest, S(0), S(0), 1));
+        assert!(!storage_move_slots(&items, &mut inv, &mut chest, S(1), I(9), 1));
+        assert!(!storage_move_slots(&items, &mut inv, &mut chest, I(7), S(1), 0));
+        assert_eq!((inv, chest), (i0, c0));
     }
 }

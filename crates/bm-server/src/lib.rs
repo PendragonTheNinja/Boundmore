@@ -2,12 +2,14 @@
 //! start real servers on ephemeral ports the same way.
 
 pub mod accounts;
+pub mod chat;
 pub mod claims;
 pub mod config;
 pub mod crafting;
 pub mod game;
 pub mod net;
 pub mod planet;
+pub mod storage;
 pub mod store;
 pub mod world;
 

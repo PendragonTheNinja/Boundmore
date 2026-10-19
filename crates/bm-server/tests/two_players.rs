@@ -7,7 +7,8 @@ use bm_core::{
 use bm_net::quinn::Connection;
 use bm_net::{read_msg, write_msg};
 use bm_protocol::{
-    ClientDatagram, ClientMsg, EditAction, PROTOCOL_VERSION, ServerDatagram, ServerMsg, StationView, Welcome,
+    Channel, ChatLine, ClientDatagram, ClientMsg, EditAction, PROTOCOL_VERSION, ServerDatagram, ServerMsg, SlotRef,
+    StationView, StorageView, Welcome,
 };
 use bm_server::config::{PlanetSpec, ServerConfig};
 use bm_server::store::{PlayerData, SavedStack, Store, UNIVERSE_FILE, WriteBatch};
@@ -29,6 +30,10 @@ struct TestClient {
     items: ItemRegistry,
     inv: Inventory,
     notices: Vec<String>,
+    /// Every chat line heard, in order.
+    chat: Vec<ChatLine>,
+    /// Storage views not yet looked at by `storage`.
+    views: std::collections::VecDeque<StorageView>,
     chunks: HashMap<ChunkPos, Chunk>,
     seq: u32,
     /// The planet the player is on now, and where they arrived on it.
@@ -95,6 +100,8 @@ async fn hello(
         welcome,
         items,
         notices: Vec::new(),
+        chat: Vec::new(),
+        views: Default::default(),
         chunks: HashMap::new(),
         seq: 0,
     })
@@ -180,6 +187,8 @@ impl TestClient {
                 }
             }
             ServerMsg::Notice { text } => self.notices.push(text.clone()),
+            ServerMsg::Chat { lines } => self.chat.extend(lines.iter().cloned()),
+            ServerMsg::Storage(v) => self.views.push_back(v.clone()),
             // Everything of the old planet goes, as in the game.
             ServerMsg::Travel(t) => {
                 self.chunks.clear();
@@ -287,6 +296,44 @@ impl TestClient {
             }
             _ => unreachable!(),
         }
+    }
+
+    /// The next storage view matching `pred` (passing over earlier ones).
+    async fn storage(&mut self, mut pred: impl FnMut(&StorageView) -> bool) -> StorageView {
+        loop {
+            while let Some(v) = self.views.pop_front() {
+                if pred(&v) {
+                    return v;
+                }
+            }
+            self.until(|m| matches!(m, ServerMsg::Storage(_))).await;
+        }
+    }
+
+    /// Waits until a chat line matching `pred` has been heard.
+    async fn heard(&mut self, mut pred: impl FnMut(&ChatLine) -> bool) -> ChatLine {
+        if let Some(l) = self.chat.iter().find(|l| pred(l)) {
+            return l.clone();
+        }
+        loop {
+            if let ServerMsg::Chat { lines } = self.until(|m| matches!(m, ServerMsg::Chat { .. })).await
+                && let Some(l) = lines.iter().find(|l| pred(l))
+            {
+                return l.clone();
+            }
+        }
+    }
+
+    fn has_heard(&self, text: &str) -> bool {
+        self.chat.iter().any(|l| l.text == text)
+    }
+
+    async fn say(&mut self, channel: Channel, text: &str) {
+        self.send(ClientMsg::Chat {
+            channel,
+            text: text.into(),
+        })
+        .await;
     }
 
     async fn station(&mut self, mut pred: impl FnMut(&StationView) -> bool) -> StationView {
@@ -654,7 +701,6 @@ async fn crafting_by_hand_and_at_a_workbench() {
             recipe: timber,
             count: 3,
             station: None,
-            storage: 0,
         })
         .await;
     alice.notice("You do not have the materials").await;
@@ -664,7 +710,6 @@ async fn crafting_by_hand_and_at_a_workbench() {
             recipe: timber,
             count: 2,
             station: None,
-            storage: 0,
         })
         .await;
     alice.settle().await;
@@ -675,7 +720,6 @@ async fn crafting_by_hand_and_at_a_workbench() {
             recipe: workbench,
             count: 1,
             station: None,
-            storage: 0,
         })
         .await;
     alice.settle().await;
@@ -688,7 +732,6 @@ async fn crafting_by_hand_and_at_a_workbench() {
             recipe: hammer,
             count: 1,
             station: None,
-            storage: 0,
         })
         .await;
     alice.notice("That is made at a Workbench").await;
@@ -1146,5 +1189,344 @@ async fn warp_shrines_take_players_between_planets() {
     assert_eq!(alice.welcome.planet.id, 1);
     assert_eq!(alice.count("stone"), 10);
     drop(bob);
+    server.stop();
+}
+
+/// Storage chests: placed, opened by two players who both see every change,
+/// moves in, out and within, refused moves answered with the contents, no
+/// breaking while anything is inside, and closed for everyone when broken.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn storage_chests_hold_items_for_everyone_who_opens_them() {
+    let dir = tempfile::tempdir().unwrap();
+    seed(
+        dir.path(),
+        "Alice",
+        &[(5, "storage_chest", 1, 0), (1, "stone", 50, 0), (2, "sand", 10, 0)],
+    );
+    let server = bm_server::start(config(dir.path())).unwrap();
+    let mut alice = TestClient::login(&server, "Alice").await;
+    let mut bob = TestClient::register(&server, "Bob").await;
+    let feet = alice.feet();
+    alice.wait_for_chunk(feet.chunk()).await;
+    bob.wait_for_chunk(feet.chunk()).await;
+
+    // Opening what is not a storage block gets a closed answer.
+    alice.send(ClientMsg::OpenStorage { pos: Some(feet) }).await;
+    assert!(alice.storage(|v| v.pos == feet).await.closed);
+
+    assert!(alice.dig(1, feet).await.0);
+    assert!(alice.edit(2, feet, EditAction::Place { slot: 5 }).await.0);
+    alice.send(ClientMsg::OpenStorage { pos: Some(feet) }).await;
+    let v = alice.storage(|v| v.pos == feet).await;
+    assert!(!v.closed);
+    assert_eq!(v.slots, vec![None; 20], "twenty empty slots");
+    bob.send(ClientMsg::OpenStorage { pos: Some(feet) }).await;
+    assert!(!bob.storage(|v| v.pos == feet).await.closed);
+
+    let move_items = |from, to, count| ClientMsg::StorageMove {
+        pos: feet,
+        from,
+        to,
+        count,
+    };
+    let stone = alice.item("stone");
+    let holds = |v: &StorageView, slot: usize, count: u16| v.slots[slot].is_some_and(|s| s.count == count);
+
+    // In: the pack loses what the chest gains, and both viewers see it.
+    alice
+        .send(move_items(SlotRef::Inventory(1), SlotRef::Storage(0), 30))
+        .await;
+    let v = alice.storage(|v| holds(v, 0, 30)).await;
+    assert_eq!(v.slots[0].unwrap().item, stone);
+    alice.settle().await;
+    assert_eq!(alice.count("stone"), 20);
+    bob.storage(|v| holds(v, 0, 30)).await;
+
+    // Out, by the other player; the first sees it go.
+    bob.send(move_items(SlotRef::Storage(0), SlotRef::Inventory(3), 10))
+        .await;
+    bob.storage(|v| holds(v, 0, 20)).await;
+    bob.settle().await;
+    assert_eq!(bob.count("stone"), 10);
+    alice.storage(|v| holds(v, 0, 20)).await;
+
+    // Within the chest.
+    alice
+        .send(move_items(SlotRef::Storage(0), SlotRef::Storage(19), 5))
+        .await;
+    alice.storage(|v| holds(v, 0, 15) && holds(v, 19, 5)).await;
+
+    // A move that cannot happen changes nothing and is answered with what
+    // the chest holds: a slot beyond it, part of a stack onto another item.
+    alice
+        .send(move_items(SlotRef::Inventory(2), SlotRef::Storage(20), 1))
+        .await;
+    alice
+        .send(move_items(SlotRef::Inventory(2), SlotRef::Storage(0), 3))
+        .await;
+    alice.settle().await;
+    assert_eq!(alice.count("sand"), 10);
+
+    // Full, it cannot be broken.
+    assert!(!alice.dig(3, feet).await.0, "a chest with things in it stands");
+    alice.notice("Empty the Storage Chest before breaking it").await;
+
+    // Emptied, it breaks like any block, and closes for everyone.
+    alice
+        .send(move_items(SlotRef::Storage(0), SlotRef::Inventory(1), 100))
+        .await;
+    alice
+        .send(move_items(SlotRef::Storage(19), SlotRef::Inventory(1), 100))
+        .await;
+    alice.storage(|v| v.slots.iter().all(Option::is_none)).await;
+    alice.settle().await;
+    assert_eq!(alice.count("stone"), 40);
+    assert!(alice.dig(4, feet).await.0, "an empty chest breaks");
+    assert_eq!(alice.count("storage_chest"), 1, "and comes back as an item");
+    assert!(bob.storage(|v| v.pos == feet && v.closed).await.slots.is_empty());
+    alice.storage(|v| v.pos == feet && v.closed).await;
+    server.stop();
+}
+
+/// A chest's contents are saved with everything else; walking away closes it.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn storage_contents_survive_a_restart_and_close_out_of_reach() {
+    let dir = tempfile::tempdir().unwrap();
+    seed(dir.path(), "Alice", &[(5, "storage_chest", 1, 0), (1, "stone", 50, 0)]);
+    let feet = {
+        let server = bm_server::start(config(dir.path())).unwrap();
+        let mut alice = TestClient::login(&server, "Alice").await;
+        // In the plaza ground, five blocks behind her (she walks off along
+        // -Z, the way the plaza is open).
+        let feet = alice.feet().offset(0, 0, 5);
+        alice.wait_for_chunk(feet.chunk()).await;
+        assert!(alice.dig(1, feet).await.0);
+        assert!(alice.edit(2, feet, EditAction::Place { slot: 5 }).await.0);
+        alice.send(ClientMsg::OpenStorage { pos: Some(feet) }).await;
+        alice
+            .send(ClientMsg::StorageMove {
+                pos: feet,
+                from: SlotRef::Inventory(1),
+                to: SlotRef::Storage(3),
+                count: 25,
+            })
+            .await;
+        alice.storage(|v| v.slots[3].is_some()).await;
+        drop(alice);
+        server.stop();
+        feet
+    };
+    let server = bm_server::start(config(dir.path())).unwrap();
+    let mut alice = TestClient::login(&server, "Alice").await;
+    assert_eq!(alice.count("stone"), 25, "the pack was saved with the chest");
+    alice.wait_for_chunk(feet.chunk()).await;
+    assert_eq!(
+        alice.chunks[&feet.chunk()].get(feet.local()),
+        alice.block("storage_chest")
+    );
+    alice.send(ClientMsg::OpenStorage { pos: Some(feet) }).await;
+    let v = alice.storage(|v| v.pos == feet).await;
+    assert_eq!(v.slots[3].map(|s| (s.item, s.count)), Some((alice.item("stone"), 25)));
+
+    // Walk away at the real input rate until the server closes it.
+    let walk = PlayerInput {
+        forward: 1,
+        sprint: true,
+        jump: true,
+        ..Default::default()
+    };
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(10);
+    loop {
+        alice.send_inputs(1, walk);
+        tokio::time::sleep(Duration::from_secs_f64(1.0 / 60.0)).await;
+        while let Ok(m) = alice.msgs.try_recv() {
+            alice.apply(&m);
+            if let ServerMsg::Storage(v) = &m
+                && v.closed
+            {
+                assert_eq!(v.pos, feet);
+                server.stop();
+                return;
+            }
+        }
+        if tokio::time::Instant::now() >= deadline {
+            let (_, ack, st, _) = alice.latest_snapshot().await;
+            panic!("never closed walking away: at {:?} ack {ack}, chest {feet:?}", st.pos);
+        }
+    }
+}
+
+/// Like a station, a chest on someone else's claim cannot be opened.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn chests_on_a_claim_open_only_for_its_owner() {
+    let dir = tempfile::tempdir().unwrap();
+    seed(
+        dir.path(),
+        "Alice",
+        &[(5, "storage_chest", 1, 0), (6, "claim_stone", 1, 0), (1, "stone", 5, 0)],
+    );
+    let server = bm_server::start(config(dir.path())).unwrap();
+    let mut alice = TestClient::login(&server, "Alice").await;
+    let mut bob = TestClient::register(&server, "Bob").await;
+    let feet = alice.feet();
+    let beside = feet.offset(1, 0, 0);
+    alice.wait_for_chunk(feet.chunk()).await;
+    alice.wait_for_chunk(beside.chunk()).await;
+    bob.wait_for_chunk(feet.chunk()).await;
+    assert!(alice.dig(1, feet).await.0);
+    assert!(alice.edit(2, feet, EditAction::Place { slot: 5 }).await.0);
+    assert!(alice.dig(3, beside).await.0);
+    assert!(alice.edit(4, beside, EditAction::Place { slot: 6 }).await.0);
+    let claim = match bob.until(|m| matches!(m, ServerMsg::Claim(_))).await {
+        ServerMsg::Claim(c) => c,
+        _ => unreachable!(),
+    };
+    let chest_plot = PlotPos::of(feet, alice.shape());
+    if !claim.plots.contains(&chest_plot) {
+        alice
+            .send(ClientMsg::ClaimPlot {
+                claim: claim.id,
+                plot: chest_plot,
+            })
+            .await;
+        bob.until(|m| matches!(m, ServerMsg::Claim(c) if c.plots.contains(&chest_plot)))
+            .await;
+    }
+
+    bob.send(ClientMsg::OpenStorage { pos: Some(feet) }).await;
+    assert!(bob.storage(|v| v.pos == feet).await.closed, "refused");
+    bob.notice("This land belongs to Alice").await;
+    bob.send(ClientMsg::StorageMove {
+        pos: feet,
+        from: SlotRef::Storage(0),
+        to: SlotRef::Inventory(0),
+        count: 1,
+    })
+    .await;
+    bob.settle().await;
+    assert!(bob.inv.slots.iter().all(Option::is_none), "nothing taken");
+
+    alice.send(ClientMsg::OpenStorage { pos: Some(feet) }).await;
+    assert!(!alice.storage(|v| v.pos == feet).await.closed, "the owner opens it");
+    server.stop();
+}
+
+/// Registers players on a first run, then moves `far` 150 blocks away and
+/// `elsewhere` to the second planet before the server starts again.
+fn place_players(dir: &Path, far: &str, elsewhere: &str) {
+    let store = Store::open(&planet_file(dir)).unwrap();
+    let mut f = store.player(far).unwrap().unwrap();
+    let s = f.state.as_mut().unwrap();
+    s.pos += glam::DVec3::new(150.0, 40.0, 0.0);
+    let mut e = store.player(elsewhere).unwrap().unwrap();
+    e.planet = 1;
+    e.state = None;
+    store
+        .write(&WriteBatch {
+            players: vec![(far.into(), f), (elsewhere.into(), e)],
+            ..Default::default()
+        })
+        .unwrap();
+}
+
+/// Who hears what: local near and not far, planet, universe, whispers;
+/// cleaning, the rate limit, history on joining, arrival and leaving lines.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn chat_reaches_whoever_the_channel_says() {
+    let dir = tempfile::tempdir().unwrap();
+    {
+        let server = bm_server::start(universe(dir.path())).unwrap();
+        for name in ["Alice", "Bob", "Far", "Dave"] {
+            drop(TestClient::register(&server, name).await);
+        }
+        tokio::time::sleep(Duration::from_millis(300)).await;
+        server.stop();
+    }
+    place_players(dir.path(), "far", "dave");
+    let server = bm_server::start(universe(dir.path())).unwrap();
+    let mut alice = TestClient::login(&server, "Alice").await;
+    let mut far = TestClient::login(&server, "Far").await;
+    let mut dave = TestClient::login(&server, "Dave").await;
+    let mut bob = TestClient::login(&server, "Bob").await;
+    assert_eq!(dave.welcome.planet.id, 1);
+    assert!((far.spawn.pos - alice.spawn.pos).length() > 100.0);
+    assert!(alice.welcome.inventory.slots.iter().all(Option::is_none));
+
+    // Arrivals are announced on the planet, by the server.
+    let line = alice.heard(|l| l.text == "Bob arrived on Testworld").await;
+    assert_eq!((line.from.as_str(), &line.channel), ("", &Channel::Planet));
+    far.heard(|l| l.text == "Bob arrived on Testworld").await;
+    bob.heard(|l| l.text == "Bob arrived on Testworld").await;
+
+    // Local: near, not far, not another planet. The text is cleaned.
+    alice.say(Channel::Local, "  hello\u{7}   near \n").await;
+    let line = bob.heard(|l| l.channel == Channel::Local).await;
+    assert_eq!((line.from.as_str(), line.text.as_str()), ("Alice", "hello near"));
+    assert!(line.time > 1_700_000_000);
+    alice.heard(|l| l.text == "hello near").await;
+    // Planet: far hears it, the other planet does not.
+    alice.say(Channel::Planet, "planet wide").await;
+    far.heard(|l| l.text == "planet wide").await;
+    // Universe: everyone.
+    alice.say(Channel::Universe, "to everyone").await;
+    dave.heard(|l| l.text == "to everyone").await;
+    far.heard(|l| l.text == "to everyone").await;
+    bob.heard(|l| l.text == "to everyone").await;
+    // Lines that clean to nothing are dropped (and cost nothing).
+    alice.say(Channel::Universe, " \u{0}\u{200B} ").await;
+    // Whisper: by name in any case, the sender gets a copy, nobody else hears.
+    alice.say(Channel::Whisper("dAVE".into()), "psst").await;
+    let line = dave.heard(|l| l.text == "psst").await;
+    assert_eq!(
+        (line.from.as_str(), &line.channel),
+        ("Alice", &Channel::Whisper("Dave".into()))
+    );
+    alice.heard(|l| l.text == "psst").await;
+    alice.say(Channel::Whisper("Nobody".into()), "hello?").await;
+    alice.notice("Nobody called Nobody is here").await;
+
+    for c in [&mut alice, &mut bob, &mut far, &mut dave] {
+        c.settle().await;
+    }
+    assert!(!far.has_heard("hello near"), "too far for local");
+    assert!(
+        !dave.has_heard("hello near") && !dave.has_heard("planet wide"),
+        "another planet"
+    );
+    assert!(!bob.has_heard("psst") && !far.has_heard("psst"), "whispers are private");
+    assert!(!far.has_heard("hello?"));
+    assert_eq!(alice.chat.iter().filter(|l| l.text == "psst").count(), 1);
+
+    // Talking too fast: a burst of five, then a notice.
+    for i in 0..8 {
+        bob.say(Channel::Universe, &format!("spam {i}")).await;
+    }
+    bob.notice("You are talking too fast").await;
+    alice.heard(|l| l.text == "spam 4").await;
+    alice.settle().await;
+    assert!(!alice.has_heard("spam 5"), "dropped past the burst");
+
+    // Joining brings the universe history, after the welcome.
+    let mut carol = TestClient::register(&server, "Carol").await;
+    let history = match carol.until(|m| matches!(m, ServerMsg::Chat { .. })).await {
+        ServerMsg::Chat { lines } => lines,
+        _ => unreachable!(),
+    };
+    let texts: Vec<&str> = history.iter().map(|l| l.text.as_str()).collect();
+    assert_eq!(
+        texts,
+        ["to everyone", "spam 0", "spam 1", "spam 2", "spam 3", "spam 4"],
+        "universe lines only, oldest first"
+    );
+    alice.heard(|l| l.text == "Carol arrived on Testworld").await;
+
+    // Leaving and travelling away are announced where they left.
+    drop(carol);
+    alice.heard(|l| l.text == "Carol left").await;
+    let shrine = bob.shrine();
+    bob.send(ClientMsg::Warp { shrine, planet: 1 }).await;
+    alice.heard(|l| l.text == "Bob left").await;
+    dave.heard(|l| l.text == "Bob arrived on Dryside").await;
+    bob.heard(|l| l.text == "Bob arrived on Dryside").await;
     server.stop();
 }
