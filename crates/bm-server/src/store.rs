@@ -19,6 +19,7 @@
 //! catalogue, and adding one block shifts every item after it.
 
 use anyhow::{Context, Result, bail};
+use bm_core::portal::PortalAxis;
 use bm_core::{
     BlockPos, CHUNK_FORMAT_VERSION, ChunkPos, Colour, DayCycle, Inventory, ItemRegistry, ItemStack, PlanetShape,
     PlayerState, PlotPos, Station,
@@ -54,6 +55,10 @@ const STORAGE: TableDefinition<&[u8], &[u8]> = TableDefinition::new("planet_stor
 /// account's lapsed claims. Added in M6 without a version bump, as `STORAGE`
 /// was: a new table changes nothing already saved.
 const RECLAIM: TableDefinition<&str, &[u8]> = TableDefinition::new("reclaim");
+/// Portal number (unique in the universe, never reused) -> [`SavedPortal`].
+/// Added in M8 without a version bump, as `STORAGE` was; the next portal
+/// number is kept in `META` under "next_portal".
+const PORTALS: TableDefinition<u32, &[u8]> = TableDefinition::new("portals");
 
 /// Save version 1 and 2 tables, read only to upgrade, then deleted.
 const V1_PLAYERS: TableDefinition<&str, &[u8]> = TableDefinition::new("players");
@@ -323,6 +328,21 @@ pub struct SavedClaim {
     pub plots: Vec<PlotPos>,
 }
 
+/// A portal as saved (ADR-0009): where its rectangle is, whose it is, what
+/// it links to and what its tank holds.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct SavedPortal {
+    pub planet: u16,
+    pub corner: BlockPos,
+    pub axis: PortalAxis,
+    pub width: u8,
+    pub height: u8,
+    /// Lowercased account name.
+    pub owner: String,
+    pub link: Option<u32>,
+    pub fuel: u32,
+}
+
 /// The layouts save version 2 wrote, kept only to read them for the upgrade.
 mod v2 {
     use super::*;
@@ -494,6 +514,7 @@ impl Store {
         tx.open_table(CLAIMS)?;
         tx.open_table(STORAGE)?;
         tx.open_table(RECLAIM)?;
+        tx.open_table(PORTALS)?;
         tx.commit()?;
         Ok(Self { db: Arc::new(db) })
     }
@@ -772,6 +793,29 @@ impl Store {
         Ok((out, next))
     }
 
+    /// Every portal in the universe, and the next free portal number (above
+    /// every stored key, even a corrupt one, and never below the saved next
+    /// number, so a number is never used twice).
+    pub fn portals(&self) -> Result<(Vec<(u32, SavedPortal)>, u32)> {
+        let tx = self.db.begin_read()?;
+        let mut next = match tx.open_table(META)?.get("next_portal")? {
+            Some(v) => postcard::from_bytes(v.value()).context("next portal number is corrupt")?,
+            None => 1,
+        };
+        let t = tx.open_table(PORTALS)?;
+        let mut out = Vec::new();
+        for row in t.iter()? {
+            let (k, v) = row?;
+            let id = k.value();
+            next = next.max(id.saturating_add(1));
+            match postcard::from_bytes(v.value()) {
+                Ok(p) => out.push((id, p)),
+                Err(e) => tracing::error!("saved portal {id} is corrupt ({e}); skipped"),
+            }
+        }
+        Ok((out, next))
+    }
+
     /// The universe clock in ticks (0 for a new universe).
     pub fn clock(&self) -> Result<u64> {
         let tx = self.db.begin_read()?;
@@ -826,6 +870,17 @@ impl Store {
                     Some(r) => reclaim.insert(key.as_str(), postcard::to_stdvec(r)?.as_slice())?,
                     None => reclaim.remove(key.as_str())?,
                 };
+            }
+            let mut portals = tx.open_table(PORTALS)?;
+            for (id, p) in &batch.portals {
+                match p {
+                    Some(p) => portals.insert(*id, postcard::to_stdvec(p)?.as_slice())?,
+                    None => portals.remove(*id)?,
+                };
+            }
+            if let Some(next) = batch.next_portal {
+                tx.open_table(META)?
+                    .insert("next_portal", postcard::to_stdvec(&next)?.as_slice())?;
             }
         }
         tx.commit()?;
@@ -1040,6 +1095,10 @@ pub struct WriteBatch {
     pub storage: Vec<(u16, BlockPos, Option<SavedSlots>)>,
     /// Reclaims by lowercased account name; None deletes (it was emptied).
     pub reclaim: Vec<(String, Option<SavedReclaim>)>,
+    /// Portals by number; None deletes (it was broken or lapsed).
+    pub portals: Vec<(u32, Option<SavedPortal>)>,
+    /// The next portal number, when it changed.
+    pub next_portal: Option<u32>,
     /// The universe clock, so days and station jobs continue across restarts.
     pub clock: Option<u64>,
     /// Each is signalled once the batch is durable (shutdown waits on one;
@@ -1056,6 +1115,8 @@ impl WriteBatch {
             && self.claims.is_empty()
             && self.storage.is_empty()
             && self.reclaim.is_empty()
+            && self.portals.is_empty()
+            && self.next_portal.is_none()
     }
 }
 
@@ -1230,6 +1291,16 @@ mod tests {
             plots: vec![PlotPos::new(0, 0, 0)],
         };
         let spot = BlockPos::new(-5, 40, 1 << 40);
+        let portal = SavedPortal {
+            planet: 2,
+            corner: spot,
+            axis: PortalAxis::Z,
+            width: 2,
+            height: 3,
+            owner: "pendragon".into(),
+            link: Some(4),
+            fuel: 499,
+        };
         {
             let s = Store::open(&path).unwrap();
             assert_eq!(s.universe(&kinds()).unwrap(), None);
@@ -1258,6 +1329,8 @@ mod tests {
                         notices: vec!["gone".into()],
                     }),
                 )],
+                portals: vec![(9, Some(portal.clone()))],
+                next_portal: Some(12),
                 clock: Some(777),
                 done: Vec::new(),
             })
@@ -1301,8 +1374,11 @@ mod tests {
             )]
         );
 
+        assert_eq!(s.portals().unwrap(), (vec![(9, portal)], 12));
+
         // Deletions.
         s.write(&WriteBatch {
+            portals: vec![(9, None)],
             stations: vec![(2, spot, None)],
             claims: vec![(4, None)],
             storage: vec![(2, spot, None)],
@@ -1314,6 +1390,7 @@ mod tests {
         assert!(s.stations(2).unwrap().is_empty());
         assert!(s.storage(2).unwrap().is_empty());
         assert_eq!(s.claims().unwrap(), (vec![], 1));
+        assert_eq!(s.portals().unwrap(), (vec![], 12), "a number is never used again");
     }
 
     #[test]
@@ -1578,7 +1655,11 @@ mod tests {
         });
         inv.slots[2] = Some(ItemStack::new(token, 1));
         let saved = save_slots(&items, &inv);
-        let names: Vec<_> = saved.iter().take(3).map(|s| s.as_ref().unwrap().item.as_str()).collect();
+        let names: Vec<_> = saved
+            .iter()
+            .take(3)
+            .map(|s| s.as_ref().unwrap().item.as_str())
+            .collect();
         assert_eq!(names, ["portal_token@17", "portal_token#4@4294967295", "portal_token"]);
         assert_eq!(load_slots(&items, &saved, "test"), inv.slots);
         let bad = vec![Some(SavedStack {
