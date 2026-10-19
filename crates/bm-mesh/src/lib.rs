@@ -14,7 +14,10 @@
 //! the GPU. Quads are the unit tests compare: greedy output must cover exactly
 //! the faces the naive mesher emits, with the same block, occlusion and light.
 
-use bm_core::{BlockFlags, BlockId, CHUNK_SIZE, Chunk, ChunkLight, Colour, Light, LocalPos};
+use bm_core::{BlockFlags, BlockId, CHUNK_SIZE, Chunk, ChunkLight, Colour, Light, LocalPos, Shape};
+
+pub mod shaped;
+pub use shaped::{ShapeTri, template};
 
 const N: usize = CHUNK_SIZE as usize;
 const P: usize = N + 2;
@@ -25,6 +28,9 @@ pub struct Padded {
     /// The centre chunk's colours (faces belong to the centre's blocks, so
     /// the border never needs one), indexed by `LocalPos::index`.
     colours: Box<[u8]>,
+    /// Shapes (ADR-0008), indexed like `blocks`; `None` when every block in
+    /// reach is a full cube, as almost all are.
+    shapes: Option<Box<[Shape]>>,
 }
 
 impl Padded {
@@ -38,6 +44,27 @@ impl Padded {
         self.blocks[Self::idx(x, y, z)]
     }
 
+    /// The shape of a block (invalid shapes read as the full cube).
+    #[inline]
+    pub fn shape(&self, x: i32, y: i32, z: i32) -> Shape {
+        match &self.shapes {
+            Some(s) => s[Self::idx(x, y, z)],
+            None => Shape::FULL,
+        }
+    }
+
+    #[inline]
+    pub fn full(&self, x: i32, y: i32, z: i32) -> bool {
+        self.shapes.as_ref().is_none_or(|s| s[Self::idx(x, y, z)].is_full())
+    }
+
+    /// Whether the block hides what is behind it: opaque and uncut (a cut
+    /// block is never opaque, ADR-0008).
+    #[inline]
+    pub fn opaque(&self, flags: &BlockFlags, x: i32, y: i32, z: i32) -> bool {
+        flags.opaque(self.get(x, y, z)) && self.full(x, y, z)
+    }
+
     /// The colour of a centre-chunk block.
     #[inline]
     pub fn colour(&self, x: i32, y: i32, z: i32) -> Colour {
@@ -49,6 +76,9 @@ impl Padded {
     /// A missing neighbour reads as `missing`.
     pub fn new(center: &Chunk, neighbors: &[Option<&Chunk>; 27], missing: BlockId) -> Self {
         let mut blocks = vec![missing; P * P * P].into_boxed_slice();
+        let cut = |c: &Chunk| c.palette().iter().any(|s| !s.shape.is_full());
+        let mut shapes = (cut(center) || neighbors.iter().flatten().any(|c| cut(c)))
+            .then(|| vec![Shape::FULL; P * P * P].into_boxed_slice());
         let n = N as i32;
         let off = |v: i32| {
             if v < 0 {
@@ -70,7 +100,17 @@ impl Padded {
                     };
                     if let Some(c) = src {
                         let l = LocalPos::new((x - dx * n) as u8, (y - dy * n) as u8, (z - dz * n) as u8);
-                        blocks[Self::idx(x, y, z)] = c.get(l);
+                        let i = Self::idx(x, y, z);
+                        match &mut shapes {
+                            Some(shapes) => {
+                                let st = c.state(l);
+                                blocks[i] = st.id;
+                                if st.shape.is_valid() {
+                                    shapes[i] = st.shape;
+                                }
+                            }
+                            None => blocks[i] = c.get(l),
+                        }
                     }
                 }
             }
@@ -80,7 +120,11 @@ impl Padded {
         } else {
             center.to_dense_states().iter().map(|s| s.colour.0).collect()
         };
-        Self { blocks, colours }
+        Self {
+            blocks,
+            colours,
+            shapes,
+        }
     }
 }
 
@@ -211,13 +255,15 @@ pub struct ChunkQuads {
     pub translucent: Vec<Quad>,
 }
 
-/// `Some(translucent)` when the face of `me` towards `other` is visible.
+/// `Some(translucent)` when the face of the full block `me` towards `other`
+/// is visible. A cut neighbour never hides it (ADR-0008).
 #[inline]
-fn face_visible(flags: &BlockFlags, me: BlockId, other: BlockId) -> Option<bool> {
+fn face_visible(flags: &BlockFlags, me: BlockId, other: BlockId, other_full: bool) -> Option<bool> {
+    let covers = other_full && flags.opaque(other);
     if flags.opaque(me) {
-        (!flags.opaque(other)).then_some(false)
+        (!covers).then_some(false)
     } else if flags.translucent(me) {
-        (!flags.opaque(other) && other != me).then_some(true)
+        (!covers && !(other == me && other_full)).then_some(true)
     } else {
         None
     }
@@ -241,7 +287,7 @@ fn face_ao(p: &Padded, flags: &BlockFlags, b: [i32; 3], face: Face) -> [u8; 4] {
         let mut q = front;
         q[ua] += du;
         q[va] += dv;
-        flags.opaque(p.get(q[0], q[1], q[2]))
+        p.opaque(flags, q[0], q[1], q[2])
     };
     let corner = |su: i32, sv: i32| vertex_ao(occ(su, 0), occ(0, sv), occ(su, sv));
     [corner(-1, -1), corner(1, -1), corner(1, 1), corner(-1, 1)]
@@ -260,7 +306,7 @@ fn face_light(p: &Padded, light: &PaddedLight, flags: &BlockFlags, b: [i32; 3], 
         let mut q = front;
         q[ua] += du;
         q[va] += dv;
-        (flags.opaque(p.get(q[0], q[1], q[2])), light.get(q[0], q[1], q[2]))
+        (p.opaque(flags, q[0], q[1], q[2]), light.get(q[0], q[1], q[2]))
     };
     let centre = light.get(front[0], front[1], front[2]);
     let corner = |su: i32, sv: i32| {
@@ -310,10 +356,14 @@ fn for_each_face(
             b[ua] = u as i32;
             b[va] = v as i32;
             let me = p.get(b[0], b[1], b[2]);
+            // Cut blocks are drawn on their own (`mesh_shaped`).
+            if !p.full(b[0], b[1], b[2]) {
+                continue;
+            }
             let mut o = b;
             o[face.axis as usize] += d;
             let other = p.get(o[0], o[1], o[2]);
-            if let Some(translucent) = face_visible(flags, me, other) {
+            if let Some(translucent) = face_visible(flags, me, other, p.full(o[0], o[1], o[2])) {
                 let ao = if translucent {
                     [3; 4]
                 } else {
@@ -546,16 +596,173 @@ pub fn quad_indices(quads: usize) -> Vec<u32> {
         .collect()
 }
 
-/// A chunk's finished mesh.
+/// A chunk's finished mesh: greedy quads of full cubes (four [`Vertex`]es
+/// each, drawn with [`quad_indices`]) and triangles of cut blocks (three
+/// [`ShapedVertex`]es each, drawn as a plain list).
 #[derive(Default, Debug)]
 pub struct ChunkMesh {
     pub opaque: Vec<Vertex>,
     pub translucent: Vec<Vertex>,
+    pub shaped_opaque: Vec<ShapedVertex>,
+    pub shaped_translucent: Vec<ShapedVertex>,
 }
 
 impl ChunkMesh {
     pub fn is_empty(&self) -> bool {
-        self.opaque.is_empty() && self.translucent.is_empty()
+        self.opaque.is_empty()
+            && self.translucent.is_empty()
+            && self.shaped_opaque.is_empty()
+            && self.shaped_translucent.is_empty()
+    }
+}
+
+/// Fixed-point steps per block in a [`ShapedVertex`] position.
+pub const SHAPED_UNITS: f32 = 256.0;
+
+/// A vertex of a cut block, 16 bytes. Cuts need positions finer than the
+/// cube vertex's whole corners, and a normal.
+///
+/// `xy`: x | y << 16, chunk-local in 1/[`SHAPED_UNITS`] of a block (0..=8192).
+/// `z`: z | texture face << 16 (3 bits, as [`Face::index`]) | ao << 19 (2 bits).
+/// `normal`: x, y, z as signed bytes (`unpack4x8snorm`).
+/// `b`: as [`Vertex`]: block id | sky << 16 | block light << 20 | colour << 24.
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, bytemuck::Pod, bytemuck::Zeroable)]
+pub struct ShapedVertex {
+    pub xy: u32,
+    pub z: u32,
+    pub normal: u32,
+    pub b: u32,
+}
+
+impl ShapedVertex {
+    /// `pos` in blocks, chunk-local; `normal` a unit vector.
+    pub fn new(pos: [f32; 3], normal: [f32; 3], tex_face: u8, ao: u8, block: BlockId, light: Light, c: Colour) -> Self {
+        let q = |v: f32| (v * SHAPED_UNITS).round().clamp(0.0, 65535.0) as u32;
+        let n = |v: f32| ((v.clamp(-1.0, 1.0) * 127.0).round() as i8) as u8 as u32;
+        Self {
+            xy: q(pos[0]) | q(pos[1]) << 16,
+            z: q(pos[2]) | (tex_face as u32 & 7) << 16 | (ao as u32 & 3) << 19,
+            normal: n(normal[0]) | n(normal[1]) << 8 | n(normal[2]) << 16,
+            b: block.0 as u32 | (light.sky() as u32) << 16 | (light.block() as u32) << 20 | (c.0 as u32) << 24,
+        }
+    }
+
+    /// Position in 1/[`SHAPED_UNITS`] of a block.
+    pub fn position(self) -> [u32; 3] {
+        [self.xy & 0xffff, self.xy >> 16, self.z & 0xffff]
+    }
+
+    pub fn normal(self) -> [f32; 3] {
+        let c = |s: u32| (self.normal >> s) as u8 as i8 as f32 / 127.0;
+        [c(0), c(8), c(16)]
+    }
+
+    pub fn tex_face(self) -> u32 {
+        self.z >> 16 & 7
+    }
+
+    pub fn ao(self) -> u8 {
+        (self.z >> 19 & 3) as u8
+    }
+
+    pub fn block(self) -> BlockId {
+        BlockId(self.b as u16)
+    }
+
+    pub fn colour(self) -> Colour {
+        Colour((self.b >> 24) as u8)
+    }
+
+    pub fn light(self) -> Light {
+        Light::new((self.b >> 16 & 15) as u8, (self.b >> 20 & 15) as u8)
+    }
+}
+
+/// Occlusion (0 dark to 3 open) and light at a point of a cut block's
+/// surface: the cells around the point half a block out along `n`, weighted
+/// by nearness. Opaque cells occlude and lend no light. For a cube corner
+/// this is the classic four cells in front of it.
+fn shaped_sample(
+    p: &Padded,
+    light: &PaddedLight,
+    flags: &BlockFlags,
+    b: [i32; 3],
+    q: [f32; 3],
+    n: [f32; 3],
+) -> (u8, Light) {
+    let s: [f32; 3] = std::array::from_fn(|a| b[a] as f32 + q[a] + n[a] * 0.5 - 0.5);
+    let c0: [i32; 3] = s.map(|v| v.floor() as i32);
+    let f: [f32; 3] = std::array::from_fn(|a| s[a] - c0[a] as f32);
+    let (mut occ, mut open, mut sky, mut blk) = (0.0f32, 0.0f32, 0.0f32, 0.0f32);
+    for k in 0..8 {
+        let d = [k & 1, k >> 1 & 1, k >> 2 & 1];
+        let w: f32 = (0..3).map(|a| if d[a] == 1 { f[a] } else { 1.0 - f[a] }).product();
+        if w <= 0.0 {
+            continue;
+        }
+        let c: [i32; 3] = std::array::from_fn(|a| (c0[a] + d[a]).clamp(-1, N as i32));
+        if p.opaque(flags, c[0], c[1], c[2]) {
+            occ += w;
+        } else {
+            let l = light.get(c[0], c[1], c[2]);
+            open += w;
+            sky += w * l.sky() as f32;
+            blk += w * l.block() as f32;
+        }
+    }
+    let ao = (3.0 - (occ * 4.0).round()).clamp(0.0, 3.0) as u8;
+    let l = if open > 1e-3 {
+        Light::new((sky / open).round() as u8, (blk / open).round() as u8)
+    } else {
+        light.get(b[0], b[1], b[2])
+    };
+    (ao, l)
+}
+
+/// The triangles of every cut block in the chunk, from their templates
+/// ([`shaped::template`]). A triangle on the block's boundary is dropped
+/// where the neighbour is a full opaque block (or, for a translucent block,
+/// a full block of its own kind).
+pub fn mesh_shaped(p: &Padded, light: &PaddedLight, flags: &BlockFlags, mesh: &mut ChunkMesh) {
+    if p.shapes.is_none() {
+        return;
+    }
+    for y in 0..N as i32 {
+        for z in 0..N as i32 {
+            for x in 0..N as i32 {
+                let shape = p.shape(x, y, z);
+                if shape.is_full() {
+                    continue;
+                }
+                let me = p.get(x, y, z);
+                let out = if flags.opaque(me) {
+                    &mut mesh.shaped_opaque
+                } else if flags.translucent(me) {
+                    &mut mesh.shaped_translucent
+                } else {
+                    continue;
+                };
+                let colour = p.colour(x, y, z);
+                let b = [x, y, z];
+                for t in template(shape) {
+                    if let Some(f) = t.face {
+                        let mut o = b;
+                        o[f.axis as usize] += if f.positive { 1 } else { -1 };
+                        let other = p.get(o[0], o[1], o[2]);
+                        let full = p.full(o[0], o[1], o[2]);
+                        if full && (flags.opaque(other) || (other == me && flags.translucent(me))) {
+                            continue;
+                        }
+                    }
+                    for k in 0..3 {
+                        let (ao, l) = shaped_sample(p, light, flags, b, t.pos[k], t.normal[k]);
+                        let pos = [x as f32 + t.pos[k][0], y as f32 + t.pos[k][1], z as f32 + t.pos[k][2]];
+                        out.push(ShapedVertex::new(pos, t.normal[k], t.tex_face, ao, me, l, colour));
+                    }
+                }
+            }
+        }
     }
 }
 
@@ -588,7 +795,12 @@ fn mesh_with(
     flags: &BlockFlags,
     light: impl FnOnce() -> PaddedLight,
 ) -> ChunkMesh {
-    if let Some(b) = center.uniform() {
+    // Uniform in one full cube: the scan can often be skipped.
+    let uniform = |c: &Chunk| match c.palette() {
+        [s] if s.shape.is_full() => Some(s.id),
+        _ => None,
+    };
+    if let Some(b) = uniform(center) {
         if b.is_air() {
             return ChunkMesh::default();
         }
@@ -600,20 +812,20 @@ fn mesh_with(
             neighbor_index(0, 0, -1),
             neighbor_index(0, 0, 1),
         ];
-        let sealed = faces.iter().all(|&i| {
-            neighbors[i]
-                .and_then(|c| c.uniform())
-                .is_some_and(|nb| flags.opaque(nb))
-        });
+        let sealed = faces
+            .iter()
+            .all(|&i| neighbors[i].and_then(uniform).is_some_and(|nb| flags.opaque(nb)));
         if flags.opaque(b) && sealed {
             return ChunkMesh::default();
         }
     }
     let padded = Padded::new(center, neighbors, missing);
-    let quads = mesh_quads(&padded, &light(), flags);
+    let light = light();
+    let quads = mesh_quads(&padded, &light, flags);
     let mut mesh = ChunkMesh::default();
     quads_to_vertices(&quads.opaque, &mut mesh.opaque);
     quads_to_vertices(&quads.translucent, &mut mesh.translucent);
+    mesh_shaped(&padded, &light, flags, &mut mesh);
     mesh
 }
 
@@ -945,6 +1157,147 @@ mod tests {
             .collect();
         assert_eq!(top.len(), 4);
         assert!(top.iter().all(|v| v.block_light() == 10), "{top:?}");
+    }
+
+    fn cut(r: &BlockRegistry, name: &str, family: bm_core::ShapeFamily, removed: u8) -> BlockState {
+        BlockState {
+            shape: Shape::new(family, removed).unwrap(),
+            ..BlockState::plain(r.id(name).unwrap())
+        }
+    }
+
+    #[test]
+    fn a_cut_block_is_meshed_on_its_own_and_its_neighbours_show_through() {
+        let r = reg();
+        let stone = r.id("stone").unwrap();
+        let mut c = Chunk::empty();
+        // A half slab (top four removed) on a stone, with a stone beside it.
+        let top = 0b1111_0000;
+        c.set_state(
+            LocalPos::new(5, 5, 5),
+            cut(&r, "stone", bm_core::ShapeFamily::Square, top),
+        );
+        c.set(LocalPos::new(5, 4, 5), stone);
+        c.set(LocalPos::new(6, 5, 5), stone);
+        let mesh = mesh_chunk(&c, &NO_NEIGHBORS, BlockId::AIR, &r.flags());
+        assert!(mesh.translucent.is_empty() && mesh.shaped_translucent.is_empty());
+        // The stones show all their faces except the one... none: the slab
+        // is not opaque, so both draw the face towards it.
+        assert_eq!(mesh.opaque.len(), 12 * 4, "two stones, six faces each");
+        // The slab's own faces: no bottom (stone below), no +X (stone beside);
+        // top (two triangles per octant quarter), -X, ±Z.
+        let tris = mesh.shaped_opaque.chunks(3).count();
+        let all = template(Shape::new(bm_core::ShapeFamily::Square, top).unwrap()).len();
+        let culled = template(Shape::new(bm_core::ShapeFamily::Square, top).unwrap())
+            .iter()
+            .filter(|t| matches!(t.face, Some(f) if (f.axis, f.positive) == (1, false) || (f.axis, f.positive) == (0, true)))
+            .count();
+        assert_eq!(tris, all - culled);
+        assert!(culled > 0);
+        // Every vertex is within the slab.
+        for v in &mesh.shaped_opaque {
+            let [x, y, z] = v.position().map(|u| u as f32 / SHAPED_UNITS);
+            assert!((5.0..=6.0).contains(&x) && (5.0..=5.5).contains(&y) && (5.0..=6.0).contains(&z));
+            assert_eq!(v.block(), stone);
+        }
+    }
+
+    #[test]
+    fn cut_glass_drops_faces_against_whole_glass_but_not_against_cut_glass() {
+        let r = reg();
+        let glass = r.id("glass").unwrap();
+        let shape = 0b1000_0000;
+        let count = |nb: BlockState| {
+            let mut c = Chunk::empty();
+            c.set_state(
+                LocalPos::new(5, 5, 5),
+                cut(&r, "glass", bm_core::ShapeFamily::Bevel, shape),
+            );
+            c.set_state(LocalPos::new(4, 5, 5), nb);
+            let m = mesh_chunk(&c, &NO_NEIGHBORS, BlockId::AIR, &r.flags());
+            assert!(m.shaped_opaque.is_empty());
+            // Only the block at x = 5's own triangles.
+            m.shaped_translucent
+                .chunks(3)
+                .filter(|t| {
+                    let x: u32 = t.iter().map(|v| v.position()[0]).sum();
+                    x > 3 * 5 * 256 || (x == 3 * 5 * 256 && t[0].normal()[0] < 0.0)
+                })
+                .count()
+        };
+        let whole = count(BlockState::plain(glass));
+        let cut_beside = count(cut(&r, "glass", bm_core::ShapeFamily::Bevel, 1));
+        let alone = count(BlockState::AIR);
+        assert!(whole < alone);
+        assert_eq!(cut_beside, alone);
+    }
+
+    #[test]
+    fn chunks_of_one_cut_state_are_not_skipped() {
+        let r = reg();
+        let s = cut(&r, "stone", bm_core::ShapeFamily::Slope, 1);
+        let c = Chunk::filled_state(s);
+        let nb: [Option<&Chunk>; 27] = [Some(&c); 27];
+        let m = mesh_chunk(&c, &nb, BlockId::AIR, &r.flags());
+        assert!(!m.shaped_opaque.is_empty());
+        assert!(m.opaque.is_empty(), "no cube faces in a chunk of cut blocks");
+    }
+
+    #[test]
+    fn shaped_vertices_pack_and_light_like_cubes() {
+        let v = ShapedVertex::new(
+            [31.5, 0.25, 17.0],
+            [0.0, -0.6, 0.8],
+            5,
+            2,
+            BlockId(0xbeef),
+            Light::new(9, 4),
+            Colour(77),
+        );
+        assert_eq!(v.position(), [31 * 256 + 128, 64, 17 * 256]);
+        assert_eq!(
+            (v.tex_face(), v.ao(), v.block(), v.light(), v.colour()),
+            (5, 2, BlockId(0xbeef), Light::new(9, 4), Colour(77))
+        );
+        let n = v.normal();
+        assert!((n[1] + 0.6).abs() < 0.01 && (n[2] - 0.8).abs() < 0.01 && n[0] == 0.0);
+        assert_eq!(std::mem::size_of::<ShapedVertex>(), 16);
+        // A cut block in open sky is lit at every vertex, and open.
+        let mut c = Chunk::empty();
+        let r = reg();
+        c.set_state(
+            LocalPos::new(5, 5, 5),
+            cut(&r, "stone", bm_core::ShapeFamily::Round, 0b1100_0000),
+        );
+        let m = mesh_chunk(&c, &NO_NEIGHBORS, BlockId::AIR, &r.flags());
+        assert!(
+            m.shaped_opaque
+                .iter()
+                .all(|v| v.light() == Light::OPEN_SKY && v.ao() == 3)
+        );
+    }
+
+    #[test]
+    fn a_cut_beside_a_wall_is_shaded_by_it() {
+        let r = reg();
+        let stone = r.id("stone").unwrap();
+        let mut c = Chunk::empty();
+        c.set_state(
+            LocalPos::new(5, 5, 5),
+            cut(&r, "stone", bm_core::ShapeFamily::Square, 0b1111_0000),
+        );
+        for z in 4..7 {
+            for y in 5..8 {
+                c.set(LocalPos::new(4, y, z), stone);
+            }
+        }
+        let m = mesh_chunk(&c, &NO_NEIGHBORS, BlockId::AIR, &r.flags());
+        // On the slab's top, corners against the wall darken.
+        let top: Vec<_> = m.shaped_opaque.iter().filter(|v| v.tex_face() == 2).collect();
+        assert!(top.iter().any(|v| v.ao() < 3) && top.iter().any(|v| v.ao() == 3));
+        for v in top {
+            assert_eq!(v.ao() < 3, v.position()[0] == 5 * 256, "{v:?}");
+        }
     }
 
     #[test]

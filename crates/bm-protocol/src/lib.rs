@@ -22,7 +22,7 @@ use bm_core::{
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
 
 /// Bump on any change to a message below. Client and server must match.
-pub const PROTOCOL_VERSION: u32 = 9;
+pub const PROTOCOL_VERSION: u32 = 10;
 
 /// QUIC application protocol name; also refuses non-Boundmore peers early.
 pub const ALPN: &[u8] = b"boundmore/1";
@@ -146,6 +146,11 @@ pub enum EditAction {
     Break,
     /// Places the block item in hotbar `slot`, spending one.
     Place { slot: u8 },
+    /// Cuts (or, with `restore`, fills back) the octants in `octants` of the
+    /// block, with the chisel in hotbar `slot` (ADR-0008). A precise chisel
+    /// moves exactly one octant, an ordinary one an edge pair
+    /// (`bm_core::edge_pairs`).
+    Chisel { slot: u8, octants: u8, restore: bool },
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]

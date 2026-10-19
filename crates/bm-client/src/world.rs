@@ -3,7 +3,7 @@
 
 use bm_core::{
     BlockFlags, BlockId, BlockPos, BlockRegistry, BlockState, Chunk, ChunkLight, ChunkPos, LightMap, PhysicsWorld,
-    PlanetShape,
+    PlanetShape, Shape,
 };
 use bm_mesh::{ChunkMesh, neighbor_index};
 use crossbeam_channel::{Receiver, Sender};
@@ -38,8 +38,11 @@ impl ClientWorld {
         }
     }
 
-    pub fn insert_chunk(&mut self, pos: ChunkPos, chunk: Chunk) {
+    pub fn insert_chunk(&mut self, pos: ChunkPos, mut chunk: Chunk) {
         let pos = self.shape.wrap_chunk(pos);
+        // A shape the game cannot make reads as the full cube, as on the
+        // server (ADR-0008).
+        chunk.fix_invalid_shapes();
         // Edits are only made in chunks we hold, and the server answers every
         // one on the same ordered stream, so a freshly arrived chunk is
         // already the truth: nothing predicted needs re-applying to it.
@@ -75,10 +78,22 @@ impl ClientWorld {
         self.chunks.get(&p.chunk()).map(|c| c.state(p.local()))
     }
 
+    /// A block's cut, as the server answers it (invariant 3): a shape the
+    /// game cannot make, or an unloaded block, reads as the full cube.
+    pub fn block_shape(&self, p: BlockPos) -> Shape {
+        match self.state(p) {
+            Some(s) if s.shape.is_valid() => s.shape,
+            _ => Shape::FULL,
+        }
+    }
+
     /// Writes a block the server told us about.
-    pub fn set_block(&mut self, p: BlockPos, state: BlockState) {
+    pub fn set_block(&mut self, p: BlockPos, mut state: BlockState) {
         if !self.shape.contains_y(p.y) {
             return;
+        }
+        if !state.shape.is_valid() {
+            state.shape = Shape::FULL;
         }
         let p = self.shape.wrap_block(p);
         let Some(c) = self.chunks.get_mut(&p.chunk()) else {
@@ -87,8 +102,9 @@ impl ClientWorld {
         let old = Arc::make_mut(c).set_state(p.local(), state);
         if old != state {
             self.dirty_block(p);
-            // A new colour or cut needs a re-mesh; only a new type can change light.
-            if old.id != state.id {
+            // A new colour needs a re-mesh; a new type, or a cut that makes
+            // or unmakes a whole cube (cut blocks are not opaque), relights.
+            if old.id != state.id || old.shape.is_full() != state.shape.is_full() {
                 let relit = self.light.block_changed(p, &self.chunks);
                 self.mesher.dirty.extend(relit);
             }
@@ -288,6 +304,10 @@ impl PhysicsWorld for ClientWorld {
     fn liquid(&self, p: BlockPos) -> bool {
         self.block(p) == Some(self.water)
     }
+
+    fn shape(&self, p: BlockPos) -> Shape {
+        self.block_shape(p)
+    }
 }
 
 pub struct MeshResult {
@@ -327,5 +347,49 @@ impl Mesher {
     fn forget(&mut self, p: ChunkPos) {
         self.dirty.remove(&p);
         self.versions.remove(&p);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use bm_core::{LocalPos, ShapeFamily};
+
+    #[test]
+    fn the_physics_shape_is_the_servers() {
+        let reg = BlockRegistry::builtin();
+        let stone = reg.id("stone").unwrap();
+        let mut w = ClientWorld::new(PlanetShape::new(4, 1), reg);
+        let cut = Shape::new(ShapeFamily::Slope, 0b1100_0000).unwrap();
+        let mut c = Chunk::empty();
+        c.set_state(
+            LocalPos::new(1, 2, 3),
+            BlockState {
+                shape: cut,
+                ..BlockState::plain(stone)
+            },
+        );
+        c.set_state(
+            LocalPos::new(4, 5, 6),
+            BlockState {
+                shape: Shape(0x0f01),
+                ..BlockState::plain(stone)
+            },
+        );
+        w.insert_chunk(ChunkPos::new(0, 0, 0), c);
+        assert_eq!(w.shape(BlockPos::new(1, 2, 3)), cut);
+        assert_eq!(w.shape(BlockPos::new(4, 5, 6)), Shape::FULL, "invalid reads as full");
+        assert_eq!(w.shape(BlockPos::new(40, 5, 6)), Shape::FULL, "unloaded reads as full");
+        // Across the seam, the same block.
+        assert_eq!(w.shape(BlockPos::new(1 + 128, 2, 3)), cut);
+        // A cut written by the server is kept; a bad one is not.
+        w.set_block(
+            BlockPos::new(7, 7, 7),
+            BlockState {
+                shape: Shape(0x0f01),
+                ..BlockState::plain(stone)
+            },
+        );
+        assert_eq!(w.state(BlockPos::new(7, 7, 7)).unwrap().shape, Shape::FULL);
     }
 }

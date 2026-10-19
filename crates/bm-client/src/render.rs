@@ -13,7 +13,7 @@ use crate::colour::{self, PALETTE_COLOURS};
 use crate::sky::{MAX_SKY_PLANETS, SkyPlanet};
 use crate::textures::{self, TextureSet};
 use bm_core::{BlockPos, BlockRegistry, CHUNK_SIZE, ChunkPos, ColourPalette, NO_TINT, PlanetShape};
-use bm_mesh::{ChunkMesh, Vertex};
+use bm_mesh::{ChunkMesh, ShapedVertex, Vertex};
 use glam::{DVec3, Mat4, Vec3, Vec4};
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -112,9 +112,13 @@ pub struct BoxInstance {
     pub color: [f32; 4],
 }
 
+/// A chunk's buffers: cube quads (with their count) and cut-block
+/// triangles (with their vertex count).
 struct GpuChunk {
     opaque: Option<(wgpu::Buffer, u32)>,
     translucent: Option<(wgpu::Buffer, u32)>,
+    shaped_opaque: Option<(wgpu::Buffer, u32)>,
+    shaped_translucent: Option<(wgpu::Buffer, u32)>,
 }
 
 pub struct Camera {
@@ -185,6 +189,8 @@ pub struct Renderer {
     bind_group: wgpu::BindGroup,
     terrain_opaque: wgpu::RenderPipeline,
     terrain_translucent: wgpu::RenderPipeline,
+    shaped_opaque: wgpu::RenderPipeline,
+    shaped_translucent: wgpu::RenderPipeline,
     box_pipeline: wgpu::RenderPipeline,
     line_pipeline: wgpu::RenderPipeline,
     xray_line_pipeline: wgpu::RenderPipeline,
@@ -373,6 +379,19 @@ impl Renderer {
                 attributes: &wgpu::vertex_attr_array![2 => Float32x3, 3 => Sint32x3],
             }),
         ];
+        // Cut blocks (ADR-0008): their own vertex, the same instances.
+        let shaped_buffers = [
+            Some(wgpu::VertexBufferLayout {
+                array_stride: std::mem::size_of::<ShapedVertex>() as u64,
+                step_mode: wgpu::VertexStepMode::Vertex,
+                attributes: &wgpu::vertex_attr_array![0 => Uint32, 1 => Uint32, 2 => Uint32, 3 => Uint32],
+            }),
+            Some(wgpu::VertexBufferLayout {
+                array_stride: std::mem::size_of::<ChunkInstance>() as u64,
+                step_mode: wgpu::VertexStepMode::Instance,
+                attributes: &wgpu::vertex_attr_array![4 => Float32x3, 5 => Sint32x3],
+            }),
+        ];
         let depth_state = |write: bool, compare: wgpu::CompareFunction| wgpu::DepthStencilState {
             format: DEPTH_FORMAT,
             depth_write_enabled: Some(write),
@@ -445,6 +464,28 @@ impl Renderer {
             "vs_main",
             "fs_translucent",
             &chunk_buffers,
+            TriangleList,
+            None,
+            Some(depth_state(false, Greater)),
+            &blend_target,
+        );
+        let shaped_opaque = pipeline(
+            "shaped opaque",
+            &terrain,
+            "vs_shaped",
+            "fs_opaque",
+            &shaped_buffers,
+            TriangleList,
+            Some(wgpu::Face::Back),
+            Some(depth_state(true, Greater)),
+            &opaque_target,
+        );
+        let shaped_translucent = pipeline(
+            "shaped translucent",
+            &terrain,
+            "vs_shaped",
+            "fs_translucent",
+            &shaped_buffers,
             TriangleList,
             None,
             Some(depth_state(false, Greater)),
@@ -572,6 +613,8 @@ impl Renderer {
             bind_group,
             terrain_opaque,
             terrain_translucent,
+            shaped_opaque,
+            shaped_translucent,
             box_pipeline,
             line_pipeline,
             xray_line_pipeline,
@@ -686,19 +729,23 @@ impl Renderer {
             self.quad_capacity = quads.next_power_of_two();
             self.quad_indices = make_quad_indices(&self.device, self.quad_capacity);
         }
-        let make = |verts: &[Vertex], label: &str| {
-            (!verts.is_empty()).then(|| {
+        let make = |bytes: &[u8], count: usize, label: &str| {
+            (count > 0).then(|| {
                 let buf = self.device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
                     label: Some(label),
-                    contents: bytemuck::cast_slice(verts),
+                    contents: bytes,
                     usage: wgpu::BufferUsages::VERTEX,
                 });
-                (buf, (verts.len() / 4) as u32)
+                (buf, count as u32)
             })
         };
+        let quads = |v: &[Vertex], label: &str| make(bytemuck::cast_slice(v), v.len() / 4, label);
+        let tris = |v: &[ShapedVertex], label: &str| make(bytemuck::cast_slice(v), v.len(), label);
         let gpu = GpuChunk {
-            opaque: make(&mesh.opaque, "chunk opaque"),
-            translucent: make(&mesh.translucent, "chunk translucent"),
+            opaque: quads(&mesh.opaque, "chunk opaque"),
+            translucent: quads(&mesh.translucent, "chunk translucent"),
+            shaped_opaque: tris(&mesh.shaped_opaque, "chunk shaped opaque"),
+            shaped_translucent: tris(&mesh.shaped_translucent, "chunk shaped translucent"),
         };
         self.chunks.insert(pos, gpu);
     }
@@ -901,6 +948,14 @@ impl Renderer {
                     stats.quads_drawn += *quads as u64;
                 }
             }
+            pass.set_pipeline(&self.shaped_opaque);
+            for (i, (_, pos, _)) in visible.iter().enumerate() {
+                if let Some((buf, verts)) = &self.chunks[pos].shaped_opaque {
+                    pass.set_vertex_buffer(0, buf.slice(..));
+                    pass.draw(0..*verts, i as u32..i as u32 + 1);
+                    stats.quads_drawn += *verts as u64 / 6;
+                }
+            }
 
             if !scene.boxes.is_empty() {
                 pass.set_pipeline(&self.box_pipeline);
@@ -916,12 +971,19 @@ impl Renderer {
             pass.draw(0..3, 0..1);
 
             // Translucent last, far to near, without writing depth.
-            pass.set_pipeline(&self.terrain_translucent);
             for (i, (_, pos, _)) in visible.iter().enumerate().rev() {
-                if let Some((buf, quads)) = &self.chunks[pos].translucent {
+                let chunk = &self.chunks[pos];
+                if let Some((buf, quads)) = &chunk.translucent {
+                    pass.set_pipeline(&self.terrain_translucent);
                     pass.set_vertex_buffer(0, buf.slice(..));
                     pass.draw_indexed(0..quads * 6, 0, i as u32..i as u32 + 1);
                     stats.quads_drawn += *quads as u64;
+                }
+                if let Some((buf, verts)) = &chunk.shaped_translucent {
+                    pass.set_pipeline(&self.shaped_translucent);
+                    pass.set_vertex_buffer(0, buf.slice(..));
+                    pass.draw(0..*verts, i as u32..i as u32 + 1);
+                    stats.quads_drawn += *verts as u64 / 6;
                 }
             }
 
@@ -1237,7 +1299,7 @@ fn cube(device: &wgpu::Device) -> (wgpu::Buffer, wgpu::Buffer) {
 }
 
 /// The 12 edges of a box as a line list.
-fn cube_edges(min: Vec3, size: Vec3) -> [[f32; 3]; 24] {
+pub fn cube_edges(min: Vec3, size: Vec3) -> [[f32; 3]; 24] {
     let c = |x: f32, y: f32, z: f32| (min + size * Vec3::new(x, y, z)).to_array();
     let p = [
         c(0.0, 0.0, 0.0),
@@ -1352,6 +1414,7 @@ mod tests {
         assert_eq!(std::mem::size_of::<Globals>(), 64 * 3 + 16 * 6 + 32 * MAX_SKY_PLANETS);
         assert_eq!(std::mem::size_of::<ChunkInstance>(), 24);
         assert_eq!(std::mem::size_of::<Vertex>(), 8);
+        assert_eq!(std::mem::size_of::<ShapedVertex>(), 16);
         assert_eq!(std::mem::size_of::<LineVertex>(), 28);
     }
 

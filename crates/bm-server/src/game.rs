@@ -26,8 +26,8 @@ use anyhow::{Context, Result};
 use bm_core::items::title_case;
 use bm_core::movement::{self, MoveConfig, PlayerInput, PlayerState};
 use bm_core::{
-    BlockId, BlockPos, BlockState, CHUNK_SIZE, ChunkPos, Colour, ColourPalette, HOTBAR_SLOTS, Inventory, ItemId,
-    ItemRegistry, ItemStack, PlanetShape, PlotPos, RecipeBook, Station, TICK_DT,
+    BlockId, BlockPos, BlockState, CHUNK_SIZE, Chiselling, ChunkPos, Colour, ColourPalette, HOTBAR_SLOTS, Inventory,
+    ItemId, ItemRegistry, ItemStack, PlanetShape, PlotPos, RecipeBook, Shape, Station, TICK_DT, edge_pairs,
 };
 use bm_net::quinn::Connection;
 use bm_protocol::{
@@ -189,6 +189,10 @@ enum Effect {
     Placed {
         slot: usize,
     },
+    /// Cut or filled back with the chisel in this hotbar slot, which wears.
+    Chiselled {
+        slot: usize,
+    },
 }
 
 pub struct Game {
@@ -326,6 +330,15 @@ fn in_reach(shape: PlanetShape, m: &MoveConfig, reach: f64, state: &PlayerState,
     shape.delta(state.eye(m), centre).length() <= reach + 0.87
 }
 
+/// Whether a player's body standing at `feet` overlaps the box `lo..hi`.
+fn body_overlaps(m: &MoveConfig, feet: DVec3, lo: DVec3, hi: DVec3) -> bool {
+    let (blo, bhi) = (
+        DVec3::new(feet.x - m.half_width, feet.y, feet.z - m.half_width),
+        DVec3::new(feet.x + m.half_width, feet.y + m.height, feet.z + m.half_width),
+    );
+    (0..3).all(|a| blo[a] < hi[a] && bhi[a] > lo[a])
+}
+
 /// Sends the slots that differ from `before`.
 fn send_slots(p: &Player, before: &Inventory) {
     let changes: Vec<_> = (0..p.inventory.slots.len())
@@ -344,9 +357,9 @@ fn sanitize(inv: &mut Inventory, items: &ItemRegistry) {
         if let Some(s) = slot {
             let spent = items
                 .get(s.item)
-                .and_then(|d| d.tool())
-                .is_some_and(|(_, _, d)| s.wear >= d);
-            let worn_material = s.wear > 0 && items.get(s.item).is_some_and(|d| d.tool().is_none());
+                .and_then(|d| d.durability())
+                .is_some_and(|d| s.wear >= d);
+            let worn_material = s.wear > 0 && items.get(s.item).is_some_and(|d| d.durability().is_none());
             if spent || worn_material {
                 *slot = None;
             }
@@ -1135,6 +1148,17 @@ impl Game {
                     }
                 }
             }
+            Effect::Chiselled { slot } => {
+                if let Some(s) = p.inventory.slots[slot].as_mut() {
+                    s.wear += 1;
+                    if let Some(def) = self.items.get(s.item)
+                        && def.durability().is_some_and(|d| s.wear >= d)
+                    {
+                        broke = Some(format!("Your {} broke", def.display));
+                        p.inventory.slots[slot] = None;
+                    }
+                }
+            }
         }
         send_slots(p, &before);
         if let Some(text) = broke {
@@ -1326,6 +1350,78 @@ impl Game {
                 Ok(Accepted {
                     block: BlockState::coloured(block, colour),
                     effect: Effect::Placed { slot },
+                })
+            }
+            EditAction::Chisel { slot, octants, restore } => {
+                let slot = slot as usize;
+                if slot >= HOTBAR_SLOTS {
+                    return Err("not a hotbar slot".into());
+                }
+                let (family, precise, _) = p
+                    .inventory
+                    .get(slot)
+                    .and_then(|s| self.items.get(s.item))
+                    .and_then(|d| d.chisel())
+                    .ok_or("not a chisel")?;
+                let def = reg.get(current);
+                if current.is_air() || !def.solid {
+                    return Err("nothing to chisel".into());
+                }
+                if !def.chisel.allows(family) {
+                    return Err(Refusal::Told(match def.chisel {
+                        Chiselling::Slope => "Natural ground takes only slope chisels".into(),
+                        _ => format!("{} cannot be chiselled", title_case(&def.name)),
+                    }));
+                }
+                // Precise chisels move one octant, ordinary ones an edge's two.
+                let fits = if precise {
+                    octants.count_ones() == 1
+                } else {
+                    edge_pairs().any(|m| m == octants)
+                };
+                if !fits {
+                    return Err("not a cut this chisel makes".into());
+                }
+                let state = world.state(canon).ok_or("chunk not resident")?;
+                let cut = if state.shape.is_valid() {
+                    state.shape
+                } else {
+                    Shape::FULL
+                };
+                if cut.family().is_some_and(|f| f != family) {
+                    return Err(Refusal::Told(
+                        "This block is already cut by another kind of chisel".into(),
+                    ));
+                }
+                let new = if restore {
+                    if octants & !cut.removed() != 0 {
+                        return Err("nothing cut there to fill".into());
+                    }
+                    // Filling back must not close over a player: the octants
+                    // put back are the solid boxes of `Shape(!octants)`.
+                    let m = self.movement;
+                    let corner = DVec3::new(canon.x as f64, canon.y as f64, canon.z as f64);
+                    let filled = Shape::new(family, !octants).unwrap_or(Shape::FULL);
+                    let blocked = self.players.values().filter(|o| o.planet == pi).any(|o| {
+                        let feet = shape.nearest_lap(corner, o.state.pos);
+                        filled.boxes().any(|(lo, hi)| {
+                            body_overlaps(&m, feet, corner + DVec3::from_array(lo), corner + DVec3::from_array(hi))
+                        })
+                    });
+                    if blocked {
+                        return Err("a player is in the way".into());
+                    }
+                    cut.restored(octants)
+                } else {
+                    if octants & cut.removed() != 0 {
+                        return Err("already cut there".into());
+                    }
+                    cut.chiselled(family, octants)
+                        .ok_or_else(|| Refusal::Told("That would cut the whole block away".into()))?
+                };
+                Ok(Accepted {
+                    block: BlockState { shape: new, ..state },
+                    effect: Effect::Chiselled { slot },
                 })
             }
         }
@@ -2343,5 +2439,55 @@ mod storage_move_tests {
         assert!(!storage_move_slots(&items, &mut inv, &mut chest, S(1), I(9), 1));
         assert!(!storage_move_slots(&items, &mut inv, &mut chest, I(7), S(1), 0));
         assert_eq!((inv, chest), (i0, c0));
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn worn_chisels_survive_loading_and_spent_ones_go() {
+        let blocks = bm_core::BlockRegistry::builtin();
+        let items = ItemRegistry::builtin(&blocks);
+        let chisel = items.id("square_chisel").unwrap();
+        let durability = items.get(chisel).unwrap().durability().unwrap();
+        let mut inv = Inventory::default();
+        inv.slots[0] = Some(ItemStack {
+            wear: 3,
+            ..ItemStack::new(chisel, 1)
+        });
+        inv.slots[1] = Some(ItemStack {
+            wear: durability,
+            ..ItemStack::new(chisel, 1)
+        });
+        sanitize(&mut inv, &items);
+        assert_eq!(inv.get(0).map(|s| s.wear), Some(3), "a worn chisel is kept");
+        assert_eq!(inv.get(1), None, "a spent one is not");
+    }
+
+    #[test]
+    fn filling_back_checks_the_body_against_each_octant() {
+        let m = MoveConfig::default();
+        let feet = DVec3::new(0.5, 1.0, 0.5);
+        // Standing on top of the block's lower half: touching is not overlapping.
+        assert!(!body_overlaps(
+            &m,
+            feet,
+            DVec3::new(0.0, 0.5, 0.0),
+            DVec3::new(1.0, 1.0, 1.0)
+        ));
+        assert!(body_overlaps(
+            &m,
+            feet,
+            DVec3::new(0.0, 1.0, 0.0),
+            DVec3::new(0.5, 1.5, 0.5)
+        ));
+        assert!(!body_overlaps(
+            &m,
+            feet,
+            DVec3::new(1.0, 1.0, 0.0),
+            DVec3::new(1.5, 1.5, 0.5)
+        ));
     }
 }

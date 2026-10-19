@@ -39,6 +39,8 @@ pub const CHEST: [i64; 3] = [126, 44, 126];
 /// The palette wall (`show_colours`): its lowest, westmost block. 17 wide
 /// (16 hues and the greys) by 15 shades tall, facing the spawn.
 pub const WALL: [i64; 3] = [120, 48, 114];
+/// Where `show_shapes` puts the player: on a pillar behind the rows.
+pub const SHAPES_VIEW: [f64; 3] = [128.5, 46.0, 130.5];
 /// The demo's planets: name, kind, and the width shown for it in the sky and
 /// menu. (The demo's own patch is tiny; these are sizes real planets have.)
 const PLANETS: [(&str, &str, u32); 4] = [
@@ -404,6 +406,90 @@ impl Demo {
         self.events.extend(chunks.into_iter().map(NetEvent::Msg));
     }
 
+    /// Turns the first planet into a showroom for chisel cuts (ADR-0008):
+    /// level ground and, ahead of the spawn, a row per family (round,
+    /// bevel, slope, square, nearest first) of the same
+    /// cuts in natural and coloured materials. With `in_hand`, every chisel
+    /// in the hotbar, a bevel chisel held, and a whole brick to aim at.
+    pub fn show_shapes(&mut self, in_hand: bool) {
+        use bm_core::{Shape, ShapeFamily, octant};
+        let b = |n: &str| self.blocks.id(n).expect("builtin block");
+        let c = |name: &str| self.colours.id(name).expect("palette colour");
+        let o = |x, y, z| 1u8 << octant(x, y, z);
+        // Front is +z, towards the spawn.
+        let cuts: [u8; 6] = [
+            o(0, 1, 1) | o(1, 1, 1),              // the top front edge: a ramp
+            o(1, 1, 1),                           // one top corner
+            0b1111_0000,                          // the top half: a slab
+            o(1, 0, 1) | o(1, 1, 1),              // a front side edge
+            o(0, 1, 1) | o(1, 1, 1) | o(1, 1, 0), // three of the top: a step
+            o(0, 1, 1) | o(1, 1, 0),              // two opposite top corners
+        ];
+        let looks = [
+            ("brick", None),
+            ("timber", Some("Rich Azure")),
+            ("sandstone", None),
+            ("glass", None),
+            ("brick", Some("Bright Crimson")),
+            ("ash", Some("True Teal")),
+        ];
+        let mut put = Vec::new();
+        let rows = [
+            ShapeFamily::Round,
+            ShapeFamily::Bevel,
+            ShapeFamily::Slope,
+            ShapeFamily::Square,
+        ];
+        for (row, family) in rows.into_iter().enumerate() {
+            let (z, y) = (125 - 2 * row as i64, 44);
+            for (k, &cut) in cuts.iter().enumerate() {
+                let x = 123 + 2 * k as i64;
+                // Natural ground takes slopes: show natural stone there.
+                let (name, colour) = if family == ShapeFamily::Slope && k % 2 == 0 {
+                    ("stone", None)
+                } else {
+                    looks[k]
+                };
+                let state = BlockState {
+                    id: b(name),
+                    colour: colour.map(c).unwrap_or(Colour::NATURAL),
+                    shape: Shape::new(family, cut).expect("a shape"),
+                };
+                put.push((BlockPos::new(x, y, z), state));
+            }
+        }
+        // A pillar behind the rows to look down from (`SHAPES_VIEW`).
+        for y in 44..46 {
+            put.push((BlockPos::new(128, y, 130), BlockState::plain(b("stone"))));
+        }
+        if in_hand {
+            put.push((BlockPos::new(128, 44, 127), BlockState::plain(b("stone"))));
+            put.push((BlockPos::new(128, 45, 127), BlockState::plain(b("brick"))));
+        }
+        let planet = &mut self.planets[0];
+        planet.flat = true;
+        planet.edits.clear();
+        planet.edits.extend(put);
+        if in_hand {
+            let id = |n: &str| self.items.id(n).expect("builtin item");
+            let before = self.inv.clone();
+            let chisels = [
+                "square_chisel",
+                "slope_chisel",
+                "bevel_chisel",
+                "round_chisel",
+                "precise_square_chisel",
+                "precise_slope_chisel",
+            ];
+            for (i, name) in chisels.into_iter().enumerate() {
+                self.inv.slots[4 + i] = Some(ItemStack::new(id(name), 1));
+            }
+            self.slots_since(&before);
+        }
+        let chunks = self.chunks_around_spawn();
+        self.events.extend(chunks.into_iter().map(NetEvent::Msg));
+    }
+
     /// Fills the reclaim, as a lapsed claim would, and tells the client.
     pub fn sample_reclaim(&mut self) {
         let id = |n: &str| self.items.id(n).expect("builtin item");
@@ -750,6 +836,22 @@ impl Demo {
         }
     }
 
+    /// One use of the chisel in `slot`; it breaks at its durability.
+    fn wear_chisel(&mut self, slot: usize) {
+        let before = self.inv.clone();
+        if let Some(s) = self.inv.slots[slot].as_mut() {
+            s.wear += 1;
+            if let Some(def) = self.items.get(s.item)
+                && def.durability().is_some_and(|d| s.wear >= d)
+            {
+                let text = format!("Your {} broke", def.display);
+                self.inv.slots[slot] = None;
+                self.notice(&text);
+            }
+        }
+        self.slots_since(&before);
+    }
+
     fn edit(&mut self, seq: u32, pos: BlockPos, action: EditAction) {
         let pos = shape().wrap_block(pos);
         let old_state = self.ground(pos);
@@ -787,6 +889,36 @@ impl Demo {
                             Colour::NATURAL
                         };
                         (BlockState::coloured(b, colour), true)
+                    }
+                    _ => (old_state, false),
+                }
+            }
+            EditAction::Chisel { slot, octants, restore } => {
+                let chisel = self
+                    .inv
+                    .get(slot as usize)
+                    .and_then(|s| self.items.get(s.item))
+                    .and_then(|d| d.chisel());
+                let fits = |precise: bool| {
+                    if precise {
+                        octants.count_ones() == 1
+                    } else {
+                        bm_core::edge_pairs().any(|m| m == octants)
+                    }
+                };
+                match chisel {
+                    Some((family, precise, _)) if fits(precise) => {
+                        match crate::chisel::apply(self.blocks.get(old), old_state, family, octants, restore) {
+                            Ok(shape) => {
+                                self.wear_chisel(slot as usize);
+                                (BlockState { shape, ..old_state }, true)
+                            }
+                            Err(crate::chisel::Refused::Told(t)) => {
+                                self.notice(&t);
+                                (old_state, false)
+                            }
+                            Err(crate::chisel::Refused::Quiet) => (old_state, false),
+                        }
                     }
                     _ => (old_state, false),
                 }
@@ -1038,6 +1170,49 @@ mod tests {
             .map(|s| s.count as u32)
             .sum();
         assert_eq!(blue, 137);
+    }
+
+    #[test]
+    fn the_demo_chisels_by_the_rules_and_wears_the_chisel() {
+        use bm_core::{Shape, ShapeFamily, octant};
+        let mut d = Demo::new("Tester");
+        d.poll();
+        d.show_shapes(true);
+        d.poll();
+        let brick = BlockPos::new(128, 45, 127);
+        let edge = 1 << octant(0, 1, 1) | 1 << octant(1, 1, 1);
+        let edit = |d: &mut Demo, seq, pos, slot: u8, octants, restore| {
+            d.send(ClientMsg::Edit {
+                seq,
+                at: 0,
+                pos,
+                action: EditAction::Chisel { slot, octants, restore },
+            });
+            d.poll().into_iter().find_map(|e| match e {
+                NetEvent::Msg(ServerMsg::EditResult { block, accepted, .. }) => Some((block, accepted)),
+                _ => None,
+            })
+        };
+        // Slot 6 holds the bevel chisel (slots 4 to 9: square, slope, bevel...).
+        let (block, ok) = edit(&mut d, 1, brick, 6, edge, false).unwrap();
+        assert!(ok);
+        assert_eq!(block.shape, Shape::new(ShapeFamily::Bevel, edge).unwrap());
+        assert_eq!(d.inv.slots[6].unwrap().wear, 1);
+        // A precise cut asked of an ordinary chisel is refused.
+        assert!(!edit(&mut d, 2, brick, 6, 1, false).unwrap().1);
+        // Another family on the same block is refused.
+        assert!(
+            !edit(&mut d, 3, brick, 4, 1 << octant(0, 0, 0) | 1 << octant(1, 0, 0), false)
+                .unwrap()
+                .1
+        );
+        // Filling it back makes it whole.
+        let (block, ok) = edit(&mut d, 4, brick, 6, edge, true).unwrap();
+        assert!(ok && block.shape.is_full());
+        // Natural stone takes only slopes.
+        let stone = BlockPos::new(128, 44, 127);
+        assert!(!edit(&mut d, 5, stone, 4, edge, false).unwrap().1);
+        assert!(edit(&mut d, 6, stone, 5, edge, false).unwrap().1);
     }
 
     #[test]

@@ -1,8 +1,8 @@
 //! End to end: real server, real QUIC, headless players.
 
 use bm_core::{
-    BlockId, BlockPos, BlockRegistry, BlockState, Chunk, ChunkPos, Colour, Inventory, ItemRegistry, ItemStack,
-    PlayerInput, PlayerState, PlotPos,
+    BlockId, BlockPos, BlockRegistry, BlockState, Chiselling, Chunk, ChunkPos, Colour, Inventory, ItemRegistry,
+    ItemStack, PlayerInput, PlayerState, PlotPos, ShapeFamily,
 };
 use bm_net::quinn::Connection;
 use bm_net::{read_msg, write_msg};
@@ -1786,5 +1786,185 @@ async fn an_online_owner_never_lapses_and_leaving_starts_the_clock() {
         .await;
     alice.settle().await;
     assert!(alice.reclaim.is_none(), "nothing was stored");
+    server.stop();
+}
+
+/// A chisel edit: `octants` cut (or filled back, with `restore`) with the
+/// chisel in hotbar `slot`.
+fn chisel(slot: u8, octants: u8, restore: bool) -> EditAction {
+    EditAction::Chisel { slot, octants, restore }
+}
+
+/// The removed octants and family of the block a client holds at `p`.
+fn cut_at(c: &TestClient, p: BlockPos) -> (u8, Option<ShapeFamily>) {
+    let s = state_at(c, p).shape;
+    (s.removed(), s.family())
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn chisels_cut_and_fill_back_by_the_rules() {
+    let dir = tempfile::tempdir().unwrap();
+    seed(
+        dir.path(),
+        "Alice",
+        &[
+            (0, "square_chisel", 1, 0),
+            (1, "precise_square_chisel", 1, 0),
+            (2, "slope_chisel", 1, 0),
+            (3, "timber", 10, 0),
+            (4, "square_chisel", 1, 299),
+            (5, "stone_hammer", 1, 0),
+            (6, "bevel_chisel", 1, 0),
+        ],
+    );
+    let server = bm_server::start(config(dir.path())).unwrap();
+    let mut alice = TestClient::login(&server, "Alice").await;
+    let feet = alice.feet();
+    alice.wait_for_chunk(feet.chunk()).await;
+    let timber = alice.block("timber");
+
+    // Natural ground takes only slopes.
+    let ground = alice.chunks[&feet.chunk()].get(feet.local());
+    assert_eq!(alice.welcome.blocks[ground.0 as usize].chisel, Chiselling::Slope);
+    let beside = feet.offset(1, 0, 0);
+    assert!(!alice.edit(1, beside, chisel(0, 0x03, false)).await.0);
+    alice.notice("Natural ground takes only slope chisels").await;
+    assert!(alice.edit(2, beside, chisel(2, 0x30, false)).await.0);
+    assert_eq!(cut_at(&alice, beside), (0x30, Some(ShapeFamily::Slope)));
+
+    // A timber block standing on the ground beside her takes any family.
+    let t = feet.offset(1, 1, 0);
+    assert!(alice.edit(3, t, EditAction::Place { slot: 3 }).await.0);
+    assert_eq!(state_at(&alice, t), BlockState::plain(timber));
+    // A precise chisel moves exactly one octant.
+    assert!(!alice.edit(4, t, chisel(1, 0x03, false)).await.0, "two octants");
+    assert!(alice.edit(5, t, chisel(1, 0x80, false)).await.0);
+    assert_eq!(cut_at(&alice, t), (0x80, Some(ShapeFamily::Square)));
+    assert_eq!(stack(&alice, 1).unwrap().wear, 1, "one use per cut");
+    // An ordinary one moves an edge's two, never one or a diagonal.
+    assert!(!alice.edit(6, t, chisel(0, 0x10, false)).await.0, "one octant");
+    assert!(!alice.edit(7, t, chisel(0, 0x81, false)).await.0, "not an edge");
+    assert!(alice.edit(8, t, chisel(0, 0x30, false)).await.0);
+    assert_eq!(cut_at(&alice, t), (0xb0, Some(ShapeFamily::Square)));
+    assert!(!alice.edit(9, t, chisel(0, 0x30, false)).await.0, "already cut");
+    // Families do not mix, and only chisels chisel.
+    assert!(!alice.edit(10, t, chisel(6, 0x03, false)).await.0);
+    alice
+        .notice("This block is already cut by another kind of chisel")
+        .await;
+    assert!(!alice.edit(11, t, chisel(5, 0x03, false)).await.0, "a hammer");
+    assert!(!alice.edit(12, t, chisel(HAND, 0x03, false)).await.0, "a bare hand");
+    // Down to a slab, then a quarter; the last of it cannot be cut away.
+    assert!(alice.edit(13, t, chisel(1, 0x40, false)).await.0);
+    assert_eq!(cut_at(&alice, t).0, 0xf0, "a half slab");
+    assert!(alice.edit(14, t, chisel(0, 0x03, false)).await.0);
+    assert!(!alice.edit(15, t, chisel(0, 0x0c, false)).await.0);
+    alice.notice("That would cut the whole block away").await;
+    assert_eq!(cut_at(&alice, t).0, 0xf3);
+
+    // Filling back: only what is cut, and all of it makes the block whole.
+    assert!(!alice.edit(16, t, chisel(0, 0x0c, true)).await.0, "nothing cut there");
+    for (seq, m) in [(17, 0x03), (18, 0x30), (19, 0xc0)] {
+        assert!(alice.edit(seq, t, chisel(0, m, true)).await.0, "restore {m:#x}");
+    }
+    assert_eq!(state_at(&alice, t), BlockState::plain(timber), "whole again");
+    assert_eq!(stack(&alice, 0).unwrap().wear, 5, "restoring wears it too");
+
+    // A worn-out chisel breaks on its last cut.
+    assert!(alice.edit(20, t, chisel(4, 0x30, false)).await.0);
+    let name = alice.items.get(alice.item("square_chisel")).unwrap().display.clone();
+    alice.notice(&format!("Your {name} broke")).await;
+    assert_eq!(stack(&alice, 4), None, "the broken chisel is gone");
+
+    // Breaking a cut block gives back the whole block, once.
+    let before = alice.count("timber");
+    let (ok, now) = alice.dig(21, t).await;
+    assert!(ok && now.is_air());
+    assert_eq!(alice.count("timber"), before + 1);
+
+    // The cuts were saved with the chunk (restart and read them back).
+    drop(alice);
+    server.stop();
+    let server = bm_server::start(config(dir.path())).unwrap();
+    let mut alice = TestClient::login(&server, "Alice").await;
+    alice.wait_for_chunk(beside.chunk()).await;
+    assert_eq!(cut_at(&alice, beside), (0x30, Some(ShapeFamily::Slope)));
+    server.stop();
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn chisels_respect_claims() {
+    let dir = tempfile::tempdir().unwrap();
+    seed(dir.path(), "Alice", &[(5, "claim_stone", 1, 0)]);
+    seed(dir.path(), "Bob", &[(0, "slope_chisel", 1, 0)]);
+    let server = bm_server::start(config(dir.path())).unwrap();
+    let mut alice = TestClient::login(&server, "Alice").await;
+    let feet = alice.feet();
+    alice.wait_for_chunk(feet.chunk()).await;
+    assert!(alice.dig(1, feet).await.0);
+    assert!(alice.edit(2, feet, EditAction::Place { slot: 5 }).await.0);
+    // Natural ground beside her, in the claim stone's plot.
+    let t = spots_in_plot(&alice, feet)[0];
+    let mut bob = TestClient::login(&server, "Bob").await;
+    bob.wait_for_chunk(t.chunk()).await;
+    assert!(!bob.edit(1, t, chisel(0, 0x30, false)).await.0);
+    bob.notice("This land belongs to Alice").await;
+    assert!(state_at(&bob, t).shape.is_full());
+    assert_eq!(stack(&bob, 0).unwrap().wear, 0, "a refused cut costs nothing");
+    server.stop();
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn players_walk_up_half_slabs_on_the_server() {
+    let dir = tempfile::tempdir().unwrap();
+    seed(dir.path(), "Alice", &[(0, "square_chisel", 1, 0), (3, "timber", 4, 0)]);
+    let server = bm_server::start(config(dir.path())).unwrap();
+    let mut alice = TestClient::login(&server, "Alice").await;
+    let feet = alice.feet();
+    alice.wait_for_chunk(feet.chunk()).await;
+    // Two half slabs along +X at body height, on the plaza.
+    let mut seq = 0;
+    for dx in [1, 2] {
+        let t = feet.offset(dx, 1, 0);
+        for action in [
+            EditAction::Place { slot: 3 },
+            chisel(0, 0x30, false),
+            chisel(0, 0xc0, false),
+        ] {
+            seq += 1;
+            assert!(alice.edit(seq, t, action).await.0);
+        }
+        assert_eq!(cut_at(&alice, t).0, 0xf0);
+    }
+    let (_, _, start, _) = alice.latest_snapshot().await;
+    let (yaw, _) = PlayerInput::from_angles(std::f64::consts::FRAC_PI_2, 0.0);
+    let walk = PlayerInput {
+        forward: 1,
+        yaw,
+        ..Default::default()
+    };
+    for _ in 0..24 {
+        alice.send_inputs(1, walk);
+        tokio::time::sleep(Duration::from_millis(16)).await;
+    }
+    for _ in 0..30 {
+        alice.send_inputs(
+            1,
+            PlayerInput {
+                yaw,
+                ..Default::default()
+            },
+        );
+        tokio::time::sleep(Duration::from_millis(16)).await;
+    }
+    tokio::time::sleep(Duration::from_millis(300)).await;
+    let (_, _, end, _) = alice.latest_snapshot().await;
+    assert!(end.pos.x > start.pos.x + 1.0, "walked onto the slabs: {:?}", end.pos);
+    assert!(
+        (end.pos.y - (start.pos.y + 0.5)).abs() < 1e-9 && end.on_ground,
+        "standing on a half slab: {:?} from {:?}",
+        end.pos,
+        start.pos
+    );
     server.stop();
 }

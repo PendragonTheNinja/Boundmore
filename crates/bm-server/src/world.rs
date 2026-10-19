@@ -2,12 +2,15 @@
 //! background loader that fills them.
 
 use crate::store::Store;
-use bm_core::{BlockFlags, BlockId, BlockPos, BlockRegistry, BlockState, Chunk, ChunkPos, PhysicsWorld, PlanetShape};
+use bm_core::{
+    BlockFlags, BlockId, BlockPos, BlockRegistry, BlockState, Chunk, ChunkPos, PhysicsWorld, PlanetShape, Shape,
+};
 use bm_protocol::ServerMsg;
 use bm_worldgen::Generator;
 use crossbeam_channel::{Receiver, Sender};
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 pub struct Slot {
     pub chunk: Chunk,
@@ -294,6 +297,10 @@ impl World {
     }
 }
 
+/// Whether an invalid saved shape has been logged (once per run is enough to
+/// notice; the block reads as full either way).
+static BAD_SHAPE_LOGGED: AtomicBool = AtomicBool::new(false);
+
 impl PhysicsWorld for World {
     /// Unloaded chunks are solid: a player can never fall into terrain the
     /// server has not loaded yet (the client agrees, so prediction matches).
@@ -309,6 +316,12 @@ impl PhysicsWorld for World {
 
     fn liquid(&self, p: BlockPos) -> bool {
         self.block(p) == Some(self.water)
+    }
+
+    /// Chiselled blocks collide on their kept octants (ADR-0008). Unloaded
+    /// reads as full, matching `solid`.
+    fn shape(&self, p: BlockPos) -> Shape {
+        self.state(p).map_or(Shape::FULL, |s| s.shape)
     }
 }
 
@@ -369,7 +382,16 @@ impl Loader {
             };
             let chunk = match saved {
                 Some(bytes) => match Chunk::decode(&bytes) {
-                    Ok(c) => c,
+                    Ok(mut c) => {
+                        let bad = c.fix_invalid_shapes();
+                        if bad > 0 && !BAD_SHAPE_LOGGED.swap(true, Ordering::Relaxed) {
+                            tracing::warn!(
+                                "saved chunk {p:?} of planet {planet} has {bad} invalid shapes; read as full blocks \
+                                 (logged once)"
+                            );
+                        }
+                        c
+                    }
                     Err(e) => {
                         tracing::error!("saved chunk {p:?} is corrupt ({e}); serving fresh terrain");
                         g.generate(p)
