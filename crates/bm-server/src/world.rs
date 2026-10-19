@@ -1,4 +1,4 @@
-//! The server's resident world: loaded chunks, their dirty state, and the
+//! One planet's resident world: loaded chunks, their dirty state, and the
 //! background loader that fills them.
 
 use crate::store::Store;
@@ -23,18 +23,13 @@ pub struct Slot {
 impl Slot {
     pub fn frame(&mut self, pos: ChunkPos) -> Arc<Vec<u8>> {
         let chunk = &self.chunk;
-        self.frame
-            .get_or_insert_with(|| {
-                Arc::new(bm_protocol::encode_frame(&ServerMsg::Chunk {
-                    pos,
-                    data: chunk.encode(),
-                }))
-            })
-            .clone()
+        self.frame.get_or_insert_with(|| chunk_frame(pos, chunk)).clone()
     }
 }
 
 pub struct World {
+    /// The planet's id (what its saved chunks are keyed by).
+    pub planet: u16,
     pub shape: PlanetShape,
     pub registry: Arc<BlockRegistry>,
     pub flags: BlockFlags,
@@ -42,19 +37,40 @@ pub struct World {
     chunks: HashMap<ChunkPos, Slot>,
     loading: HashSet<ChunkPos>,
     loader: Loader,
+    /// Chunks whose latest save is not durable yet, with the save that
+    /// carries them.
+    unconfirmed: HashMap<ChunkPos, u64>,
+    saves: Vec<(Receiver<()>, u64, Vec<ChunkPos>)>,
+    next_save: u64,
+    /// Evicted chunks among `unconfirmed`. A request for one is answered from
+    /// here, never from the disk, which may still hold the copy from before
+    /// the edit: a quick return (a player warping back) would otherwise load
+    /// it, and the next save would put it over the build.
+    saving: HashMap<ChunkPos, Chunk>,
 }
 
 impl World {
-    pub fn new(shape: PlanetShape, registry: Arc<BlockRegistry>, generator: Arc<Generator>, store: Store) -> Self {
+    pub fn new(
+        planet: u16,
+        shape: PlanetShape,
+        registry: Arc<BlockRegistry>,
+        generator: Arc<Generator>,
+        store: Store,
+    ) -> Self {
         let water = registry.id("water").expect("catalogue has water");
         Self {
+            planet,
             shape,
             flags: registry.flags(),
             registry,
             water,
             chunks: HashMap::new(),
             loading: HashSet::new(),
-            loader: Loader::new(generator, store),
+            loader: Loader::new(planet, generator, store),
+            unconfirmed: HashMap::new(),
+            saves: Vec::new(),
+            next_save: 0,
+            saving: HashMap::new(),
         }
     }
 
@@ -72,24 +88,45 @@ impl World {
 
     /// Asks for a chunk to be loaded (from the save or the generator). Does
     /// nothing if it is resident or already on its way.
-    pub fn request(&mut self, p: ChunkPos) {
+    pub fn request(&mut self, p: ChunkPos, tick: u64) {
         let p = self.shape.wrap_chunk(p);
-        if self.shape.contains_chunk_y(p.y) && !self.chunks.contains_key(&p) && self.loading.insert(p) {
-            self.loader.request(p);
+        if !self.shape.contains_chunk_y(p.y) || self.chunks.contains_key(&p) || self.loading.contains(&p) {
+            return;
         }
-    }
-
-    /// Moves finished loads in. Returns how many arrived.
-    pub fn receive_loaded(&mut self, tick: u64) -> usize {
-        let mut n = 0;
-        while let Ok((p, chunk)) = self.loader.done.try_recv() {
-            self.loading.remove(&p);
+        if let Some(chunk) = self.saving.remove(&p) {
+            // Still on its way to the disk: the copy here is the true one,
+            // and the save in flight writes these same bytes.
             self.chunks.insert(
                 p,
                 Slot {
                     chunk,
                     dirty: false,
                     frame: None,
+                    wanted_at: tick,
+                },
+            );
+            return;
+        }
+        self.loading.insert(p);
+        self.loader.request(p);
+    }
+
+    /// Moves finished loads in. Returns how many arrived. With `keep` false
+    /// (nobody is on the planet) they are dropped instead: nothing was
+    /// changed in them, and an empty planet holds no chunks.
+    pub fn receive_loaded(&mut self, tick: u64, keep: bool) -> usize {
+        let mut n = 0;
+        while let Ok((p, chunk, frame)) = self.loader.done.try_recv() {
+            self.loading.remove(&p);
+            if !keep {
+                continue;
+            }
+            self.chunks.insert(
+                p,
+                Slot {
+                    chunk,
+                    dirty: false,
+                    frame: Some(frame),
                     wanted_at: tick,
                 },
             );
@@ -122,8 +159,9 @@ impl World {
         Some(old)
     }
 
-    /// Takes every dirty chunk's encoded bytes for saving, clearing the flags.
-    pub fn take_dirty(&mut self) -> Vec<(ChunkPos, Vec<u8>)> {
+    /// Takes every dirty chunk's encoded bytes for saving, clearing the
+    /// flags. `saved` fires (or disconnects) once the batch is durable.
+    pub fn take_dirty(&mut self, saved: &Receiver<()>) -> Vec<(ChunkPos, Vec<u8>)> {
         let mut out = Vec::new();
         for (p, slot) in &mut self.chunks {
             if slot.dirty {
@@ -131,12 +169,27 @@ impl World {
                 out.push((*p, slot.chunk.encode()));
             }
         }
+        self.track(saved, &out);
         out
     }
 
-    /// Evicts chunks nobody has wanted since `before`. Dirty chunks are
-    /// returned for saving rather than dropped.
-    pub fn evict_unwanted(&mut self, before: u64) -> Vec<(ChunkPos, Vec<u8>)> {
+    fn track(&mut self, saved: &Receiver<()>, chunks: &[(ChunkPos, Vec<u8>)]) {
+        if chunks.is_empty() {
+            return;
+        }
+        self.next_save += 1;
+        for (p, _) in chunks {
+            self.unconfirmed.insert(*p, self.next_save);
+        }
+        self.saves
+            .push((saved.clone(), self.next_save, chunks.iter().map(|(p, _)| *p).collect()));
+    }
+
+    /// Evicts chunks nobody has wanted since `before` (`u64::MAX`: all).
+    /// Dirty chunks are returned for saving, in the batch `saved` belongs to;
+    /// any whose save is not durable yet is held until it is.
+    pub fn evict_unwanted(&mut self, before: u64, saved: &Receiver<()>) -> Vec<(ChunkPos, Vec<u8>)> {
+        self.forget_saved();
         let stale: Vec<ChunkPos> = self
             .chunks
             .iter()
@@ -144,14 +197,42 @@ impl World {
             .map(|(p, _)| *p)
             .collect();
         let mut save = Vec::new();
+        let mut held = Vec::new();
         for p in stale {
-            if let Some(s) = self.chunks.remove(&p)
-                && s.dirty
-            {
+            let Some(s) = self.chunks.remove(&p) else { continue };
+            if s.dirty {
                 save.push((p, s.chunk.encode()));
             }
+            if s.dirty || self.unconfirmed.contains_key(&p) {
+                held.push((p, s.chunk));
+            }
         }
+        self.track(saved, &save);
+        self.saving.extend(held);
         save
+    }
+
+    /// Forgets saves that have finished, and drops the evicted chunks they
+    /// were the last save of.
+    pub fn forget_saved(&mut self) {
+        let (unconfirmed, saving) = (&mut self.unconfirmed, &mut self.saving);
+        self.saves.retain(|(rx, n, chunks)| {
+            if matches!(rx.try_recv(), Err(crossbeam_channel::TryRecvError::Empty)) {
+                return true;
+            }
+            for p in chunks {
+                if unconfirmed.get(p) == Some(n) {
+                    unconfirmed.remove(p);
+                    saving.remove(p);
+                }
+            }
+            false
+        });
+    }
+
+    /// Evicted chunks still waiting for their save.
+    pub fn held_for_saving(&self) -> usize {
+        self.saving.len()
     }
 
     pub fn resident(&self) -> usize {
@@ -181,18 +262,32 @@ impl PhysicsWorld for World {
     }
 }
 
+/// The network frame of a chunk (the same bytes for every player).
+fn chunk_frame(pos: ChunkPos, chunk: &Chunk) -> Arc<Vec<u8>> {
+    Arc::new(bm_protocol::encode_frame(&ServerMsg::Chunk {
+        pos,
+        data: chunk.encode(),
+    }))
+}
+
+/// A loaded chunk with its frame, encoded on the loader thread so the game
+/// thread only copies it out.
+type Loaded = (ChunkPos, Chunk, Arc<Vec<u8>>);
+
 /// Loads chunks on the rayon pool: the save first, the generator otherwise.
 struct Loader {
+    planet: u16,
     generator: Arc<Generator>,
     store: Store,
-    done_tx: Sender<(ChunkPos, Chunk)>,
-    done: Receiver<(ChunkPos, Chunk)>,
+    done_tx: Sender<Loaded>,
+    done: Receiver<Loaded>,
 }
 
 impl Loader {
-    fn new(generator: Arc<Generator>, store: Store) -> Self {
+    fn new(planet: u16, generator: Arc<Generator>, store: Store) -> Self {
         let (done_tx, done) = crossbeam_channel::unbounded();
         Self {
+            planet,
             generator,
             store,
             done_tx,
@@ -201,18 +296,23 @@ impl Loader {
     }
 
     fn request(&self, p: ChunkPos) {
-        let (g, store, tx) = (self.generator.clone(), self.store.clone(), self.done_tx.clone());
+        let (planet, g, store, tx) = (
+            self.planet,
+            self.generator.clone(),
+            self.store.clone(),
+            self.done_tx.clone(),
+        );
         rayon::spawn(move || {
             // A read error is retried, never answered with fresh terrain: a
             // regenerated chunk that is later edited would be saved over the
             // player's real build.
             let mut attempt = 0u64;
             let saved = loop {
-                match store.chunk(p) {
+                match store.chunk(planet, p) {
                     Ok(v) => break v,
                     Err(e) => {
                         attempt += 1;
-                        tracing::error!("reading chunk {p:?} failed (attempt {attempt}): {e:#}");
+                        tracing::error!("reading chunk {p:?} of planet {planet} failed (attempt {attempt}): {e:#}");
                         std::thread::sleep(std::time::Duration::from_millis(100 * attempt.min(50)));
                     }
                 }
@@ -227,7 +327,8 @@ impl Loader {
                 },
                 None => g.generate(p),
             };
-            let _ = tx.send((p, chunk));
+            let frame = chunk_frame(p, &chunk);
+            let _ = tx.send((p, chunk, frame));
         });
     }
 }

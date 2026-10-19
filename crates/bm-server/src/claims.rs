@@ -4,7 +4,9 @@
 //! grows a plot at a time through faces, so it is always one connected piece:
 //! a plot is released only if every remaining plot still reaches the stone's.
 //! All plots are canonical (`PlotPos::wrap`), so a claim straddling the
-//! planet's seam is one claim.
+//! planet's seam is one claim. Each planet has its own `Claims`; claim ids are
+//! unique across the universe (the game hands them out), so an id from one
+//! planet never names a claim on another.
 
 use crate::store::SavedClaim;
 use bm_core::{BlockPos, PlanetShape, PlotPos};
@@ -44,6 +46,8 @@ pub enum ClaimError {
     OutsidePlanet,
     StonePlot,
     WouldSplit,
+    /// The plot touches the ground kept clear around a warp shrine.
+    Shrine,
 }
 
 impl std::fmt::Display for ClaimError {
@@ -57,38 +61,41 @@ impl std::fmt::Display for ClaimError {
             ClaimError::OutsidePlanet => write!(f, "That plot is outside the planet"),
             ClaimError::StonePlot => write!(f, "The claim stone's plot cannot be released"),
             ClaimError::WouldSplit => write!(f, "Releasing that plot would split your claim"),
+            ClaimError::Shrine => write!(f, "The ground around a warp shrine cannot be claimed"),
         }
     }
 }
 
 pub struct Claims {
+    planet: u16,
     shape: PlanetShape,
     by_id: BTreeMap<u32, Claim>,
     /// Which claim holds each plot.
     plots: HashMap<PlotPos, u32>,
     stones: HashMap<BlockPos, u32>,
-    next_id: u32,
+    /// Plots nobody may claim (around the warp shrine).
+    reserved: BTreeSet<PlotPos>,
     /// Claims changed (or removed) since the last save.
     dirty: BTreeSet<u32>,
 }
 
 impl Claims {
-    pub fn new(shape: PlanetShape) -> Self {
+    pub fn new(planet: u16, shape: PlanetShape) -> Self {
         Self {
+            planet,
             shape,
             by_id: BTreeMap::new(),
             plots: HashMap::new(),
             stones: HashMap::new(),
-            next_id: 1,
+            reserved: BTreeSet::new(),
             dirty: BTreeSet::new(),
         }
     }
 
-    /// Rebuilds from the save. A plot claimed twice (which no rule allows)
-    /// stays with the claim loaded first.
-    pub fn load(shape: PlanetShape, saved: Vec<(u32, SavedClaim)>, next_id: u32) -> Self {
-        let mut c = Self::new(shape);
-        c.next_id = next_id.max(1);
+    /// Rebuilds from the save (this planet's claims). A plot claimed twice
+    /// (which no rule allows) stays with the claim loaded first.
+    pub fn load(planet: u16, shape: PlanetShape, saved: Vec<(u32, SavedClaim)>) -> Self {
+        let mut c = Self::new(planet, shape);
         for (id, s) in saved {
             let stone = shape.wrap_block(s.stone);
             let mut plots = BTreeSet::new();
@@ -116,6 +123,13 @@ impl Claims {
             );
         }
         c
+    }
+
+    /// Keeps these plots out of every claim from now on. Claims already
+    /// holding one keep it (only a new claim or plot is refused).
+    pub fn reserve(&mut self, plots: impl IntoIterator<Item = PlotPos>) {
+        let shape = self.shape;
+        self.reserved.extend(plots.into_iter().map(|p| p.wrap(shape)));
     }
 
     pub fn get(&self, id: u32) -> Option<&Claim> {
@@ -154,14 +168,20 @@ impl Claims {
             Some(c) => return Err(ClaimError::OwnedBy(c.owner_name.clone())),
             None => {}
         }
+        if self.reserved.contains(&PlotPos::of(stone, self.shape)) {
+            return Err(ClaimError::Shrine);
+        }
         if self.used_by(owner) >= allowance {
             return Err(ClaimError::Allowance(allowance));
         }
         Ok(())
     }
 
+    /// Creates claim `id` (unused anywhere in the universe). `allowance` is
+    /// what the owner may hold on this planet.
     pub fn create(
         &mut self,
+        id: u32,
         owner: &str,
         owner_name: &str,
         stone: BlockPos,
@@ -170,8 +190,6 @@ impl Claims {
         self.can_create(owner, stone, allowance)?;
         let stone = self.shape.wrap_block(stone);
         let plot = PlotPos::of(stone, self.shape);
-        let id = self.next_id;
-        self.next_id += 1;
         self.plots.insert(plot, id);
         self.stones.insert(stone, id);
         self.by_id.insert(
@@ -209,6 +227,9 @@ impl Claims {
         }
         if !plot.neighbours(shape).iter().any(|n| claim.plots.contains(n)) {
             return Err(ClaimError::NotAdjacent);
+        }
+        if self.reserved.contains(&plot) {
+            return Err(ClaimError::Shrine);
         }
         if self.used_by(owner) >= allowance {
             return Err(ClaimError::Allowance(allowance));
@@ -273,6 +294,7 @@ impl Claims {
             .into_iter()
             .map(|id| {
                 let saved = self.by_id.get(&id).map(|c| SavedClaim {
+                    planet: self.planet,
                     owner: c.owner.clone(),
                     owner_name: c.owner_name.clone(),
                     stone: c.stone,
@@ -294,16 +316,16 @@ mod tests {
 
     #[test]
     fn a_stone_claims_its_plot_once() {
-        let mut c = Claims::new(shape());
-        let id = c.create("alice", "Alice", BlockPos::new(3, 20, 3), 64).unwrap();
+        let mut c = Claims::new(0, shape());
+        let id = c.create(1, "alice", "Alice", BlockPos::new(3, 20, 3), 64).unwrap();
         assert_eq!(c.at_block(BlockPos::new(7, 23, 0)).unwrap().id, id);
         assert!(c.at_block(BlockPos::new(8, 20, 3)).is_none());
         assert_eq!(
-            c.create("alice", "Alice", BlockPos::new(4, 20, 3), 64),
+            c.create(2, "alice", "Alice", BlockPos::new(4, 20, 3), 64),
             Err(ClaimError::AlreadyClaimed)
         );
         assert_eq!(
-            c.create("bob", "Bob", BlockPos::new(4, 20, 3), 64),
+            c.create(3, "bob", "Bob", BlockPos::new(4, 20, 3), 64),
             Err(ClaimError::OwnedBy("Alice".into()))
         );
         assert_eq!(c.by_stone(BlockPos::new(3, 20, 3)).unwrap().id, id);
@@ -314,8 +336,8 @@ mod tests {
 
     #[test]
     fn claims_grow_through_faces_within_the_allowance_and_across_the_seam() {
-        let mut c = Claims::new(shape());
-        let id = c.create("alice", "Alice", BlockPos::new(0, 0, 0), 3).unwrap();
+        let mut c = Claims::new(0, shape());
+        let id = c.create(4, "alice", "Alice", BlockPos::new(0, 0, 0), 3).unwrap();
         assert_eq!(
             c.add_plot("alice", id, PlotPos::new(1, 1, 0), 3),
             Err(ClaimError::NotAdjacent)
@@ -338,10 +360,10 @@ mod tests {
             Err(ClaimError::Allowance(3))
         );
         assert_eq!(
-            c.create("alice", "Alice", BlockPos::new(100, 0, 100), 3),
+            c.create(5, "alice", "Alice", BlockPos::new(100, 0, 100), 3),
             Err(ClaimError::Allowance(3))
         );
-        let bob = c.create("bob", "Bob", BlockPos::new(16, 0, 0), 3).unwrap();
+        let bob = c.create(6, "bob", "Bob", BlockPos::new(16, 0, 0), 3).unwrap();
         assert_eq!(
             c.add_plot("bob", bob, PlotPos::new(1, 0, 0), 3),
             Err(ClaimError::OwnedBy("Alice".into()))
@@ -350,8 +372,8 @@ mod tests {
 
     #[test]
     fn releasing_never_splits_a_claim_or_frees_the_stone() {
-        let mut c = Claims::new(shape());
-        let id = c.create("alice", "Alice", BlockPos::new(0, 0, 0), 64).unwrap();
+        let mut c = Claims::new(0, shape());
+        let id = c.create(7, "alice", "Alice", BlockPos::new(0, 0, 0), 64).unwrap();
         // A line of plots: 0 - 1 - 2.
         c.add_plot("alice", id, PlotPos::new(1, 0, 0), 64).unwrap();
         c.add_plot("alice", id, PlotPos::new(2, 0, 0), 64).unwrap();
@@ -374,12 +396,28 @@ mod tests {
     }
 
     #[test]
+    fn reserved_plots_cannot_be_claimed() {
+        let mut c = Claims::new(0, shape());
+        c.reserve([PlotPos::new(1, 0, 0)]);
+        assert_eq!(
+            c.create(1, "alice", "Alice", BlockPos::new(9, 0, 0), 64),
+            Err(ClaimError::Shrine)
+        );
+        let id = c.create(2, "alice", "Alice", BlockPos::new(0, 0, 0), 64).unwrap();
+        assert_eq!(
+            c.add_plot("alice", id, PlotPos::new(1, 0, 0), 64),
+            Err(ClaimError::Shrine)
+        );
+    }
+
+    #[test]
     fn claims_survive_a_save_round_trip() {
-        let mut c = Claims::new(shape());
-        let id = c.create("alice", "Alice", BlockPos::new(-3, 9, 260), 64).unwrap();
+        let mut c = Claims::new(0, shape());
+        let id = c.create(8, "alice", "Alice", BlockPos::new(-3, 9, 260), 64).unwrap();
         c.add_plot("alice", id, PlotPos::new(31, 2, 0), 64).unwrap();
         let saved: Vec<_> = c.take_dirty().into_iter().map(|(i, s)| (i, s.unwrap())).collect();
-        let d = Claims::load(shape(), saved, 2);
+        assert!(saved.iter().all(|(_, s)| s.planet == 0));
+        let d = Claims::load(0, shape(), saved);
         assert_eq!(d.get(id), c.get(id));
         assert_eq!(d.by_stone(BlockPos::new(253, 9, 4)).unwrap().id, id);
         assert_eq!(d.views(), c.views());

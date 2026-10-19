@@ -1,16 +1,18 @@
 //! Headless bots for load testing and for seeing other players.
 //!
-//! `cargo run --release -p bm-server --example bots -- --count 50 --server 127.0.0.1:7777 --cert data/server.cert.der [--prefix Bot] [--seconds N]`
+//! `cargo run --release -p bm-server --example bots -- --count 50 --server 127.0.0.1:7777 --cert data/server.cert.der [--prefix Bot] [--seconds N] [--planets N]`
 //!
 //! Each bot registers an account (password `botpassword123`), or logs in if a
 //! previous run registered it, then wanders: walks, turns, jumps,
 //! sends inputs at 60 Hz with the same redundancy the game uses, and reads
-//! everything the server sends.
+//! everything the server sends. With `--planets N`, bot `i` first travels
+//! from the shrine it arrived beside to planet `i % N`, spreading the bots
+//! over the first N planets.
 
-use bm_core::{PlayerInput, TICK_DT};
+use bm_core::{BlockPos, PlayerInput, TICK_DT};
 use bm_net::quinn::{Connection, Endpoint, RecvStream, SendStream};
 use bm_net::{read_msg, write_msg};
-use bm_protocol::{ClientDatagram, ClientMsg, INPUT_REDUNDANCY, PROTOCOL_VERSION, ServerMsg};
+use bm_protocol::{ClientDatagram, ClientMsg, INPUT_REDUNDANCY, PROTOCOL_VERSION, ServerMsg, Welcome};
 use std::collections::VecDeque;
 use std::net::SocketAddr;
 use std::sync::Arc;
@@ -23,6 +25,7 @@ struct Totals {
     reliable_bytes: AtomicU64,
     chunks: AtomicU64,
     snapshots: AtomicU64,
+    travelled: AtomicU64,
 }
 
 #[tokio::main]
@@ -32,6 +35,7 @@ async fn main() -> anyhow::Result<()> {
     let mut cert = std::path::PathBuf::from("data").join(bm_net::CERT_FILE);
     let mut seconds = 0u64;
     let mut prefix = "Bot".to_string();
+    let mut planets = 1u16;
     let mut args = std::env::args().skip(1);
     while let Some(a) = args.next() {
         let v = args.next().unwrap_or_default();
@@ -43,6 +47,7 @@ async fn main() -> anyhow::Result<()> {
             // Bots are saved like players; a new prefix makes new bots that
             // start at the spawn instead of where the last run left them.
             "--prefix" => prefix = v,
+            "--planets" => planets = v.parse::<u16>()?.max(1),
             other => anyhow::bail!("unknown argument {other}"),
         }
     }
@@ -51,7 +56,8 @@ async fn main() -> anyhow::Result<()> {
     for i in 0..count {
         let (cert, totals, name) = (cert.clone(), totals.clone(), format!("{prefix} {i}"));
         tokio::spawn(async move {
-            if let Err(e) = bot(i, name, server, cert, totals).await {
+            let target = (i % planets as usize) as u16;
+            if let Err(e) = bot(i, name, server, cert, totals, target).await {
                 eprintln!("bot {i}: {e:#}");
             }
         });
@@ -62,9 +68,10 @@ async fn main() -> anyhow::Result<()> {
         tokio::time::sleep(Duration::from_secs(5)).await;
         let t = start.elapsed().as_secs_f64();
         println!(
-            "{:>5.0}s | {} bots connected | {} chunks, {:.1} MiB reliable | {:.0} snapshots/s",
+            "{:>5.0}s | {} bots connected, {} travelled | {} chunks, {:.1} MiB reliable | {:.0} snapshots/s",
             t,
             totals.connected.load(Ordering::Relaxed),
+            totals.travelled.load(Ordering::Relaxed),
             totals.chunks.load(Ordering::Relaxed),
             totals.reliable_bytes.load(Ordering::Relaxed) as f64 / (1 << 20) as f64,
             totals.snapshots.load(Ordering::Relaxed) as f64 / t,
@@ -78,7 +85,7 @@ async fn main() -> anyhow::Result<()> {
 const BOT_PASSWORD: &str = "botpassword123";
 
 /// A welcomed connection: every handle must outlive the bot.
-type Session = (Endpoint, Connection, SendStream, RecvStream);
+type Session = (Endpoint, Connection, SendStream, RecvStream, Box<Welcome>);
 
 /// Connects and says hello; the session on a welcome, the refusal's reason
 /// otherwise.
@@ -102,14 +109,21 @@ async fn connect(
     )
     .await?;
     match read_msg::<ServerMsg>(&mut recv).await? {
-        Some(ServerMsg::Welcome(_)) => Ok(Ok((endpoint, conn, send, recv))),
+        Some(ServerMsg::Welcome(w)) => Ok(Ok((endpoint, conn, send, recv, w))),
         Some(ServerMsg::Refused { reason }) => Ok(Err(reason)),
         other => anyhow::bail!("not welcomed: {other:?}"),
     }
 }
 
-async fn bot(i: usize, name: String, server: SocketAddr, cert: Vec<u8>, totals: Arc<Totals>) -> anyhow::Result<()> {
-    let (_endpoint, conn, _send, mut recv) = match connect(&name, true, server, &cert).await? {
+async fn bot(
+    i: usize,
+    name: String,
+    server: SocketAddr,
+    cert: Vec<u8>,
+    totals: Arc<Totals>,
+    target: u16,
+) -> anyhow::Result<()> {
+    let (_endpoint, conn, mut send, mut recv, welcome) = match connect(&name, true, server, &cert).await? {
         Ok(c) => c,
         Err(reason) if reason == "that name is taken" => match connect(&name, false, server, &cert).await? {
             Ok(c) => c,
@@ -118,6 +132,31 @@ async fn bot(i: usize, name: String, server: SocketAddr, cert: Vec<u8>, totals: 
         Err(reason) => anyhow::bail!("refused: {reason}"),
     };
     totals.connected.fetch_add(1, Ordering::Relaxed);
+    if welcome.planet.id != target {
+        // Arrivals stand two blocks along +X from the shrine. The server
+        // must have sent its chunk before it lets the bot use it.
+        let s = welcome.spawn.pos;
+        let shrine = BlockPos::containing(s.x, s.y, s.z).offset(-2, 0, 0);
+        let shrine = welcome.planet.shape.wrap_block(shrine);
+        while let Some(m) = read_msg::<ServerMsg>(&mut recv).await? {
+            if let ServerMsg::Chunk { pos, .. } = m
+                && pos == shrine.chunk()
+            {
+                break;
+            }
+        }
+        write_msg(&mut send, &ClientMsg::Warp { shrine, planet: target }).await?;
+        loop {
+            match read_msg::<ServerMsg>(&mut recv).await? {
+                Some(ServerMsg::Travel(_)) => break,
+                Some(ServerMsg::Notice { text }) => anyhow::bail!("could not travel: {text}"),
+                Some(_) => {}
+                None => anyhow::bail!("closed before travelling"),
+            }
+        }
+        totals.travelled.fetch_add(1, Ordering::Relaxed);
+    }
+    let _send = send;
     let t2 = totals.clone();
     tokio::spawn(async move {
         while let Ok(Some(m)) = read_msg::<ServerMsg>(&mut recv).await {
