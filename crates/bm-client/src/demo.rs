@@ -16,8 +16,9 @@
 
 use crate::net::NetEvent;
 use bm_core::{
-    BlockId, BlockPos, BlockRegistry, CHUNK_SIZE, Chunk, ChunkPos, DayCycle, Inventory, ItemRegistry, ItemStack,
-    LocalPos, MoveConfig, PlanetLook, PlanetShape, PlayerState, PlotPos, RecipeBook, Station,
+    BlockId, BlockPos, BlockRegistry, BlockState, CHUNK_SIZE, Chunk, ChunkPos, Colour, ColourPalette, DayCycle,
+    Inventory, ItemRegistry, ItemStack, LocalPos, MoveConfig, PlanetLook, PlanetShape, PlayerState, PlotPos,
+    RecipeBook, Station,
 };
 use bm_protocol::{
     Channel, ChatLine, ClaimView, ClientMsg, EditAction, JobView, MAX_CHAT_LEN, PlanetInfo, PlanetSummary, ServerMsg,
@@ -35,6 +36,9 @@ const SHAPE: (u32, u32) = (8, 4);
 pub const SHRINE: [i64; 3] = [128, 44, 131];
 /// A storage chest with a few things in it, on the first planet.
 pub const CHEST: [i64; 3] = [126, 44, 126];
+/// The palette wall (`show_colours`): its lowest, westmost block. 17 wide
+/// (16 hues and the greys) by 15 shades tall, facing the spawn.
+pub const WALL: [i64; 3] = [120, 48, 114];
 /// The demo's planets: name, kind, and the width shown for it in the sky and
 /// menu. (The demo's own patch is tiny; these are sizes real planets have.)
 const PLANETS: [(&str, &str, u32); 4] = [
@@ -62,7 +66,9 @@ struct KindDef {
 struct DemoPlanet {
     info: PlanetInfo,
     summary: PlanetSummary,
-    edits: HashMap<BlockPos, BlockId>,
+    edits: HashMap<BlockPos, BlockState>,
+    /// No rolling ground: level everywhere (the colour wall's patch).
+    flat: bool,
 }
 
 struct DemoStation {
@@ -90,6 +96,9 @@ pub struct Demo {
     /// Storage blocks' contents by position (first planet only).
     chests: HashMap<BlockPos, Vec<Option<ItemStack>>>,
     open_chest: Option<BlockPos>,
+    /// What waits in the reclaim, as a server keeps it per account.
+    reclaim: Vec<ItemStack>,
+    colours: ColourPalette,
     last: Instant,
     push_timer: f64,
 }
@@ -216,6 +225,8 @@ impl Demo {
             claims,
             chests,
             open_chest: None,
+            reclaim: Vec::new(),
+            colours: ColourPalette::builtin(),
             last: Instant::now(),
             push_timer: 0.0,
         };
@@ -231,7 +242,7 @@ impl Demo {
             universe: self.universe(),
             blocks: self.blocks.defs().to_vec(),
             items: self.items.defs().to_vec(),
-            colours: bm_core::ColourPalette::builtin(),
+            colours: self.colours.clone(),
             recipes: self.book.recipes.clone(),
             inventory: self.inv.clone(),
             movement: MoveConfig::default(),
@@ -306,7 +317,148 @@ impl Demo {
         out
     }
 
-    fn ground(&self, p: BlockPos) -> BlockId {
+    /// Turns the first planet into a showroom for colours: level ground, no
+    /// trees, the whole palette as a wall of stone (hues across, shades up;
+    /// the greys last) and in front of it other materials in a spread of
+    /// colours. A pack of coloured stacks too. The ground is sent again.
+    pub fn show_colours(&mut self) {
+        let b = |n: &str| self.blocks.id(n).expect("builtin block");
+        let (trunk, foliage) = (b("trunk"), b("foliage"));
+        let planet = &mut self.planets[0];
+        planet.flat = true;
+        planet.edits.retain(|_, s| s.id != trunk && s.id != foliage);
+        let stone = b("stone");
+        let [x0, y0, z0] = WALL;
+        for hue in 0..17i64 {
+            for shade in 0..15i64 {
+                let c = Colour((hue * 15 + shade + 1) as u8);
+                planet.edits.insert(
+                    BlockPos::new(x0 + hue, y0 + 14 - shade, z0),
+                    BlockState::coloured(stone, c),
+                );
+            }
+            for y in GROUND + 1..y0 {
+                planet
+                    .edits
+                    .insert(BlockPos::new(x0 + hue, y, z0), BlockState::plain(stone));
+            }
+        }
+        // Other materials, a column each, three colours up: a bright, a
+        // middle and a dark shade of a hue that moves along the row.
+        let materials = [
+            "soil",
+            "sand",
+            "gravel",
+            "trunk",
+            "timber",
+            "foliage",
+            "glass",
+            "brick",
+            "ash",
+            "snow",
+            "sandstone",
+            "ice",
+            "turf",
+            "deep_stone",
+            "ash",
+            "brick",
+            "glass",
+        ];
+        for (i, name) in materials.iter().enumerate() {
+            let block = b(name);
+            let hue = (i as i64 * 5) % 16;
+            for (k, shade) in [10i64, 5, 2].into_iter().enumerate() {
+                let c = Colour((hue * 15 + shade + 1) as u8);
+                let pos = BlockPos::new(x0 + i as i64, GROUND + 1 + k as i64, z0 + 2);
+                planet.edits.insert(pos, BlockState::coloured(block, c));
+            }
+            // And the material as it is, on top.
+            planet.edits.insert(
+                BlockPos::new(x0 + i as i64, GROUND + 4, z0 + 2),
+                BlockState::plain(block),
+            );
+        }
+        let c = |name: &str| self.colours.id(name).expect("palette colour");
+        let id = |n: &str| self.items.id(n).expect("builtin item");
+        let coloured: [(&str, &str, u16); 12] = [
+            ("stone", "Rich Azure", 64),
+            ("stone", "Bright Crimson", 40),
+            ("brick", "Deep Moss", 25),
+            ("timber", "Light Amber", 18),
+            ("glass", "Soft Violet", 9),
+            ("sand", "Pale Gold", 33),
+            ("ash", "Dusky Rose", 12),
+            ("foliage", "True Teal", 7),
+            ("soil", "Midnight Cobalt", 30),
+            ("stone", "Snow", 50),
+            ("stone", "Coal", 50),
+            ("trunk", "Strong Ember", 6),
+        ];
+        let before = self.inv.clone();
+        for (i, (item, colour, n)) in coloured.into_iter().enumerate() {
+            let slot = if i < 7 { 3 + i } else { 13 + i };
+            self.inv.slots[slot] = Some(ItemStack::coloured(id(item), c(colour), n));
+        }
+        self.slots_since(&before);
+        let chunks = self.chunks_around_spawn();
+        self.events.extend(chunks.into_iter().map(NetEvent::Msg));
+    }
+
+    /// Fills the reclaim, as a lapsed claim would, and tells the client.
+    pub fn sample_reclaim(&mut self) {
+        let id = |n: &str| self.items.id(n).expect("builtin item");
+        let c = |name: &str| self.colours.id(name).expect("palette colour");
+        self.reclaim = vec![
+            ItemStack::coloured(id("stone"), c("Rich Azure"), 100),
+            ItemStack::coloured(id("stone"), c("Rich Azure"), 37),
+            ItemStack::coloured(id("brick"), c("Bold Crimson"), 64),
+            ItemStack::new(id("timber"), 80),
+            ItemStack::coloured(id("glass"), c("Light Sky"), 24),
+            ItemStack::new(id("copper_ingot"), 12),
+            ItemStack::coloured(id("ash"), c("Dusky Amber"), 15),
+            ItemStack::new(id("coal"), 40),
+            ItemStack::coloured(id("timber"), c("Deep Fern"), 30),
+            ItemStack {
+                wear: 40,
+                ..ItemStack::new(id("copper_axe"), 1)
+            },
+        ];
+        self.push_reclaim();
+    }
+
+    fn push_reclaim(&mut self) {
+        self.events.push_back(NetEvent::Msg(ServerMsg::Reclaim {
+            items: self.reclaim.clone(),
+        }));
+    }
+
+    /// Moves what fits from the reclaim into the inventory, as the server
+    /// does: whole stacks first, then what is left of one.
+    fn collect_reclaim(&mut self) {
+        let mut left = Vec::new();
+        for stack in std::mem::take(&mut self.reclaim) {
+            if stack.wear > 0 {
+                match self.inv.slots.iter().position(Option::is_none) {
+                    Some(i) => self.inv.slots[i] = Some(stack),
+                    None => left.push(stack),
+                }
+                continue;
+            }
+            let rest = self
+                .inv
+                .add_coloured(&self.items, stack.item, stack.colour, stack.count);
+            if rest > 0 {
+                left.push(ItemStack { count: rest, ..stack });
+            }
+        }
+        if !left.is_empty() {
+            self.notice("Your inventory is full; the rest waits here");
+        }
+        self.reclaim = left;
+        self.push_reclaim();
+    }
+
+    fn ground(&self, p: BlockPos) -> BlockState {
         let planet = &self.planets[self.here];
         if let Some(b) = planet.edits.get(&p) {
             return *b;
@@ -319,15 +471,18 @@ impl Demo {
         };
         // Gentle rolling ground away from the spawn clearing.
         let (dx, dz) = (p.x as f64 - SPAWN[0], p.z as f64 - SPAWN[2]);
-        let far = ((dx * dx + dz * dz).sqrt() - 10.0).clamp(0.0, 6.0) / 6.0;
+        let far = match planet.flat {
+            true => 0.0,
+            false => ((dx * dx + dz * dz).sqrt() - 10.0).clamp(0.0, 6.0) / 6.0,
+        };
         let h = GROUND + (far * ((p.x as f64 * 0.21).sin() * 1.6 + (p.z as f64 * 0.17).cos() * 1.6)).round() as i64;
-        match p.y {
+        BlockState::plain(match p.y {
             0 => b("bedrock"),
             y if y < h - 3 => b("stone"),
             y if y < h => b(under),
             y if y == h => b(top),
             _ => BlockId::AIR,
-        }
+        })
     }
 
     fn make_chunk(&self, pos: ChunkPos) -> Chunk {
@@ -338,8 +493,8 @@ impl Demo {
             for z in 0..n {
                 for x in 0..n {
                     let block = self.ground(o.offset(x as i64, y as i64, z as i64));
-                    if !block.is_air() {
-                        c.set(LocalPos::new(x, y, z), block);
+                    if !block.id.is_air() {
+                        c.set_state(LocalPos::new(x, y, z), block);
                     }
                 }
             }
@@ -496,6 +651,7 @@ impl Demo {
                 self.events
                     .push_back(NetEvent::Msg(ServerMsg::Chat { lines: vec![line] }));
             }
+            ClientMsg::CollectReclaim { .. } => self.collect_reclaim(),
             ClientMsg::StartBreak { .. } | ClientMsg::Hello { .. } => {}
         }
         self.slots_since(&before);
@@ -596,40 +752,50 @@ impl Demo {
 
     fn edit(&mut self, seq: u32, pos: BlockPos, action: EditAction) {
         let pos = shape().wrap_block(pos);
-        let old = self.ground(pos);
+        let old_state = self.ground(pos);
+        let old = old_state.id;
         let full_chest = self.here == 0 && self.chests.get(&pos).is_some_and(|c| c.iter().any(Option::is_some));
         let (block, accepted) = match action {
             EditAction::Break if full_chest => {
                 let name = bm_core::items::title_case(&self.blocks.get(old).name);
                 self.notice(&format!("Empty the {name} before breaking it"));
-                (old, false)
+                (old_state, false)
             }
-            EditAction::Break => match self.items.drop_of(old) {
-                Some(item) if self.inv.add_all(&self.items, item, 1).is_none() => {
-                    self.notice("Your inventory is full");
-                    (old, false)
-                }
-                _ => (BlockId::AIR, true),
-            },
-            EditAction::Place { slot } => {
-                let block = self
-                    .inv
-                    .get(slot as usize)
-                    .and_then(|s| self.items.get(s.item))
-                    .and_then(|d| d.block());
-                match block {
-                    Some(b) if old.is_air() => {
-                        self.inv.take_one(slot as usize);
-                        (b, true)
+            EditAction::Break => {
+                // A block that yields itself keeps its colour (ADR-0007).
+                let drop = self.items.drop_of(old).map(|item| {
+                    let keeps = self.items.get(item).and_then(|d| d.block()) == Some(old);
+                    (item, if keeps { old_state.colour } else { Colour::NATURAL })
+                });
+                match drop {
+                    Some((item, colour)) if self.inv.add_all_coloured(&self.items, item, colour, 1).is_none() => {
+                        self.notice("Your inventory is full");
+                        (old_state, false)
                     }
-                    _ => (old, false),
+                    _ => (BlockState::AIR, true),
+                }
+            }
+            EditAction::Place { slot } => {
+                let stack = self.inv.get(slot as usize);
+                let block = stack.and_then(|s| self.items.get(s.item)).and_then(|d| d.block());
+                match (block, stack) {
+                    (Some(b), Some(s)) if old.is_air() => {
+                        self.inv.take_one(slot as usize);
+                        let colour = if self.blocks.get(b).colourable {
+                            s.colour
+                        } else {
+                            Colour::NATURAL
+                        };
+                        (BlockState::coloured(b, colour), true)
+                    }
+                    _ => (old_state, false),
                 }
             }
         };
         if accepted {
             self.planets[self.here].edits.insert(pos, block);
             if self.here == 0 {
-                let slots = self.blocks.get(block).storage as usize;
+                let slots = self.blocks.get(block.id).storage as usize;
                 if slots > 0 {
                     self.chests.insert(pos, vec![None; slots]);
                 } else if self.chests.remove(&pos).is_some() && self.open_chest == Some(pos) {
@@ -641,7 +807,7 @@ impl Demo {
         self.events.push_back(NetEvent::Msg(ServerMsg::EditResult {
             seq,
             pos,
-            block: bm_core::BlockState::plain(block),
+            block,
             accepted,
         }));
     }
@@ -664,7 +830,7 @@ fn demo_planets(blocks: &BlockRegistry) -> Vec<DemoPlanet> {
             let display = k.display.clone().unwrap_or_else(|| bm_core::items::title_case(&k.name));
             let mut edits = HashMap::new();
             let mut put = |x, y, z, block| {
-                edits.insert(BlockPos::new(x, y, z), block);
+                edits.insert(BlockPos::new(x, y, z), BlockState::plain(block));
             };
             put(SHRINE[0], SHRINE[1], SHRINE[2], b("warp_shrine"));
             if i == 0 {
@@ -716,6 +882,7 @@ fn demo_planets(blocks: &BlockRegistry) -> Vec<DemoPlanet> {
                     players: (i == 0) as u16 + [0, 3, 0, 7][i],
                 },
                 edits,
+                flat: false,
             }
         })
         .collect()
@@ -839,6 +1006,79 @@ mod tests {
         d.send(ClientMsg::OpenStorage { pos: None });
         let views = storage_views(&d.poll());
         assert!(views.len() == 1 && views[0].closed && views[0].slots.is_empty());
+    }
+
+    #[test]
+    fn the_demo_reclaim_moves_what_fits_and_keeps_colours() {
+        let mut d = Demo::new("Tester");
+        d.poll();
+        d.sample_reclaim();
+        let waiting = d.reclaim.clone();
+        assert!(waiting.iter().any(|s| s.colour != Colour::NATURAL));
+        d.poll();
+        let shrine = BlockPos::new(SHRINE[0], SHRINE[1], SHRINE[2]);
+        d.send(ClientMsg::CollectReclaim { shrine });
+        let ev = d.poll();
+        assert!(ev.iter().any(|e| matches!(e, NetEvent::Msg(ServerMsg::Slots { .. }))));
+        let Some(NetEvent::Msg(ServerMsg::Reclaim { items })) = ev
+            .iter()
+            .find(|e| matches!(e, NetEvent::Msg(ServerMsg::Reclaim { .. })))
+        else {
+            panic!("reclaim answered")
+        };
+        assert!(items.is_empty(), "everything fit: {items:?}");
+        let azure = d.colours.id("Rich Azure").unwrap();
+        let stone = d.items.id("stone").unwrap();
+        let blue: u32 = d
+            .inv
+            .slots
+            .iter()
+            .flatten()
+            .filter(|s| s.item == stone && s.colour == azure)
+            .map(|s| s.count as u32)
+            .sum();
+        assert_eq!(blue, 137);
+    }
+
+    #[test]
+    fn the_demo_places_and_breaks_in_colour() {
+        let mut d = Demo::new("Tester");
+        d.poll();
+        d.show_colours();
+        d.poll();
+        let slot = d
+            .inv
+            .slots
+            .iter()
+            .position(|s| s.is_some_and(|s| s.colour != Colour::NATURAL))
+            .unwrap();
+        let stack = d.inv.slots[slot].unwrap();
+        let pos = BlockPos::new(130, 44, 131);
+        d.send(ClientMsg::Edit {
+            seq: 1,
+            at: 0,
+            pos,
+            action: EditAction::Place { slot: slot as u8 },
+        });
+        let placed = d.poll().into_iter().find_map(|e| match e {
+            NetEvent::Msg(ServerMsg::EditResult { block, accepted, .. }) => Some((block, accepted)),
+            _ => None,
+        });
+        let (block, accepted) = placed.unwrap();
+        assert!(accepted);
+        assert_eq!(block.colour, stack.colour);
+        d.send(ClientMsg::Edit {
+            seq: 2,
+            at: 0,
+            pos,
+            action: EditAction::Break,
+        });
+        d.poll();
+        assert_eq!(
+            d.inv.slots[slot].unwrap().count,
+            stack.count,
+            "it came back in its colour"
+        );
     }
 
     #[test]
