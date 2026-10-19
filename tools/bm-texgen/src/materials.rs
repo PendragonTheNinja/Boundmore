@@ -1242,6 +1242,300 @@ pub fn ice(ctx: Ctx) -> Tex {
     tex
 }
 
+// ---------------------------------------------------------------- portals
+
+/// Wayshard: a cold violet-blue, deep indigo in shadow to a lilac-white
+/// heart. Bluer than the warp shrine's violet, far deeper than the glow
+/// crystal's pale cyan.
+pub(crate) fn wayshard_ramp() -> Ramp {
+    Ramp::from_hex(&[
+        0x140a3a, 0x221466, 0x322298, 0x4434c4, 0x5a50e2, 0x7a76f6, 0xa2a6ff, 0xd2daff, 0xffffff,
+    ])
+}
+
+/// Dressed stone for portal conduits: a smooth lilac-grey, paler and
+/// warmer than deep stone, so a portal frame reads as built, not dug.
+pub(crate) fn conduit_stone_ramp() -> Ramp {
+    Ramp::from_hex(&[
+        0x221e34, 0x322d4a, 0x433d62, 0x56507a, 0x6a6490, 0x807aa6, 0x9c96bc, 0xbeb8d4,
+    ])
+}
+
+/// The portal surface: deep blue-violet to near-white streaks.
+fn portal_ramp() -> Ramp {
+    Ramp::from_hex(&[
+        0x1a0c58, 0x281692, 0x3a26c0, 0x5240e0, 0x6e62f2, 0x9290fc, 0xbcc2ff, 0xeaf0ff,
+    ])
+}
+
+/// One crystal shard: a blade from its foot at (x, y) along the unit axis
+/// (ax, ay), `len` long, `half` wide, ending in a point.
+struct Shard {
+    x: f32,
+    y: f32,
+    ax: f32,
+    ay: f32,
+    len: f32,
+    half: f32,
+}
+
+impl Shard {
+    /// (u along the axis, v across it, half width at u) for a point.
+    fn local(&self, px: f32, py: f32) -> (f32, f32, f32) {
+        let (dx, dy) = (wrap_delta(px - self.x), wrap_delta(py - self.y));
+        let u = dx * self.ax + dy * self.ay;
+        let v = -dx * self.ay + dy * self.ax;
+        let tip = self.half * 2.2;
+        let w = self.half * ((self.len - u) / tip).clamp(0.0, 1.0) * (0.7 + u / 3.0).min(1.0);
+        (u, v, w)
+    }
+
+    /// How far a point lies outside the shard (0 inside).
+    fn outside(&self, px: f32, py: f32) -> f32 {
+        let (u, v, w) = self.local(px, py);
+        let along = (-u).max(u - self.len).max(0.0);
+        let across = (v.abs() - w).max(0.0);
+        along.hypot(across)
+    }
+}
+
+/// Wayshard vein: clusters of slim violet-blue crystal blades breaking out
+/// of deep stone, each blade with a lit face and a shaded face either side
+/// of a bright ridge, brightening to its point, a dark seat where it meets
+/// the rock and a faint violet glow cast on the stone round it. Blades, not
+/// copper's and iron's rounded nuggets; deep and violet, not glow crystal's
+/// pale cyan prisms.
+pub fn wayshard_vein(ctx: Ctx) -> Tex {
+    let salt = seed("wayshard_vein");
+    let ramp = wayshard_ramp();
+    let host = deep_stone(ctx);
+    let mut shards: Vec<Shard> = Vec::new();
+    for (i, s) in ctx.sites(salt, 12.0).iter().enumerate() {
+        if s.r[0] > 0.9 {
+            continue;
+        }
+        let mut rng = crate::noise::Rng::new(hash2(salt, i as u32));
+        let n = 3 + (s.r[1] * 1.8) as usize;
+        // Clusters lean up and to one side, never straight down.
+        let base = -std::f32::consts::FRAC_PI_2 + (s.r[2] - 0.5) * 2.2;
+        for j in 0..n {
+            let a = base + (j as f32 - (n - 1) as f32 * 0.5) * 0.5 + rng.range(-0.15, 0.15);
+            shards.push(Shard {
+                x: s.x + rng.range(-1.2, 1.2),
+                y: s.y + rng.range(-0.6, 0.6) + 4.0,
+                ax: a.cos(),
+                ay: a.sin(),
+                len: rng.range(9.5, 13.0) * if j == n / 2 { 1.15 } else { 0.75 },
+                half: rng.range(1.8, 2.5),
+            });
+        }
+    }
+    let outline = Rgba::hex(0x0e0822);
+    let glow = ramp.at(3);
+    let which = |px: f32, py: f32| shards.iter().rposition(|s| s.outside(px, py) == 0.0);
+    let mut tex = host.clone();
+    for y in 0..SIZE {
+        for x in 0..SIZE {
+            let (fx, fy) = (c(x), c(y));
+            if let Some(k) = which(fx, fy) {
+                let s = &shards[k];
+                let (u, v, w) = s.local(fx, fy);
+                // Which side of the ridge faces the light (from the top left).
+                let lit_neg = (s.ax - s.ay) * std::f32::consts::FRAC_1_SQRT_2;
+                let side = if v < 0.0 { lit_neg } else { -lit_neg };
+                let mut t = 0.46 + side * 0.2 + (u / s.len) * 0.24;
+                if v.abs() < 0.55 {
+                    t += 0.16;
+                }
+                // The rim: a bright edge on the lit side, dark on the other.
+                if v.abs() > w - 0.8 {
+                    t += if side > 0.0 { 0.12 } else { -0.16 };
+                }
+                // Seated in the rock at its foot.
+                if u < 1.2 {
+                    t -= 0.18;
+                }
+                let tip = u > s.len - 1.6 && v.abs() < 0.8;
+                tex.set(x, y, if tip { ramp.at(7) } else { ramp.pick(t, x, y) });
+                continue;
+            }
+            let d = shards.iter().map(|s| s.outside(fx, fy)).fold(f32::MAX, f32::min);
+            if d < 0.75 {
+                tex.set(x, y, outline);
+            } else if d < 4.5 {
+                // The faint light the shards throw on the stone.
+                let k = 0.5 * (1.0 - (d - 0.75) / 3.75);
+                tex.set(x, y, host.get(x, y).mix(glow, k));
+            }
+        }
+    }
+    // Sparkles on a few blade tips.
+    let white = ramp.lightest();
+    for s in shards.iter().filter(|s| s.half > 2.1) {
+        let (px, py) = (s.x + s.ax * (s.len - 2.2), s.y + s.ay * (s.len - 2.2));
+        let (ix, iy) = (px.floor() as i32, py.floor() as i32);
+        tex.set(wrap_i(ix), wrap_i(iy), white);
+    }
+    tex
+}
+
+/// The copper of a conduit's inlay at offset `o` across a band `w` pixels
+/// wide (0 = the band's top or left edge): lit on its leading edge, shaded
+/// on its trailing edge, a sheen down the middle.
+fn conduit_copper(copper: &Ramp, o: f32, w: f32, x: usize, y: usize) -> Rgba {
+    let t = if o < 1.0 {
+        0.78
+    } else if o > w - 1.0 {
+        0.3
+    } else {
+        0.55 + (1.0 - ((o - w * 0.5) / (w * 0.5)).abs()) * 0.12
+    };
+    copper.pick(t, x, y)
+}
+
+/// Portal conduit: a dressed block of lilac-grey stone with a copper inlay
+/// cut across it in a cross, carrying the power to a wayshard set in a copper
+/// bezel in the middle. The inlay runs out of every edge and clasps the next
+/// block's with a collar, so a filled rectangle of conduits reads as one
+/// frame wired through with copper, a crystal at every node.
+pub fn portal_conduit(_ctx: Ctx) -> Tex {
+    let salt = seed("portal_conduit");
+    let stone = conduit_stone_ramp();
+    let copper = copper_ramp();
+    let shard = wayshard_ramp();
+    let shadow = Rgba::hex(0x1a1428);
+    // The inlay band: 3 pixels from 15 to 17 in both directions, widening
+    // to 5 (14 to 18) in a collar where it crosses the block's edge.
+    let band = |a: usize, b: usize| -> Option<(f32, f32)> {
+        let collar = !(2..30).contains(&b);
+        let (lo, w) = if collar { (14, 5.0) } else { (15, 3.0) };
+        (a >= lo && a < lo + w as usize).then(|| ((a - lo) as f32, w))
+    };
+    let mut tex = Tex::from_fn(|x, y| {
+        let (fx, fy) = (c(x), c(y));
+        let (dx, dy) = (fx - 16.0, fy - 16.0);
+        let l1 = dx.abs() + dy.abs();
+        // The wayshard: a square-cut gem turned on its point, four facets.
+        if l1 < 5.0 {
+            let mut t = match (dx < 0.0, dy < 0.0) {
+                (true, true) => 0.72,
+                (false, true) => 0.56,
+                (true, false) => 0.44,
+                (false, false) => 0.28,
+            };
+            if l1 < 1.6 {
+                t = 0.86;
+            }
+            if l1 > 4.0 {
+                t -= 0.1;
+            }
+            return shard.pick(t, x, y);
+        }
+        // The bezel round it.
+        if l1 < 7.5 {
+            let facing = -(dx + dy) / l1;
+            let t = if l1 > 6.5 {
+                0.55 + facing * 0.3
+            } else {
+                0.5 - facing * 0.28
+            };
+            return copper.pick(t, x, y);
+        }
+        // The inlay: the vertical arm over the horizontal one.
+        if let Some((o, w)) = band(x, y) {
+            return conduit_copper(&copper, o, w, x, y);
+        }
+        if let Some((o, w)) = band(y, x) {
+            return conduit_copper(&copper, o, w, x, y);
+        }
+        // Dressed stone: a soft mottle, faint tooling, a bevelled edge.
+        let mut t = 0.5 + (crate::noise::fbm(salt, 4, 4, 2, fx, fy) - 0.5) * 0.22;
+        let tool = crate::noise::value(salt ^ 1, 2, 16, fx, fy);
+        if tool > 0.72 {
+            t -= 0.06;
+        }
+        if x == 0 || y == 0 {
+            t += 0.24;
+        } else if x == 1 || y == 1 {
+            t += 0.08;
+        }
+        if x == SIZE - 1 || y == SIZE - 1 {
+            t -= 0.26;
+        }
+        stone.pick(t, x, y)
+    });
+    // Shadows the raised copper casts on the stone, below and right of it.
+    let raised = |x: i32, y: i32| {
+        let (x, y) = (wrap_i(x), wrap_i(y));
+        let l1 = (c(x) - 16.0).abs() + (c(y) - 16.0).abs();
+        l1 < 7.5 || band(x, y).is_some() || band(y, x).is_some()
+    };
+    let before = tex.clone();
+    for y in 0..SIZE {
+        for x in 0..SIZE {
+            let (ix, iy) = (x as i32, y as i32);
+            if !raised(ix, iy) && (raised(ix - 1, iy) || raised(ix, iy - 1) || raised(ix - 1, iy - 1)) {
+                tex.set(x, y, before.get(x, y).mix(shadow, 0.5));
+            }
+        }
+    }
+    // Rivets on the collars, and the gem's glint.
+    for (x, y) in [(16, 0), (16, 31), (0, 16), (31, 16)] {
+        tex.set(x, y, copper.at(7));
+    }
+    tex.set(14, 14, shard.lightest());
+    tex
+}
+
+/// Portal surface: a sheet of violet-blue light in slow interleaved swirls,
+/// deep where it is calm and breaking into pale streaks along the currents,
+/// with a few bright motes. No centre and no edge, so a 6 by 6 portal reads
+/// as one surface. Translucent: the calm parts show the far side dimly, the
+/// streaks are nearly solid light.
+pub fn portal_surface(ctx: Ctx) -> Tex {
+    let salt = seed("portal_surface");
+    let ramp = portal_ramp();
+    // Swirls from a few waves at whole-tile frequencies (so they tile),
+    // their coordinates bent by more such waves, and a little soft noise.
+    let p = std::f32::consts::TAU / SIZEF;
+    let flow = Field::from_fn(|x, y| {
+        let (fx, fy) = (c(x), c(y));
+        let wx = fx + 4.5 * (p * fy + 1.3).sin() + 2.5 * (p * (fx + fy) + 0.4).sin();
+        let wy = fy + 4.5 * (p * fx + 2.1).sin() + 2.5 * (p * (fx - fy) + 2.7).sin();
+        0.5 + 0.2 * (p * (wx + 2.0 * wy)).sin()
+            + 0.14 * (p * (2.0 * wx - wy) + 1.0).sin()
+            + 0.08 * (p * (wx - wy) + 2.2).sin()
+            + (ctx.fbm(salt ^ 5, 4, 4, 1, fx, fy) - 0.5) * 0.12
+    })
+    .blur();
+    let light = flow.light();
+    let mut tex = Tex::from_fn(|x, y| {
+        let h = flow.at(x, y);
+        // Streaks: thin bright lines along the contours of the swirl, each
+        // trailing a soft glow on one side.
+        let band = (h * 3.0 + 0.2).fract();
+        let streak = 1.0 - smoothstep(0.04, 0.09, band);
+        let trail = (1.0 - smoothstep(0.09, 0.35, band)) * 0.45;
+        let lit = streak.max(trail);
+        let t = 0.18 + h * 0.4 + light.at(x, y) * 1.0 + lit * 0.5;
+        ramp.pick(t, x, y).with_alpha(0.62 + h * 0.06 + lit * 0.16)
+    });
+    // Motes: a bright pixel with a soft glow either side.
+    for m in ctx.sites(salt ^ 7, 9.0) {
+        if m.r[0] > 0.25 {
+            continue;
+        }
+        let (x, y) = (m.x as i32, m.y as i32);
+        tex.set(wrap_i(x), wrap_i(y), ramp.lightest().with_alpha(0.9));
+        for (dx, dy) in [(1, 0), (0, 1), (-1, 0), (0, -1)] {
+            let (px, py) = (wrap_i(x + dx), wrap_i(y + dy));
+            let base = tex.get(px, py);
+            tex.set(px, py, base.mix(ramp.at(6), 0.5).with_alpha(base.a.max(0.78)));
+        }
+    }
+    tex
+}
+
 /// Every texture the game asks for, painted; `variant` is ignored by the
 /// materials that have no variants.
 pub fn paint_named(name: &str, variant: u32) -> Option<Tex> {
@@ -1271,6 +1565,9 @@ pub fn paint_named(name: &str, variant: u32) -> Option<Tex> {
         "timber" => timber,
         "brick" => brick,
         "glass" => glass,
+        "wayshard_vein" => wayshard_vein,
+        "portal_conduit" => portal_conduit,
+        "portal_surface" => portal_surface,
         "workbench_top" => stations::workbench_top,
         "workbench_side" => stations::workbench_side,
         "furnace_top" => stations::furnace_top,
