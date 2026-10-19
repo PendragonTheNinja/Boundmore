@@ -1686,7 +1686,10 @@ mod tests {
         assert!(map.light_at(BlockPos::new(35, 10, 33)).sky() > 0, "into the cave");
         assert_matches(&map, &reference(shape, &flags, &world, &cols), &world);
         // Filled back to a full block, the cave is dark again.
-        world.get_mut(&p.chunk()).unwrap().set_state(p.local(), BlockState::plain(ids.stone));
+        world
+            .get_mut(&p.chunk())
+            .unwrap()
+            .set_state(p.local(), BlockState::plain(ids.stone));
         map.block_changed(p, &world);
         assert_eq!(map.light_at(BlockPos::new(31, 10, 33)), Light::DARK);
         assert_matches(&map, &reference(shape, &flags, &world, &cols), &world);

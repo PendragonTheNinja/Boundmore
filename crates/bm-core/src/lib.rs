@@ -32,7 +32,7 @@ pub use look::{NO_TINT, PlanetLook};
 pub use movement::{MoveConfig, PhysicsWorld, PlayerInput, PlayerState, TICK_DT, TICK_HZ};
 pub use planet::PlanetShape;
 pub use plots::{PLOT_SIZE, PlotPos};
-pub use raycast::{RayHit, raycast};
+pub use raycast::{RayHit, raycast, raycast_shaped};
 pub use recipes::{Recipe, RecipeBook, RecipeError};
 pub use shape::{ShapeFamily, edge_pairs, octant};
 pub use time::DayCycle;
