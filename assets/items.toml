@@ -7,6 +7,9 @@
 #   tool      { class = hammer | shovel | axe, speed, durability }
 #             speed: how many times faster than a bare hand on the materials
 #             its class suits (hammer: rock, crystal; shovel: soil; axe: wood, plant)
+#   chisel    { family = square | slope | bevel | round, precise, durability }
+#             cuts blocks into shapes (ADR-0008); precise cuts one eighth of
+#             a block at a time, otherwise an edge's two
 #   icon      texture in assets/textures/items/ (default: the name)
 
 [[item]]
@@ -68,3 +71,33 @@ tool = { class = "shovel", speed = 6.0, durability = 900 }
 name = "iron_axe"
 stack = 1
 tool = { class = "axe", speed = 6.0, durability = 900 }
+
+[[item]]
+name = "square_chisel"
+stack = 1
+chisel = { family = "square", durability = 300 }
+
+[[item]]
+name = "slope_chisel"
+stack = 1
+chisel = { family = "slope", durability = 400 }
+
+[[item]]
+name = "bevel_chisel"
+stack = 1
+chisel = { family = "bevel", durability = 600 }
+
+[[item]]
+name = "round_chisel"
+stack = 1
+chisel = { family = "round", durability = 600 }
+
+[[item]]
+name = "precise_square_chisel"
+stack = 1
+chisel = { family = "square", precise = true, durability = 600 }
+
+[[item]]
+name = "precise_slope_chisel"
+stack = 1
+chisel = { family = "slope", precise = true, durability = 600 }

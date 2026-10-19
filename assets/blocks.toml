@@ -23,6 +23,8 @@
 #   station     workbench | furnace: a crafting station
 #   storage     slots of storage inside (0, the default: none)
 #   colourable  takes a palette colour (default true; ADR-0007)
+#   chisel      none (default) | slope (natural terrain, as in Boundless) | any
+#               which chisels may cut it (ADR-0008)
 
 [[block]]
 name = "air"
@@ -50,6 +52,7 @@ material = "rock"
 
 [[block]]
 name = "stone"
+chisel = "slope"
 color = [118, 116, 122]
 solid = true
 opaque = true
@@ -62,6 +65,7 @@ material = "rock"
 
 [[block]]
 name = "deep_stone"
+chisel = "slope"
 color = [82, 78, 92]
 solid = true
 opaque = true
@@ -74,6 +78,7 @@ material = "rock"
 
 [[block]]
 name = "soil"
+chisel = "slope"
 color = [112, 82, 58]
 solid = true
 opaque = true
@@ -86,6 +91,7 @@ material = "soil"
 
 [[block]]
 name = "turf"
+chisel = "slope"
 color = [112, 82, 58]
 top_color = [92, 156, 74]
 fringe = true
@@ -101,6 +107,7 @@ drops = "soil"
 
 [[block]]
 name = "sand"
+chisel = "slope"
 color = [214, 196, 142]
 solid = true
 opaque = true
@@ -113,6 +120,7 @@ material = "soil"
 
 [[block]]
 name = "gravel"
+chisel = "slope"
 color = [136, 128, 122]
 solid = true
 opaque = true
@@ -125,6 +133,7 @@ material = "soil"
 
 [[block]]
 name = "snow"
+chisel = "slope"
 color = [236, 242, 248]
 solid = true
 opaque = true
@@ -218,6 +227,7 @@ material = "crystal"
 
 [[block]]
 name = "timber"
+chisel = "any"
 color = [176, 134, 86]
 solid = true
 opaque = true
@@ -230,6 +240,7 @@ material = "wood"
 
 [[block]]
 name = "brick"
+chisel = "any"
 color = [164, 82, 66]
 solid = true
 opaque = true
@@ -242,6 +253,7 @@ material = "rock"
 
 [[block]]
 name = "glass"
+chisel = "any"
 color = [200, 228, 236]
 solid = true
 opaque = false
@@ -318,6 +330,7 @@ drops = "iron_ore"
 
 [[block]]
 name = "sandstone"
+chisel = "any"
 color = [214, 178, 120]
 solid = true
 opaque = true
@@ -330,6 +343,7 @@ material = "rock"
 
 [[block]]
 name = "ice"
+chisel = "any"
 color = [170, 210, 240]
 solid = true
 opaque = false
@@ -377,6 +391,7 @@ storage = 20
 
 [[block]]
 name = "ash"
+chisel = "any"
 color = [150, 146, 140]
 solid = true
 opaque = true

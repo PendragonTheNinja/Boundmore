@@ -113,3 +113,39 @@ output = "storage_chest"
 inputs = [["timber", 8]]
 station = "workbench"
 seconds = 3.0
+
+[[recipe]]
+output = "square_chisel"
+inputs = [["stone", 2], ["timber", 1]]
+station = "workbench"
+seconds = 3.0
+
+[[recipe]]
+output = "slope_chisel"
+inputs = [["copper_ingot", 1], ["timber", 1]]
+station = "workbench"
+seconds = 4.0
+
+[[recipe]]
+output = "bevel_chisel"
+inputs = [["iron_ingot", 1], ["timber", 1]]
+station = "workbench"
+seconds = 5.0
+
+[[recipe]]
+output = "round_chisel"
+inputs = [["iron_ingot", 1], ["timber", 1]]
+station = "workbench"
+seconds = 5.0
+
+[[recipe]]
+output = "precise_square_chisel"
+inputs = [["iron_ingot", 2], ["square_chisel", 1]]
+station = "workbench"
+seconds = 6.0
+
+[[recipe]]
+output = "precise_slope_chisel"
+inputs = [["iron_ingot", 2], ["slope_chisel", 1]]
+station = "workbench"
+seconds = 6.0

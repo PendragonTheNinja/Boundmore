@@ -15,10 +15,12 @@ pub mod planet;
 pub mod plots;
 pub mod raycast;
 pub mod recipes;
+pub mod shape;
 pub mod time;
 
 pub use block::{
-    BlockDef, BlockFlags, BlockId, BlockRegistry, BlockState, Colour, Material, RegistryError, Shape, Station,
+    BlockDef, BlockFlags, BlockId, BlockRegistry, BlockState, Chiselling, Colour, Material, RegistryError, Shape,
+    Station,
 };
 pub use chunk::{CHUNK_FORMAT_VERSION, Chunk, ChunkDecodeError};
 pub use colours::{ColourDef, ColourError, ColourPalette};
@@ -32,4 +34,5 @@ pub use planet::PlanetShape;
 pub use plots::{PLOT_SIZE, PlotPos};
 pub use raycast::{RayHit, raycast};
 pub use recipes::{Recipe, RecipeBook, RecipeError};
+pub use shape::{ShapeFamily, edge_pairs, octant};
 pub use time::DayCycle;

@@ -6,6 +6,7 @@
 //! items are data the server sends to clients in the handshake.
 
 use crate::block::{BlockDef, BlockId, BlockRegistry, Colour, Material};
+use crate::shape::ShapeFamily;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
@@ -47,6 +48,13 @@ pub enum ItemKind {
         speed: f32,
         durability: u16,
     },
+    /// Cuts blocks into shapes of `family` (ADR-0008): one octant at a time
+    /// when `precise`, else an edge's two. One use per cut.
+    Chisel {
+        family: ShapeFamily,
+        precise: bool,
+        durability: u16,
+    },
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -76,6 +84,26 @@ impl ItemDef {
                 speed,
                 durability,
             } => Some((class, speed, durability)),
+            _ => None,
+        }
+    }
+
+    /// `(family, precise, durability)` for a chisel.
+    pub fn chisel(&self) -> Option<(ShapeFamily, bool, u16)> {
+        match self.kind {
+            ItemKind::Chisel {
+                family,
+                precise,
+                durability,
+            } => Some((family, precise, durability)),
+            _ => None,
+        }
+    }
+
+    /// Uses before it breaks, for anything that wears.
+    pub fn durability(&self) -> Option<u16> {
+        match self.kind {
+            ItemKind::Tool { durability, .. } | ItemKind::Chisel { durability, .. } => Some(durability),
             _ => None,
         }
     }
@@ -148,7 +176,17 @@ struct ItemEntry {
     stack: u16,
     #[serde(default)]
     tool: Option<ToolEntry>,
+    #[serde(default)]
+    chisel: Option<ChiselEntry>,
     icon: Option<String>,
+}
+
+#[derive(Deserialize)]
+struct ChiselEntry {
+    family: ShapeFamily,
+    #[serde(default)]
+    precise: bool,
+    durability: u16,
 }
 
 #[derive(Deserialize)]
@@ -202,13 +240,19 @@ impl ItemRegistry {
             }
         }
         for e in file.item {
-            let kind = match e.tool {
-                Some(t) => ItemKind::Tool {
+            let kind = match (e.tool, e.chisel) {
+                (Some(_), Some(_)) => return Err(ItemError::BadTool(e.name)),
+                (Some(t), None) => ItemKind::Tool {
                     class: t.class,
                     speed: t.speed,
                     durability: t.durability,
                 },
-                None => ItemKind::Material,
+                (None, Some(c)) => ItemKind::Chisel {
+                    family: c.family,
+                    precise: c.precise,
+                    durability: c.durability,
+                },
+                (None, None) => ItemKind::Material,
             };
             defs.push(ItemDef {
                 display: e.display.unwrap_or_else(|| title_case(&e.name)),
@@ -240,6 +284,9 @@ impl ItemRegistry {
             }
             match d.kind {
                 ItemKind::Tool { speed, durability, .. } if d.stack != 1 || speed <= 0.0 || durability == 0 => {
+                    return Err(ItemError::BadTool(d.name.clone()));
+                }
+                ItemKind::Chisel { durability, .. } if d.stack != 1 || durability == 0 => {
                     return Err(ItemError::BadTool(d.name.clone()));
                 }
                 ItemKind::Block(b) if !blocks.contains(b) => return Err(ItemError::BadBlock(d.name.clone(), b.0)),

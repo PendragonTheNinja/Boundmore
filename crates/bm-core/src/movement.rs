@@ -149,6 +149,11 @@ impl PlayerState {
 pub trait PhysicsWorld {
     fn solid(&self, p: BlockPos) -> bool;
     fn liquid(&self, p: BlockPos) -> bool;
+    /// The shape of a solid block (ADR-0008): its kept octants are what
+    /// collides. Client and server must answer identically (invariant 3).
+    fn shape(&self, _p: BlockPos) -> crate::block::Shape {
+        crate::block::Shape::FULL
+    }
 }
 
 const SKIN: f64 = 1e-6;

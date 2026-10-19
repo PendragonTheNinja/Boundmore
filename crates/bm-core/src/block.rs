@@ -119,6 +119,32 @@ pub struct BlockDef {
     /// their painted look.
     #[serde(default = "yes")]
     pub colourable: bool,
+    /// Which chisels may cut it (ADR-0008).
+    #[serde(default)]
+    pub chisel: Chiselling,
+}
+
+/// Which chisels may cut a block.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Chiselling {
+    /// None: machines, ores, liquids, plants.
+    #[default]
+    None,
+    /// Only slopes: natural terrain, as in Boundless.
+    Slope,
+    /// Every family: building blocks.
+    Any,
+}
+
+impl Chiselling {
+    pub fn allows(self, family: crate::shape::ShapeFamily) -> bool {
+        match self {
+            Chiselling::None => false,
+            Chiselling::Slope => family == crate::shape::ShapeFamily::Slope,
+            Chiselling::Any => true,
+        }
+    }
 }
 
 fn yes() -> bool {
