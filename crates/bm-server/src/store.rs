@@ -163,7 +163,10 @@ impl std::fmt::Debug for AccountRecord {
 
 /// One stack as saved: by item name. A coloured stack saves its colour id
 /// after a `#` (`stone#17`); a plain name is natural colour, which is how
-/// every stack saved before colours existed reads (ADR-0007).
+/// every stack saved before colours existed reads (ADR-0007). A tagged stack
+/// (a portal token, ADR-0009) saves its tag after an `@`, always last
+/// (`portal_token@17`, `name#3@17` with both); no `@` is tag 0, so every
+/// older save reads unchanged.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SavedStack {
     pub item: String,
@@ -174,12 +177,15 @@ pub struct SavedStack {
 impl SavedStack {
     pub fn new(items: &ItemRegistry, s: &ItemStack) -> Option<Self> {
         let name = &items.get(s.item)?.name;
+        let mut item = name.clone();
+        if s.colour != Colour::NATURAL {
+            item.push_str(&format!("#{}", s.colour.0));
+        }
+        if s.tag != 0 {
+            item.push_str(&format!("@{}", s.tag));
+        }
         Some(Self {
-            item: if s.colour == Colour::NATURAL {
-                name.clone()
-            } else {
-                format!("{name}#{}", s.colour.0)
-            },
+            item,
             count: s.count,
             wear: s.wear,
         })
@@ -187,9 +193,13 @@ impl SavedStack {
 
     /// The stack in this catalogue, if the item still exists.
     pub fn resolve(&self, items: &ItemRegistry) -> Option<ItemStack> {
-        let (name, colour) = match self.item.split_once('#') {
+        let (rest, tag) = match self.item.rsplit_once('@') {
+            Some((rest, t)) => (rest, t.parse().ok()?),
+            None => (self.item.as_str(), 0),
+        };
+        let (name, colour) = match rest.split_once('#') {
             Some((name, c)) => (name, Colour(c.parse().ok()?)),
-            None => (self.item.as_str(), Colour::NATURAL),
+            None => (rest, Colour::NATURAL),
         };
         let id = items.id(name).ok()?;
         Some(ItemStack {
@@ -197,7 +207,7 @@ impl SavedStack {
             count: self.count,
             wear: self.wear,
             colour,
-            tag: 0,
+            tag,
         })
     }
 }
@@ -1558,6 +1568,25 @@ mod tests {
         assert_eq!(saved[3].as_ref().unwrap().item, "stone_hammer");
         assert_eq!(saved[5].as_ref().unwrap().item, "stone#77");
         assert_eq!(load_slots(&items, &saved, "test"), inv.slots);
+        // Tokens carry their portal after an `@`, after any colour.
+        let token = items.id("portal_token").unwrap();
+        let mut inv = Inventory::default();
+        inv.slots[0] = Some(ItemStack::tagged(token, 17));
+        inv.slots[1] = Some(ItemStack {
+            colour: Colour(4),
+            ..ItemStack::tagged(token, u32::MAX)
+        });
+        inv.slots[2] = Some(ItemStack::new(token, 1));
+        let saved = save_slots(&items, &inv);
+        let names: Vec<_> = saved.iter().take(3).map(|s| s.as_ref().unwrap().item.as_str()).collect();
+        assert_eq!(names, ["portal_token@17", "portal_token#4@4294967295", "portal_token"]);
+        assert_eq!(load_slots(&items, &saved, "test"), inv.slots);
+        let bad = vec![Some(SavedStack {
+            item: "portal_token@x".into(),
+            count: 1,
+            wear: 0,
+        })];
+        assert_eq!(load_slots(&items, &bad, "test"), vec![None], "a bad tag is no item");
         let gone = vec![Some(SavedStack {
             item: "unobtainium".into(),
             count: 1,
