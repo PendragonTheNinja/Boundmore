@@ -1,4 +1,5 @@
-//! Item icons, made on the CPU once per catalogue.
+//! Item icons, made on the CPU once per catalogue (and once per colour a
+//! coloured stack is seen in).
 //!
 //! A block item is drawn as a small isometric cube from its own face
 //! textures (the look the M2 hotbar had), lit from the top left as the art
@@ -30,20 +31,23 @@ pub enum IconSource {
 const SHADES: [f32; 3] = [1.0, 0.80, 0.62];
 
 /// `tints` is the planet's block tints (`PlanetInfo::tints`), so a block
-/// item looks in the hand as it does in the ground here.
+/// item looks in the hand as it does in the ground here. `colour` (linear)
+/// repaints a block item as the terrain shader does (`colour::recolour`);
+/// a coloured block wears its colour, not the planet's tint.
 pub fn icon_for(
     def: &ItemDef,
     blocks: &BlockRegistry,
     set: &TextureSet,
     items_dir: &Path,
     tints: &[[u8; 3]],
+    colour: Option<[f32; 3]>,
 ) -> IconSource {
     if let ItemKind::Block(b) = def.kind
         && blocks.contains(b)
     {
         let faces = set.faces.get(b.0 as usize).copied().unwrap_or([NO_TEXTURE; 4]);
         let tint = tints.get(b.0 as usize).copied().unwrap_or(NO_TINT);
-        return IconSource::Image(block_icon(blocks.get(b), faces, &set.layers, tint));
+        return IconSource::Image(block_icon(blocks.get(b), faces, &set.layers, tint, colour));
     }
     let file = def.icon.as_deref().unwrap_or(&def.name);
     match load_item_png(&items_dir.join(format!("{file}.png"))) {
@@ -131,8 +135,15 @@ fn faces() -> [Face; 3] {
 
 /// Rasterises a block's isometric icon. `faces` is the block's entry in the
 /// texture face table (`first_layer | variants << 16`, ADR on textures);
-/// `tint` multiplies its colour (sRGB, white for none).
-pub fn block_icon(def: &BlockDef, faces_entry: [u32; 4], layers: &[textures::Layer], tint: [u8; 3]) -> Vec<u8> {
+/// `tint` multiplies its colour (sRGB, white for none); `colour` (linear, a
+/// palette colour) repaints it instead, keeping its light and shade.
+pub fn block_icon(
+    def: &BlockDef,
+    faces_entry: [u32; 4],
+    layers: &[textures::Layer],
+    tint: [u8; 3],
+    colour: Option<[f32; 3]>,
+) -> Vec<u8> {
     let n = ICON_SIZE;
     let tint = tint.map(textures::srgb_to_linear);
     let geometry = faces();
@@ -140,6 +151,11 @@ pub fn block_icon(def: &BlockDef, faces_entry: [u32; 4], layers: &[textures::Lay
     let entry = [faces_entry[0], faces_entry[1], faces_entry[1]];
     let colours = [def.top_color.unwrap_or(def.color), def.color, def.color];
     let layer = |e: u32| (e != NO_TEXTURE).then(|| layers.get((e & 0xffff) as usize)).flatten();
+    // Each face's average brightness, as the shader's palette carries it.
+    let base: [f32; 3] = std::array::from_fn(|f| {
+        crate::colour::face_luma(entry[f], layers)
+            .unwrap_or_else(|| crate::colour::luma(crate::colour::srgb_to_linear(colours[f])))
+    });
     let mut out = vec![0u8; n * n * 4];
     const SS: usize = 3;
     for y in 0..n {
@@ -165,9 +181,14 @@ pub fn block_icon(def: &BlockDef, faces_entry: [u32; 4], layers: &[textures::Lay
                         }
                         None => (colours[f], 1.0),
                     };
+                    let lin = crate::colour::srgb_to_linear(rgb);
+                    let lit = match colour {
+                        Some(c) => crate::colour::recolour(lin, base[f], c),
+                        None => std::array::from_fn(|c| lin[c] * tint[c]),
+                    };
                     // Shade in linear light, weighted by coverage and alpha.
                     for c in 0..3 {
-                        acc[c] += textures::srgb_to_linear(rgb[c]) * tint[c] * SHADES[f] * alpha;
+                        acc[c] += lit[c] * SHADES[f] * alpha;
                     }
                     acc[3] += alpha;
                 }
@@ -207,7 +228,7 @@ mod tests {
     fn block_icons_are_cubes_lit_from_the_top_left() {
         let blocks = BlockRegistry::builtin();
         let stone = blocks.get(blocks.id("stone").unwrap());
-        let img = block_icon(stone, [NO_TEXTURE; 4], &[], NO_TINT);
+        let img = block_icon(stone, [NO_TEXTURE; 4], &[], NO_TINT, None);
         assert_eq!(img.len(), ICON_SIZE * ICON_SIZE * 4);
         let c = ICON_SIZE / 2;
         assert_eq!(px(&img, 0, 0)[3], 0, "corners are transparent");
@@ -231,6 +252,7 @@ mod tests {
             [3 | 3 << 16, 3 | 3 << 16, 3 | 3 << 16, 0],
             &[vec![], vec![], vec![], red],
             NO_TINT,
+            None,
         );
         let c = ICON_SIZE / 2;
         assert_eq!(px(&img, c, c / 2), [200, 10, 10, 255]);
@@ -244,20 +266,20 @@ mod tests {
         let dir = std::env::temp_dir().join(format!("bm-icons-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
         let def = |n: &str| items.get(items.id(n).unwrap()).unwrap();
-        match icon_for(def("copper_ore"), &blocks, &set, &dir, &[]) {
+        match icon_for(def("copper_ore"), &blocks, &set, &dir, &[], None) {
             IconSource::Initials { text, .. } => assert_eq!(text, "CO"),
             other => panic!("{other:?}"),
         }
         // Block items never need a picture file.
         assert!(matches!(
-            icon_for(def("stone"), &blocks, &set, &dir, &[]),
+            icon_for(def("stone"), &blocks, &set, &dir, &[], None),
             IconSource::Image(_)
         ));
         // A dropped-in picture of any size is used, scaled to the icon size.
         image::RgbaImage::from_pixel(16, 16, image::Rgba([1, 2, 3, 255]))
             .save(dir.join("coal.png"))
             .unwrap();
-        match icon_for(def("coal"), &blocks, &set, &dir, &[]) {
+        match icon_for(def("coal"), &blocks, &set, &dir, &[], None) {
             IconSource::Image(px) => assert_eq!(&px[..4], &[1, 2, 3, 255]),
             other => panic!("{other:?}"),
         }
@@ -265,11 +287,44 @@ mod tests {
     }
 
     #[test]
+    fn coloured_icons_keep_detail_ignore_the_tint_and_repeat_exactly() {
+        let blocks = BlockRegistry::builtin();
+        let stone = blocks.get(blocks.id("stone").unwrap());
+        // A two-tone texture: the recoloured icon keeps both tones.
+        let s = textures::SIZE as usize;
+        let mut layer = Vec::with_capacity(s * s * 4);
+        for i in 0..s * s {
+            let v = if (i / s / 8) % 2 == 0 { 90 } else { 170 };
+            layer.extend_from_slice(&[v, v, v, 255]);
+        }
+        let entry = [0, 0, 0, 0];
+        let azure = Some(crate::colour::srgb_to_linear([40, 110, 210]));
+        let a = block_icon(stone, entry, std::slice::from_ref(&layer), NO_TINT, azure);
+        let b = block_icon(stone, entry, std::slice::from_ref(&layer), [255, 100, 100], azure);
+        assert_eq!(a, b, "the planet's tint does not touch a coloured block");
+        assert_eq!(
+            a,
+            block_icon(stone, entry, std::slice::from_ref(&layer), NO_TINT, azure),
+            "deterministic"
+        );
+        let c = ICON_SIZE / 2;
+        let lit: Vec<[u8; 4]> = (c / 4..c * 3 / 4).map(|y| px(&a, c, y)).collect();
+        assert!(lit.iter().all(|p| p[2] > p[0] && p[2] > p[1]), "blue: {lit:?}");
+        let (lo, hi) = (
+            lit.iter().map(|p| p[2]).min().unwrap(),
+            lit.iter().map(|p| p[2]).max().unwrap(),
+        );
+        assert!(hi - lo > 25, "light and shade survive: {lo} to {hi}");
+        let plain = block_icon(stone, entry, std::slice::from_ref(&layer), NO_TINT, None);
+        assert_ne!(a, plain);
+    }
+
+    #[test]
     fn block_icons_wear_the_planets_tint() {
         let blocks = BlockRegistry::builtin();
         let stone = blocks.get(blocks.id("stone").unwrap());
-        let plain = block_icon(stone, [NO_TEXTURE; 4], &[], NO_TINT);
-        let red = block_icon(stone, [NO_TEXTURE; 4], &[], [255, 128, 128]);
+        let plain = block_icon(stone, [NO_TEXTURE; 4], &[], NO_TINT, None);
+        let red = block_icon(stone, [NO_TEXTURE; 4], &[], [255, 128, 128], None);
         let c = ICON_SIZE / 2;
         let (a, b) = (px(&plain, c, c / 2), px(&red, c, c / 2));
         assert_eq!(a[0], b[0], "full red is kept");

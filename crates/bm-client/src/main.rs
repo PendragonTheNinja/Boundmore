@@ -5,6 +5,7 @@
 mod app;
 mod chat;
 mod claims;
+mod colour;
 mod demo;
 mod icons;
 mod items;

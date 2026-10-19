@@ -9,9 +9,10 @@
 //! - One vertex buffer per chunk and per pass, a shared quad index buffer, and
 //!   one instance record per visible chunk carrying its offset and origin.
 
+use crate::colour::{self, PALETTE_COLOURS};
 use crate::sky::{MAX_SKY_PLANETS, SkyPlanet};
 use crate::textures::{self, TextureSet};
-use bm_core::{BlockPos, BlockRegistry, CHUNK_SIZE, ChunkPos, NO_TINT, PlanetShape};
+use bm_core::{BlockPos, BlockRegistry, CHUNK_SIZE, ChunkPos, ColourPalette, NO_TINT, PlanetShape};
 use bm_mesh::{ChunkMesh, Vertex};
 use glam::{DVec3, Mat4, Vec3, Vec4};
 use std::collections::HashMap;
@@ -174,6 +175,13 @@ pub struct Renderer {
     depth: wgpu::TextureView,
     globals: wgpu::Buffer,
     palette: wgpu::Buffer,
+    /// The block colours as last written (`write_palette`), and each face's
+    /// average texture luma (`set_textures`; None where it has no texture),
+    /// merged into the palette uniform by `upload_palette`.
+    block_colours: Vec<[f32; 4]>,
+    texture_luma: Vec<[Option<f32>; 3]>,
+    /// The colour palette (ADR-0007), by colour id.
+    colours: wgpu::Buffer,
     bind_group: wgpu::BindGroup,
     terrain_opaque: wgpu::RenderPipeline,
     terrain_translucent: wgpu::RenderPipeline,
@@ -272,6 +280,12 @@ impl Renderer {
             usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
+        let colours = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("colours"),
+            size: (PALETTE_COLOURS * 16) as u64,
+            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
         let uniform = |binding| wgpu::BindGroupLayoutEntry {
             binding,
             visibility: wgpu::ShaderStages::VERTEX_FRAGMENT,
@@ -304,6 +318,7 @@ impl Renderer {
                     ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
                     count: None,
                 },
+                uniform(5),
             ],
         });
         let faces = device.create_buffer(&wgpu::BufferDescriptor {
@@ -329,7 +344,13 @@ impl Renderer {
             missing: Vec::new(),
         };
         let block_view = make_block_texture(&device, &queue, &empty);
-        let bind_group = make_bind_group(&device, &layout, [&globals, &palette, &faces], &block_view, &sampler);
+        let bind_group = make_bind_group(
+            &device,
+            &layout,
+            [&globals, &palette, &faces, &colours],
+            &block_view,
+            &sampler,
+        );
         let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("main"),
             bind_group_layouts: &[Some(&layout)],
@@ -545,6 +566,9 @@ impl Renderer {
             depth,
             globals,
             palette,
+            block_colours: vec![[0.0; 4]; PALETTE_BLOCKS * 4],
+            texture_luma: Vec::new(),
+            colours,
             bind_group,
             terrain_opaque,
             terrain_translucent,
@@ -566,6 +590,7 @@ impl Renderer {
             stats: FrameStats::default(),
         };
         r.write_palette(&BlockRegistry::builtin());
+        r.set_colours(&ColourPalette::builtin());
         r.write_faces();
         Ok(r)
     }
@@ -586,7 +611,19 @@ impl Renderer {
         if registry.len() > PALETTE_BLOCKS {
             tracing::warn!("only the first {PALETTE_BLOCKS} blocks have colours");
         }
+        self.block_colours = data;
+        self.upload_palette();
+    }
+
+    fn upload_palette(&mut self) {
+        let data = with_face_luma(&self.block_colours, &self.texture_luma);
         self.queue.write_buffer(&self.palette, 0, bytemuck::cast_slice(&data));
+    }
+
+    /// Uploads the colour palette the server sent (`Welcome.colours`).
+    pub fn set_colours(&mut self, palette: &ColourPalette) {
+        let data = colour::palette_uniform(palette);
+        self.queue.write_buffer(&self.colours, 0, bytemuck::cast_slice(&data));
     }
 
     /// Uploads the block textures and the per-block face table.
@@ -597,11 +634,18 @@ impl Renderer {
         }
         self.face_table = table;
         self.write_faces();
+        self.texture_luma = set
+            .faces
+            .iter()
+            .take(PALETTE_BLOCKS)
+            .map(|f| [f[1], f[0], f[2]].map(|e| colour::face_luma(e, &set.layers)))
+            .collect();
+        self.upload_palette();
         let view = make_block_texture(&self.device, &self.queue, set);
         self.bind_group = make_bind_group(
             &self.device,
             &self.bind_layout,
-            [&self.globals, &self.palette, &self.faces],
+            [&self.globals, &self.palette, &self.faces, &self.colours],
             &view,
             &self.sampler,
         );
@@ -949,6 +993,21 @@ fn with_tints(table: &[[u32; 4]], tints: &[[u8; 3]]) -> Vec<[u32; 4]> {
         .collect()
 }
 
+/// The block colours with each face's average luma in w: its texture's
+/// where it has one, else its own colour's. The shader divides by it to find
+/// a texel's light and shade when recolouring (ADR-0007).
+fn with_face_luma(block_colours: &[[f32; 4]], texture_luma: &[[Option<f32>; 3]]) -> Vec<[f32; 4]> {
+    let mut out = block_colours.to_vec();
+    for (i, entry) in out.iter_mut().enumerate() {
+        let (block, slot) = (i / 4, i % 4);
+        if slot < 3 {
+            let own = colour::luma([entry[0], entry[1], entry[2]]);
+            entry[3] = texture_luma.get(block).and_then(|l| l[slot]).unwrap_or(own);
+        }
+    }
+    out
+}
+
 fn sky_planets(list: &[SkyPlanet]) -> [SkyPlanetGpu; MAX_SKY_PLANETS] {
     let mut out = [SkyPlanetGpu::default(); MAX_SKY_PLANETS];
     for (o, p) in out.iter_mut().zip(list) {
@@ -987,7 +1046,7 @@ pub fn view_rotation(forward: Vec3) -> Mat4 {
 fn make_bind_group(
     device: &wgpu::Device,
     layout: &wgpu::BindGroupLayout,
-    [globals, palette, faces]: [&wgpu::Buffer; 3],
+    [globals, palette, faces, colours]: [&wgpu::Buffer; 4],
     view: &wgpu::TextureView,
     sampler: &wgpu::Sampler,
 ) -> wgpu::BindGroup {
@@ -1014,6 +1073,10 @@ fn make_bind_group(
             wgpu::BindGroupEntry {
                 binding: 4,
                 resource: wgpu::BindingResource::Sampler(sampler),
+            },
+            wgpu::BindGroupEntry {
+                binding: 5,
+                resource: colours.as_entire_binding(),
             },
         ],
     })
@@ -1290,6 +1353,21 @@ mod tests {
         assert_eq!(std::mem::size_of::<ChunkInstance>(), 24);
         assert_eq!(std::mem::size_of::<Vertex>(), 8);
         assert_eq!(std::mem::size_of::<LineVertex>(), 28);
+    }
+
+    #[test]
+    fn faces_carry_their_texture_luma_or_their_colours() {
+        let mut colours = vec![[0.0; 4]; 8];
+        colours[0] = [0.5, 0.5, 0.5, 1.0]; // block 0 side
+        colours[1] = [0.2, 0.2, 0.2, 1.0]; // block 0 top
+        colours[3] = [0.9, 1.0, 0.0, 0.0]; // block 0 parameters
+        colours[4] = [0.1, 0.1, 0.1, 1.0]; // block 1 side
+        let out = with_face_luma(&colours, &[[Some(0.33), None, None]]);
+        assert!((out[0][3] - 0.33).abs() < 1e-6, "textured side");
+        assert!((out[1][3] - 0.2).abs() < 1e-6, "untextured top: its colour");
+        assert_eq!(out[3], colours[3], "parameters untouched");
+        assert!((out[4][3] - 0.1).abs() < 1e-6, "a block past the texture list");
+        assert_eq!(out[0][..3], colours[0][..3]);
     }
 
     #[test]
