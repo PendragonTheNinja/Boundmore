@@ -1,8 +1,8 @@
 //! Chisels on the client (ADR-0008): which octants a click cuts or fills
-//! from where the player aims, and the rules checked before predicting it.
-//! The server checks the same rules (`check_edit`) and its answer wins.
+//! from where the player aims. Whether it may is `bm_core::chisel::apply`,
+//! the same rules the server checks (`check_edit`); its answer wins.
 
-use bm_core::{BlockDef, BlockState, Chiselling, RayHit, Shape, ShapeFamily, octant};
+use bm_core::{RayHit, Shape, octant};
 
 /// What a left click would cut and a right click would fill back, as masks
 /// of octants. `None` where the click would do nothing.
@@ -90,55 +90,6 @@ fn distance(p: [f64; 3], o: u8) -> f64 {
         .sum::<f64>()
 }
 
-/// Why a chisel cannot act: words for the player, or nothing worth saying.
-#[derive(Debug, PartialEq, Eq)]
-pub enum Refused {
-    Told(String),
-    Quiet,
-}
-
-/// The shape a chisel of `family` leaves on `state` after cutting (or with
-/// `restore`, filling back) `octants`, by the server's rules.
-pub fn apply(
-    def: &BlockDef,
-    state: BlockState,
-    family: ShapeFamily,
-    octants: u8,
-    restore: bool,
-) -> Result<Shape, Refused> {
-    if state.id.is_air() || !def.solid {
-        return Err(Refused::Quiet);
-    }
-    if !def.chisel.allows(family) {
-        return Err(Refused::Told(match def.chisel {
-            Chiselling::Slope => "Natural ground takes only slope chisels".into(),
-            _ => format!("{} cannot be chiselled", bm_core::items::title_case(&def.name)),
-        }));
-    }
-    let cut = if state.shape.is_valid() {
-        state.shape
-    } else {
-        Shape::FULL
-    };
-    if cut.family().is_some_and(|f| f != family) {
-        return Err(Refused::Told(
-            "This block is already cut by another kind of chisel".into(),
-        ));
-    }
-    if restore {
-        if octants & !cut.removed() != 0 {
-            return Err(Refused::Quiet);
-        }
-        Ok(cut.restored(octants))
-    } else {
-        if octants & cut.removed() != 0 {
-            return Err(Refused::Quiet);
-        }
-        cut.chiselled(family, octants)
-            .ok_or_else(|| Refused::Told("That would cut the whole block away".into()))
-    }
-}
-
 /// The boxes (block units) outlining `mask`: one per octant, or one for an
 /// edge pair.
 pub fn outline(mask: u8) -> Vec<([f64; 3], [f64; 3])> {
@@ -161,7 +112,7 @@ pub fn outline(mask: u8) -> Vec<([f64; 3], [f64; 3])> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use bm_core::{BlockId, BlockPos, BlockRegistry, edge_pairs};
+    use bm_core::{BlockPos, ShapeFamily, edge_pairs};
     use glam::DVec3;
 
     fn hit(point: [f64; 3], normal: [i64; 3]) -> RayHit {
@@ -230,67 +181,6 @@ mod tests {
         assert_eq!(p.fill, Some(1 << octant(0, 1, 1)));
         let p = plan(&h, slab, false);
         assert!(p.fill.is_some_and(|m| m.count_ones() == 2 && m & 0b1111_0000 == m));
-    }
-
-    #[test]
-    fn the_rules_match_the_servers() {
-        let r = BlockRegistry::builtin();
-        let state = |n: &str| BlockState::plain(r.id(n).unwrap());
-        let def = |n: &str| r.get(r.id(n).unwrap());
-        let edge = 1 << octant(1, 1, 0) | 1 << octant(1, 1, 1);
-        let brick = state("brick");
-        assert!(apply(def("brick"), brick, ShapeFamily::Bevel, edge, false).is_ok());
-        let natural = r
-            .iter()
-            .find(|(_, d)| d.chisel == Chiselling::Slope)
-            .map(|(id, d)| (BlockState::plain(id), d))
-            .unwrap();
-        assert_eq!(
-            apply(natural.1, natural.0, ShapeFamily::Square, edge, false),
-            Err(Refused::Told("Natural ground takes only slope chisels".into()))
-        );
-        assert!(apply(natural.1, natural.0, ShapeFamily::Slope, edge, false).is_ok());
-        let none = r.iter().find(|(_, d)| d.solid && d.chisel == Chiselling::None).unwrap();
-        assert!(matches!(
-            apply(none.1, BlockState::plain(none.0), ShapeFamily::Square, edge, false),
-            Err(Refused::Told(t)) if t.ends_with("cannot be chiselled")
-        ));
-        let cut = BlockState {
-            shape: Shape::new(ShapeFamily::Square, edge).unwrap(),
-            ..brick
-        };
-        assert_eq!(
-            apply(def("brick"), cut, ShapeFamily::Round, 1, false),
-            Err(Refused::Told(
-                "This block is already cut by another kind of chisel".into()
-            ))
-        );
-        assert_eq!(
-            apply(def("brick"), cut, ShapeFamily::Square, edge, false),
-            Err(Refused::Quiet)
-        );
-        assert_eq!(
-            apply(def("brick"), cut, ShapeFamily::Square, edge, true),
-            Ok(Shape::FULL)
-        );
-        let one_left = BlockState {
-            shape: Shape::new(ShapeFamily::Square, !1).unwrap(),
-            ..brick
-        };
-        assert_eq!(
-            apply(def("brick"), one_left, ShapeFamily::Square, 1, false),
-            Err(Refused::Told("That would cut the whole block away".into()))
-        );
-        assert_eq!(
-            apply(
-                def("air"),
-                BlockState::plain(BlockId::AIR),
-                ShapeFamily::Square,
-                1,
-                false
-            ),
-            Err(Refused::Quiet)
-        );
     }
 
     #[test]

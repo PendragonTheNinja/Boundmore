@@ -3,6 +3,7 @@
 //! windowing, sockets or the filesystem.
 
 pub mod block;
+pub mod chisel;
 pub mod chunk;
 pub mod colours;
 pub mod coords;

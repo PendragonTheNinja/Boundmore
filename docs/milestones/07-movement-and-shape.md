@@ -30,6 +30,6 @@ Lattice and other forged chisel effects, undo history, chisel skills, smooth ram
 - [x] Core and server: kept-octant collision, a 0.55 step-up (half blocks only, never a full block), shaped raycast, light through cut blocks, the chisel rules and wear, cut blocks give back the whole block, lapse ash keeps the cut shape
 - [x] Chisel icons
 - [x] Integrated: 287 tests, fmt and clippy clean
-- [ ] Follow-up: move the chisel rules into bm-core so client and server share one copy
+- [x] Follow-up: move the chisel rules into bm-core so client and server share one copy (`bm_core::chisel::apply`, 2026-10-19)
 - [ ] Part 2: grapples
 - [ ] Nathan's play-test
