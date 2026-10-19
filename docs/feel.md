@@ -30,6 +30,19 @@ Seeded from a 2017 player measurement of Boundless's grapples (research §2.2), 
 | Shortest rope | 1 block (`ROPE_MIN`) | How close does reeling in pull you to the hook? |
 | Durability | copper 300, iron 700, hookshot 500 shots | |
 
+## Portals (`ServerConfig`, `assets/planets.toml`; M8, ADR-0009)
+
+Boundless burned shards every hour whether a portal was used or not (1 to 9 an hour by size, 50 to 450 to open). Boundmore charges per trip instead (Nathan, 2026-10-19), so these are not comparable one for one: check how long a stocked hub lasts in practice.
+
+| Value | Now | Check |
+|---|---|---|
+| Trip cost | 1 wayshard on the same planet, 2 between planets | Does a busy hub drain too fast, or never? |
+| Charge cooldown | 1 hour per player per portal | Back-and-forth trips should feel free |
+| Tank | 500 wayshards | How often does an owner restock? |
+| Portal sizes | 1 to 6 wide, 2 to 6 tall | Boundless went up to 24 conduits for its longest links |
+| Wayshard rarity | vein size 6, threshold 0.64, below y 68 and 24 under the surface | How long to mine a stack of 100? |
+| Conduit recipe | 4 stone, 1 copper ingot, 1 wayshard for 2 | A 1 by 2 portal costs one wayshard |
+
 ## World (`bm-server/src/config.rs`, `bm-worldgen`)
 
 | Value | Now | Check |
