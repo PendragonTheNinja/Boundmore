@@ -22,7 +22,7 @@ use bm_core::{
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
 
 /// Bump on any change to a message below. Client and server must match.
-pub const PROTOCOL_VERSION: u32 = 7;
+pub const PROTOCOL_VERSION: u32 = 8;
 
 /// QUIC application protocol name; also refuses non-Boundmore peers early.
 pub const ALPN: &[u8] = b"boundmore/1";
@@ -35,6 +35,11 @@ pub const MAX_FRAME: usize = 1 << 20;
 pub const INPUT_REDUNDANCY: usize = 6;
 
 pub const MAX_NAME_LEN: usize = 24;
+
+/// Longest chat line, in characters. The server cuts longer ones.
+pub const MAX_CHAT_LEN: usize = 240;
+/// Blocks within which `Channel::Local` is heard.
+pub const LOCAL_CHAT_RANGE: f64 = 96.0;
 
 /// Passwords: at least this long. (Longer is checked by `MAX_PASSWORD_LEN`.)
 pub const MIN_PASSWORD_LEN: usize = 8;
@@ -95,6 +100,40 @@ pub enum ClientMsg {
     /// Travel to another planet from a warp shrine within reach. The server
     /// answers with `Travel`, or a `Notice` saying why not.
     Warp { shrine: BlockPos, planet: u16 },
+    /// Start (Some) or stop (None) receiving a storage block within reach;
+    /// the server answers with `Storage` and repeats it on every change.
+    OpenStorage { pos: Option<BlockPos> },
+    /// Move up to `count` between the inventory and the open storage block,
+    /// or within either: same rules as `MoveItems` (merge, split, whole-stack
+    /// swap). The server answers with `Slots` and/or `Storage`.
+    StorageMove {
+        pos: BlockPos,
+        from: SlotRef,
+        to: SlotRef,
+        count: u16,
+    },
+    /// A chat line. `Whisper` goes to one player by name, anywhere.
+    Chat { channel: Channel, text: String },
+}
+
+/// A slot in the inventory or in an open storage block.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub enum SlotRef {
+    Inventory(u8),
+    Storage(u8),
+}
+
+/// Who hears a chat line.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub enum Channel {
+    /// Players within `LOCAL_CHAT_RANGE` on the same planet.
+    Local,
+    /// Everyone on the same planet.
+    Planet,
+    /// Everyone on the server.
+    Universe,
+    /// One player, by name (the sender gets a copy).
+    Whisper(String),
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -253,6 +292,32 @@ pub enum ServerMsg {
     Universe {
         planets: Vec<PlanetSummary>,
     },
+    /// An open storage block's contents (`OpenStorage`), sent on open and on
+    /// every change; `slots` empty with `closed` set when it is gone or out of
+    /// reach.
+    Storage(StorageView),
+    /// Chat lines, oldest first: one as it is said, or the recent history of
+    /// the universe channel on joining.
+    Chat {
+        lines: Vec<ChatLine>,
+    },
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct StorageView {
+    pub pos: BlockPos,
+    pub slots: Vec<Option<ItemStack>>,
+    pub closed: bool,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct ChatLine {
+    pub channel: Channel,
+    /// The speaker's name; empty for the server itself.
+    pub from: String,
+    pub text: String,
+    /// Unix seconds when it was said.
+    pub time: u64,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]

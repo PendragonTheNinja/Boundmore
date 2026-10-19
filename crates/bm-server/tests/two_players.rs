@@ -654,6 +654,7 @@ async fn crafting_by_hand_and_at_a_workbench() {
             recipe: timber,
             count: 3,
             station: None,
+            storage: 0,
         })
         .await;
     alice.notice("You do not have the materials").await;
@@ -663,6 +664,7 @@ async fn crafting_by_hand_and_at_a_workbench() {
             recipe: timber,
             count: 2,
             station: None,
+            storage: 0,
         })
         .await;
     alice.settle().await;
@@ -673,6 +675,7 @@ async fn crafting_by_hand_and_at_a_workbench() {
             recipe: workbench,
             count: 1,
             station: None,
+            storage: 0,
         })
         .await;
     alice.settle().await;
@@ -685,6 +688,7 @@ async fn crafting_by_hand_and_at_a_workbench() {
             recipe: hammer,
             count: 1,
             station: None,
+            storage: 0,
         })
         .await;
     alice.notice("That is made at a Workbench").await;
