@@ -233,4 +233,16 @@ mod tests {
         assert_eq!(cfg.planets, vec![PlanetSpec::new("A", "arid", 1, 32)]);
         cfg.validate().unwrap();
     }
+
+    #[test]
+    fn the_example_config_matches_the_defaults() {
+        let cfg: ServerConfig = toml::from_str(include_str!("../../../server.example.toml")).unwrap();
+        cfg.validate().unwrap();
+        let d = ServerConfig::default();
+        assert_eq!(cfg.planets, d.planets);
+        assert_eq!(
+            (cfg.start_planet, cfg.height_chunks, cfg.shrine_guard),
+            (d.start_planet, d.height_chunks, d.shrine_guard)
+        );
+    }
 }
