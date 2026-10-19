@@ -2,7 +2,7 @@
 //! background loader that fills them.
 
 use crate::store::Store;
-use bm_core::{BlockFlags, BlockId, BlockPos, BlockRegistry, Chunk, ChunkPos, PhysicsWorld, PlanetShape};
+use bm_core::{BlockFlags, BlockId, BlockPos, BlockRegistry, BlockState, Chunk, ChunkPos, PhysicsWorld, PlanetShape};
 use bm_protocol::ServerMsg;
 use bm_worldgen::Generator;
 use crossbeam_channel::{Receiver, Sender};
@@ -47,6 +47,11 @@ pub struct World {
     /// the edit: a quick return (a player warping back) would otherwise load
     /// it, and the next save would put it over the build.
     saving: HashMap<ChunkPos, Chunk>,
+    /// Chunks kept resident whoever is near, with how many holds each has
+    /// (a lapsing claim works on them; nobody need be on the planet).
+    pinned: HashMap<ChunkPos, u32>,
+    /// The tick of the last `receive_loaded`.
+    last_tick: u64,
 }
 
 impl World {
@@ -71,6 +76,33 @@ impl World {
             saves: Vec::new(),
             next_save: 0,
             saving: HashMap::new(),
+            pinned: HashMap::new(),
+            last_tick: 0,
+        }
+    }
+
+    /// The planet's generator: what its terrain was before anyone changed it.
+    pub fn generator(&self) -> &Arc<Generator> {
+        &self.loader.generator
+    }
+
+    /// Keeps a chunk resident once loaded (it must still be requested),
+    /// even with nobody on the planet, until as many `unpin`s.
+    pub fn pin(&mut self, p: ChunkPos) {
+        *self.pinned.entry(self.shape.wrap_chunk(p)).or_default() += 1;
+    }
+
+    pub fn unpin(&mut self, p: ChunkPos) {
+        let p = self.shape.wrap_chunk(p);
+        if let Some(n) = self.pinned.get_mut(&p) {
+            *n -= 1;
+            if *n == 0 {
+                self.pinned.remove(&p);
+                // Wanted until now: evicted with the rest of the unwanted.
+                if let Some(slot) = self.chunks.get_mut(&p) {
+                    slot.wanted_at = slot.wanted_at.max(self.last_tick);
+                }
+            }
         }
     }
 
@@ -114,11 +146,13 @@ impl World {
     /// Moves finished loads in. Returns how many arrived. With `keep` false
     /// (nobody is on the planet) they are dropped instead: nothing was
     /// changed in them, and an empty planet holds no chunks.
+    /// Pinned chunks are always kept.
     pub fn receive_loaded(&mut self, tick: u64, keep: bool) -> usize {
+        self.last_tick = tick;
         let mut n = 0;
         while let Ok((p, chunk, frame)) = self.loader.done.try_recv() {
             self.loading.remove(&p);
-            if !keep {
+            if !keep && !self.pinned.contains_key(&p) {
                 continue;
             }
             self.chunks.insert(
@@ -143,16 +177,31 @@ impl World {
         self.chunks.get(&p.chunk()).map(|s| s.chunk.get(p.local()))
     }
 
-    /// Sets a block in a resident chunk. Returns the old block, or `None` if
-    /// the chunk is not resident (the caller must not have allowed the edit).
+    /// The full state (type, colour, shape) of a resident block.
+    pub fn state(&self, p: BlockPos) -> Option<BlockState> {
+        if !self.shape.contains_y(p.y) {
+            return Some(BlockState::AIR);
+        }
+        let p = self.shape.wrap_block(p);
+        self.chunks.get(&p.chunk()).map(|s| s.chunk.state(p.local()))
+    }
+
+    /// Sets a plain block (natural colour, full shape) in a resident chunk.
+    /// Returns the old block, or `None` if the chunk is not resident (the
+    /// caller must not have allowed the edit).
     pub fn set_block(&mut self, p: BlockPos, id: BlockId) -> Option<BlockId> {
+        self.set_state(p, BlockState::plain(id)).map(|s| s.id)
+    }
+
+    /// Sets a block state in a resident chunk; see [`World::set_block`].
+    pub fn set_state(&mut self, p: BlockPos, state: BlockState) -> Option<BlockState> {
         if !self.shape.contains_y(p.y) {
             return None;
         }
         let p = self.shape.wrap_block(p);
         let slot = self.chunks.get_mut(&p.chunk())?;
-        let old = slot.chunk.set(p.local(), id);
-        if old != id {
+        let old = slot.chunk.set_state(p.local(), state);
+        if old != state {
             slot.dirty = true;
             slot.frame = None;
         }
@@ -185,7 +234,8 @@ impl World {
             .push((saved.clone(), self.next_save, chunks.iter().map(|(p, _)| *p).collect()));
     }
 
-    /// Evicts chunks nobody has wanted since `before` (`u64::MAX`: all).
+    /// Evicts chunks nobody has wanted since `before` (`u64::MAX`: all but
+    /// the pinned).
     /// Dirty chunks are returned for saving, in the batch `saved` belongs to;
     /// any whose save is not durable yet is held until it is.
     pub fn evict_unwanted(&mut self, before: u64, saved: &Receiver<()>) -> Vec<(ChunkPos, Vec<u8>)> {
@@ -193,7 +243,7 @@ impl World {
         let stale: Vec<ChunkPos> = self
             .chunks
             .iter()
-            .filter(|(_, s)| s.wanted_at < before)
+            .filter(|(p, s)| s.wanted_at < before && !self.pinned.contains_key(p))
             .map(|(p, _)| *p)
             .collect();
         let mut save = Vec::new();

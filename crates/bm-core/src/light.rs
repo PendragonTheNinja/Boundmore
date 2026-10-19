@@ -832,7 +832,7 @@ impl LightMap {
             let Some(chunk) = blocks.chunk(self.slots[s as usize].pos) else {
                 continue;
             };
-            if !chunk.palette().iter().any(|b| self.props[b.0 as usize] & EMIT != 0) {
+            if !chunk.palette().iter().any(|b| self.props[b.id.0 as usize] & EMIT != 0) {
                 continue;
             }
             for i in 0..CHUNK_VOLUME {

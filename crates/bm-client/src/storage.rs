@@ -75,7 +75,8 @@ pub fn move_request(
 }
 
 /// Where Shift-click sends a stack: across to the other side, onto the
-/// first stack of the same item with room, else the first empty slot.
+/// first stack it can join (same item and colour, unworn) with room, else
+/// the first empty slot.
 pub fn shift_target(
     items: &ItemRegistry,
     inv: &[Option<ItemStack>],
@@ -90,7 +91,7 @@ pub fn shift_target(
     let limit = items.get(src.item).map(|d| d.stack).unwrap_or(1);
     let merge = other
         .iter()
-        .position(|s| s.is_some_and(|d| d.item == src.item && d.wear == 0 && src.wear == 0 && d.count < limit));
+        .position(|s| s.is_some_and(|d| d.stacks_with(&src) && d.count < limit));
     let slot = merge.or_else(|| other.iter().position(|s| s.is_none()))?;
     let slot = u8::try_from(slot).ok()?;
     Some(if across {
@@ -288,6 +289,26 @@ mod tests {
         worn.wear = 5;
         inv[4] = Some(worn);
         assert_eq!(shift_target(&r, &inv, &chest, i(4)), Some(s(1)));
+    }
+
+    #[test]
+    fn shift_click_joins_only_a_stack_of_the_same_colour() {
+        use bm_core::Colour;
+        let r = reg();
+        let stone = r.id("stone").unwrap();
+        let mut inv = vec![None; INVENTORY_SLOTS];
+        let mut chest = vec![None; 20];
+        inv[3] = Some(ItemStack::coloured(stone, Colour(12), 10));
+        chest[0] = Some(ItemStack::new(stone, 20));
+        chest[1] = Some(ItemStack::coloured(stone, Colour(40), 20));
+        chest[4] = Some(ItemStack::coloured(stone, Colour(12), 20));
+        let (i, s) = (SlotRef::Inventory, SlotRef::Storage);
+        // Natural and another colour are passed over for the matching stack.
+        assert_eq!(shift_target(&r, &inv, &chest, i(3)), Some(s(4)));
+        // With no stack of its colour, the first empty slot.
+        chest[4] = None;
+        assert_eq!(shift_target(&r, &inv, &chest, i(3)), Some(s(2)));
+        assert!(shift_request(&r, &inv, &chest, POS, i(3)).is_some());
     }
 
     #[test]

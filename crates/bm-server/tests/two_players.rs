@@ -1,8 +1,8 @@
 //! End to end: real server, real QUIC, headless players.
 
 use bm_core::{
-    BlockId, BlockPos, BlockRegistry, Chunk, ChunkPos, Inventory, ItemRegistry, ItemStack, PlayerInput, PlayerState,
-    PlotPos,
+    BlockId, BlockPos, BlockRegistry, BlockState, Chunk, ChunkPos, Colour, Inventory, ItemRegistry, ItemStack,
+    PlayerInput, PlayerState, PlotPos,
 };
 use bm_net::quinn::Connection;
 use bm_net::{read_msg, write_msg};
@@ -34,6 +34,8 @@ struct TestClient {
     chat: Vec<ChatLine>,
     /// Storage views not yet looked at by `storage`.
     views: std::collections::VecDeque<StorageView>,
+    /// The last reclaim heard of.
+    reclaim: Option<Vec<ItemStack>>,
     chunks: HashMap<ChunkPos, Chunk>,
     seq: u32,
     /// The planet the player is on now, and where they arrived on it.
@@ -102,6 +104,7 @@ async fn hello(
         notices: Vec::new(),
         chat: Vec::new(),
         views: Default::default(),
+        reclaim: None,
         chunks: HashMap::new(),
         seq: 0,
     })
@@ -178,7 +181,7 @@ impl TestClient {
             ServerMsg::BlockChanged { pos, block } | ServerMsg::EditResult { pos, block, .. } => {
                 let pos = self.shape().wrap_block(*pos);
                 if let Some(c) = self.chunks.get_mut(&pos.chunk()) {
-                    c.set(pos.local(), *block);
+                    c.set_state(pos.local(), *block);
                 }
             }
             ServerMsg::Slots { changes } => {
@@ -189,6 +192,7 @@ impl TestClient {
             ServerMsg::Notice { text } => self.notices.push(text.clone()),
             ServerMsg::Chat { lines } => self.chat.extend(lines.iter().cloned()),
             ServerMsg::Storage(v) => self.views.push_back(v.clone()),
+            ServerMsg::Reclaim { items } => self.reclaim = Some(items.clone()),
             // Everything of the old planet goes, as in the game.
             ServerMsg::Travel(t) => {
                 self.chunks.clear();
@@ -292,7 +296,7 @@ impl TestClient {
             ServerMsg::EditResult { accepted, block, .. } => {
                 // Slots and notices for the edit follow its result.
                 self.settle().await;
-                (accepted, block)
+                (accepted, block.id)
             }
             _ => unreachable!(),
         }
@@ -1528,5 +1532,259 @@ async fn chat_reaches_whoever_the_channel_says() {
     alice.heard(|l| l.text == "Bob left").await;
     dave.heard(|l| l.text == "Bob arrived on Dryside").await;
     bob.heard(|l| l.text == "Bob arrived on Dryside").await;
+    server.stop();
+}
+
+/// The block state a client holds at `p`.
+fn state_at(c: &TestClient, p: BlockPos) -> BlockState {
+    let p = c.shape().wrap_block(p);
+    c.chunks[&p.chunk()].state(p.local())
+}
+
+/// Ash in the palette colour nearest a block's painted side colour.
+fn natural_ash(c: &TestClient, block: &str) -> BlockState {
+    let def = &c.welcome.blocks[c.block(block).0 as usize];
+    BlockState::coloured(c.block("ash"), c.welcome.colours.nearest(def.color))
+}
+
+/// Spots in the ground row beside the player's feet, in the plot holding
+/// them, nearest first (never the feet themselves).
+fn spots_in_plot(c: &TestClient, feet: BlockPos) -> Vec<BlockPos> {
+    let shape = c.shape();
+    let plot = PlotPos::of(feet, shape);
+    let mut v: Vec<(i64, BlockPos)> = (-3i64..=3)
+        .flat_map(|dz| (-3i64..=3).map(move |dx| (dx, dz)))
+        .filter(|&(dx, dz)| (dx, dz) != (0, 0))
+        .map(|(dx, dz)| (dx * dx + dz * dz, feet.offset(dx, 0, dz)))
+        .filter(|(_, p)| PlotPos::of(*p, shape) == plot)
+        .collect();
+    v.sort_by_key(|(d, p)| (*d, p.x, p.z));
+    v.into_iter().map(|(_, p)| p).collect()
+}
+
+/// A claim whose owner has been away too long crumbles: what they built turns
+/// to ash in its colours, what they dug stays dug, natural ground stays, the
+/// chest's contents wait in reclaim (across a restart) for a warp shrine.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn a_lapsed_claim_turns_to_ash_and_its_contents_wait_in_reclaim() {
+    let dir = tempfile::tempdir().unwrap();
+    seed(
+        dir.path(),
+        "Alice",
+        &[
+            (5, "claim_stone", 1, 0),
+            (6, "storage_chest", 1, 0),
+            (1, "stone#17", 10, 0),
+            (2, "sand", 10, 0),
+            (3, "stone", 40, 0),
+        ],
+    );
+    // Phase 1: Alice claims and builds, then goes away.
+    let (feet, shrine, spots, untouched) = {
+        let server = bm_server::start(config(dir.path())).unwrap();
+        let mut alice = TestClient::login(&server, "Alice").await;
+        let feet = alice.feet();
+        let shrine = alice.shrine();
+        alice.wait_for_chunk(feet.chunk()).await;
+        let spots = spots_in_plot(&alice, feet);
+        assert!(spots.len() >= 5, "room in the plot");
+        let (coloured, natural, chest, dug, plain) = (spots[0], spots[1], spots[2], spots[3], spots[4]);
+
+        assert!(alice.dig(1, feet).await.0);
+        assert!(alice.edit(2, feet, EditAction::Place { slot: 5 }).await.0, "claimed");
+        let mut seq = 3;
+        for (pos, slot) in [(coloured, 1), (natural, 2), (chest, 6)] {
+            assert!(alice.dig(seq, pos).await.0);
+            assert!(alice.edit(seq + 1, pos, EditAction::Place { slot }).await.0);
+            seq += 2;
+        }
+        assert!(alice.dig(seq, dug).await.0);
+        assert_eq!(state_at(&alice, coloured).colour, Colour(17));
+
+        alice.send(ClientMsg::OpenStorage { pos: Some(chest) }).await;
+        alice.storage(|v| v.pos == chest && !v.closed).await;
+        for (from, to, n) in [(3, 0, 30), (1, 1, 5)] {
+            alice
+                .send(ClientMsg::StorageMove {
+                    pos: chest,
+                    from: SlotRef::Inventory(from),
+                    to: SlotRef::Storage(to),
+                    count: n,
+                })
+                .await;
+        }
+        alice
+            .storage(|v| v.slots[0].is_some_and(|s| s.count == 30) && v.slots[1].is_some_and(|s| s.count == 5))
+            .await;
+        let untouched = [plain, plain.offset(0, -1, 0), coloured.offset(0, -1, 0)].map(|p| (p, state_at(&alice, p)));
+        drop(alice);
+        server.stop();
+        (feet, shrine, [coloured, natural, chest, dug], untouched)
+    };
+    let [coloured, natural, chest, dug] = spots;
+
+    // Her last visit was long ago.
+    {
+        let store = Store::open(&planet_file(dir.path())).unwrap();
+        let data = store.player("alice").unwrap().unwrap();
+        assert!(data.last_seen > 1_000_000, "leaving records the time");
+        store
+            .write(&WriteBatch {
+                players: vec![(
+                    "alice".into(),
+                    PlayerData {
+                        last_seen: 1_000_000,
+                        ..data
+                    },
+                )],
+                ..Default::default()
+            })
+            .unwrap();
+    }
+
+    // Phase 2: the server finds the claim lapsed and turns it, by itself.
+    {
+        let server = bm_server::start(config(dir.path())).unwrap();
+        let mut bob = TestClient::register(&server, "Bob").await;
+        if !bob.welcome.claims.is_empty() {
+            bob.until(|m| matches!(m, ServerMsg::ClaimRemoved { .. })).await;
+        }
+        bob.wait_for_chunk(feet.chunk()).await;
+        bob.settle().await;
+        let ash = bob.block("ash");
+        assert_eq!(
+            state_at(&bob, coloured),
+            BlockState::coloured(ash, Colour(17)),
+            "its own colour"
+        );
+        assert_eq!(
+            state_at(&bob, natural),
+            natural_ash(&bob, "sand"),
+            "nearest to its paint"
+        );
+        assert_eq!(state_at(&bob, chest), natural_ash(&bob, "storage_chest"));
+        assert_eq!(state_at(&bob, feet), natural_ash(&bob, "claim_stone"), "the stone too");
+        assert_eq!(state_at(&bob, dug), BlockState::AIR, "dug stays dug");
+        for (p, was) in untouched {
+            assert_eq!(state_at(&bob, p), was, "natural ground stays at {p:?}");
+        }
+        bob.wait_for_chunk(shrine.chunk()).await;
+        assert_eq!(state_at(&bob, shrine).id, bob.block("warp_shrine"), "the shrine stands");
+        // The land is free: Bob may build where the claim was.
+        let carol = TestClient::register(&server, "Carol").await;
+        assert!(carol.welcome.claims.is_empty());
+        drop(bob);
+        drop(carol);
+        server.stop();
+    }
+
+    // Phase 3: after a restart Alice hears of it, and her things wait.
+    let server = bm_server::start(config(dir.path())).unwrap();
+    let mut alice = TestClient::login(&server, "Alice").await;
+    alice.until(|m| matches!(m, ServerMsg::Reclaim { .. })).await;
+    let lapsed = alice
+        .notices
+        .iter()
+        .find(|n| n.starts_with("Your claim on Testworld lapsed after "))
+        .cloned()
+        .expect("told of the lapse");
+    assert!(
+        lapsed.ends_with("months away. Its stored items wait for you at any warp shrine."),
+        "{lapsed}"
+    );
+    let stone = alice.item("stone");
+    assert_eq!(
+        alice.reclaim.clone().unwrap(),
+        vec![ItemStack::new(stone, 30), ItemStack::coloured(stone, Colour(17), 5)]
+    );
+    assert_eq!(alice.count("stone"), 14);
+
+    alice.wait_for_chunk(shrine.chunk()).await;
+    alice.send(ClientMsg::CollectReclaim { shrine: feet }).await;
+    alice
+        .notice("Stand at a warp shrine to collect your reclaimed items")
+        .await;
+    assert_eq!(alice.count("stone"), 14, "nothing taken away from a shrine");
+
+    alice.send(ClientMsg::CollectReclaim { shrine }).await;
+    alice
+        .until(|m| matches!(m, ServerMsg::Reclaim { items } if items.is_empty()))
+        .await;
+    alice.settle().await;
+    assert_eq!(alice.count("stone"), 49);
+    assert!(
+        alice
+            .inv
+            .slots
+            .iter()
+            .flatten()
+            .any(|s| s.colour == Colour(17) && s.count == 9),
+        "coloured stone joins its colour"
+    );
+    alice.send(ClientMsg::CollectReclaim { shrine }).await;
+    alice.notice("Nothing waits for you in reclaim").await;
+    drop(alice);
+    server.stop();
+
+    // Read once, the notice is not told again.
+    let server = bm_server::start(config(dir.path())).unwrap();
+    let mut alice = TestClient::login(&server, "Alice").await;
+    alice.settle().await;
+    assert!(
+        !alice.notices.iter().any(|n| n.contains("lapsed")),
+        "{:?}",
+        alice.notices
+    );
+    assert!(alice.reclaim.is_none(), "an empty reclaim is not sent");
+    server.stop();
+}
+
+/// An owner online never lapses, however short the keep time; leaving starts
+/// the clock, and the claim crumbles with everyone on the planet told.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn an_online_owner_never_lapses_and_leaving_starts_the_clock() {
+    let dir = tempfile::tempdir().unwrap();
+    seed(dir.path(), "Alice", &[(5, "claim_stone", 1, 0), (1, "stone#33", 5, 0)]);
+    let cfg = ServerConfig {
+        claim_keep_seconds: Some(0),
+        ..config(dir.path())
+    };
+    let server = bm_server::start(cfg).unwrap();
+    let mut alice = TestClient::login(&server, "Alice").await;
+    let mut bob = TestClient::register(&server, "Bob").await;
+    let feet = alice.feet();
+    alice.wait_for_chunk(feet.chunk()).await;
+    bob.wait_for_chunk(feet.chunk()).await;
+    let spot = spots_in_plot(&alice, feet)[0];
+    assert!(alice.dig(1, feet).await.0);
+    assert!(alice.edit(2, feet, EditAction::Place { slot: 5 }).await.0);
+    assert!(alice.dig(3, spot).await.0);
+    assert!(alice.edit(4, spot, EditAction::Place { slot: 1 }).await.0);
+
+    // Several checks pass with her here.
+    tokio::time::sleep(Duration::from_millis(2500)).await;
+    let carol = TestClient::register(&server, "Carol").await;
+    assert_eq!(carol.welcome.claims.len(), 1, "still claimed");
+    drop(carol);
+    bob.settle().await;
+    assert_eq!(
+        state_at(&bob, spot),
+        BlockState::coloured(bob.block("stone"), Colour(33))
+    );
+
+    drop(alice);
+    bob.until(|m| matches!(m, ServerMsg::ClaimRemoved { .. })).await;
+    bob.heard(|l| l.text == "A claim on Testworld has crumbled to ash")
+        .await;
+    bob.settle().await;
+    assert_eq!(state_at(&bob, spot), BlockState::coloured(bob.block("ash"), Colour(33)));
+    assert_eq!(state_at(&bob, feet), natural_ash(&bob, "claim_stone"));
+
+    let mut alice = TestClient::login(&server, "Alice").await;
+    alice
+        .notice("Your claim on Testworld lapsed after less than a month away.")
+        .await;
+    alice.settle().await;
+    assert!(alice.reclaim.is_none(), "nothing was stored");
     server.stop();
 }

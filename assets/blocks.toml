@@ -22,9 +22,11 @@
 #   drops       the item it yields (default: its own item; "" for nothing)
 #   station     workbench | furnace: a crafting station
 #   storage     slots of storage inside (0, the default: none)
+#   colourable  takes a palette colour (default true; ADR-0007)
 
 [[block]]
 name = "air"
+colourable = false
 color = [0, 0, 0]
 solid = false
 opaque = false
@@ -35,6 +37,7 @@ hardness = 0.0
 
 [[block]]
 name = "bedrock"
+colourable = false
 color = [38, 34, 44]
 solid = true
 opaque = true
@@ -134,6 +137,7 @@ material = "soil"
 
 [[block]]
 name = "water"
+colourable = false
 color = [52, 104, 186]
 solid = false
 opaque = false
@@ -172,6 +176,7 @@ material = "plant"
 
 [[block]]
 name = "coal_seam"
+colourable = false
 color = [52, 50, 54]
 solid = true
 opaque = true
@@ -185,6 +190,7 @@ drops = "coal"
 
 [[block]]
 name = "copper_vein"
+colourable = false
 color = [184, 112, 72]
 solid = true
 opaque = true
@@ -198,6 +204,7 @@ drops = "copper_ore"
 
 [[block]]
 name = "glow_crystal"
+colourable = false
 color = [150, 230, 255]
 solid = true
 opaque = true
@@ -248,6 +255,7 @@ material = "crystal"
 
 [[block]]
 name = "workbench"
+colourable = false
 color = [150, 108, 64]
 top_color = [184, 142, 92]
 solid = true
@@ -262,6 +270,7 @@ station = "workbench"
 
 [[block]]
 name = "furnace"
+colourable = false
 color = [96, 92, 98]
 top_color = [120, 116, 122]
 solid = true
@@ -277,6 +286,7 @@ light = 7
 
 [[block]]
 name = "claim_stone"
+colourable = false
 color = [120, 110, 150]
 top_color = [170, 210, 240]
 solid = true
@@ -294,6 +304,7 @@ light = 6
 
 [[block]]
 name = "iron_vein"
+colourable = false
 color = [150, 120, 108]
 solid = true
 opaque = true
@@ -332,6 +343,7 @@ material = "crystal"
 
 [[block]]
 name = "warp_shrine"
+colourable = false
 color = [96, 84, 140]
 top_color = [200, 170, 255]
 solid = true
@@ -348,6 +360,7 @@ light = 10
 
 [[block]]
 name = "storage_chest"
+colourable = false
 color = [150, 104, 62]
 top_color = [176, 128, 80]
 solid = true
@@ -359,3 +372,17 @@ hardness = 0.8
 textures = { top = "storage_chest_top", side = "storage_chest_side", bottom = "timber" }
 material = "wood"
 storage = 20
+
+# M6: what a lapsed build turns into, keeping each block's colour.
+
+[[block]]
+name = "ash"
+color = [150, 146, 140]
+solid = true
+opaque = true
+translucent = false
+breakable = true
+placeable = true
+hardness = 0.4
+textures = { all = "ash" }
+material = "soil"

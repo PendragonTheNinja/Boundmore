@@ -3,14 +3,18 @@
 // attributes. Everything is drawn relative to the camera (floating origin),
 // so f32 precision never runs out however far from the planet's origin we are.
 
-// Four entries per block: side, top and bottom colour (linear rgb), then
-// parameters (x: opacity, y: fringe). Written by `Renderer::write_palette`.
+// Four entries per block: side, top and bottom colour (linear rgb, with
+// that face's average luma in w, of its texture where it has one), then
+// parameters (x: opacity, y: fringe). Written by `Renderer::upload_palette`.
 @group(0) @binding(1) var<uniform> palette: array<vec4<f32>, 1024>;
 // Per block: top, side, bottom texture as `first_layer | variants << 16`, or
 // 0xffff for "use the palette colour". Written by `Renderer::set_textures`.
 @group(0) @binding(2) var<uniform> faces: array<vec4<u32>, 256>;
 @group(0) @binding(3) var block_tex: texture_2d_array<f32>;
 @group(0) @binding(4) var block_samp: sampler;
+// The colour palette (ADR-0007): linear rgb by colour id, luma in w; 0 is
+// natural and unused. Written by `Renderer::set_colours`.
+@group(0) @binding(5) var<uniform> colours: array<vec4<f32>, 256>;
 
 const NO_TEXTURE: u32 = 0xffffu;
 
@@ -31,6 +35,8 @@ struct VsOut {
     @location(5) @interpolate(flat) origin: vec3<i32>,
     // x: sky light, y: block light, each 0..1 before the curve
     @location(6) light: vec2<f32>,
+    // Palette colour id, 0 natural.
+    @location(7) @interpolate(flat) colour: u32,
 };
 
 const NORMALS = array<vec3<f32>, 6>(
@@ -56,6 +62,7 @@ fn vs_main(in: VsIn) -> VsOut {
     out.ao = AO_CURVE[(in.a >> 21u) & 3u];
     out.origin = in.origin;
     out.light = vec2<f32>(f32((in.b >> 16u) & 15u), f32((in.b >> 20u) & 15u)) / 15.0;
+    out.colour = in.b >> 24u;
     return out;
 }
 
@@ -140,10 +147,46 @@ fn tint(block: u32) -> vec3<f32> {
 
 // Base colour and alpha of the face at this fragment: the block's texture
 // (one of its variants, chosen per block position), or its palette colour,
-// times the planet's tint for that block.
+// times the planet's tint for that block. A coloured block shows its colour
+// instead, untinted: the texture's light and shade in the palette's hue.
 fn albedo(in: VsOut) -> vec4<f32> {
     let a = untinted_albedo(in);
-    return vec4<f32>(a.rgb * tint(in.block), a.a);
+    if (in.colour == 0u) {
+        return vec4<f32>(a.rgb * tint(in.block), a.a);
+    }
+    let base = palette[in.block * 4u + palette_slot(in.face)].w;
+    return vec4<f32>(recolour(a.rgb, base, colours[in.colour].rgb), a.a);
+}
+
+// Which of a block's palette entries describes this face: side 0, top 1,
+// bottom 2.
+fn palette_slot(face: u32) -> u32 {
+    if (face == 2u) {
+        return 1u;
+    }
+    if (face == 3u) {
+        return 2u;
+    }
+    return 0u;
+}
+
+// Repaints a texel (linear) of a face whose average luma is `base` in a
+// palette colour. Must match `colour::recolour` (the item icons).
+const DETAIL_MIN: f32 = 0.15;
+const DETAIL_MAX: f32 = 3.0;
+const DARK_DETAIL: f32 = 0.012;
+const KNEE: f32 = 0.8;
+
+fn recolour(texel: vec3<f32>, base: f32, colour: vec3<f32>) -> vec3<f32> {
+    let l = dot(texel, vec3<f32>(0.2126, 0.7152, 0.0722));
+    let detail = clamp(l / max(base, 0.002), DETAIL_MIN, DETAIL_MAX);
+    let out = max(colour * detail + DARK_DETAIL * (detail - 1.0), vec3<f32>(0.0));
+    let m = max(out.r, max(out.g, out.b));
+    if (m <= KNEE) {
+        return out;
+    }
+    let eased = KNEE + (1.0 - KNEE) * (1.0 - exp(-(m - KNEE) / (1.0 - KNEE)));
+    return out * (eased / m);
 }
 
 fn untinted_albedo(in: VsOut) -> vec4<f32> {

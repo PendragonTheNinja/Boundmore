@@ -7,11 +7,12 @@
 
 use crate::icons::{ICON_SIZE, IconSource};
 use crate::items::Items;
-use bm_core::{BlockPos, BlockRegistry, HOTBAR_SLOTS, INVENTORY_SLOTS, ItemStack, Station};
+use bm_core::{BlockPos, BlockRegistry, Colour, HOTBAR_SLOTS, INVENTORY_SLOTS, ItemId, ItemStack, Station};
 use bm_protocol::{ClientMsg, PlanetSummary, SlotRef, StationView};
 use egui::{
     Align, Align2, Color32, CornerRadius, FontId, Id, Layout, Rect, Sense, Stroke, StrokeKind, Ui, Vec2, pos2, vec2,
 };
+use std::collections::HashMap;
 
 pub const GOLD: Color32 = Color32::from_rgb(240, 186, 84);
 const GOLD_DIM: Color32 = Color32::from_rgb(150, 116, 62);
@@ -76,10 +77,26 @@ pub enum Icon {
     Initials { text: String, color: Color32 },
 }
 
-/// One icon per item id.
+/// One icon per item id, plus one per (item, colour) for coloured stacks,
+/// made as they are first seen (`missing_colours`, `add_coloured`).
 #[derive(Default)]
 pub struct ItemIcons {
     icons: Vec<Icon>,
+    coloured: HashMap<(ItemId, Colour), Icon>,
+}
+
+fn icon_from(ctx: &egui::Context, name: String, source: IconSource) -> Icon {
+    match source {
+        IconSource::Image(rgba) => Icon::Texture(ctx.load_texture(
+            name,
+            egui::ColorImage::from_rgba_unmultiplied([ICON_SIZE, ICON_SIZE], &rgba),
+            egui::TextureOptions::LINEAR,
+        )),
+        IconSource::Initials { text, color } => Icon::Initials {
+            text,
+            color: Color32::from_rgb(color[0], color[1], color[2]),
+        },
+    }
 }
 
 impl ItemIcons {
@@ -87,23 +104,40 @@ impl ItemIcons {
         let icons = sources
             .into_iter()
             .enumerate()
-            .map(|(i, s)| match s {
-                IconSource::Image(rgba) => Icon::Texture(ctx.load_texture(
-                    format!("item-{i}"),
-                    egui::ColorImage::from_rgba_unmultiplied([ICON_SIZE, ICON_SIZE], &rgba),
-                    egui::TextureOptions::LINEAR,
-                )),
-                IconSource::Initials { text, color } => Icon::Initials {
-                    text,
-                    color: Color32::from_rgb(color[0], color[1], color[2]),
-                },
-            })
+            .map(|(i, s)| icon_from(ctx, format!("item-{i}"), s))
             .collect();
-        Self { icons }
+        Self {
+            icons,
+            coloured: HashMap::new(),
+        }
     }
 
+    /// A stack's icon: its colour's if made, else the item's own.
     fn get(&self, stack: &ItemStack) -> Option<&Icon> {
+        if stack.colour != Colour::NATURAL
+            && let Some(icon) = self.coloured.get(&(stack.item, stack.colour))
+        {
+            return Some(icon);
+        }
         self.icons.get(stack.item.0 as usize)
+    }
+
+    /// The coloured stacks among `stacks` that have no icon of their own
+    /// yet, each once.
+    pub fn missing_colours<'a>(&self, stacks: impl IntoIterator<Item = &'a ItemStack>) -> Vec<(ItemId, Colour)> {
+        let mut out = Vec::new();
+        for s in stacks {
+            let key = (s.item, s.colour);
+            if s.colour != Colour::NATURAL && !self.coloured.contains_key(&key) && !out.contains(&key) {
+                out.push(key);
+            }
+        }
+        out
+    }
+
+    pub fn add_coloured(&mut self, ctx: &egui::Context, key: (ItemId, Colour), source: IconSource) {
+        let name = format!("item-{}-{}", key.0.0, key.1.0);
+        self.coloured.insert(key, icon_from(ctx, name, source));
     }
 }
 
@@ -392,7 +426,12 @@ pub struct Hud<'a> {
     /// What a key does to the block aimed at ("E", "travel"), shown under
     /// the crosshair.
     pub aim_hint: Option<(&'static str, &'static str)>,
+    /// Something waits in the reclaim (items from a lapsed claim).
+    pub reclaim_waiting: bool,
 }
+
+/// The HUD's reminder while the reclaim holds anything.
+pub const RECLAIM_HINT: &str = "Items wait for you at any warp shrine";
 
 pub fn hud(ctx: &egui::Context, h: &Hud) {
     let width = HOTBAR_SLOTS as f32 * SLOT + (HOTBAR_SLOTS - 1) as f32 * GAP;
@@ -493,6 +532,25 @@ pub fn hud(ctx: &egui::Context, h: &Hud) {
                                 });
                             ui.label(egui::RichText::new(what).size(15.0));
                         });
+                    });
+            });
+    }
+    if h.reclaim_waiting {
+        egui::Area::new(Id::unique("reclaim-hint"))
+            .anchor(Align2::RIGHT_TOP, vec2(-14.0, 14.0))
+            .interactable(false)
+            .order(egui::Order::Background)
+            .show(ctx, |ui| {
+                egui::Frame::new()
+                    .fill(Color32::from_black_alpha(150))
+                    .corner_radius(CornerRadius::same(10))
+                    .inner_margin(egui::Margin::symmetric(10, 3))
+                    .show(ui, |ui| {
+                        ui.label(
+                            egui::RichText::new(RECLAIM_HINT)
+                                .color(TEXT.gamma_multiply(0.85))
+                                .size(13.0),
+                        );
                     });
             });
     }
@@ -1082,73 +1140,152 @@ pub struct TravelView<'a> {
     pub here: u16,
     /// The shrine the menu was opened at.
     pub shrine: BlockPos,
+    pub items: &'a Items,
+    pub icons: &'a ItemIcons,
+    /// What waits in the reclaim, as the server last said.
+    pub reclaim: &'a [ItemStack],
 }
 
-pub fn travel(ctx: &egui::Context, v: &TravelView, actions: &mut Vec<UiAction>) {
+/// The warp shrine window's tabs.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum ShrineTab {
+    #[default]
+    Worlds,
+    Reclaim,
+}
+
+pub fn travel(ctx: &egui::Context, v: &TravelView, tab: &mut ShrineTab, actions: &mut Vec<UiAction>) {
     let mut open = true;
-    let mut list: Vec<&PlanetSummary> = v.planets.iter().collect();
-    list.sort_by_key(|p| (p.id != v.here, p.tier, p.id));
     window("Warp Shrine").open(&mut open).show(ctx, |ui| {
         ui.set_width(430.0);
-        ui.label(
-            egui::RichText::new("The shrine opens a way to any world it knows.")
-                .color(MUTED)
-                .small(),
-        );
-        ui.add_space(4.0);
-        egui::ScrollArea::vertical().max_height(420.0).show(ui, |ui| {
-            for p in list {
-                let here = p.id == v.here;
-                egui::Frame::new()
-                    .fill(if here {
-                        Color32::from_rgba_unmultiplied(240, 186, 84, 18)
-                    } else {
-                        Color32::from_white_alpha(7)
-                    })
-                    .stroke(if here { Stroke::new(1.0, GOLD_DIM) } else { Stroke::NONE })
-                    .corner_radius(CornerRadius::same(10))
-                    .inner_margin(egui::Margin::same(8))
-                    .show(ui, |ui| {
-                        ui.set_width(ui.available_width());
-                        ui.horizontal(|ui| {
-                            let (rect, _) = ui.allocate_exact_size(Vec2::splat(44.0), Sense::hover());
-                            paint_planet(ui.painter(), rect.center(), 17.0, p.color);
-                            ui.vertical(|ui| {
-                                ui.spacing_mut().item_spacing.y = 2.0;
-                                ui.label(egui::RichText::new(&p.name).strong().size(17.0));
-                                ui.label(
-                                    egui::RichText::new(format!("{}, tier {}", p.kind, p.tier))
-                                        .color(MUTED)
-                                        .small(),
-                                );
-                                ui.label(egui::RichText::new(players_there(p.players)).color(MUTED).small());
-                            });
-                            ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                                if here {
-                                    ui.label(egui::RichText::new("You are here").color(GOLD));
-                                } else if ui
-                                    .add_sized(
-                                        [86.0, 32.0],
-                                        egui::Button::new(egui::RichText::new("Travel").strong())
-                                            .fill(Color32::from_rgb(120, 86, 34)),
-                                    )
-                                    .clicked()
-                                {
-                                    actions.push(UiAction::Send(ClientMsg::Warp {
-                                        shrine: v.shrine,
-                                        planet: p.id,
-                                    }));
-                                    actions.push(UiAction::CloseMenu);
-                                }
-                            });
-                        });
-                    });
-            }
+        ui.horizontal(|ui| {
+            ui.selectable_value(tab, ShrineTab::Worlds, egui::RichText::new("Worlds").strong());
+            let waiting: u32 = v.reclaim.iter().map(|s| s.count as u32).sum();
+            let label = if waiting > 0 {
+                format!("Reclaim ({waiting})")
+            } else {
+                "Reclaim".into()
+            };
+            ui.selectable_value(tab, ShrineTab::Reclaim, egui::RichText::new(label).strong());
         });
+        ui.add_space(4.0);
+        match tab {
+            ShrineTab::Worlds => worlds_tab(ui, v, actions),
+            ShrineTab::Reclaim => reclaim_tab(ui, v, actions),
+        }
     });
     if !open {
         actions.push(UiAction::CloseMenu);
     }
+}
+
+fn reclaim_tab(ui: &mut Ui, v: &TravelView, actions: &mut Vec<UiAction>) {
+    ui.label(
+        egui::RichText::new("What was kept for you when a claim of yours lapsed. Any warp shrine holds it.")
+            .color(MUTED)
+            .small(),
+    );
+    ui.add_space(6.0);
+    if v.reclaim.is_empty() {
+        ui.label(egui::RichText::new("Nothing waits for you.").color(MUTED));
+        return;
+    }
+    let cols = 7;
+    egui::ScrollArea::vertical().max_height(330.0).show(ui, |ui| {
+        ui.spacing_mut().item_spacing = vec2(GAP, GAP);
+        for row in v.reclaim.chunks(cols) {
+            ui.horizontal(|ui| {
+                for stack in row {
+                    let (rect, resp) = ui.allocate_exact_size(Vec2::splat(SLOT), Sense::hover());
+                    paint_slot_back(ui.painter(), rect, Stroke::new(1.5, SLOT_RIM));
+                    paint_stack(ui.painter(), rect, stack, v.items, v.icons, 1.0);
+                    resp.on_hover_text(v.items.tooltip(stack));
+                }
+            });
+        }
+    });
+    ui.add_space(8.0);
+    ui.horizontal(|ui| {
+        if ui
+            .add_sized(
+                [140.0, 32.0],
+                egui::Button::new(egui::RichText::new("Take what fits").strong()).fill(Color32::from_rgb(120, 86, 34)),
+            )
+            .clicked()
+        {
+            actions.push(UiAction::Send(ClientMsg::CollectReclaim { shrine: v.shrine }));
+        }
+        let stacks = v.reclaim.len();
+        ui.label(
+            egui::RichText::new(if stacks == 1 {
+                "1 stack waiting".to_string()
+            } else {
+                format!("{stacks} stacks waiting")
+            })
+            .color(MUTED)
+            .small(),
+        );
+    });
+}
+
+fn worlds_tab(ui: &mut Ui, v: &TravelView, actions: &mut Vec<UiAction>) {
+    let mut list: Vec<&PlanetSummary> = v.planets.iter().collect();
+    list.sort_by_key(|p| (p.id != v.here, p.tier, p.id));
+    ui.label(
+        egui::RichText::new("The shrine opens a way to any world it knows.")
+            .color(MUTED)
+            .small(),
+    );
+    ui.add_space(4.0);
+    egui::ScrollArea::vertical().max_height(420.0).show(ui, |ui| {
+        for p in list {
+            let here = p.id == v.here;
+            egui::Frame::new()
+                .fill(if here {
+                    Color32::from_rgba_unmultiplied(240, 186, 84, 18)
+                } else {
+                    Color32::from_white_alpha(7)
+                })
+                .stroke(if here { Stroke::new(1.0, GOLD_DIM) } else { Stroke::NONE })
+                .corner_radius(CornerRadius::same(10))
+                .inner_margin(egui::Margin::same(8))
+                .show(ui, |ui| {
+                    ui.set_width(ui.available_width());
+                    ui.horizontal(|ui| {
+                        let (rect, _) = ui.allocate_exact_size(Vec2::splat(44.0), Sense::hover());
+                        paint_planet(ui.painter(), rect.center(), 17.0, p.color);
+                        ui.vertical(|ui| {
+                            ui.spacing_mut().item_spacing.y = 2.0;
+                            ui.label(egui::RichText::new(&p.name).strong().size(17.0));
+                            ui.label(
+                                egui::RichText::new(format!("{}, tier {}", p.kind, p.tier))
+                                    .color(MUTED)
+                                    .small(),
+                            );
+                            ui.label(egui::RichText::new(players_there(p.players)).color(MUTED).small());
+                        });
+                        ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                            if here {
+                                ui.label(egui::RichText::new("You are here").color(GOLD));
+                            } else if ui
+                                .add_sized(
+                                    [86.0, 32.0],
+                                    egui::Button::new(egui::RichText::new("Travel").strong())
+                                        .fill(Color32::from_rgb(120, 86, 34)),
+                                )
+                                .clicked()
+                            {
+                                actions.push(UiAction::Send(ClientMsg::Warp {
+                                    shrine: v.shrine,
+                                    planet: p.id,
+                                }));
+                                actions.push(UiAction::CloseMenu);
+                            }
+                        });
+                    });
+                });
+        }
+    });
 }
 
 /// Where we are going, for the screen shown on the way.

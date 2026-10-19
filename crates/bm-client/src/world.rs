@@ -2,7 +2,8 @@
 //! edits it has predicted, and the queue of chunks waiting to be meshed.
 
 use bm_core::{
-    BlockFlags, BlockId, BlockPos, BlockRegistry, Chunk, ChunkLight, ChunkPos, LightMap, PhysicsWorld, PlanetShape,
+    BlockFlags, BlockId, BlockPos, BlockRegistry, BlockState, Chunk, ChunkLight, ChunkPos, LightMap, PhysicsWorld,
+    PlanetShape,
 };
 use bm_mesh::{ChunkMesh, neighbor_index};
 use crossbeam_channel::{Receiver, Sender};
@@ -16,7 +17,7 @@ pub struct ClientWorld {
     water: BlockId,
     chunks: HashMap<ChunkPos, Arc<Chunk>>,
     /// Edits sent but not yet answered: position -> (edit seq, block before).
-    pending: HashMap<BlockPos, (u32, BlockId)>,
+    pending: HashMap<BlockPos, (u32, BlockState)>,
     /// Sky and block light for the resident chunks (bm-core `light.rs`).
     light: LightMap,
     mesher: Mesher,
@@ -66,8 +67,16 @@ impl ClientWorld {
         self.chunks.get(&p.chunk()).map(|c| c.get(p.local()))
     }
 
+    pub fn state(&self, p: BlockPos) -> Option<BlockState> {
+        if !self.shape.contains_y(p.y) {
+            return Some(BlockState::AIR);
+        }
+        let p = self.shape.wrap_block(p);
+        self.chunks.get(&p.chunk()).map(|c| c.state(p.local()))
+    }
+
     /// Writes a block the server told us about.
-    pub fn set_block(&mut self, p: BlockPos, id: BlockId) {
+    pub fn set_block(&mut self, p: BlockPos, state: BlockState) {
         if !self.shape.contains_y(p.y) {
             return;
         }
@@ -75,24 +84,28 @@ impl ClientWorld {
         let Some(c) = self.chunks.get_mut(&p.chunk()) else {
             return;
         };
-        if Arc::make_mut(c).set(p.local(), id) != id {
+        let old = Arc::make_mut(c).set_state(p.local(), state);
+        if old != state {
             self.dirty_block(p);
-            let relit = self.light.block_changed(p, &self.chunks);
-            self.mesher.dirty.extend(relit);
+            // A new colour or cut needs a re-mesh; only a new type can change light.
+            if old.id != state.id {
+                let relit = self.light.block_changed(p, &self.chunks);
+                self.mesher.dirty.extend(relit);
+            }
         }
     }
 
     /// Applies an edit locally before the server answers.
-    pub fn predict_edit(&mut self, seq: u32, p: BlockPos, id: BlockId) {
+    pub fn predict_edit(&mut self, seq: u32, p: BlockPos, state: BlockState) {
         let p = self.shape.wrap_block(p);
-        if let Some(before) = self.block(p) {
+        if let Some(before) = self.state(p) {
             self.pending.entry(p).or_insert((seq, before)).0 = seq;
-            self.set_block(p, id);
+            self.set_block(p, state);
         }
     }
 
     /// The server's verdict on our edit is the truth for that block.
-    pub fn apply_edit_result(&mut self, seq: u32, p: BlockPos, block: BlockId) {
+    pub fn apply_edit_result(&mut self, seq: u32, p: BlockPos, block: BlockState) {
         let p = self.shape.wrap_block(p);
         if let Some((latest, _)) = self.pending.get(&p)
             && *latest == seq

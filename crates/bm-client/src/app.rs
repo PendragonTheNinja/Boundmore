@@ -6,7 +6,7 @@ use crate::claims::{Claims, outline};
 use crate::icons::icon_for;
 use crate::items::Items;
 use crate::menus::{
-    self, Arrival, CraftingView, Drag, Hud, ItemIcons, LiveStation, LoginForm, Menu, Notices, StorageWindow,
+    self, Arrival, CraftingView, Drag, Hud, ItemIcons, LiveStation, LoginForm, Menu, Notices, ShrineTab, StorageWindow,
     TravelView, UiAction,
 };
 use crate::net::{self, ConnectOptions, Link, NetEvent};
@@ -18,8 +18,8 @@ use crate::textures::TextureSet;
 use crate::world::ClientWorld;
 use bm_core::movement::{MoveConfig, PlayerInput};
 use bm_core::{
-    BlockId, BlockPos, BlockRegistry, Chunk, DayCycle, HOTBAR_SLOTS, ItemId, PlanetLook, PlanetShape, PlotPos, RayHit,
-    TICK_DT, raycast,
+    BlockId, BlockPos, BlockRegistry, BlockState, Chunk, Colour, DayCycle, HOTBAR_SLOTS, ItemId, ItemStack, PlanetLook,
+    PlanetShape, PlotPos, RayHit, TICK_DT, raycast,
 };
 use bm_protocol::{
     ClientDatagram, ClientMsg, EditAction, INPUT_REDUNDANCY, MIN_PASSWORD_LEN, PlanetInfo, PlanetSummary,
@@ -72,7 +72,8 @@ pub struct Options {
     pub settings_path: PathBuf,
     /// `--demo-ui SCREEN`: run offline against `demo.rs`, opening SCREEN
     /// (`hud`, `inventory`, `crafting`, `station`, `claims`, `shrine`,
-    /// `travel`, `travelling`, `sky`, `storage`, `chat` or `login`).
+    /// `travel`, `travelling`, `sky`, `storage`, `chat`, `colours`,
+    /// `coloured-icons`, `reclaim` or `login`).
     pub demo: Option<String>,
 }
 
@@ -127,6 +128,8 @@ struct Session {
     /// Kept to repaint item icons in a new planet's tints.
     textures: TextureSet,
     journey: Option<Journey>,
+    /// What waits in this account's reclaim (`ServerMsg::Reclaim`).
+    reclaim: Vec<ItemStack>,
 }
 
 impl Session {
@@ -166,6 +169,7 @@ impl Session {
             warp_shrine,
             textures,
             journey: None,
+            reclaim: Vec::new(),
             planet: w.planet,
             universe: w.universe,
         })
@@ -296,6 +300,8 @@ pub struct App {
     live_station: Option<LiveStation>,
     /// The open storage block's contents as the server last sent them.
     storage_view: Option<StorageView>,
+    /// The warp shrine window's open tab.
+    shrine_tab: ShrineTab,
     /// Storage blocks we closed whose `closed` answer has not come back yet:
     /// that answer must not close the same block opened again meanwhile.
     storage_closing: Vec<BlockPos>,
@@ -345,6 +351,7 @@ impl App {
             drag: None,
             live_station: None,
             storage_view: None,
+            shrine_tab: ShrineTab::Worlds,
             storage_closing: Vec::new(),
             chat: ChatBox::default(),
             claim_mode: false,
@@ -452,6 +459,9 @@ impl App {
         if let Menu::Storage(pos) = menu {
             self.storage_view = None;
             self.send(ClientMsg::OpenStorage { pos: Some(pos) });
+        }
+        if let Menu::Travel(_) = menu {
+            self.shrine_tab = ShrineTab::Worlds;
         }
         self.menu = Some(menu);
         self.keys.clear();
@@ -616,7 +626,13 @@ impl App {
             Ok(r) => r,
             Err(e) => return self.refuse_catalogue(format!("the server sent a bad block catalogue: {e}")),
         };
-        let items = match Items::new(w.items.clone(), w.recipes.clone(), w.inventory.clone(), &registry) {
+        let items = match Items::new(
+            w.items.clone(),
+            w.recipes.clone(),
+            w.inventory.clone(),
+            w.colours.clone(),
+            &registry,
+        ) {
             Ok(i) => i,
             Err(e) => return self.refuse_catalogue(format!("the server sent a bad item catalogue: {e}")),
         };
@@ -625,6 +641,7 @@ impl App {
         if let Some(r) = &mut self.renderer {
             r.clear_chunks();
             r.write_palette(&registry);
+            r.set_colours(&w.colours);
             r.set_textures(&set);
         }
         if let Some(r) = &mut self.renderer {
@@ -661,11 +678,50 @@ impl App {
             .registry
             .defs()
             .iter()
-            .map(|d| icon_for(d, registry, set, &items_dir, tints))
+            .map(|d| icon_for(d, registry, set, &items_dir, tints, None))
             .collect();
         match &self.egui {
             Some(e) => ItemIcons::build(&e.ctx, sources),
             None => ItemIcons::default(),
+        }
+    }
+
+    /// Makes icons for coloured stacks shown anywhere (inventory, the open
+    /// chest, a station's output, the reclaim) the first time each colour of
+    /// each item appears. Painted like the terrain shader paints the block.
+    fn ensure_coloured_icons(&mut self) {
+        let (Some(s), Some(e)) = (self.session.as_mut(), self.egui.as_ref()) else {
+            return;
+        };
+        let chest = self.storage_view.iter().flat_map(|v| v.slots.iter().flatten());
+        let output = self.live_station.iter().flat_map(|l| l.view.output.iter());
+        let missing = s.icons.missing_colours(
+            s.items
+                .inventory
+                .slots
+                .iter()
+                .flatten()
+                .chain(chest)
+                .chain(output)
+                .chain(s.reclaim.iter()),
+        );
+        if missing.is_empty() {
+            return;
+        }
+        let items_dir = self.opts.assets.join("textures").join("items");
+        for (item, colour) in missing {
+            let Some(def) = s.items.registry.get(item) else {
+                continue;
+            };
+            let source = icon_for(
+                def,
+                &s.world.registry,
+                &s.textures,
+                &items_dir,
+                &s.planet.tints,
+                crate::colour::linear(&s.items.colours, colour),
+            );
+            s.icons.add_coloured(&e.ctx, (item, colour), source);
         }
     }
 
@@ -732,6 +788,12 @@ impl App {
             ServerMsg::Notice { text } => self.notices.push(text, now),
             ServerMsg::Universe { planets } => s.universe = planets,
             ServerMsg::Chat { lines } => self.chat.receive(lines, now),
+            ServerMsg::Reclaim { items } => {
+                s.reclaim = items
+                    .into_iter()
+                    .filter(|i| s.items.registry.contains(i.item) && i.count > 0)
+                    .collect();
+            }
             ServerMsg::Welcome(_) | ServerMsg::Refused { .. } | ServerMsg::Travel(_) | ServerMsg::Storage(_) => {}
         }
     }
@@ -901,7 +963,7 @@ impl App {
                         .drop_of(block)
                         .is_none_or(|d| s.items.inventory.can_fit(&s.items.registry, d, 1));
                     if fits {
-                        s.world.predict_edit(s.edit_seq, hit.block, BlockId::AIR);
+                        s.world.predict_edit(s.edit_seq, hit.block, BlockState::AIR);
                     }
                     link.send(ClientMsg::Edit {
                         seq: s.edit_seq,
@@ -941,7 +1003,13 @@ impl App {
             let blocks_me = s.world.registry.get(block).solid && s.me.state.overlaps_block(&s.movement, at);
             if free && !blocks_me && s.world.shape.contains_y(at.y) {
                 s.edit_seq += 1;
-                s.world.predict_edit(s.edit_seq, at, block);
+                // The block takes the stack's colour, as the server will.
+                let colour = match held {
+                    Some(h) if s.world.registry.get(block).colourable => h.colour,
+                    _ => Colour::NATURAL,
+                };
+                s.world
+                    .predict_edit(s.edit_seq, at, BlockState::coloured(block, colour));
                 link.send(ClientMsg::Edit {
                     seq: s.edit_seq,
                     at: s.me.seq,
@@ -965,6 +1033,7 @@ impl App {
 
     /// Runs this frame's menus and HUD and returns them tessellated.
     fn run_ui(&mut self) -> Option<(Vec<egui::ClippedPrimitive>, egui::TexturesDelta, f32)> {
+        self.ensure_coloured_icons();
         let window = self.window.clone()?;
         let e = self.egui.as_mut()?;
         let mut raw = e.winit.take_egui_input(&window);
@@ -986,6 +1055,7 @@ impl App {
         let session = self.session.as_ref();
         let live = self.live_station.as_ref();
         let claim_mode = self.claim_mode;
+        let shrine_tab = &mut self.shrine_tab;
         let out = e.ctx.run_ui(raw, |ui| {
             let ctx = ui.ctx().clone();
             let Some(s) = session else {
@@ -1023,6 +1093,7 @@ impl App {
                     owner,
                     claim_mode: claim_help,
                     aim_hint,
+                    reclaim_waiting: !s.reclaim.is_empty(),
                 },
             );
             match menu {
@@ -1051,7 +1122,11 @@ impl App {
                         planets: &s.universe,
                         here: s.planet.id,
                         shrine,
+                        items: &s.items,
+                        icons: &s.icons,
+                        reclaim: &s.reclaim,
                     },
+                    shrine_tab,
                     &mut actions,
                 ),
                 Some(Menu::Storage(pos)) => {
@@ -1335,6 +1410,30 @@ impl App {
                     crate::demo::CHEST[1],
                     crate::demo::CHEST[2],
                 )));
+            }
+            // The palette wall in daylight, a pack of coloured stacks.
+            "colours" => {
+                if let Some(Link::Demo(d)) = &mut self.link {
+                    d.show_colours();
+                }
+                self.pitch = 0.42;
+            }
+            "coloured-icons" => {
+                if let Some(Link::Demo(d)) = &mut self.link {
+                    d.show_colours();
+                }
+                self.open_menu(Menu::Inventory);
+            }
+            // The shrine window on its Reclaim tab, with things waiting.
+            "reclaim" => {
+                if let Some(Link::Demo(d)) = &mut self.link {
+                    d.sample_reclaim();
+                }
+                self.yaw = std::f64::consts::PI;
+                self.pitch = -0.38;
+                let shrine = BlockPos::new(crate::demo::SHRINE[0], crate::demo::SHRINE[1], crate::demo::SHRINE[2]);
+                self.open_menu(Menu::Travel(shrine));
+                self.shrine_tab = ShrineTab::Reclaim;
             }
             // Lines on every channel, the box open for typing.
             "chat" => {
@@ -1629,7 +1728,14 @@ mod tests {
             panic!("welcome first")
         };
         let registry = BlockRegistry::from_defs(w.blocks.clone()).unwrap();
-        let items = Items::new(w.items.clone(), w.recipes.clone(), w.inventory.clone(), &registry).unwrap();
+        let items = Items::new(
+            w.items.clone(),
+            w.recipes.clone(),
+            w.inventory.clone(),
+            w.colours.clone(),
+            &registry,
+        )
+        .unwrap();
         let set = TextureSet {
             layers: vec![],
             faces: vec![],
@@ -1681,7 +1787,7 @@ mod tests {
         s.remotes.joined(9, "Wren".into());
         assert!(!s.remotes.sample(30.0, s.world.shape).is_empty());
         assert!(s.claims.iter().count() > 0);
-        s.world.predict_edit(1, BlockPos::new(128, 43, 128), BlockId::AIR);
+        s.world.predict_edit(1, BlockPos::new(128, 43, 128), BlockState::AIR);
         assert_eq!(s.world.pending_edits(), 1);
         s.mining = Some(Mining {
             pos: BlockPos::new(129, 43, 128),

@@ -301,3 +301,8 @@ Dev notes: https://forum.playboundless.com/t/44553, announcement https://forum.p
 - Maximum fuel a beacon can hold at once, and the exact Gleam Club cap (about 180 days is a player figure).
 - Total palette count: 254, 255 or 256 appear in different sources. The ~255 usable plus reserved index 0 reading is the most consistent.
 - Real prices of sovereign worlds.
+
+## Art: texture size
+
+- Block textures were 256x256 each, "a LOT bigger than say Minecraft default", and supporting a wide range of hardware limited the game to around 256 block textures (developer lucadeltodecso, 2015-08-04, https://forum.playboundless.com/t/2404). A player repeats "all block textures are 256x256" in 2020 (https://forum.playboundless.com/t/43592). The same 2015 post confirms a palette of 255 colours. Confidence: high.
+

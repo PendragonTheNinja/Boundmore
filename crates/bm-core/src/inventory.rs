@@ -4,6 +4,7 @@
 //! only displays it and asks for moves). Every operation is all-or-nothing:
 //! a craft that cannot take every input takes none.
 
+use crate::block::Colour;
 use crate::items::{ItemId, ItemRegistry, ItemStack};
 use serde::{Deserialize, Serialize};
 
@@ -48,22 +49,32 @@ impl Inventory {
             .sum()
     }
 
-    /// Whether `count` of `item` would fit.
+    /// Whether `count` of `item` (natural colour) would fit.
     pub fn can_fit(&self, items: &ItemRegistry, item: ItemId, count: u16) -> bool {
-        let mut c = self.clone();
-        c.add(items, item, count) == 0
+        self.can_fit_coloured(items, item, Colour::NATURAL, count)
     }
 
-    /// Adds as much as fits: topping up stacks of the same item first, then
-    /// empty slots (hotbar first). Returns what did not fit.
+    pub fn can_fit_coloured(&self, items: &ItemRegistry, item: ItemId, colour: Colour, count: u16) -> bool {
+        let mut c = self.clone();
+        c.add_coloured(items, item, colour, count) == 0
+    }
+
+    /// Adds as much as fits, in natural colour. Returns what did not fit.
     pub fn add(&mut self, items: &ItemRegistry, item: ItemId, count: u16) -> u16 {
+        self.add_coloured(items, item, Colour::NATURAL, count)
+    }
+
+    /// Adds as much as fits: topping up stacks of the same item and colour
+    /// first, then empty slots (hotbar first). Returns what did not fit.
+    pub fn add_coloured(&mut self, items: &ItemRegistry, item: ItemId, colour: Colour, count: u16) -> u16 {
         let max = limit(items, item);
+        let want = ItemStack::coloured(item, colour, 0);
         let mut left = count;
         for s in self.slots.iter_mut().flatten() {
             if left == 0 {
                 break;
             }
-            if s.item == item && s.count < max && s.wear == 0 {
+            if s.stacks_with(&want) && s.count < max {
                 let n = left.min(max - s.count);
                 s.count += n;
                 left -= n;
@@ -75,7 +86,7 @@ impl Inventory {
             }
             if slot.is_none() {
                 let n = left.min(max);
-                *slot = Some(ItemStack::new(item, n));
+                *slot = Some(ItemStack::coloured(item, colour, n));
                 left -= n;
             }
         }
@@ -85,8 +96,18 @@ impl Inventory {
     /// Adds, all or nothing. Returns the changed slots, or None if it does
     /// not fit (and nothing changed).
     pub fn add_all(&mut self, items: &ItemRegistry, item: ItemId, count: u16) -> Option<Vec<usize>> {
+        self.add_all_coloured(items, item, Colour::NATURAL, count)
+    }
+
+    pub fn add_all_coloured(
+        &mut self,
+        items: &ItemRegistry,
+        item: ItemId,
+        colour: Colour,
+        count: u16,
+    ) -> Option<Vec<usize>> {
         let mut c = self.clone();
-        if c.add(items, item, count) != 0 {
+        if c.add_coloured(items, item, colour, count) != 0 {
             return None;
         }
         let changed = Self::changed(self, &c);
@@ -146,7 +167,7 @@ impl Inventory {
                 self.slots[to] = Some(ItemStack { count: n, ..src });
                 self.reduce(from, n);
             }
-            Some(dst) if dst.item == src.item && dst.wear == 0 && src.wear == 0 => {
+            Some(dst) if dst.stacks_with(&src) => {
                 let room = limit(items, src.item).saturating_sub(dst.count);
                 let n = n.min(room);
                 if n == 0 {
@@ -270,6 +291,26 @@ mod tests {
         assert_eq!(inv.get(2).unwrap().item, stone);
         assert!(inv.move_items(&i, 5, 6, 1).is_none(), "empty source");
         assert!(inv.move_items(&i, 0, 99, 1).is_none(), "bad slot");
+    }
+
+    #[test]
+    fn colours_never_share_a_stack() {
+        let i = items();
+        let stone = i.id("stone").unwrap();
+        let mut inv = Inventory::default();
+        assert_eq!(inv.add(&i, stone, 10), 0);
+        assert_eq!(inv.add_coloured(&i, stone, Colour(5), 10), 0);
+        assert_eq!(inv.get(0).unwrap().colour, Colour::NATURAL);
+        assert_eq!(inv.get(1).unwrap().colour, Colour(5));
+        assert_eq!(inv.count(stone), 20, "counting takes any colour");
+        assert!(
+            inv.move_items(&i, 1, 0, 5).is_none(),
+            "no merge across colours (part of a stack)"
+        );
+        inv.move_items(&i, 1, 0, 10).unwrap();
+        assert_eq!(inv.get(0).unwrap().colour, Colour(5), "whole stacks swap");
+        assert_eq!(inv.add_coloured(&i, stone, Colour(5), 3), 0);
+        assert_eq!(inv.get(0).unwrap().count, 13, "same colour tops up");
     }
 
     #[test]

@@ -37,7 +37,7 @@ pub fn move_stack(
     };
     match dst {
         None => Some((less(n), Some(ItemStack { count: n, ..src }))),
-        Some(d) if d.item == src.item && d.wear == 0 && src.wear == 0 => {
+        Some(d) if d.stacks_with(&src) => {
             let max = items.get(src.item).map_or(1, |def| def.stack);
             let n = n.min(max.saturating_sub(d.count));
             if n == 0 {
@@ -119,6 +119,17 @@ impl Storages {
         self.dirty.insert(pos);
     }
 
+    /// Removes a block's contents, returning them (its claim lapsed).
+    pub fn take(&mut self, pos: BlockPos) -> Vec<ItemStack> {
+        match self.map.remove(&pos) {
+            Some(slots) => {
+                self.dirty.insert(pos);
+                slots.into_iter().flatten().collect()
+            }
+            None => Vec::new(),
+        }
+    }
+
     /// Changed blocks for the save; None for one now empty.
     pub fn take_dirty(&mut self, items: &ItemRegistry) -> Vec<(BlockPos, Option<SavedSlots>)> {
         std::mem::take(&mut self.dirty)
@@ -175,9 +186,8 @@ mod tests {
         assert_eq!(move_stack(&items, st(stone, 10), st(sand, 3), 4), None);
         // Worn tools never merge.
         let worn = Some(ItemStack {
-            item: hammer,
-            count: 1,
             wear: 5,
+            ..ItemStack::new(hammer, 1)
         });
         assert_eq!(move_stack(&items, worn, st(hammer, 1), 1), Some((st(hammer, 1), worn)));
         // Nothing from nothing, nothing of nothing.
@@ -200,10 +210,10 @@ mod tests {
             Some(ItemStack::new(sand, 7)),
             Some(ItemStack::new(hammer, 1)),
             Some(ItemStack {
-                item: hammer,
-                count: 1,
                 wear: 3,
+                ..ItemStack::new(hammer, 1)
             }),
+            Some(ItemStack::coloured(stone, bm_core::Colour(40), 30)),
         ];
         for a in stacks {
             for b in stacks {
@@ -241,6 +251,13 @@ mod tests {
         assert_eq!(t.slots(pos, 20), slots);
         // A shrunk block keeps what was beyond its new size.
         assert_eq!(t.slots(pos, 5).len(), 20);
+
+        let mut u = Storages::new();
+        u.set(pos, slots.clone());
+        u.take_dirty(&items);
+        assert_eq!(u.take(pos), vec![ItemStack::new(stone, 12)]);
+        assert!(!u.has_contents(pos) && u.take(pos).is_empty());
+        assert_eq!(u.take_dirty(&items), vec![(pos, None)]);
 
         s.set(pos, vec![None; 20]);
         assert!(!s.has_contents(pos));

@@ -4,7 +4,7 @@ A persistent online voxel universe in the spirit of *Boundless*: a world of plan
 
 ![Arriving on four planets](docs/media/m4-real-arrivals.png)
 
-**Status:** milestones 4 and 5 (a universe of four planets, warp shrines, iron; storage chests and chat) are built and awaiting a play-test. Milestones 1 to 3 (foundation; light and textures; accounts, inventory, crafting and claims) are built. See `docs/roadmap.md` for what comes next.
+**Status:** milestones 4 to 6 (a universe of four planets, warp shrines, iron; storage chests and chat; block colours, planet colours, claims lapsing to coloured ash) are built and awaiting a play-test. Milestones 1 to 3 (foundation; light and textures; accounts, inventory, crafting and claims) are built. See `docs/roadmap.md` for what comes next.
 
 ## Running it
 
@@ -31,6 +31,8 @@ Controls:
 - **P** toggles claim mode: left click a plot beside your claim to add it, right click to give it up. Place a claim stone to start a claim. A claim stays yours as long as you visit at least once every 6 months.
 - **E** at a warp shrine (the glowing violet block at each planet's spawn) opens the travel menu: pick a planet to go there.
 - **E** on a storage chest (workbench, 8 timber) opens it beside your inventory: drag between them, or Shift-click to send a whole stack across.
+- Blocks have colours: what you break keeps its colour in your pack (stacks of different colours stay apart) and is placed in it. New planets colour their ground, rock and trees from a palette of 255 colours, in large patches worth exploring for.
+- A claim whose owner has not visited for 6 months crumbles to ash in the colours of what was built; anything stored in it waits in the owner's **Reclaim** tab at any warp shrine.
 - **Enter** or **T** opens chat. `/l`, `/p` and `/u` switch between local (nearby), planet and universe; `/w name text` whispers and `/r text` replies. Enter sends, Esc closes.
 - F11 for fullscreen.
 

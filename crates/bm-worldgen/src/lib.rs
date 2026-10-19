@@ -16,10 +16,13 @@ pub mod noise;
 pub use kinds::{KindError, PlanetKind, PlanetKinds};
 
 use bm_core::{
-    BlockId, BlockPos, BlockRegistry, CHUNK_SIZE, CHUNK_VOLUME, Chunk, ChunkPos, LocalPos, PlanetShape, RegistryError,
+    BlockId, BlockPos, BlockRegistry, BlockState, CHUNK_SIZE, CHUNK_VOLUME, Chunk, ChunkPos, Colour, ColourPalette,
+    LocalPos, PlanetShape, RegistryError,
 };
-use noise::{Fbm, hash01};
+use noise::{Fbm, hash01, hash3};
 use serde::{Deserialize, Serialize};
+use std::collections::BTreeMap;
+use std::sync::OnceLock;
 
 /// Bump on ANY change to what the generator produces for a given seed, and
 /// re-pin `terrain_fingerprint_is_pinned` in the same commit. A server refuses
@@ -29,7 +32,38 @@ use serde::{Deserialize, Serialize};
 /// Version 2 (M4) added planet kinds. The default settings still produce
 /// version 1's terrain block for block (`default_settings_reproduce_version_1`),
 /// so a version 1 planet is a version 2 planet with default settings.
-pub const GENERATOR_VERSION: u32 = 2;
+///
+/// Version 3 (M6) colours natural blocks from the palette
+/// ([`PlanetGenConfig::colours`]). Settings with no colours, which is what a
+/// version 2 planet's saved settings read as, still produce version 2's
+/// terrain block for block (`no_colours_reproduce_version_2`): see
+/// [`opens_generator_version`].
+pub const GENERATOR_VERSION: u32 = 3;
+
+/// Whether this generator reproduces, block for block, the terrain of a
+/// planet saved by generator `version` from that planet's saved settings, so
+/// the planet (and every edit saved against its terrain) can be opened.
+///
+/// Version 2's settings have no `colours` field, so they read as no colours,
+/// and version 3 with no colours is version 2's terrain: a version 2 planet
+/// opens as a version 3 planet that keeps natural colours. Version 1 saved
+/// its settings in another layout ([`PlanetGenConfigV1`]) and is upgraded by
+/// the server's save conversion, not here.
+pub fn opens_generator_version(version: u32) -> bool {
+    version == GENERATOR_VERSION || version == 2
+}
+
+/// The most palette colours a planet uses for one block: a main colour and
+/// up to three regional variants.
+pub const MAX_BLOCK_COLOURS: usize = 4;
+
+/// The shared colour palette (`assets/colours.toml`) that colour names in
+/// planet settings resolve against. Ids are positions and only ever appended
+/// (ADR-0007), so this is the palette every server and client holds.
+pub fn palette() -> &'static ColourPalette {
+    static PALETTE: OnceLock<ColourPalette> = OnceLock::new();
+    PALETTE.get_or_init(ColourPalette::builtin)
+}
 
 /// Per-planet generation settings, saved with the planet. A planet kind in
 /// `assets/planets.toml` supplies them (`[kind.generation]`, any field left
@@ -90,6 +124,29 @@ pub struct PlanetGenConfig {
     /// Each ore's veins come from its own noise, keyed by its place in this
     /// list, so add new ores at the end.
     pub ores: Vec<OreSpec>,
+
+    /// Natural colours (ADR-0007): block name to palette colour names, the
+    /// planet's main colour for that block first, then up to three regional
+    /// variants that take over in patches hundreds of blocks across. Chosen
+    /// once, when the planet is created, from its kind's choices
+    /// ([`PlanetKind::generation`]). A block not listed keeps its natural
+    /// colour; empty (planets made before version 3, and the default) is
+    /// natural everywhere. Only colourable blocks may be listed.
+    #[serde(skip_serializing_if = "BTreeMap::is_empty")]
+    pub colours: BTreeMap<String, Vec<String>>,
+}
+
+/// Why planet settings cannot be generated.
+#[derive(Debug, thiserror::Error)]
+pub enum ConfigError {
+    #[error(transparent)]
+    Block(#[from] RegistryError),
+    #[error("colours for `{0}`: that block keeps its natural colour (not colourable)")]
+    NotColourable(String),
+    #[error("colours for `{block}`: there is no palette colour named `{colour}`")]
+    UnknownColour { block: String, colour: String },
+    #[error("colours for `{0}`: {1} colours listed; a kind lists at least 1 per block, a planet 1 to 4")]
+    ColourCount(String, usize),
 }
 
 /// One ore in a planet's rock.
@@ -167,14 +224,17 @@ impl Default for PlanetGenConfig {
                     min_depth: 0,
                 },
             ],
+            colours: BTreeMap::new(),
         }
     }
 }
 
 impl PlanetGenConfig {
-    /// Every block the settings name exists.
-    pub fn check(&self, blocks: &BlockRegistry) -> Result<(), RegistryError> {
-        Ids::resolve(self, blocks).map(|_| ())
+    /// Every block the settings name exists, and every colour is a palette
+    /// colour on a colourable block.
+    pub fn check(&self, blocks: &BlockRegistry) -> Result<(), ConfigError> {
+        Ids::resolve(self, blocks)?;
+        BlockColours::resolve(&self.colours, blocks).map(|_| ())
     }
 }
 
@@ -274,11 +334,176 @@ const TREE_REACH: i64 = 3;
 /// Least headroom kept for trees above the surface (taller trees raise it).
 const TREE_MAX_HEIGHT: i64 = 11;
 
+/// Spacing of the world-aligned lattice the colour regions are sampled on
+/// and interpolated from (per column, not per voxel: colour costs nothing
+/// below the surface).
+const REGION_STEP: i64 = 4;
+/// Lattice points per chunk side: one cell of margin on each side so trees
+/// whose trunks stand outside the chunk find their column's colour.
+const REGION_N: usize = (CHUNK_SIZE as i64 / REGION_STEP) as usize + 3;
+/// Size of the largest colour patches, in blocks.
+const REGION_FEATURE: f64 = 320.0;
+/// Ragged edges: each column's region value is nudged by up to half this, so
+/// a border between two colours frays over a few blocks instead of tracing a
+/// smooth curve.
+const REGION_FRAY: f64 = 0.03;
+/// Size of the medium-scale wobble added to both region fields, so a border
+/// between two colours wanders and breaks into islands instead of running as
+/// a long smooth curve (which reads as a straight line up close).
+const REGION_WOBBLE_FEATURE: f64 = 28.0;
+/// Its strength, in units of the region fields' spread.
+const REGION_WOBBLE: f64 = 0.15;
+/// Standard deviation of the two-octave region noise (measured by
+/// `region_noise_spread_is_as_assumed`); thresholds below are in units of it.
+const REGION_SIGMA: f64 = 0.22;
+/// Where a block's main colour gives way to its variants: the normal
+/// quantile of 0.6, so the main colour covers about 60% of the planet.
+const MAIN_SHARE_Z: f64 = 0.2533;
+/// Normal quantiles splitting the variant patches evenly between one, two or
+/// three variants.
+const VARIANT_SPLITS: [&[f64]; 3] = [&[], &[0.0], &[-0.4307, 0.4307]];
+
+/// One coloured block's palette colours and how its regions are laid out.
+#[derive(Clone, Debug)]
+struct BlockColour {
+    /// Main colour first.
+    colours: Vec<Colour>,
+    /// A direction mixing the two region fields: each block gets its own, so
+    /// turf and stone change colour in different places.
+    dir: (f64, f64),
+    main_below: f64,
+    splits: Vec<f64>,
+}
+
+impl BlockColour {
+    /// The colour for a column whose region fields read `(a, b)`.
+    #[inline]
+    fn pick(&self, a: f64, b: f64) -> Colour {
+        let (c, s) = self.dir;
+        let u = a * c + b * s;
+        if u < self.main_below || self.colours.len() == 1 {
+            return self.colours[0];
+        }
+        let w = b * c - a * s;
+        let v = self.splits.iter().take_while(|&&t| w >= t).count();
+        self.colours[1 + v]
+    }
+}
+
+/// A planet's natural colours, resolved to ids.
+#[derive(Clone, Debug, Default)]
+struct BlockColours {
+    /// Per block id: index into `blocks`, or `NO_SLOT`.
+    slot: Vec<u8>,
+    blocks: Vec<BlockColour>,
+}
+
+const NO_SLOT: u8 = u8::MAX;
+
+impl BlockColours {
+    fn resolve(colours: &BTreeMap<String, Vec<String>>, r: &BlockRegistry) -> Result<Self, ConfigError> {
+        let palette = palette();
+        let mut out = Self {
+            slot: vec![NO_SLOT; r.len()],
+            blocks: Vec::new(),
+        };
+        for (block, names) in colours {
+            let id = r.id(block)?;
+            if !r.get(id).colourable {
+                return Err(ConfigError::NotColourable(block.clone()));
+            }
+            if names.is_empty() || names.len() > MAX_BLOCK_COLOURS {
+                return Err(ConfigError::ColourCount(block.clone(), names.len()));
+            }
+            let ids = names
+                .iter()
+                .map(|n| {
+                    palette.id(n).ok_or_else(|| ConfigError::UnknownColour {
+                        block: block.clone(),
+                        colour: n.clone(),
+                    })
+                })
+                .collect::<Result<Vec<_>, _>>()?;
+            // A direction from the block's name, so the layout does not move
+            // when other blocks are added. sqrt is exact in IEEE arithmetic,
+            // so this is the same on every machine (no trigonometry).
+            let h = name_hash(block);
+            let (x, y) = (
+                (h & 0xffff) as f64 / 32768.0 - 1.0,
+                ((h >> 16) & 0xffff) as f64 / 32768.0 - 1.0,
+            );
+            let len = (x * x + y * y).sqrt().max(1e-6);
+            out.slot[id.0 as usize] = out.blocks.len() as u8;
+            out.blocks.push(BlockColour {
+                dir: (x / len, y / len),
+                main_below: MAIN_SHARE_Z * REGION_SIGMA,
+                splits: VARIANT_SPLITS[ids.len().saturating_sub(2).min(2)]
+                    .iter()
+                    .map(|z| z * REGION_SIGMA)
+                    .collect(),
+                colours: ids,
+            });
+        }
+        Ok(out)
+    }
+
+    fn is_empty(&self) -> bool {
+        self.blocks.is_empty()
+    }
+
+    #[inline]
+    fn slot(&self, id: BlockId) -> Option<usize> {
+        match self.slot.get(id.0 as usize) {
+            Some(&s) if s != NO_SLOT => Some(s as usize),
+            _ => None,
+        }
+    }
+}
+
+/// FNV-1a of a name, then mixed: a stable key that does not depend on any
+/// list's order.
+fn name_hash(name: &str) -> u64 {
+    let mut h: u64 = 0xcbf2_9ce4_8422_2325;
+    for b in name.bytes() {
+        h ^= b as u64;
+        h = h.wrapping_mul(0x100_0000_01b3);
+    }
+    hash3(h, 0, 0, 0)
+}
+
+/// Picks a new planet's colours from its kind's choices (block name to
+/// palette colour names): for each block, a main colour and one to three
+/// regional variants, all different, chosen by the planet's seed. A block
+/// with one choice gets that colour alone.
+pub fn pick_colours(choices: &BTreeMap<String, Vec<String>>, seed: u64) -> BTreeMap<String, Vec<String>> {
+    choices
+        .iter()
+        .filter(|(_, names)| !names.is_empty())
+        .map(|(block, names)| {
+            let key = name_hash(block) as i64;
+            let r = |n: i64| hash3(seed ^ 0xc0_10c4, key, n, 0);
+            let want = (2 + (r(0) % 3) as usize).min(names.len());
+            // A partial Fisher-Yates shuffle: the first `want` are the picks.
+            let mut pool = names.clone();
+            for i in 0..want {
+                let j = i + (r(1 + i as i64) % (pool.len() - i) as u64) as usize;
+                pool.swap(i, j);
+            }
+            pool.truncate(want);
+            (block.clone(), pool)
+        })
+        .collect()
+}
+
 pub struct Generator {
     shape: PlanetShape,
     cfg: PlanetGenConfig,
     ids: Ids,
     ores: Vec<Ore>,
+    colours: BlockColours,
+    region_a: Fbm,
+    region_b: Fbm,
+    region_wobble: Fbm,
     width: f64,
     /// Highest a tree reaches above its footing.
     tree_top: i64,
@@ -343,11 +568,12 @@ impl Cell {
 }
 
 impl Generator {
-    pub fn new(shape: PlanetShape, cfg: PlanetGenConfig, registry: &BlockRegistry) -> Result<Self, RegistryError> {
+    pub fn new(shape: PlanetShape, cfg: PlanetGenConfig, registry: &BlockRegistry) -> Result<Self, ConfigError> {
         let w = shape.width_blocks();
         let s = cfg.seed;
         let k = |n: u64| s.wrapping_mul(0x2545_f491_4f6c_dd1d).wrapping_add(n << 12);
         let ids = Ids::resolve(&cfg, registry)?;
+        let colours = BlockColours::resolve(&cfg.colours, registry)?;
         let ores = cfg
             .ores
             .iter()
@@ -366,6 +592,12 @@ impl Generator {
             shape,
             ids,
             ores,
+            colours,
+            // Keys 1 to 8 are the terrain's and 9 up the ores'; these stay
+            // clear of any ore list a kind could hold.
+            region_a: Fbm::new(k(1001), w, REGION_FEATURE, 2, 0.5),
+            region_b: Fbm::new(k(1002), w, REGION_FEATURE, 2, 0.5),
+            region_wobble: Fbm::new(k(1003), w, REGION_WOBBLE_FEATURE, 2, 0.5),
             width: w as f64,
             tree_top: (cfg.trunk_min + cfg.trunk_extra.max(1) + 1).max(TREE_MAX_HEIGHT),
             water_level: cfg.sea_level + cfg.water_offset,
@@ -503,13 +735,24 @@ impl Generator {
             tunnel: cell.lerp(|i| caves[i].tunnel),
         };
 
+        // Colour regions, decided per column: every coloured block in a
+        // column takes the colour its region gives it.
+        let regions = self.region_lattice(origin);
+        let mut column_colours = vec![Colour::NATURAL; self.colours.blocks.len()];
+
         let seed = cfg.seed;
         let top = origin.y + cs - 1;
-        let mut blocks = vec![ids.air; CHUNK_VOLUME];
+        let mut blocks = vec![BlockState::plain(ids.air); CHUNK_VOLUME];
         for lz in 0..cs {
             for lx in 0..cs {
                 let h = height_at(lx, lz);
                 let (wx, wz) = (origin.x + lx, origin.z + lz);
+                if !regions.is_empty() {
+                    let (a, b) = self.region_at(&regions, lx, lz, wx, wz);
+                    for (c, bc) in column_colours.iter_mut().zip(&self.colours.blocks) {
+                        *c = bc.pick(a, b);
+                    }
+                }
                 let slope = slope_at(&height_at, lx, lz);
                 let surface = self.surface_block(h, slope, wx, wz);
                 // Under the top: a few blocks of soil (or more of the surface
@@ -581,13 +824,62 @@ impl Generator {
                             }
                         }
                     }
-                    blocks[LocalPos::new(lx as u8, ly as u8, lz as u8).index()] = b;
+                    blocks[LocalPos::new(lx as u8, ly as u8, lz as u8).index()] = match self.colours.slot(b) {
+                        Some(s) => BlockState::coloured(b, column_colours[s]),
+                        None => BlockState::plain(b),
+                    };
                 }
             }
         }
 
-        self.place_trees(pos, &mut blocks, &height_at);
-        Chunk::from_dense(&blocks)
+        self.place_trees(pos, &mut blocks, &height_at, &regions);
+        Chunk::from_dense_states(&blocks)
+    }
+
+    /// The two colour-region fields on the chunk's lattice, `[z][x]`, from one
+    /// lattice step outside the chunk to one past it. Empty when the planet
+    /// has no colours.
+    fn region_lattice(&self, origin: BlockPos) -> Vec<(f64, f64)> {
+        if self.colours.is_empty() {
+            return Vec::new();
+        }
+        let mut out = Vec::with_capacity(REGION_N * REGION_N);
+        for j in 0..REGION_N as i64 {
+            for i in 0..REGION_N as i64 {
+                let x = (origin.x + (i - 1) * REGION_STEP) as f64;
+                let z = (origin.z + (j - 1) * REGION_STEP) as f64;
+                // One wobble moves both fields the same way (opposite sign
+                // for b), so variants and the main colour meander together.
+                let w = self.region_wobble.sample2(x, z, self.width) * REGION_WOBBLE;
+                out.push((
+                    self.region_a.sample2(x, z, self.width) + w,
+                    self.region_b.sample2(x, z, self.width) - w,
+                ));
+            }
+        }
+        out
+    }
+
+    /// The region fields at column `(lx, lz)` of the chunk (`-4..36`), whose
+    /// canonical world column is `(wx, wz)`, frayed a little per column.
+    #[inline]
+    fn region_at(&self, lattice: &[(f64, f64)], lx: i64, lz: i64, wx: i64, wz: i64) -> (f64, f64) {
+        let (gx, gz) = (lx + REGION_STEP, lz + REGION_STEP);
+        let (i, j) = ((gx / REGION_STEP) as usize, (gz / REGION_STEP) as usize);
+        let t = |g: i64| (g % REGION_STEP) as f64 / REGION_STEP as f64;
+        let (tx, tz) = (t(gx), t(gz));
+        let at = |di: usize, dj: usize| lattice[(j + dj) * REGION_N + i + di];
+        let (p00, p10, p01, p11) = (at(0, 0), at(1, 0), at(0, 1), at(1, 1));
+        let bilerp = |a: f64, b: f64, c: f64, d: f64| {
+            let top = a + (b - a) * tx;
+            top + (c + (d - c) * tx - top) * tz
+        };
+        let h = hash3(self.cfg.seed ^ 0xf4a7_c010, wx, 0, wz);
+        let fray = |bits: u64| ((bits & 0xffff) as f64 / 65536.0 - 0.5) * REGION_FRAY;
+        (
+            bilerp(p00.0, p10.0, p01.0, p11.0) + fray(h),
+            bilerp(p00.1, p10.1, p01.1, p11.1) + fray(h >> 32),
+        )
     }
 
     fn surface_block(&self, h: i64, slope: i64, wx: i64, wz: i64) -> BlockId {
@@ -629,11 +921,26 @@ impl Generator {
         Some(self.cfg.trunk_min.max(1) + (hash01(self.cfg.seed ^ 0x7ee2, x, 0, z) * extra as f64) as i64)
     }
 
-    fn place_trees(&self, pos: ChunkPos, blocks: &mut [BlockId], height_at: &impl Fn(i64, i64) -> i64) {
+    fn place_trees(
+        &self,
+        pos: ChunkPos,
+        blocks: &mut [BlockState],
+        height_at: &impl Fn(i64, i64) -> i64,
+        regions: &[(f64, f64)],
+    ) {
         if self.cfg.tree_density <= 0.0 {
             return;
         }
         let ids = &self.ids;
+        // A whole tree takes the colours of the column it grows from, so a
+        // canopy is one colour even across a region border.
+        let tree_states = |a: f64, b: f64| {
+            let state = |id: BlockId| match self.colours.slot(id) {
+                Some(s) => BlockState::coloured(id, self.colours.blocks[s].pick(a, b)),
+                None => BlockState::plain(id),
+            };
+            (state(ids.trunk), state(ids.foliage))
+        };
         let origin = pos.origin();
         let w = self.shape.width_blocks();
         let cs = CHUNK_SIZE as i64;
@@ -649,14 +956,20 @@ impl Generator {
                 }
                 let (wx, wz) = ((origin.x + lx).rem_euclid(w), (origin.z + lz).rem_euclid(w));
                 let Some(trunk) = self.tree_at(wx, wz, h) else { continue };
+                let (trunk_state, foliage_state) = if regions.is_empty() {
+                    (BlockState::plain(ids.trunk), BlockState::plain(ids.foliage))
+                } else {
+                    let (a, b) = self.region_at(regions, lx, lz, wx, wz);
+                    tree_states(a, b)
+                };
                 let base = h + 1;
                 let crown = base + trunk - 1;
-                let mut put = |bx: i64, by: i64, bz: i64, id: BlockId, replace: bool| {
+                let mut put = |bx: i64, by: i64, bz: i64, state: BlockState, replace: bool| {
                     let (dx, dy, dz) = (bx - origin.x, by - origin.y, bz - origin.z);
                     if (0..cs).contains(&dx) && (0..cs).contains(&dy) && (0..cs).contains(&dz) {
                         let i = LocalPos::new(dx as u8, dy as u8, dz as u8).index();
-                        if replace || blocks[i] == ids.air {
-                            blocks[i] = id;
+                        if replace || blocks[i].id == ids.air {
+                            blocks[i] = state;
                         }
                     }
                 };
@@ -669,12 +982,12 @@ impl Generator {
                             if corner && (oy == 2 || hash01(seed ^ 0x1eaf, wx + ox, crown + oy, wz + oz) < 0.5) {
                                 continue;
                             }
-                            put(bx + ox, crown + oy, bz + oz, ids.foliage, false);
+                            put(bx + ox, crown + oy, bz + oz, foliage_state, false);
                         }
                     }
                 }
                 for y in base..=crown {
-                    put(bx, y, bz, ids.trunk, true);
+                    put(bx, y, bz, trunk_state, true);
                 }
             }
         }
@@ -800,10 +1113,39 @@ mod tests {
 
     const FINGERPRINT_CHUNKS: [(i32, i32, i32); 5] = [(0, 3, 0), (0, 4, 0), (10, 3, 20), (40, 5, 7), (63, 2, 1)];
 
+    /// Block types only, as version 2 pinned them: proves a change left the
+    /// shape of the terrain alone.
+    fn fingerprint_ids(g: &Generator) -> u64 {
+        let mut h = 0xcbf2_9ce4_8422_2325;
+        for (x, y, z) in FINGERPRINT_CHUNKS {
+            // The blocks themselves, not their encoding: a new chunk format
+            // must not look like new terrain.
+            let bytes: Vec<u8> = g
+                .generate(ChunkPos::new(x, y, z))
+                .to_dense()
+                .iter()
+                .flat_map(|b| b.0.to_le_bytes())
+                .collect();
+            h = fnv(&bytes, h);
+        }
+        h
+    }
+
+    /// Everything about every block: type, colour and shape.
     fn fingerprint(g: &Generator) -> u64 {
         let mut h = 0xcbf2_9ce4_8422_2325;
         for (x, y, z) in FINGERPRINT_CHUNKS {
-            h = fnv(&g.generate(ChunkPos::new(x, y, z)).encode(), h);
+            let bytes: Vec<u8> = g
+                .generate(ChunkPos::new(x, y, z))
+                .to_dense_states()
+                .iter()
+                .flat_map(|b| {
+                    let [i0, i1] = b.id.0.to_le_bytes();
+                    let [s0, s1] = b.shape.0.to_le_bytes();
+                    [i0, i1, b.colour.0, s0, s1]
+                })
+                .collect();
+            h = fnv(&bytes, h);
         }
         h
     }
@@ -850,8 +1192,12 @@ mod tests {
     /// version 2 planet with default settings.
     #[test]
     fn default_settings_reproduce_version_1() {
-        assert_eq!(fingerprint(&generator()), 0x7d6bf6bb16c76ecf);
-        assert_eq!(fingerprint(&kind("temperate")), 0x7d6bf6bb16c76ecf);
+        // 0x7d6bf6bb16c76ecf when fingerprints hashed the chunk encoding;
+        // re-pinned on 2026-10-19 when they began hashing the blocks
+        // themselves, after checking main and the new chunk format give the
+        // same value (the terrain did not change).
+        assert_eq!(fingerprint_ids(&generator()), 0x4d00_41c8_06c3_f24c);
+        assert_eq!(fingerprint_ids(&kind("temperate")), 0x4d00_41c8_06c3_f24c);
         let v1 = PlanetGenConfigV1 {
             seed: 42,
             sea_level: 128,
@@ -862,24 +1208,70 @@ mod tests {
         assert_eq!(PlanetGenConfig::from(v1), generator().config().clone());
     }
 
-    /// Pins what the generator produces for every built-in kind. If this
-    /// fails the terrain changed: bump GENERATOR_VERSION and re-pin, in the
-    /// same commit.
+    /// Version 3 coloured the blocks and left their types alone: each kind
+    /// with no colours makes exactly version 2's terrain (these are version
+    /// 2's pins), and so does each kind with its colours, block type for
+    /// block type. A version 2 planet, whose settings read as no colours,
+    /// therefore opens unchanged and stays natural.
+    #[test]
+    fn no_colours_reproduce_version_2() {
+        let blocks = BlockRegistry::builtin();
+        for (name, pinned) in PINNED_V2 {
+            let k = PlanetKinds::builtin(&blocks);
+            let with = k.get(name).unwrap().generation(42);
+            assert!(!with.colours.is_empty(), "{name} has no colours");
+            let without = PlanetGenConfig {
+                colours: BTreeMap::new(),
+                ..with.clone()
+            };
+            let g = Generator::new(PlanetShape::new(64, 12), without.clone(), &blocks).unwrap();
+            assert_eq!(fingerprint_ids(&g), pinned, "{name} without colours");
+            for (x, y, z) in FINGERPRINT_CHUNKS {
+                assert!(
+                    g.generate(ChunkPos::new(x, y, z))
+                        .palette()
+                        .iter()
+                        .all(|s| s.colour == Colour::NATURAL)
+                );
+            }
+            // Saved as version 2 saved it (no `colours` key), it reads back
+            // as no colours.
+            let text = toml::to_string(&without).unwrap();
+            assert!(!text.contains("colours"), "{text}");
+            assert_eq!(toml::from_str::<PlanetGenConfig>(&text).unwrap(), without);
+            let g = Generator::new(PlanetShape::new(64, 12), with, &blocks).unwrap();
+            assert_eq!(fingerprint_ids(&g), pinned, "{name} with colours changed block types");
+        }
+        assert!(opens_generator_version(2) && opens_generator_version(GENERATOR_VERSION));
+        assert!(!opens_generator_version(1));
+    }
+    const PINNED_V2: [(&str, u64); 4] = [
+        ("temperate", 0x4d00_41c8_06c3_f24c),
+        ("arid", 0x73a4_2ab0_3f53_7644),
+        ("frozen", 0xdb2c_2f7d_dce3_2c63),
+        ("lush", 0xbdf8_252a_fa20_5411),
+    ];
+
+    /// Pins what the generator produces for every built-in kind, colours
+    /// included. If this fails the terrain changed: bump GENERATOR_VERSION
+    /// and re-pin, in the same commit.
     #[test]
     fn terrain_fingerprint_is_pinned() {
-        let got: Vec<(String, u64)> = all_kinds()
-            .iter()
-            .map(|(n, _, g)| (n.clone(), fingerprint(g)))
-            .collect();
-        assert_eq!(GENERATOR_VERSION, 2);
+        let mut got: Vec<(String, u64)> = vec![("default".into(), fingerprint(&generator()))];
+        got.extend(all_kinds().iter().map(|(n, _, g)| (n.clone(), fingerprint(g))));
+        assert_eq!(GENERATOR_VERSION, 3);
         let want: Vec<(String, u64)> = PINNED.iter().map(|(n, h)| (n.to_string(), *h)).collect();
         assert_eq!(got, want, "terrain changed");
     }
-    const PINNED: [(&str, u64); 4] = [
-        ("temperate", 0x7d6b_f6bb_16c7_6ecf),
-        ("arid", 0x5591_efe4_48d4_bd2c),
-        ("frozen", 0x0b82_34fc_d26e_4a58),
-        ("lush", 0x400b_dcc2_0a12_90a6),
+    // Generator 3 was re-pinned before release (2026-10-19) when colour
+    // borders got their wobble and the temperate greens were retuned; no
+    // planet had been made by the earlier version 3 outside tests.
+    const PINNED: [(&str, u64); 5] = [
+        ("default", 0x6bc9_e59d_8877_7736),
+        ("temperate", 0xdcf6_1868_0cb9_14df),
+        ("arid", 0xc1f7_d350_fed3_af65),
+        ("frozen", 0x04e5_7bc8_b505_2127),
+        ("lush", 0xc4ba_2a84_be17_4d24),
     ];
 
     #[test]
@@ -1073,7 +1465,7 @@ mod tests {
                     for cy in 0..5 {
                         let p = ChunkPos::new(cx, cy, cz);
                         let c = g.generate(p);
-                        if !c.palette().contains(&iron) && !c.palette().contains(&copper) {
+                        if !c.may_contain(iron) && !c.may_contain(copper) {
                             continue;
                         }
                         for (i, b) in c.to_dense().into_iter().enumerate() {
@@ -1117,7 +1509,7 @@ mod tests {
             for cx in 0..12 {
                 for cy in 3..8 {
                     let c = g.generate(ChunkPos::new(cx, cy, cz));
-                    let (t, f) = (c.palette().contains(&trunk), c.palette().contains(&foliage));
+                    let (t, f) = (c.may_contain(trunk), c.may_contain(foliage));
                     if t && f {
                         trees += 1;
                     } else if f {
@@ -1157,6 +1549,281 @@ mod tests {
                 let ground = (-2..=1).any(|dy| blocks.get(block_at(&g, p.offset(0, dy, 0))).solid);
                 assert!(ground, "{name}: no ground beside the spawn at {p:?}");
             }
+        }
+    }
+
+    #[test]
+    fn region_noise_spread_is_as_assumed() {
+        let g = kind("temperate");
+        let w = g.shape().width_blocks();
+        let (mut n, mut sa, mut sb) = (0.0, 0.0, 0.0);
+        for z in (0..w).step_by(8) {
+            for x in (0..w).step_by(8) {
+                let (fx, fz) = (x as f64, z as f64);
+                sa += g.region_a.sample2(fx, fz, g.width).powi(2);
+                sb += g.region_b.sample2(fx, fz, g.width).powi(2);
+                n += 1.0;
+            }
+        }
+        let (a, b) = ((sa / n).sqrt(), (sb / n).sqrt());
+        eprintln!("region sigma {a:.4} {b:.4}");
+        assert!(
+            (a - REGION_SIGMA).abs() < 0.05 && (b - REGION_SIGMA).abs() < 0.05,
+            "{a} {b}"
+        );
+    }
+
+    /// The colour each coloured block gets in column `(wx, wz)`, computed the
+    /// way chunk generation does (without generating terrain).
+    fn column_colours(g: &Generator, wx: i64, wz: i64) -> Vec<Colour> {
+        let origin = BlockPos::new(wx & !31, 0, wz & !31);
+        let lattice = g.region_lattice(origin);
+        let (a, b) = g.region_at(&lattice, wx & 31, wz & 31, wx, wz);
+        g.colours.blocks.iter().map(|c| c.pick(a, b)).collect()
+    }
+
+    #[test]
+    fn colours_vary_in_large_patches() {
+        let g = kind("temperate");
+        let w = g.shape().width_blocks();
+        let n_blocks = g.colours.blocks.len();
+        assert!(n_blocks >= 5);
+        for slot in 0..n_blocks {
+            let colours = &g.colours.blocks[slot].colours;
+            let mut count = vec![0usize; colours.len()];
+            let (mut same, mut pairs) = (0, 0);
+            for z in (0..w).step_by(32) {
+                let mut prev: Option<Colour> = None;
+                for x in (0..w).step_by(16) {
+                    let c = column_colours(&g, x, z)[slot];
+                    count[colours.iter().position(|&k| k == c).unwrap()] += 1;
+                    if let Some(p) = prev {
+                        pairs += 1;
+                        same += (p == c) as usize;
+                    }
+                    prev = Some(c);
+                }
+            }
+            let total: usize = count.iter().sum();
+            let main = count[0] as f64 / total as f64;
+            // The main colour leads, every variant turns up somewhere, and
+            // colours come in patches: columns 16 apart nearly always match.
+            assert!((0.4..0.85).contains(&main), "slot {slot}: {count:?}");
+            assert!(count.iter().all(|&n| n > 0), "slot {slot}: {count:?}");
+            assert!(same as f64 / pairs as f64 > 0.85, "slot {slot}: {same}/{pairs}");
+        }
+        // Blocks change colour in different places: their layouts differ.
+        let (mut differ, mut n) = (0, 0);
+        for z in (0..w).step_by(64) {
+            for x in (0..w).step_by(64) {
+                let c = column_colours(&g, x, z);
+                let main = |slot: usize| c[slot] == g.colours.blocks[slot].colours[0];
+                differ += (main(0) != main(1)) as usize;
+                n += 1;
+            }
+        }
+        assert!(differ * 8 > n, "{differ} of {n}");
+    }
+
+    #[test]
+    fn colours_tile_across_the_seam() {
+        let g = kind("lush");
+        let w = g.shape().width_blocks();
+        // A column just west of the seam, seen from its own chunk and from
+        // the margin of the chunk east of the seam (where a tree standing
+        // in it would be coloured from): the same colours.
+        let last = g.region_lattice(BlockPos::new(w - 32, 0, 0));
+        let first = g.region_lattice(BlockPos::new(0, 0, 0));
+        for lx in [29, 30, 31] {
+            for lz in [0, 7, 31] {
+                let (wx, wz) = (w - 32 + lx, lz);
+                let (a0, b0) = g.region_at(&last, lx, lz, wx, wz);
+                let (a1, b1) = g.region_at(&first, lx - 32, lz, wx, wz);
+                assert!((a0 - a1).abs() < 1e-9 && (b0 - b1).abs() < 1e-9, "{lx} {lz}");
+            }
+        }
+        // Chunks across the seam generate the same, colours included.
+        for (x, z) in [(63, 0), (0, 63), (63, 63)] {
+            assert_eq!(
+                g.generate(ChunkPos::new(x, 4, z)),
+                g.generate(ChunkPos::new(x - 64, 4, z + 64))
+            );
+        }
+    }
+
+    /// Every state in sampled surface chunks across the planet.
+    fn surface_states(g: &Generator) -> Vec<BlockState> {
+        let mut out = Vec::new();
+        for cz in (0..64).step_by(9) {
+            for cx in (0..64).step_by(9) {
+                let h = g.surface_height(cx as i64 * 32 + 16, cz as i64 * 32 + 16);
+                let cy = (h >> 5) as i32;
+                for y in [cy - 1, cy, cy + 1] {
+                    out.extend(g.generate(ChunkPos::new(cx, y, cz)).to_dense_states());
+                }
+            }
+        }
+        out
+    }
+
+    #[test]
+    fn only_listed_colourable_blocks_take_colours() {
+        let blocks = BlockRegistry::builtin();
+        for (name, _, g) in all_kinds() {
+            let states = surface_states(&g);
+            let mut coloured = std::collections::HashSet::new();
+            for s in &states {
+                let def = blocks.get(s.id);
+                assert_eq!(s.shape, bm_core::Shape::FULL);
+                match g.cfg.colours.get(&def.name) {
+                    Some(names) => {
+                        assert!(def.colourable, "{name}: {}", def.name);
+                        let palette = palette();
+                        assert!(
+                            names.iter().any(|n| palette.id(n) == Some(s.colour)),
+                            "{name}: {} in {}",
+                            def.name,
+                            palette.name(s.colour)
+                        );
+                        coloured.insert(def.name.clone());
+                    }
+                    None => assert_eq!(s.colour, Colour::NATURAL, "{name}: {}", def.name),
+                }
+            }
+            // Ores, water, bedrock and crystals are never listed, so stay
+            // natural; the common ground blocks did get coloured.
+            for b in [
+                "coal_seam",
+                "copper_vein",
+                "iron_vein",
+                "water",
+                "bedrock",
+                "glow_crystal",
+            ] {
+                assert!(!g.cfg.colours.contains_key(b), "{name} colours {b}");
+            }
+            for b in ["stone", "gravel"] {
+                assert!(coloured.contains(b), "{name}: no coloured {b} in {coloured:?}");
+            }
+        }
+    }
+
+    #[test]
+    fn trees_are_one_colour_top_to_bottom() {
+        let g = kind("lush");
+        let (trunk, foliage) = (id("trunk"), id("foliage"));
+        let mut columns: std::collections::HashMap<(i64, i64), Colour> = Default::default();
+        let mut trunks = 0;
+        for cz in 0..4 {
+            for cx in 0..4 {
+                for cy in 3..8 {
+                    let p = ChunkPos::new(cx, cy, cz);
+                    let c = g.generate(p);
+                    if !c.may_contain(trunk) {
+                        continue;
+                    }
+                    for (i, s) in c.to_dense_states().into_iter().enumerate() {
+                        if s.id == trunk {
+                            let l = LocalPos::from_index(i);
+                            let key = (p.origin().x + l.x as i64, p.origin().z + l.z as i64);
+                            assert_eq!(*columns.entry(key).or_insert(s.colour), s.colour);
+                            assert_ne!(s.colour, Colour::NATURAL);
+                            trunks += 1;
+                        } else if s.id == foliage {
+                            assert_ne!(s.colour, Colour::NATURAL);
+                        }
+                    }
+                }
+            }
+        }
+        assert!(trunks > 50, "{trunks}");
+    }
+
+    #[test]
+    fn default_settings_are_natural_everywhere() {
+        let g = generator();
+        assert!(g.config().colours.is_empty());
+        assert!(surface_states(&g).iter().all(|s| s.colour == Colour::NATURAL));
+    }
+
+    #[test]
+    fn planets_pick_their_own_colours_by_seed() {
+        let blocks = BlockRegistry::builtin();
+        let kinds = PlanetKinds::builtin(&blocks);
+        let k = kinds.get("temperate").unwrap();
+        assert_eq!(k.generation(5), k.generation(5));
+        let mut mains = std::collections::HashSet::new();
+        for seed in 0..40 {
+            let cfg = k.generation(seed);
+            assert!(cfg.check(&blocks).is_ok());
+            assert_eq!(
+                cfg.colours.keys().collect::<Vec<_>>(),
+                k.colours.keys().collect::<Vec<_>>()
+            );
+            for (block, picked) in &cfg.colours {
+                let choices = &k.colours[block];
+                assert!((2..=MAX_BLOCK_COLOURS).contains(&picked.len()), "{block}: {picked:?}");
+                assert!(picked.iter().all(|c| choices.contains(c)));
+                let distinct: std::collections::HashSet<_> = picked.iter().collect();
+                assert_eq!(distinct.len(), picked.len(), "{block}: {picked:?}");
+            }
+            mains.insert(cfg.colours["turf"][0].clone());
+        }
+        assert!(mains.len() >= 4, "turf mains over 40 seeds: {mains:?}");
+        // One choice: that colour alone.
+        let one = BTreeMap::from([("stone".to_string(), vec!["Stone".to_string()])]);
+        assert_eq!(pick_colours(&one, 9), one);
+    }
+
+    #[test]
+    fn bad_colours_are_refused() {
+        let blocks = BlockRegistry::builtin();
+        let with = |block: &str, names: &[&str]| PlanetGenConfig {
+            colours: BTreeMap::from([(block.to_string(), names.iter().map(|n| n.to_string()).collect())]),
+            ..Default::default()
+        };
+        assert!(with("stone", &["Stone", "Iron"]).check(&blocks).is_ok());
+        assert!(matches!(
+            with("stone", &["Stone", "Mauve"]).check(&blocks),
+            Err(ConfigError::UnknownColour { .. })
+        ));
+        assert!(matches!(
+            with("coal_seam", &["Stone"]).check(&blocks),
+            Err(ConfigError::NotColourable(_))
+        ));
+        assert!(matches!(
+            with("water", &["True Azure"]).check(&blocks),
+            Err(ConfigError::NotColourable(_))
+        ));
+        assert!(matches!(
+            with("unobtainium", &["Stone"]).check(&blocks),
+            Err(ConfigError::Block(_))
+        ));
+        assert!(matches!(
+            with("stone", &[]).check(&blocks),
+            Err(ConfigError::ColourCount(..))
+        ));
+        assert!(matches!(
+            with("stone", &["Stone", "Iron", "Fog", "Ash", "Smoke"]).check(&blocks),
+            Err(ConfigError::ColourCount(..))
+        ));
+        assert!(Generator::new(PlanetShape::new(8, 4), with("stone", &["Mauve"]), &blocks).is_err());
+        // In a kind's choices too.
+        let kind = |colours: &str| format!("[[kind]]\nname = \"x\"\ntier = 1\n[kind.colours]\n{colours}\n");
+        assert!(PlanetKinds::from_toml(&kind("stone = [\"Stone\", \"Fog\"]"), &blocks).is_ok());
+        for bad in [
+            "stone = [\"Stone\", \"Mauve\"]",
+            "copper_vein = [\"Stone\"]",
+            "stone = []",
+            "nope = [\"Stone\"]",
+        ] {
+            assert!(
+                matches!(
+                    PlanetKinds::from_toml(&kind(bad), &blocks),
+                    Err(KindError::Generation(..))
+                ),
+                "{bad}"
+            );
         }
     }
 

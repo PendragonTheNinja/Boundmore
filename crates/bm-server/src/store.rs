@@ -20,8 +20,8 @@
 
 use anyhow::{Context, Result, bail};
 use bm_core::{
-    BlockPos, CHUNK_FORMAT_VERSION, ChunkPos, DayCycle, Inventory, ItemRegistry, ItemStack, PlanetShape, PlayerState,
-    PlotPos, Station,
+    BlockPos, CHUNK_FORMAT_VERSION, ChunkPos, Colour, DayCycle, Inventory, ItemRegistry, ItemStack, PlanetShape,
+    PlayerState, PlotPos, Station,
 };
 use bm_worldgen::{GENERATOR_VERSION, PlanetGenConfig, PlanetGenConfigV1, PlanetKinds};
 use crossbeam_channel::{Receiver, Sender};
@@ -49,6 +49,10 @@ const CLAIMS: TableDefinition<u32, &[u8]> = TableDefinition::new("claims");
 /// M5 without a version bump: a new table changes nothing already saved, and
 /// `Store::open` creates it in an older save.
 const STORAGE: TableDefinition<&[u8], &[u8]> = TableDefinition::new("planet_storage");
+/// Lowercased account name -> [`SavedReclaim`]: what came back from that
+/// account's lapsed claims. Added in M6 without a version bump, as `STORAGE`
+/// was: a new table changes nothing already saved.
+const RECLAIM: TableDefinition<&str, &[u8]> = TableDefinition::new("reclaim");
 
 /// Save version 1 and 2 tables, read only to upgrade, then deleted.
 const V1_PLAYERS: TableDefinition<&str, &[u8]> = TableDefinition::new("players");
@@ -156,7 +160,9 @@ impl std::fmt::Debug for AccountRecord {
     }
 }
 
-/// One stack as saved: by item name.
+/// One stack as saved: by item name. A coloured stack saves its colour id
+/// after a `#` (`stone#17`); a plain name is natural colour, which is how
+/// every stack saved before colours existed reads (ADR-0007).
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SavedStack {
     pub item: String,
@@ -166,8 +172,13 @@ pub struct SavedStack {
 
 impl SavedStack {
     pub fn new(items: &ItemRegistry, s: &ItemStack) -> Option<Self> {
+        let name = &items.get(s.item)?.name;
         Some(Self {
-            item: items.get(s.item)?.name.clone(),
+            item: if s.colour == Colour::NATURAL {
+                name.clone()
+            } else {
+                format!("{name}#{}", s.colour.0)
+            },
             count: s.count,
             wear: s.wear,
         })
@@ -175,11 +186,16 @@ impl SavedStack {
 
     /// The stack in this catalogue, if the item still exists.
     pub fn resolve(&self, items: &ItemRegistry) -> Option<ItemStack> {
-        let id = items.id(&self.item).ok()?;
+        let (name, colour) = match self.item.split_once('#') {
+            Some((name, c)) => (name, Colour(c.parse().ok()?)),
+            None => (self.item.as_str(), Colour::NATURAL),
+        };
+        let id = items.id(name).ok()?;
         Some(ItemStack {
             item: id,
             count: self.count,
             wear: self.wear,
+            colour,
         })
     }
 }
@@ -218,9 +234,18 @@ pub struct PlayerData {
     /// Where on it. None: never placed there (starts at its shrine).
     pub state: Option<PlayerState>,
     pub inventory: Vec<Option<SavedStack>>,
-    /// Unix seconds when the player was last connected; 0 if never recorded.
-    /// Claims lapse after `claim_keep_days` without a visit (not yet enforced).
+    /// Unix seconds when the player was last connected; 0 if never recorded
+    /// (the server then counts from when it first sees the 0). Their claims
+    /// lapse after `claim_keep_days` without a visit.
     pub last_seen: u64,
+}
+
+/// What waits for an account from its lapsed claims: the items, and the
+/// notices it has not read yet (it was away when they lapsed).
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+pub struct SavedReclaim {
+    pub items: Vec<SavedStack>,
+    pub notices: Vec<String>,
 }
 
 /// A queued station job, saved with its recipe spelled out so it can be
@@ -424,6 +449,7 @@ impl Store {
         tx.open_table(STATIONS)?;
         tx.open_table(CLAIMS)?;
         tx.open_table(STORAGE)?;
+        tx.open_table(RECLAIM)?;
         tx.commit()?;
         Ok(Self { db: Arc::new(db) })
     }
@@ -472,12 +498,32 @@ impl Store {
                 if u.save_version < SAVE_VERSION {
                     bail!("no upgrade from universe save version {}", u.save_version);
                 }
-                if u.chunk_format != CHUNK_FORMAT_VERSION {
+                // Older chunk formats still decode (`Chunk::decode` reads
+                // every earlier version); chunks are rewritten in the current
+                // one as they change. Only a newer format is refused.
+                if u.chunk_format > CHUNK_FORMAT_VERSION || u.chunk_format == 0 {
                     bail!(
-                        "universe chunk format {} is not {}",
+                        "universe chunk format {} is newer than this server's {}; update the server",
                         u.chunk_format,
                         CHUNK_FORMAT_VERSION
                     );
+                }
+                if u.chunk_format < CHUNK_FORMAT_VERSION {
+                    tracing::info!(
+                        "universe chunks are in format {}; they open as they are and are saved in format {}",
+                        u.chunk_format,
+                        CHUNK_FORMAT_VERSION
+                    );
+                    let tx = self.db.begin_write()?;
+                    tx.open_table(META)?.insert(
+                        "universe",
+                        postcard::to_stdvec(&UniverseMeta {
+                            chunk_format: CHUNK_FORMAT_VERSION,
+                            ..u
+                        })?
+                        .as_slice(),
+                    )?;
+                    tx.commit()?;
                 }
                 Ok(None)
             }
@@ -520,9 +566,9 @@ impl Store {
                 GENERATOR_VERSION
             );
         }
-        if meta.chunk_format != CHUNK_FORMAT_VERSION {
+        if meta.chunk_format > CHUNK_FORMAT_VERSION || meta.chunk_format == 0 {
             bail!(
-                "planet chunk format {} is not {}",
+                "planet chunk format {} is newer than this server's {}; update the server",
                 meta.chunk_format,
                 CHUNK_FORMAT_VERSION
             );
@@ -646,6 +692,22 @@ impl Store {
         Ok(out)
     }
 
+    /// Every account's reclaim. A corrupt record is reported and skipped
+    /// (left on disk untouched).
+    pub fn reclaims(&self) -> Result<Vec<(String, SavedReclaim)>> {
+        let tx = self.db.begin_read()?;
+        let t = tx.open_table(RECLAIM)?;
+        let mut out = Vec::new();
+        for row in t.iter()? {
+            let (k, v) = row?;
+            match postcard::from_bytes(v.value()) {
+                Ok(r) => out.push((k.value().to_string(), r)),
+                Err(e) => tracing::error!("the reclaim of `{}` is corrupt ({e}); skipped", k.value()),
+            }
+        }
+        Ok(out)
+    }
+
     /// Every claim in the universe, and the next free claim id (above every
     /// stored key, even a corrupt one, so a new claim never overwrites a
     /// record).
@@ -712,6 +774,13 @@ impl Store {
                 match c {
                     Some(c) => claims.insert(*id, postcard::to_stdvec(c)?.as_slice())?,
                     None => claims.remove(*id)?,
+                };
+            }
+            let mut reclaim = tx.open_table(RECLAIM)?;
+            for (key, r) in &batch.reclaim {
+                match r {
+                    Some(r) => reclaim.insert(key.as_str(), postcard::to_stdvec(r)?.as_slice())?,
+                    None => reclaim.remove(key.as_str())?,
                 };
             }
         }
@@ -925,6 +994,8 @@ pub struct WriteBatch {
     pub claims: Vec<(u32, Option<SavedClaim>)>,
     /// Storage block slots by planet id; None deletes (it was emptied).
     pub storage: Vec<(u16, BlockPos, Option<SavedSlots>)>,
+    /// Reclaims by lowercased account name; None deletes (it was emptied).
+    pub reclaim: Vec<(String, Option<SavedReclaim>)>,
     /// The universe clock, so days and station jobs continue across restarts.
     pub clock: Option<u64>,
     /// Each is signalled once the batch is durable (shutdown waits on one;
@@ -940,6 +1011,7 @@ impl WriteBatch {
             && self.stations.is_empty()
             && self.claims.is_empty()
             && self.storage.is_empty()
+            && self.reclaim.is_empty()
     }
 }
 
@@ -1136,6 +1208,13 @@ mod tests {
                 stations: vec![(2, spot, Some(station.clone()))],
                 claims: vec![(4, Some(claim.clone()))],
                 storage: vec![(2, spot, Some(vec![None, Some(stack.clone())]))],
+                reclaim: vec![(
+                    "pendragon".into(),
+                    Some(SavedReclaim {
+                        items: vec![stack.clone()],
+                        notices: vec!["gone".into()],
+                    }),
+                )],
                 clock: Some(777),
                 done: Vec::new(),
             })
@@ -1163,20 +1242,32 @@ mod tests {
         assert_eq!(p.state.unwrap().pos, DVec3::new(1.0, 2.0, 3.0));
         assert_eq!(p.inventory, vec![Some(stack.clone())]);
         assert_eq!(s.stations(2).unwrap(), vec![(spot, station)]);
-        assert_eq!(s.storage(2).unwrap(), vec![(spot, vec![None, Some(stack)])]);
+        assert_eq!(s.storage(2).unwrap(), vec![(spot, vec![None, Some(stack.clone())])]);
         assert!(s.storage(3).unwrap().is_empty());
         assert!(s.stations(1).unwrap().is_empty() && s.stations(3).unwrap().is_empty());
         assert_eq!(s.claims().unwrap(), (vec![(4, claim)], 5));
         assert_eq!(s.clock().unwrap(), 777);
+        assert_eq!(
+            s.reclaims().unwrap(),
+            vec![(
+                "pendragon".to_string(),
+                SavedReclaim {
+                    items: vec![stack.clone()],
+                    notices: vec!["gone".into()],
+                }
+            )]
+        );
 
         // Deletions.
         s.write(&WriteBatch {
             stations: vec![(2, spot, None)],
             claims: vec![(4, None)],
             storage: vec![(2, spot, None)],
+            reclaim: vec![("pendragon".into(), None)],
             ..Default::default()
         })
         .unwrap();
+        assert!(s.reclaims().unwrap().is_empty());
         assert!(s.stations(2).unwrap().is_empty());
         assert!(s.storage(2).unwrap().is_empty());
         assert_eq!(s.claims().unwrap(), (vec![], 1));
@@ -1253,6 +1344,47 @@ mod tests {
         legacy::write_v2_planet(&path, &meta, &[], &[], &[], &[], 0).unwrap();
         let s = Store::open(&path).unwrap();
         assert!(s.universe(&kinds()).is_err(), "an unknown generator is refused");
+    }
+
+    /// A universe saved before chunk format 2 opens (old chunks still decode)
+    /// and is marked current; one from a newer server is refused. Saves made
+    /// by the M4 and M5 servers are format 1 (2026-10-19).
+    #[test]
+    fn older_chunk_formats_open_and_newer_are_refused() {
+        let with_format = |format: u8| {
+            let dir = tempfile::tempdir().unwrap();
+            let s = Store::open(&dir.path().join("u.redb")).unwrap();
+            let tx = s.db.begin_write().unwrap();
+            tx.open_table(META)
+                .unwrap()
+                .insert(
+                    "universe",
+                    postcard::to_stdvec(&UniverseMeta {
+                        save_version: SAVE_VERSION,
+                        chunk_format: format,
+                    })
+                    .unwrap()
+                    .as_slice(),
+                )
+                .unwrap();
+            tx.commit().unwrap();
+            (dir, s)
+        };
+        let (_dir, s) = with_format(1);
+        assert!(s.universe(&kinds()).is_ok(), "format 1 opens");
+        let rtx = s.db.begin_read().unwrap();
+        let bytes = rtx
+            .open_table(META)
+            .unwrap()
+            .get("universe")
+            .unwrap()
+            .unwrap()
+            .value()
+            .to_vec();
+        let u: UniverseMeta = postcard::from_bytes(&bytes).unwrap();
+        assert_eq!(u.chunk_format, CHUNK_FORMAT_VERSION, "and is marked current");
+        let (_dir, s) = with_format(CHUNK_FORMAT_VERSION + 1);
+        assert!(s.universe(&kinds()).is_err(), "a newer format is refused");
     }
 
     /// Writes a planet exactly as save version 1 did: its meta, a chunk, and
@@ -1385,12 +1517,13 @@ mod tests {
         let items = ItemRegistry::builtin(&blocks);
         let mut inv = Inventory::default();
         inv.slots[3] = Some(ItemStack {
-            item: items.id("stone_hammer").unwrap(),
-            count: 1,
             wear: 12,
+            ..ItemStack::new(items.id("stone_hammer").unwrap(), 1)
         });
+        inv.slots[5] = Some(ItemStack::coloured(items.id("stone").unwrap(), Colour(77), 9));
         let saved = save_slots(&items, &inv);
         assert_eq!(saved[3].as_ref().unwrap().item, "stone_hammer");
+        assert_eq!(saved[5].as_ref().unwrap().item, "stone#77");
         assert_eq!(load_slots(&items, &saved, "test"), inv.slots);
         let gone = vec![Some(SavedStack {
             item: "unobtainium".into(),

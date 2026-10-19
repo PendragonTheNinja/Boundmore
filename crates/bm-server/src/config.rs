@@ -74,9 +74,12 @@ pub struct ServerConfig {
     pub reach: f64,
     /// Plots one account may claim in all, across the universe.
     pub plot_allowance: u32,
-    /// Days without a visit before a claim lapses and its contents go back to
-    /// the owner (decided 2026-10-18; lapsing itself is not built yet).
+    /// Days without a visit before a claim lapses: its build turns to ash
+    /// and its stored items go back to the owner (decided 2026-10-18).
     pub claim_keep_days: u32,
+    /// Seconds instead of days, for testing a lapse (`claim_keep_days` is
+    /// ignored when this is set).
+    pub claim_keep_seconds: Option<u64>,
     /// Blocks around each warp shrine that nobody may change or claim: this
     /// far each way across, down, and twice as far up. 0 protects the shrine
     /// alone.
@@ -105,6 +108,7 @@ impl Default for ServerConfig {
             reach: 7.0,
             plot_allowance: 64,
             claim_keep_days: 183,
+            claim_keep_seconds: None,
             shrine_guard: 4,
             planet_name: None,
             seed: None,
@@ -156,6 +160,11 @@ impl ServerConfig {
         }
         cfg.validate()?;
         Ok(cfg)
+    }
+
+    /// How long a claim is kept without a visit, in seconds.
+    pub fn claim_keep_secs(&self) -> u64 {
+        self.claim_keep_seconds.unwrap_or(self.claim_keep_days as u64 * 86_400)
     }
 
     /// Moves version 2's single-planet settings onto the first planet.

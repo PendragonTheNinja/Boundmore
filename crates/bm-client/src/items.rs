@@ -7,8 +7,8 @@
 //! server would refuse, using the same `Inventory` rules it runs.
 
 use bm_core::{
-    BlockRegistry, INVENTORY_SLOTS, Inventory, ItemDef, ItemError, ItemKind, ItemRegistry, ItemStack, Recipe,
-    RecipeBook, ToolClass,
+    BlockRegistry, Colour, ColourPalette, INVENTORY_SLOTS, Inventory, ItemDef, ItemError, ItemKind, ItemRegistry,
+    ItemStack, Recipe, RecipeBook, ToolClass,
 };
 use bm_protocol::ClientMsg;
 
@@ -16,6 +16,8 @@ pub struct Items {
     pub registry: ItemRegistry,
     pub recipes: RecipeBook,
     pub inventory: Inventory,
+    /// The colour palette from the welcome (ADR-0007), for names.
+    pub colours: ColourPalette,
 }
 
 /// How much a "half" drag carries: the larger half, so one item still moves.
@@ -28,6 +30,7 @@ impl Items {
         defs: Vec<ItemDef>,
         recipes: Vec<Recipe>,
         mut inventory: Inventory,
+        colours: ColourPalette,
         blocks: &BlockRegistry,
     ) -> Result<Self, ItemError> {
         let registry = ItemRegistry::from_defs(defs, blocks)?;
@@ -41,6 +44,7 @@ impl Items {
             registry,
             recipes: RecipeBook { recipes },
             inventory,
+            colours,
         })
     }
 
@@ -89,12 +93,29 @@ impl Items {
         Some((total.saturating_sub(stack.wear), total))
     }
 
-    /// The hover text for a stack: its name, then what it does.
+    /// A stack's name with its colour: "Stone, Rich Azure", or plain
+    /// "Stone" when natural (or a colour this palette does not hold).
+    pub fn name(&self, stack: &ItemStack) -> String {
+        let Some(def) = self.def(stack) else {
+            return "Unknown item".into();
+        };
+        match self
+            .colours
+            .get(stack.colour)
+            .filter(|_| stack.colour != Colour::NATURAL)
+        {
+            Some(c) => format!("{}, {}", def.display, c.name),
+            None => def.display.clone(),
+        }
+    }
+
+    /// The hover text for a stack: its name (with its colour), then what it
+    /// does.
     pub fn tooltip(&self, stack: &ItemStack) -> String {
         let Some(def) = self.def(stack) else {
             return "Unknown item".into();
         };
-        let mut lines = vec![def.display.clone()];
+        let mut lines = vec![self.name(stack)];
         match def.kind {
             ItemKind::Tool { class, speed, .. } => {
                 lines.push(format!(
@@ -193,7 +214,14 @@ mod tests {
         let blocks = BlockRegistry::builtin();
         let reg = ItemRegistry::builtin(&blocks);
         let book = RecipeBook::builtin(&reg);
-        Items::new(reg.defs().to_vec(), book.recipes, Inventory::default(), &blocks).unwrap()
+        Items::new(
+            reg.defs().to_vec(),
+            book.recipes,
+            Inventory::default(),
+            ColourPalette::builtin(),
+            &blocks,
+        )
+        .unwrap()
     }
 
     fn stack(i: &Items, name: &str, count: u16) -> Option<ItemStack> {
@@ -221,7 +249,7 @@ mod tests {
         let blocks = BlockRegistry::builtin();
         let reg = ItemRegistry::builtin(&blocks);
         let inv = Inventory { slots: vec![None; 3] };
-        let i = Items::new(reg.defs().to_vec(), vec![], inv, &blocks).unwrap();
+        let i = Items::new(reg.defs().to_vec(), vec![], inv, ColourPalette::builtin(), &blocks).unwrap();
         assert_eq!(i.inventory.slots.len(), INVENTORY_SLOTS);
     }
 
@@ -263,6 +291,37 @@ mod tests {
         );
         assert_eq!(i.durability(&stack(&i, "stone", 1).unwrap()), None);
         assert!(!tip.contains('\u{2014}'), "no em dashes in player text");
+    }
+
+    #[test]
+    fn tooltips_name_the_colour_after_the_item() {
+        let i = items();
+        let stone = i.registry.id("stone").unwrap();
+        let azure = i.colours.id("Rich Azure").unwrap();
+        let blue = ItemStack::coloured(stone, azure, 3);
+        assert_eq!(i.name(&blue), "Stone, Rich Azure");
+        let tip = i.tooltip(&blue);
+        assert!(tip.starts_with("Stone, Rich Azure\nA block you can place"), "{tip}");
+        assert_eq!(i.name(&ItemStack::new(stone, 1)), "Stone", "natural says nothing");
+        // An id the palette does not hold reads as natural, never a panic.
+        let short = Items {
+            colours: ColourPalette::from_defs(i.colours.colours[..3].to_vec()).unwrap(),
+            ..items()
+        };
+        assert_eq!(short.name(&ItemStack::coloured(stone, Colour(200), 1)), "Stone");
+        assert!(!tip.contains('\u{2014}'));
+    }
+
+    #[test]
+    fn craft_max_counts_every_colour() {
+        let mut i = items();
+        let hammer = i.registry.id("stone_hammer").unwrap();
+        let r = i.recipes.recipes.iter().find(|r| r.output == hammer).unwrap().clone();
+        let stone = i.registry.id("stone").unwrap();
+        i.inventory.slots[0] = Some(ItemStack::coloured(stone, Colour(5), 2));
+        i.inventory.slots[1] = Some(ItemStack::new(stone, 1));
+        i.inventory.slots[2] = stack(&i, "timber", 2);
+        assert_eq!(i.craft_max(&r), 1, "two blue and one natural stone make three");
     }
 
     #[test]

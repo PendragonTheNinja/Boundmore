@@ -631,6 +631,49 @@ pub fn gravel(ctx: Ctx) -> Tex {
     })
 }
 
+// -------------------------------------------------------------------- ash
+
+/// Ash: near-neutral warm grey, so the shader can give it any palette hue.
+/// All the detail is light and shade, in a narrow mid-lightness band.
+fn ash_ramp() -> Ramp {
+    Ramp::from_hex(&[0x55514f, 0x6a6663, 0x7e7a76, 0x928e89, 0xa6a29c, 0xb9b5ae])
+}
+
+/// Ash: fine powder in soft lit clumps, a few darker cinders and faint
+/// hairline cracks. Smoother than sand, softer than gravel, greyer than soil.
+pub fn ash(ctx: Ctx) -> Tex {
+    let salt = seed("ash");
+    let clods = ctx.sites(salt, 6.5);
+    // Soft clumps: a gently domed height per cell, lit from the top left.
+    let height = Field::from_fn(|x, y| {
+        let (fx, fy) = (c(x), c(y));
+        let k = cell(&clods, fx, fy, 1.0);
+        let site = &clods[k.index];
+        let dome = 1.0 - (k.d1 / 5.5).min(1.0);
+        dome * 0.5 + site.r[0] * 0.2 + ctx.fbm(salt ^ 1, 4, 4, 2, fx, fy) * 0.35
+    })
+    .blur();
+    let light = height.light();
+    let tone = Field::from_fn(|x, y| {
+        let (fx, fy) = (c(x), c(y));
+        let fine = ctx.value(salt ^ 2, 16, 16, fx, fy) - 0.5;
+        // Faint cracks: thin dark contours of a warped field, broken up.
+        let wx = fx + (ctx.fbm(salt ^ 3, 2, 2, 2, fx, fy) - 0.5) * 8.0;
+        let wy = fy + (ctx.fbm(salt ^ 4, 2, 2, 2, fx, fy) - 0.5) * 8.0;
+        let line = (ctx.fbm(salt ^ 5, 3, 3, 2, wx, wy) * 3.0).fract();
+        let crack = (1.0 - smoothstep(0.0, 0.05, line.min(1.0 - line)))
+            * if ctx.value(salt ^ 6, 6, 6, fx, fy) > 0.55 {
+                1.0
+            } else {
+                0.0
+            };
+        0.5 + light.at(x, y) * 1.1 + (height.at(x, y) - 0.5) * 0.35 + fine * 0.14 - crack * 0.2
+    });
+    let mut tex = paint(&ash_ramp(), &tone);
+    specks(ctx, &mut tex, salt ^ 7, 6.0, 0.5, Rgba::hex(0x34302f));
+    tex
+}
+
 // ------------------------------------------------------------------- snow
 
 /// Snow: soft drifts lit from the top left, pale blue-lavender in the
@@ -1212,6 +1255,7 @@ pub fn paint_named(name: &str, variant: u32) -> Option<Tex> {
         "turf_side" => turf_side,
         "sand" => sand,
         "gravel" => gravel,
+        "ash" => ash,
         "snow" => snow,
         "water" => water,
         "trunk_side" => trunk_side,

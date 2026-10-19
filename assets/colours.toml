@@ -1,0 +1,1024 @@
+# The colour palette (ADR-0007): 255 colours, ids 1 to 255 in this order;
+# 0 is natural (a block as its texture is painted). Generated in OKLCH so
+# shades step evenly; names are Boundmore's own. Append, never reorder:
+# saved blocks and items store the id.
+
+[[colour]]
+name = "Midnight Crimson"
+rgb = [49, 13, 12]
+
+[[colour]]
+name = "Deep Crimson"
+rgb = [82, 22, 21]
+
+[[colour]]
+name = "Dark Crimson"
+rgb = [117, 31, 31]
+
+[[colour]]
+name = "Dusky Crimson"
+rgb = [147, 43, 42]
+
+[[colour]]
+name = "Rich Crimson"
+rgb = [182, 49, 50]
+
+[[colour]]
+name = "Strong Crimson"
+rgb = [215, 51, 55]
+
+[[colour]]
+name = "Bold Crimson"
+rgb = [241, 68, 69]
+
+[[colour]]
+name = "True Crimson"
+rgb = [255, 100, 95]
+
+[[colour]]
+name = "Bright Crimson"
+rgb = [254, 139, 131]
+
+[[colour]]
+name = "Soft Crimson"
+rgb = [254, 166, 159]
+
+[[colour]]
+name = "Light Crimson"
+rgb = [255, 191, 184]
+
+[[colour]]
+name = "Pale Crimson"
+rgb = [254, 210, 205]
+
+[[colour]]
+name = "Misty Crimson"
+rgb = [255, 228, 225]
+
+[[colour]]
+name = "Muted Crimson"
+rgb = [146, 100, 96]
+
+[[colour]]
+name = "Faded Crimson"
+rgb = [194, 153, 149]
+
+[[colour]]
+name = "Midnight Ember"
+rgb = [49, 14, 3]
+
+[[colour]]
+name = "Deep Ember"
+rgb = [81, 25, 3]
+
+[[colour]]
+name = "Dark Ember"
+rgb = [116, 36, 0]
+
+[[colour]]
+name = "Dusky Ember"
+rgb = [146, 48, 2]
+
+[[colour]]
+name = "Rich Ember"
+rgb = [177, 62, 6]
+
+[[colour]]
+name = "Strong Ember"
+rgb = [205, 72, 5]
+
+[[colour]]
+name = "Bold Ember"
+rgb = [234, 82, 2]
+
+[[colour]]
+name = "True Ember"
+rgb = [254, 105, 46]
+
+[[colour]]
+name = "Bright Ember"
+rgb = [253, 142, 103]
+
+[[colour]]
+name = "Soft Ember"
+rgb = [254, 168, 138]
+
+[[colour]]
+name = "Light Ember"
+rgb = [253, 193, 172]
+
+[[colour]]
+name = "Pale Ember"
+rgb = [253, 212, 198]
+
+[[colour]]
+name = "Misty Ember"
+rgb = [254, 229, 220]
+
+[[colour]]
+name = "Muted Ember"
+rgb = [144, 102, 87]
+
+[[colour]]
+name = "Faded Ember"
+rgb = [193, 155, 141]
+
+[[colour]]
+name = "Midnight Rust"
+rgb = [47, 17, 0]
+
+[[colour]]
+name = "Deep Rust"
+rgb = [73, 33, 0]
+
+[[colour]]
+name = "Dark Rust"
+rgb = [103, 50, 0]
+
+[[colour]]
+name = "Dusky Rust"
+rgb = [130, 65, 3]
+
+[[colour]]
+name = "Rich Rust"
+rgb = [160, 80, 0]
+
+[[colour]]
+name = "Strong Rust"
+rgb = [183, 95, 11]
+
+[[colour]]
+name = "Bold Rust"
+rgb = [209, 110, 13]
+
+[[colour]]
+name = "True Rust"
+rgb = [236, 124, 14]
+
+[[colour]]
+name = "Bright Rust"
+rgb = [255, 145, 56]
+
+[[colour]]
+name = "Soft Rust"
+rgb = [255, 170, 111]
+
+[[colour]]
+name = "Light Rust"
+rgb = [253, 195, 156]
+
+[[colour]]
+name = "Pale Rust"
+rgb = [254, 212, 185]
+
+[[colour]]
+name = "Misty Rust"
+rgb = [255, 230, 214]
+
+[[colour]]
+name = "Muted Rust"
+rgb = [141, 104, 80]
+
+[[colour]]
+name = "Faded Rust"
+rgb = [190, 157, 135]
+
+[[colour]]
+name = "Midnight Amber"
+rgb = [40, 22, 0]
+
+[[colour]]
+name = "Deep Amber"
+rgb = [64, 40, 0]
+
+[[colour]]
+name = "Dark Amber"
+rgb = [91, 59, 0]
+
+[[colour]]
+name = "Dusky Amber"
+rgb = [116, 76, 0]
+
+[[colour]]
+name = "Rich Amber"
+rgb = [141, 94, 0]
+
+[[colour]]
+name = "Strong Amber"
+rgb = [163, 110, 9]
+
+[[colour]]
+name = "Bold Amber"
+rgb = [187, 126, 0]
+
+[[colour]]
+name = "True Amber"
+rgb = [210, 143, 14]
+
+[[colour]]
+name = "Bright Amber"
+rgb = [235, 160, 2]
+
+[[colour]]
+name = "Soft Amber"
+rgb = [242, 180, 88]
+
+[[colour]]
+name = "Light Amber"
+rgb = [248, 200, 133]
+
+[[colour]]
+name = "Pale Amber"
+rgb = [250, 216, 171]
+
+[[colour]]
+name = "Misty Amber"
+rgb = [251, 232, 206]
+
+[[colour]]
+name = "Muted Amber"
+rgb = [134, 109, 73]
+
+[[colour]]
+name = "Faded Amber"
+rgb = [183, 161, 130]
+
+[[colour]]
+name = "Midnight Gold"
+rgb = [34, 26, 0]
+
+[[colour]]
+name = "Deep Gold"
+rgb = [55, 45, 2]
+
+[[colour]]
+name = "Dark Gold"
+rgb = [80, 65, 0]
+
+[[colour]]
+name = "Dusky Gold"
+rgb = [101, 84, 6]
+
+[[colour]]
+name = "Rich Gold"
+rgb = [124, 103, 5]
+
+[[colour]]
+name = "Strong Gold"
+rgb = [144, 121, 15]
+
+[[colour]]
+name = "Bold Gold"
+rgb = [165, 138, 7]
+
+[[colour]]
+name = "True Gold"
+rgb = [186, 156, 19]
+
+[[colour]]
+name = "Bright Gold"
+rgb = [208, 175, 7]
+
+[[colour]]
+name = "Soft Gold"
+rgb = [219, 192, 84]
+
+[[colour]]
+name = "Light Gold"
+rgb = [229, 209, 131]
+
+[[colour]]
+name = "Pale Gold"
+rgb = [236, 222, 170]
+
+[[colour]]
+name = "Misty Gold"
+rgb = [243, 236, 206]
+
+[[colour]]
+name = "Muted Gold"
+rgb = [124, 113, 72]
+
+[[colour]]
+name = "Faded Gold"
+rgb = [174, 165, 129]
+
+[[colour]]
+name = "Midnight Lime"
+rgb = [24, 30, 0]
+
+[[colour]]
+name = "Deep Lime"
+rgb = [42, 50, 1]
+
+[[colour]]
+name = "Dark Lime"
+rgb = [61, 73, 0]
+
+[[colour]]
+name = "Dusky Lime"
+rgb = [78, 93, 4]
+
+[[colour]]
+name = "Rich Lime"
+rgb = [97, 114, 9]
+
+[[colour]]
+name = "Strong Lime"
+rgb = [113, 133, 9]
+
+[[colour]]
+name = "Bold Lime"
+rgb = [129, 152, 8]
+
+[[colour]]
+name = "True Lime"
+rgb = [146, 172, 6]
+
+[[colour]]
+name = "Bright Lime"
+rgb = [163, 192, 3]
+
+[[colour]]
+name = "Soft Lime"
+rgb = [182, 205, 104]
+
+[[colour]]
+name = "Light Lime"
+rgb = [200, 219, 144]
+
+[[colour]]
+name = "Pale Lime"
+rgb = [216, 230, 178]
+
+[[colour]]
+name = "Misty Lime"
+rgb = [231, 240, 210]
+
+[[colour]]
+name = "Muted Lime"
+rgb = [109, 119, 79]
+
+[[colour]]
+name = "Faded Lime"
+rgb = [160, 170, 135]
+
+[[colour]]
+name = "Midnight Moss"
+rgb = [13, 32, 2]
+
+[[colour]]
+name = "Deep Moss"
+rgb = [23, 55, 0]
+
+[[colour]]
+name = "Dark Moss"
+rgb = [38, 78, 1]
+
+[[colour]]
+name = "Dusky Moss"
+rgb = [50, 100, 2]
+
+[[colour]]
+name = "Rich Moss"
+rgb = [63, 123, 4]
+
+[[colour]]
+name = "Strong Moss"
+rgb = [73, 143, 0]
+
+[[colour]]
+name = "Bold Moss"
+rgb = [85, 163, 7]
+
+[[colour]]
+name = "True Moss"
+rgb = [98, 184, 17]
+
+[[colour]]
+name = "Bright Moss"
+rgb = [124, 201, 72]
+
+[[colour]]
+name = "Soft Moss"
+rgb = [156, 212, 124]
+
+[[colour]]
+name = "Light Moss"
+rgb = [181, 224, 158]
+
+[[colour]]
+name = "Pale Moss"
+rgb = [202, 233, 187]
+
+[[colour]]
+name = "Misty Moss"
+rgb = [224, 242, 215]
+
+[[colour]]
+name = "Muted Moss"
+rgb = [98, 122, 86]
+
+[[colour]]
+name = "Faded Moss"
+rgb = [151, 172, 141]
+
+[[colour]]
+name = "Midnight Fern"
+rgb = [0, 34, 10]
+
+[[colour]]
+name = "Deep Fern"
+rgb = [0, 57, 20]
+
+[[colour]]
+name = "Dark Fern"
+rgb = [0, 81, 33]
+
+[[colour]]
+name = "Dusky Fern"
+rgb = [0, 103, 44]
+
+[[colour]]
+name = "Rich Fern"
+rgb = [10, 126, 58]
+
+[[colour]]
+name = "Strong Fern"
+rgb = [0, 147, 66]
+
+[[colour]]
+name = "Bold Fern"
+rgb = [6, 168, 78]
+
+[[colour]]
+name = "True Fern"
+rgb = [15, 189, 89]
+
+[[colour]]
+name = "Bright Fern"
+rgb = [68, 208, 112]
+
+[[colour]]
+name = "Soft Fern"
+rgb = [127, 217, 148]
+
+[[colour]]
+name = "Light Fern"
+rgb = [161, 228, 174]
+
+[[colour]]
+name = "Pale Fern"
+rgb = [190, 236, 198]
+
+[[colour]]
+name = "Misty Fern"
+rgb = [217, 243, 221]
+
+[[colour]]
+name = "Muted Fern"
+rgb = [88, 124, 95]
+
+[[colour]]
+name = "Faded Fern"
+rgb = [143, 174, 148]
+
+[[colour]]
+name = "Midnight Jade"
+rgb = [0, 34, 21]
+
+[[colour]]
+name = "Deep Jade"
+rgb = [0, 56, 37]
+
+[[colour]]
+name = "Dark Jade"
+rgb = [0, 79, 56]
+
+[[colour]]
+name = "Dusky Jade"
+rgb = [0, 101, 72]
+
+[[colour]]
+name = "Rich Jade"
+rgb = [0, 124, 89]
+
+[[colour]]
+name = "Strong Jade"
+rgb = [10, 144, 104]
+
+[[colour]]
+name = "Bold Jade"
+rgb = [0, 165, 119]
+
+[[colour]]
+name = "True Jade"
+rgb = [15, 186, 136]
+
+[[colour]]
+name = "Bright Jade"
+rgb = [0, 208, 151]
+
+[[colour]]
+name = "Soft Jade"
+rgb = [97, 219, 172]
+
+[[colour]]
+name = "Light Jade"
+rgb = [143, 230, 193]
+
+[[colour]]
+name = "Pale Jade"
+rgb = [179, 237, 211]
+
+[[colour]]
+name = "Misty Jade"
+rgb = [212, 244, 229]
+
+[[colour]]
+name = "Muted Jade"
+rgb = [79, 125, 105]
+
+[[colour]]
+name = "Faded Jade"
+rgb = [136, 175, 157]
+
+[[colour]]
+name = "Midnight Teal"
+rgb = [0, 32, 31]
+
+[[colour]]
+name = "Deep Teal"
+rgb = [3, 54, 51]
+
+[[colour]]
+name = "Dark Teal"
+rgb = [2, 77, 74]
+
+[[colour]]
+name = "Dusky Teal"
+rgb = [10, 98, 94]
+
+[[colour]]
+name = "Rich Teal"
+rgb = [0, 121, 116]
+
+[[colour]]
+name = "Strong Teal"
+rgb = [1, 141, 135]
+
+[[colour]]
+name = "Bold Teal"
+rgb = [4, 161, 155]
+
+[[colour]]
+name = "True Teal"
+rgb = [8, 182, 175]
+
+[[colour]]
+name = "Bright Teal"
+rgb = [13, 203, 195]
+
+[[colour]]
+name = "Soft Teal"
+rgb = [53, 219, 211]
+
+[[colour]]
+name = "Light Teal"
+rgb = [123, 230, 223]
+
+[[colour]]
+name = "Pale Teal"
+rgb = [168, 238, 232]
+
+[[colour]]
+name = "Misty Teal"
+rgb = [206, 244, 241]
+
+[[colour]]
+name = "Muted Teal"
+rgb = [69, 125, 121]
+
+[[colour]]
+name = "Faded Teal"
+rgb = [128, 175, 171]
+
+[[colour]]
+name = "Midnight Sky"
+rgb = [0, 31, 42]
+
+[[colour]]
+name = "Deep Sky"
+rgb = [3, 51, 66]
+
+[[colour]]
+name = "Dark Sky"
+rgb = [5, 74, 94]
+
+[[colour]]
+name = "Dusky Sky"
+rgb = [1, 94, 121]
+
+[[colour]]
+name = "Rich Sky"
+rgb = [14, 116, 146]
+
+[[colour]]
+name = "Strong Sky"
+rgb = [0, 135, 171]
+
+[[colour]]
+name = "Bold Sky"
+rgb = [8, 154, 195]
+
+[[colour]]
+name = "True Sky"
+rgb = [18, 174, 219]
+
+[[colour]]
+name = "Bright Sky"
+rgb = [27, 195, 243]
+
+[[colour]]
+name = "Soft Sky"
+rgb = [85, 210, 253]
+
+[[colour]]
+name = "Light Sky"
+rgb = [142, 222, 254]
+
+[[colour]]
+name = "Pale Sky"
+rgb = [176, 232, 255]
+
+[[colour]]
+name = "Misty Sky"
+rgb = [211, 241, 253]
+
+[[colour]]
+name = "Muted Sky"
+rgb = [73, 121, 140]
+
+[[colour]]
+name = "Faded Sky"
+rgb = [131, 172, 188]
+
+[[colour]]
+name = "Midnight Azure"
+rgb = [1, 27, 53]
+
+[[colour]]
+name = "Deep Azure"
+rgb = [0, 47, 86]
+
+[[colour]]
+name = "Dark Azure"
+rgb = [0, 68, 122]
+
+[[colour]]
+name = "Dusky Azure"
+rgb = [4, 87, 151]
+
+[[colour]]
+name = "Rich Azure"
+rgb = [6, 107, 184]
+
+[[colour]]
+name = "Strong Azure"
+rgb = [0, 125, 215]
+
+[[colour]]
+name = "Bold Azure"
+rgb = [4, 143, 244]
+
+[[colour]]
+name = "True Azure"
+rgb = [66, 163, 253]
+
+[[colour]]
+name = "Bright Azure"
+rgb = [112, 182, 253]
+
+[[colour]]
+name = "Soft Azure"
+rgb = [146, 198, 252]
+
+[[colour]]
+name = "Light Azure"
+rgb = [175, 213, 254]
+
+[[colour]]
+name = "Pale Azure"
+rgb = [198, 225, 255]
+
+[[colour]]
+name = "Misty Azure"
+rgb = [223, 237, 252]
+
+[[colour]]
+name = "Muted Azure"
+rgb = [87, 117, 148]
+
+[[colour]]
+name = "Faded Azure"
+rgb = [141, 168, 195]
+
+[[colour]]
+name = "Midnight Cobalt"
+rgb = [15, 24, 54]
+
+[[colour]]
+name = "Deep Cobalt"
+rgb = [27, 41, 90]
+
+[[colour]]
+name = "Dark Cobalt"
+rgb = [39, 60, 129]
+
+[[colour]]
+name = "Dusky Cobalt"
+rgb = [52, 77, 162]
+
+[[colour]]
+name = "Rich Cobalt"
+rgb = [64, 94, 201]
+
+[[colour]]
+name = "Strong Cobalt"
+rgb = [73, 108, 239]
+
+[[colour]]
+name = "Bold Cobalt"
+rgb = [91, 129, 254]
+
+[[colour]]
+name = "True Cobalt"
+rgb = [117, 152, 254]
+
+[[colour]]
+name = "Bright Cobalt"
+rgb = [144, 174, 254]
+
+[[colour]]
+name = "Soft Cobalt"
+rgb = [168, 191, 252]
+
+[[colour]]
+name = "Light Cobalt"
+rgb = [191, 208, 253]
+
+[[colour]]
+name = "Pale Cobalt"
+rgb = [209, 222, 253]
+
+[[colour]]
+name = "Misty Cobalt"
+rgb = [228, 235, 253]
+
+[[colour]]
+name = "Muted Cobalt"
+rgb = [98, 113, 149]
+
+[[colour]]
+name = "Faded Cobalt"
+rgb = [151, 164, 197]
+
+[[colour]]
+name = "Midnight Violet"
+rgb = [29, 19, 51]
+
+[[colour]]
+name = "Deep Violet"
+rgb = [50, 34, 85]
+
+[[colour]]
+name = "Dark Violet"
+rgb = [73, 49, 122]
+
+[[colour]]
+name = "Dusky Violet"
+rgb = [93, 64, 153]
+
+[[colour]]
+name = "Rich Violet"
+rgb = [115, 77, 190]
+
+[[colour]]
+name = "Strong Violet"
+rgb = [134, 88, 225]
+
+[[colour]]
+name = "Bold Violet"
+rgb = [153, 104, 251]
+
+[[colour]]
+name = "True Violet"
+rgb = [168, 132, 254]
+
+[[colour]]
+name = "Bright Violet"
+rgb = [183, 159, 253]
+
+[[colour]]
+name = "Soft Violet"
+rgb = [197, 180, 254]
+
+[[colour]]
+name = "Light Violet"
+rgb = [212, 200, 254]
+
+[[colour]]
+name = "Pale Violet"
+rgb = [224, 216, 253]
+
+[[colour]]
+name = "Misty Violet"
+rgb = [236, 232, 254]
+
+[[colour]]
+name = "Muted Violet"
+rgb = [116, 107, 145]
+
+[[colour]]
+name = "Faded Violet"
+rgb = [166, 159, 193]
+
+[[colour]]
+name = "Midnight Orchid"
+rgb = [38, 16, 44]
+
+[[colour]]
+name = "Deep Orchid"
+rgb = [65, 28, 73]
+
+[[colour]]
+name = "Dark Orchid"
+rgb = [93, 40, 105]
+
+[[colour]]
+name = "Dusky Orchid"
+rgb = [118, 53, 132]
+
+[[colour]]
+name = "Rich Orchid"
+rgb = [146, 64, 164]
+
+[[colour]]
+name = "Strong Orchid"
+rgb = [172, 71, 194]
+
+[[colour]]
+name = "Bold Orchid"
+rgb = [194, 86, 217]
+
+[[colour]]
+name = "True Orchid"
+rgb = [211, 109, 234]
+
+[[colour]]
+name = "Bright Orchid"
+rgb = [226, 135, 247]
+
+[[colour]]
+name = "Soft Orchid"
+rgb = [230, 165, 245]
+
+[[colour]]
+name = "Light Orchid"
+rgb = [239, 188, 250]
+
+[[colour]]
+name = "Pale Orchid"
+rgb = [243, 208, 251]
+
+[[colour]]
+name = "Misty Orchid"
+rgb = [248, 227, 252]
+
+[[colour]]
+name = "Muted Orchid"
+rgb = [129, 102, 136]
+
+[[colour]]
+name = "Faded Orchid"
+rgb = [179, 155, 184]
+
+[[colour]]
+name = "Midnight Rose"
+rgb = [46, 13, 30]
+
+[[colour]]
+name = "Deep Rose"
+rgb = [77, 22, 52]
+
+[[colour]]
+name = "Dark Rose"
+rgb = [110, 32, 75]
+
+[[colour]]
+name = "Dusky Rose"
+rgb = [138, 43, 96]
+
+[[colour]]
+name = "Rich Rose"
+rgb = [171, 50, 118]
+
+[[colour]]
+name = "Strong Rose"
+rgb = [202, 53, 139]
+
+[[colour]]
+name = "Bold Rose"
+rgb = [226, 69, 158]
+
+[[colour]]
+name = "True Rose"
+rgb = [244, 95, 176]
+
+[[colour]]
+name = "Bright Rose"
+rgb = [254, 127, 192]
+
+[[colour]]
+name = "Soft Rose"
+rgb = [254, 159, 204]
+
+[[colour]]
+name = "Light Rose"
+rgb = [253, 187, 217]
+
+[[colour]]
+name = "Pale Rose"
+rgb = [254, 206, 228]
+
+[[colour]]
+name = "Misty Rose"
+rgb = [255, 226, 238]
+
+[[colour]]
+name = "Muted Rose"
+rgb = [141, 99, 118]
+
+[[colour]]
+name = "Faded Rose"
+rgb = [190, 152, 169]
+
+[[colour]]
+name = "Coal"
+rgb = [13, 13, 13]
+
+[[colour]]
+name = "Soot"
+rgb = [26, 26, 26]
+
+[[colour]]
+name = "Slate"
+rgb = [40, 40, 40]
+
+[[colour]]
+name = "Ash"
+rgb = [55, 55, 55]
+
+[[colour]]
+name = "Smoke"
+rgb = [70, 70, 70]
+
+[[colour]]
+name = "Iron"
+rgb = [86, 86, 86]
+
+[[colour]]
+name = "Pewter"
+rgb = [102, 102, 102]
+
+[[colour]]
+name = "Stone"
+rgb = [119, 119, 119]
+
+[[colour]]
+name = "Fog"
+rgb = [137, 137, 137]
+
+[[colour]]
+name = "Silver"
+rgb = [154, 154, 154]
+
+[[colour]]
+name = "Cloud"
+rgb = [172, 172, 172]
+
+[[colour]]
+name = "Chalk"
+rgb = [191, 191, 191]
+
+[[colour]]
+name = "Pearl"
+rgb = [210, 210, 210]
+
+[[colour]]
+name = "Bone"
+rgb = [229, 229, 229]
+
+[[colour]]
+name = "Snow"
+rgb = [248, 248, 248]

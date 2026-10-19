@@ -269,6 +269,30 @@ impl Stations {
         moved
     }
 
+    /// Removes a station's data, returning everything in it: its output and
+    /// the inputs of every craft not yet finished (the one under way too).
+    /// Used when its claim lapses.
+    pub fn take(&mut self, pos: BlockPos, recipes: &RecipeBook) -> Vec<ItemStack> {
+        let Some(st) = self.map.remove(&pos) else {
+            return Vec::new();
+        };
+        self.active.remove(&pos);
+        self.dirty.insert(pos);
+        let mut out: Vec<ItemStack> = st.output.slots.iter().flatten().copied().collect();
+        for job in &st.jobs {
+            let Some(r) = recipes.get(job.recipe) else { continue };
+            for (item, n) in &r.inputs {
+                let mut total = *n as u32 * job.remaining as u32;
+                while total > 0 {
+                    let c = total.min(u16::MAX as u32) as u16;
+                    out.push(ItemStack::new(*item, c));
+                    total -= c as u32;
+                }
+            }
+        }
+        out
+    }
+
     /// Stations whose current craft is under way (for progress updates).
     pub fn running(&self) -> impl Iterator<Item = BlockPos> + '_ {
         self.active.iter().copied()
@@ -475,6 +499,28 @@ mod tests {
         let mut inv = Inventory::default();
         assert!(s.collect(pos, &mut inv, &items));
         assert!(!s.has_contents(pos), "an empty station has no data");
+    }
+
+    #[test]
+    fn taking_a_station_returns_its_output_and_unfinished_inputs() {
+        let (items, recipes) = setup();
+        let ingot = recipe_for(&items, &recipes, "copper_ingot");
+        let r = recipes.get(ingot).unwrap().clone();
+        let ticks = craft_ticks(&r);
+        let pos = BlockPos::new(4, 5, 6);
+        let mut s = Stations::new();
+        s.queue(pos, Station::Furnace, ingot, 3, 0).unwrap();
+        s.step(ticks, &items, &recipes);
+        s.take_dirty(&items, &recipes);
+        let mut got = s.take(pos, &recipes);
+        got.sort_by_key(|st| st.item);
+        let mut want = vec![ItemStack::new(r.output, r.output_count)];
+        want.extend(r.inputs.iter().map(|(i, n)| ItemStack::new(*i, n * 2)));
+        want.sort_by_key(|st| st.item);
+        assert_eq!(got, want, "one ingot made, two crafts' inputs back");
+        assert!(!s.has_contents(pos) && s.running().count() == 0);
+        assert_eq!(s.take_dirty(&items, &recipes), vec![(pos, None)]);
+        assert!(s.take(pos, &recipes).is_empty());
     }
 
     #[test]
