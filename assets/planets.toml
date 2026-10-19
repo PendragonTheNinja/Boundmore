@@ -11,11 +11,29 @@
 #     tints                     [["block", [r, g, b]], ...] multiplies a block's
 #                               texture, sRGB 0-255 (white is none)
 #   [kind.generation]           PlanetGenConfig fields (bm-worldgen); any left
-#                               out keep their defaults
+#                               out keep their defaults, which are the
+#                               temperate world:
+#     sea_level 128, snow_line 112 (above sea), mountain_height 130.0
+#     tree_density 0.012, tree_line 100 (above sea), trunk_min 5, trunk_extra 4
+#     water_offset 0          water fills to sea_level + this
+#     ice_depth 0             top layers of water frozen to `ice`
+#     ground "turf", subsoil "soil", snow "snow", shore "sand",
+#     shallows "sand", seabed ["gravel", "sand"], cliff "stone",
+#     water "water", ice "ice"
+#     layer "sandstone", layer_depth 0    a rock band under the topsoil
+#     glow_chance 0.02, glow_depth 24     crystals on cave floors below sea - depth
+#     ores   coal_seam and copper_vein (below). Listing [[kind.generation.ores]]
+#            replaces the whole list. Each ore's veins come from noise keyed
+#            by its place in the list: keep coal first and copper second so
+#            they lie where they would on a temperate world, and add new ores
+#            at the end.
+#       block, size (vein size, blocks), threshold (lower is richer),
+#       min_y, max_y (world heights, inclusive), min_depth (below the surface)
 
 [[kind]]
 name = "temperate"
 tier = 1
+# Generation: every default (coal and copper, no iron).
 [kind.look]
 day_zenith = [0.08, 0.26, 0.78]
 day_horizon = [0.42, 0.62, 0.90]
@@ -30,8 +48,36 @@ day_horizon = [0.85, 0.70, 0.50]
 color = [0.80, 0.50, 0.28]
 tints = [["sand", [255, 200, 160]], ["stone", [255, 225, 200]]]
 [kind.generation]
+# Dunes over sandstone; only the deepest basins hold water.
 tree_density = 0.0
 snow_line = 400
+water_offset = -18
+ground = "sand"
+subsoil = "sand"
+shore = "sand"
+shallows = "sand"
+seabed = ["sand", "sand", "gravel"]
+cliff = "sandstone"
+layer = "sandstone"
+layer_depth = 12
+[[kind.generation.ores]]
+block = "coal_seam"
+size = 14.0
+threshold = 0.52
+min_y = 13
+min_depth = 6
+[[kind.generation.ores]]
+block = "copper_vein"
+size = 12.0
+threshold = 0.58
+max_y = 149
+[[kind.generation.ores]]
+block = "iron_vein"
+size = 10.0
+threshold = 0.60
+min_y = 13
+max_y = 96
+min_depth = 10
 
 [[kind]]
 name = "frozen"
@@ -42,8 +88,30 @@ day_horizon = [0.70, 0.80, 0.92]
 color = [0.80, 0.88, 0.95]
 tints = [["foliage", [170, 210, 200]]]
 [kind.generation]
+# Snow down to the waterline, the sea frozen over, a few hardy trees.
 snow_line = -20
 tree_density = 0.004
+tree_line = 60
+ice_depth = 1
+shore = "snow"
+[[kind.generation.ores]]
+block = "coal_seam"
+size = 14.0
+threshold = 0.52
+min_y = 13
+min_depth = 6
+[[kind.generation.ores]]
+block = "copper_vein"
+size = 12.0
+threshold = 0.58
+max_y = 149
+[[kind.generation.ores]]
+block = "iron_vein"
+size = 10.0
+threshold = 0.60
+min_y = 13
+max_y = 96
+min_depth = 10
 
 [[kind]]
 name = "lush"
@@ -54,5 +122,27 @@ day_horizon = [0.55, 0.78, 0.70]
 color = [0.20, 0.62, 0.42]
 tints = [["turf", [190, 255, 170]], ["foliage", [170, 255, 160]]]
 [kind.generation]
-mountain_height = 170.0
+# Tall mountains under dense, tall forest; caves bright with crystal.
+mountain_height = 190.0
 tree_density = 0.03
+trunk_min = 6
+trunk_extra = 5
+glow_chance = 0.05
+[[kind.generation.ores]]
+block = "coal_seam"
+size = 14.0
+threshold = 0.52
+min_y = 13
+min_depth = 6
+[[kind.generation.ores]]
+block = "copper_vein"
+size = 12.0
+threshold = 0.58
+max_y = 149
+[[kind.generation.ores]]
+block = "iron_vein"
+size = 10.0
+threshold = 0.55
+min_y = 13
+max_y = 96
+min_depth = 10
