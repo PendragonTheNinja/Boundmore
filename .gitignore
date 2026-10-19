@@ -1,3 +1,4 @@
 /target
 /data
 *.der
+.claude/worktrees/
