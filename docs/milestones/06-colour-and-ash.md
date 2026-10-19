@@ -1,6 +1,6 @@
 # Milestone 6: Colour and Ash
 
-*Spec written 2026-10-19. In progress.*
+*Spec written 2026-10-19. Built 2026-10-19; awaiting Nathan's play-test.*
 
 ## Goal
 
@@ -38,9 +38,9 @@ Spray paint, the transformation chisel, colour inherited through crafting, colou
 ## Status
 
 - [x] Contract, ADR-0007, spec
-- [ ] Client colour rendering (agent)
-- [ ] Planet colours (agent)
-- [ ] Lapse, ash, reclaim (agent)
-- [ ] Ash texture (agent)
-- [ ] Integrated, play-tested headlessly
-- [ ] Nathan's play-test
+- [x] Client: palette uniform, recolouring shader (keeps a texture's light and shade, takes the palette hue; coloured voxels skip the planet tint), coloured icons, "Stone, Rich Azure" tooltips, Reclaim tab and hint. Screenshots `docs/media/m6-*.png`.
+- [x] Planet colours: per-kind choices in `planets.toml`, 2 to 4 colours per block picked by seed, large patches with wandering borders, trees one colour; generator 3 (planets made by 2 open unchanged and stay natural). Temperate greens retuned after a look in play.
+- [x] Lapse, ash, reclaim: gradual, never loses or duplicates, owner returning stops it, reclaim collected at any shrine.
+- [x] Ash texture.
+- [x] Integrated: 252 tests, fmt and clippy clean; a universe saved by the M5 server opens (found and fixed: chunk format 1 was refused); new planets render their colours (`m6-temperate-colours.png`).
+- [ ] Nathan's play-test. Not seen headlessly: a lapse forced on a real server and collected through the tab (covered end to end in tests).

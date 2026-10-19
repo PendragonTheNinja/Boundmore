@@ -347,6 +347,12 @@ const REGION_FEATURE: f64 = 320.0;
 /// a border between two colours frays over a few blocks instead of tracing a
 /// smooth curve.
 const REGION_FRAY: f64 = 0.03;
+/// Size of the medium-scale wobble added to both region fields, so a border
+/// between two colours wanders and breaks into islands instead of running as
+/// a long smooth curve (which reads as a straight line up close).
+const REGION_WOBBLE_FEATURE: f64 = 28.0;
+/// Its strength, in units of the region fields' spread.
+const REGION_WOBBLE: f64 = 0.15;
 /// Standard deviation of the two-octave region noise (measured by
 /// `region_noise_spread_is_as_assumed`); thresholds below are in units of it.
 const REGION_SIGMA: f64 = 0.22;
@@ -497,6 +503,7 @@ pub struct Generator {
     colours: BlockColours,
     region_a: Fbm,
     region_b: Fbm,
+    region_wobble: Fbm,
     width: f64,
     /// Highest a tree reaches above its footing.
     tree_top: i64,
@@ -590,6 +597,7 @@ impl Generator {
             // clear of any ore list a kind could hold.
             region_a: Fbm::new(k(1001), w, REGION_FEATURE, 2, 0.5),
             region_b: Fbm::new(k(1002), w, REGION_FEATURE, 2, 0.5),
+            region_wobble: Fbm::new(k(1003), w, REGION_WOBBLE_FEATURE, 2, 0.5),
             width: w as f64,
             tree_top: (cfg.trunk_min + cfg.trunk_extra.max(1) + 1).max(TREE_MAX_HEIGHT),
             water_level: cfg.sea_level + cfg.water_offset,
@@ -840,9 +848,12 @@ impl Generator {
             for i in 0..REGION_N as i64 {
                 let x = (origin.x + (i - 1) * REGION_STEP) as f64;
                 let z = (origin.z + (j - 1) * REGION_STEP) as f64;
+                // One wobble moves both fields the same way (opposite sign
+                // for b), so variants and the main colour meander together.
+                let w = self.region_wobble.sample2(x, z, self.width) * REGION_WOBBLE;
                 out.push((
-                    self.region_a.sample2(x, z, self.width),
-                    self.region_b.sample2(x, z, self.width),
+                    self.region_a.sample2(x, z, self.width) + w,
+                    self.region_b.sample2(x, z, self.width) - w,
                 ));
             }
         }
@@ -1252,12 +1263,15 @@ mod tests {
         let want: Vec<(String, u64)> = PINNED.iter().map(|(n, h)| (n.to_string(), *h)).collect();
         assert_eq!(got, want, "terrain changed");
     }
+    // Generator 3 was re-pinned before release (2026-10-19) when colour
+    // borders got their wobble and the temperate greens were retuned; no
+    // planet had been made by the earlier version 3 outside tests.
     const PINNED: [(&str, u64); 5] = [
         ("default", 0x6bc9_e59d_8877_7736),
-        ("temperate", 0x2c2a_a437_1406_e52d),
-        ("arid", 0xdf2a_13c6_bfa8_34e0),
-        ("frozen", 0xae7b_f6cf_3aa5_fcb4),
-        ("lush", 0xb890_01c4_700a_097e),
+        ("temperate", 0xdcf6_1868_0cb9_14df),
+        ("arid", 0xc1f7_d350_fed3_af65),
+        ("frozen", 0x04e5_7bc8_b505_2127),
+        ("lush", 0xc4ba_2a84_be17_4d24),
     ];
 
     #[test]
