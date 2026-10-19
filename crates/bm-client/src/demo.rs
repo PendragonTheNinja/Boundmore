@@ -934,28 +934,22 @@ impl Demo {
                     .get(slot as usize)
                     .and_then(|s| self.items.get(s.item))
                     .and_then(|d| d.chisel());
-                let fits = |precise: bool| {
-                    if precise {
-                        octants.count_ones() == 1
-                    } else {
-                        bm_core::edge_pairs().any(|m| m == octants)
-                    }
-                };
                 match chisel {
-                    Some((family, precise, _)) if fits(precise) => {
-                        match crate::chisel::apply(self.blocks.get(old), old_state, family, octants, restore) {
+                    Some((family, precise, _)) => {
+                        match bm_core::chisel::apply(self.blocks.get(old), old_state, family, precise, octants, restore)
+                        {
                             Ok(shape) => {
                                 self.wear_chisel(slot as usize);
                                 (BlockState { shape, ..old_state }, true)
                             }
-                            Err(crate::chisel::Refused::Told(t)) => {
+                            Err(bm_core::chisel::Refused::Told(t)) => {
                                 self.notice(&t);
                                 (old_state, false)
                             }
-                            Err(crate::chisel::Refused::Quiet) => (old_state, false),
+                            Err(bm_core::chisel::Refused::Quiet(_)) => (old_state, false),
                         }
                     }
-                    _ => (old_state, false),
+                    None => (old_state, false),
                 }
             }
         };

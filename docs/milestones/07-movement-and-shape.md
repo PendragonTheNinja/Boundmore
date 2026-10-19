@@ -40,7 +40,7 @@ Lattice and other forged chisel effects, undo history, chisel skills, smooth ram
 - [x] Core and server: kept-octant collision, a 0.55 step-up (half blocks only, never a full block), shaped raycast, light through cut blocks, the chisel rules and wear, cut blocks give back the whole block, lapse ash keeps the cut shape
 - [x] Chisel icons
 - [x] Integrated: 287 tests, fmt and clippy clean
-- [ ] Follow-up: move the chisel rules into bm-core so client and server share one copy
+- [x] Follow-up: move the chisel rules into bm-core so client and server share one copy (`bm_core::chisel::apply`, 2026-10-19)
 - [x] Part 2 core: hook flight, sticking, rope constraint, reel, hookshot, lean and fling in `movement::step`; grapple items, recipes and icons; protocol 11 (input slot, fire, reel; hooks in snapshots); the server wears grapples per shot; saved bodies keep the pre-grapple layout (upgrade check from `main`: players kept)
 - [x] Part 2 client: prediction replays with the grapple each input held, R and F reel, click-to-fire latched so no shot is lost between frames, ropes and hooks drawn for everyone, tooltips, `--demo-ui grapple`; screenshot `docs/media/m7-grapple.png`
 - [x] Integrated: 299 tests, fmt and clippy clean, 50-bot load test the same as `main`

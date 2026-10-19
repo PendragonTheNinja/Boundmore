@@ -52,7 +52,7 @@ cargo clippy --workspace --all-targets -- -D warnings
 cargo test --workspace
 ```
 
-Expected test counts (M7 part 2, 2026-10-19): bm-core 91, bm-worldgen 32, bm-mesh 22, bm-protocol 6, bm-server 42 unit + 21 end-to-end, bm-client 80, bm-texgen 5 (299 in all). CI (`.github/workflows/ci.yml`) runs the same on Linux and builds on Windows.
+Expected test counts (M7 done, 2026-10-19): bm-core 96, bm-worldgen 32, bm-mesh 22, bm-protocol 6, bm-server 42 unit + 21 end-to-end, bm-client 79, bm-texgen 5 (303 in all). CI (`.github/workflows/ci.yml`) runs the same on Linux and builds on Windows.
 
 **Upgrade check (any change to a saved or versioned format):** build the server from `main` in a separate worktree and target dir, let it create a universe (`bots --count 2 --planets 2` to make players), stop it, then open that data dir with the new server and read its log. Unit tests built from the new code missed exactly this once (2026-10-19: chunk format 2 refused every older universe).
 
@@ -96,7 +96,7 @@ Drive it with `xdotool` (`windowfocus --sync`, then plain `keydown`/`click`, not
 
 ## Status
 
-**Where we are (handoff, 2026-10-19):** milestones 1 to 7 are on `main` (M7: chisels, then grapples); Nathan has play-tested up to M3. Next: player-built portals with the agreed fuel rule (roadmap; spec first, as milestone 8), then a skills proposal for Nathan before building any progression. Open follow-ups: share the chisel rules between client and server in bm-core (the client copies the server's refusal texts today); the rope is drawn with 1-pixel lines (a few strands side by side), a real rope mesh would look better; the rest of the roadmap's M7 line (swimming improvements, far views) is not specced yet.
+**Where we are (handoff, 2026-10-19):** milestones 1 to 7 are on `main` (M7: chisels, then grapples); Nathan has play-tested up to M3. Next: player-built portals with the agreed fuel rule (roadmap; spec first, as milestone 8), then a skills proposal for Nathan before building any progression. Open follow-ups: the rope is drawn with 1-pixel lines (a few strands side by side), a real rope mesh would look better; the rest of the roadmap's M7 line (swimming improvements, far views) is not specced yet.
 
 - **Milestone 1, Foundation: done** (2026-10-18). `docs/milestones/01-foundation.md`.
 - **Milestone 2, A World Worth Looking At: built** (2026-10-18), play-tested by Nathan (breaking, water fixed). `docs/milestones/02-a-world-worth-looking-at.md`.

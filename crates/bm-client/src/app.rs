@@ -998,7 +998,7 @@ impl App {
                 s.place_cooldown = PLACE_REPEAT;
                 let state = s.world.state(hit.block).unwrap_or(BlockState::AIR);
                 let def = s.world.registry.get(state.id);
-                match crate::chisel::apply(def, state, family, octants, restore) {
+                match bm_core::chisel::apply(def, state, family, precise, octants, restore) {
                     Ok(new) => {
                         // Filling back over ourselves would be refused.
                         let filled = Shape::new(family, !octants).unwrap_or(Shape::FULL);
@@ -1031,8 +1031,8 @@ impl App {
                             });
                         }
                     }
-                    Err(crate::chisel::Refused::Told(text)) => self.notices.push(text, now_s),
-                    Err(crate::chisel::Refused::Quiet) => {}
+                    Err(bm_core::chisel::Refused::Told(text)) => self.notices.push(text, now_s),
+                    Err(bm_core::chisel::Refused::Quiet(_)) => {}
                 }
             }
         }

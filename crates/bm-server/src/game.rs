@@ -26,8 +26,8 @@ use anyhow::{Context, Result};
 use bm_core::items::title_case;
 use bm_core::movement::{self, MoveConfig, PlayerInput, PlayerState};
 use bm_core::{
-    BlockId, BlockPos, BlockState, CHUNK_SIZE, Chiselling, ChunkPos, Colour, ColourPalette, HOTBAR_SLOTS, Inventory,
-    ItemId, ItemRegistry, ItemStack, PlanetShape, PlotPos, RecipeBook, Shape, Station, TICK_DT, edge_pairs,
+    BlockId, BlockPos, BlockState, CHUNK_SIZE, ChunkPos, Colour, ColourPalette, HOTBAR_SLOTS, Inventory, ItemId,
+    ItemRegistry, ItemStack, PlanetShape, PlotPos, RecipeBook, Shape, Station, TICK_DT, chisel,
 };
 use bm_net::quinn::Connection;
 use bm_protocol::{
@@ -165,6 +165,15 @@ enum Refusal {
 impl From<&'static str> for Refusal {
     fn from(why: &'static str) -> Self {
         Refusal::Quiet(why)
+    }
+}
+
+impl From<chisel::Refused> for Refusal {
+    fn from(r: chisel::Refused) -> Self {
+        match r {
+            chisel::Refused::Quiet(why) => Refusal::Quiet(why),
+            chisel::Refused::Told(t) => Refusal::Told(t),
+        }
     }
 }
 
@@ -1411,40 +1420,9 @@ impl Game {
                     .and_then(|s| self.items.get(s.item))
                     .and_then(|d| d.chisel())
                     .ok_or("not a chisel")?;
-                let def = reg.get(current);
-                if current.is_air() || !def.solid {
-                    return Err("nothing to chisel".into());
-                }
-                if !def.chisel.allows(family) {
-                    return Err(Refusal::Told(match def.chisel {
-                        Chiselling::Slope => "Natural ground takes only slope chisels".into(),
-                        _ => format!("{} cannot be chiselled", title_case(&def.name)),
-                    }));
-                }
-                // Precise chisels move one octant, ordinary ones an edge's two.
-                let fits = if precise {
-                    octants.count_ones() == 1
-                } else {
-                    edge_pairs().any(|m| m == octants)
-                };
-                if !fits {
-                    return Err("not a cut this chisel makes".into());
-                }
                 let state = world.state(canon).ok_or("chunk not resident")?;
-                let cut = if state.shape.is_valid() {
-                    state.shape
-                } else {
-                    Shape::FULL
-                };
-                if cut.family().is_some_and(|f| f != family) {
-                    return Err(Refusal::Told(
-                        "This block is already cut by another kind of chisel".into(),
-                    ));
-                }
-                let new = if restore {
-                    if octants & !cut.removed() != 0 {
-                        return Err("nothing cut there to fill".into());
-                    }
+                let new = chisel::apply(reg.get(current), state, family, precise, octants, restore)?;
+                if restore {
                     // Filling back must not close over a player: the octants
                     // put back are the solid boxes of `Shape(!octants)`.
                     let m = self.movement;
@@ -1459,14 +1437,7 @@ impl Game {
                     if blocked {
                         return Err("a player is in the way".into());
                     }
-                    cut.restored(octants)
-                } else {
-                    if octants & cut.removed() != 0 {
-                        return Err("already cut there".into());
-                    }
-                    cut.chiselled(family, octants)
-                        .ok_or_else(|| Refusal::Told("That would cut the whole block away".into()))?
-                };
+                }
                 Ok(Accepted {
                     block: BlockState { shape: new, ..state },
                     effect: Effect::Chiselled { slot },
