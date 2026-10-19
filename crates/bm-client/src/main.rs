@@ -12,6 +12,7 @@ mod icons;
 mod items;
 mod menus;
 mod net;
+mod portal;
 mod predict;
 mod render;
 mod settings;
