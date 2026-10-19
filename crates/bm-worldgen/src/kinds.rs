@@ -2,10 +2,15 @@
 //! planet is created its generation settings are copied out of the kind and
 //! saved with the planet, so later edits to the file never change terrain
 //! that already exists (only new planets see them).
+//!
+//! Colours work the same way: a kind lists the palette colours each natural
+//! block may take (`[kind.colours]`), and a new planet picks its own few
+//! from them by seed ([`crate::pick_colours`]), saved with its settings.
 
-use crate::PlanetGenConfig;
+use crate::{ConfigError, PlanetGenConfig, palette, pick_colours};
 use bm_core::{BlockRegistry, PlanetLook, RegistryError};
 use serde::Deserialize;
+use std::collections::BTreeMap;
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct PlanetKind {
@@ -16,14 +21,23 @@ pub struct PlanetKind {
     /// 1 is the gentle start; higher tiers hold rarer ore.
     pub tier: u8,
     pub look: PlanetLook,
+    /// Block name to the palette colour names a planet of this kind may give
+    /// it (`[kind.colours]`).
+    pub colours: BTreeMap<String, Vec<String>>,
     generation: PlanetGenConfig,
 }
 
 impl PlanetKind {
-    /// The settings a new planet of this kind is generated with.
+    /// The settings a new planet of this kind is generated with, its natural
+    /// colours picked from the kind's choices by `seed`. Call it once, when
+    /// the planet is created, and save the result: the planet then keeps
+    /// these colours whatever later happens to `planets.toml`.
     pub fn generation(&self, seed: u64) -> PlanetGenConfig {
+        let mut colours = self.generation.colours.clone();
+        colours.extend(pick_colours(&self.colours, seed));
         PlanetGenConfig {
             seed,
+            colours,
             ..self.generation.clone()
         }
     }
@@ -35,6 +49,8 @@ pub enum KindError {
     Parse(#[from] toml::de::Error),
     #[error("planet kind `{0}`: {1}")]
     Block(String, RegistryError),
+    #[error("planet kind `{0}`: {1}")]
+    Generation(String, ConfigError),
     #[error("planet kind `{0}` is defined twice")]
     Duplicate(String),
     #[error("no planet kinds defined")]
@@ -54,6 +70,8 @@ struct KindEntry {
     tier: u8,
     #[serde(default)]
     look: PlanetLook,
+    #[serde(default)]
+    colours: BTreeMap<String, Vec<String>>,
     #[serde(default)]
     generation: PlanetGenConfig,
 }
@@ -76,12 +94,14 @@ impl PlanetKinds {
                 .map_err(|err| KindError::Block(e.name.clone(), err))?;
             e.generation
                 .check(blocks)
-                .map_err(|err| KindError::Block(e.name.clone(), err))?;
+                .map_err(|err| KindError::Generation(e.name.clone(), err))?;
+            check_colour_choices(&e.colours, blocks).map_err(|err| KindError::Generation(e.name.clone(), err))?;
             kinds.push(PlanetKind {
                 display: e.display.unwrap_or_else(|| title_case(&e.name)),
                 name: e.name,
                 tier: e.tier.max(1),
                 look: e.look,
+                colours: e.colours,
                 generation: e.generation,
             });
         }
@@ -98,6 +118,27 @@ impl PlanetKinds {
     pub fn get(&self, name: &str) -> Option<&PlanetKind> {
         self.kinds.iter().find(|k| k.name == name)
     }
+}
+
+/// Every block named takes colours and every colour is in the palette. A
+/// list may be any length (a planet picks up to four from it) but not empty.
+fn check_colour_choices(choices: &BTreeMap<String, Vec<String>>, blocks: &BlockRegistry) -> Result<(), ConfigError> {
+    let palette = palette();
+    for (block, names) in choices {
+        if !blocks.get(blocks.id(block)?).colourable {
+            return Err(ConfigError::NotColourable(block.clone()));
+        }
+        if names.is_empty() {
+            return Err(ConfigError::ColourCount(block.clone(), 0));
+        }
+        if let Some(bad) = names.iter().find(|n| palette.id(n).is_none()) {
+            return Err(ConfigError::UnknownColour {
+                block: block.clone(),
+                colour: bad.clone(),
+            });
+        }
+    }
+    Ok(())
 }
 
 fn title_case(s: &str) -> String {

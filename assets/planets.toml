@@ -10,6 +10,14 @@
 #     color                     the planet seen from other planets, linear RGB
 #     tints                     [["block", [r, g, b]], ...] multiplies a block's
 #                               texture, sRGB 0-255 (white is none)
+#   [kind.colours]              natural colours (ADR-0007): block = [palette
+#                               colour names from assets/colours.toml, ...].
+#                               Each new planet picks a main colour and one to
+#                               three regional variants per block from its
+#                               list, by seed, and keeps them. Only colourable
+#                               blocks; a block left out stays natural. Adding
+#                               a colour here changes only planets created
+#                               afterwards.
 #   [kind.generation]           PlanetGenConfig fields (bm-worldgen); any left
 #                               out keep their defaults, which are the
 #                               temperate world:
@@ -38,6 +46,16 @@ tier = 1
 day_zenith = [0.08, 0.26, 0.78]
 day_horizon = [0.42, 0.62, 0.90]
 color = [0.30, 0.55, 0.35]
+[kind.colours]
+turf = ["Rich Moss", "Strong Moss", "Bold Moss", "Dusky Moss", "Rich Fern", "Strong Fern", "Muted Moss", "Rich Lime", "Strong Lime"]
+foliage = ["Dusky Fern", "Rich Fern", "Dark Fern", "Dark Moss", "Dusky Moss", "Rich Moss", "Dusky Jade", "Muted Fern", "Dusky Lime"]
+trunk = ["Dusky Rust", "Dark Rust", "Muted Ember", "Muted Rust", "Dusky Amber", "Muted Amber", "Dark Amber"]
+soil = ["Muted Ember", "Muted Rust", "Dusky Rust", "Muted Amber", "Dark Rust", "Muted Crimson"]
+sand = ["Faded Gold", "Pale Gold", "Light Gold", "Faded Amber", "Light Amber", "Pale Amber", "Faded Rust"]
+gravel = ["Stone", "Fog", "Pewter", "Silver", "Muted Amber", "Muted Cobalt"]
+stone = ["Stone", "Pewter", "Fog", "Iron", "Muted Cobalt", "Muted Violet", "Muted Azure", "Muted Amber"]
+deep_stone = ["Iron", "Smoke", "Ash", "Pewter", "Muted Violet", "Muted Cobalt"]
+snow = ["Snow", "Bone", "Pearl", "Misty Azure", "Misty Sky", "Misty Cobalt"]
 
 [[kind]]
 name = "arid"
@@ -47,6 +65,13 @@ day_zenith = [0.20, 0.32, 0.62]
 day_horizon = [0.85, 0.70, 0.50]
 color = [0.80, 0.50, 0.28]
 tints = [["sand", [255, 200, 160]], ["stone", [255, 225, 200]]]
+[kind.colours]
+# Warm sand and red rock.
+sand = ["Soft Amber", "Light Amber", "Faded Amber", "Bright Amber", "Soft Gold", "Light Gold", "Soft Rust", "Light Rust", "Faded Rust", "Soft Ember"]
+sandstone = ["Bright Rust", "Soft Rust", "True Rust", "Bold Rust", "Faded Rust", "Soft Ember", "Bright Ember", "Faded Ember", "Soft Amber"]
+stone = ["Stone", "Fog", "Muted Ember", "Muted Rust", "Faded Ember", "Muted Amber", "Muted Crimson"]
+deep_stone = ["Iron", "Smoke", "Muted Crimson", "Muted Ember", "Muted Rust", "Muted Rose"]
+gravel = ["Fog", "Silver", "Faded Ember", "Faded Rust", "Faded Amber", "Muted Rust"]
 [kind.generation]
 # Dunes over sandstone; only the deepest basins hold water.
 tree_density = 0.0
@@ -87,6 +112,17 @@ day_zenith = [0.18, 0.34, 0.70]
 day_horizon = [0.70, 0.80, 0.92]
 color = [0.80, 0.88, 0.95]
 tints = [["foliage", [170, 210, 200]]]
+[kind.colours]
+# Cold whites and blues.
+snow = ["Snow", "Bone", "Pearl", "Misty Azure", "Misty Sky", "Misty Cobalt", "Misty Teal", "Misty Violet", "Pale Azure"]
+ice = ["Light Azure", "Pale Azure", "Soft Azure", "Light Sky", "Pale Sky", "Soft Sky", "Light Teal", "Pale Teal", "Light Cobalt"]
+foliage = ["Dark Teal", "Dusky Teal", "Dark Jade", "Dusky Jade", "Muted Teal", "Muted Jade", "Dark Sky", "Muted Fern"]
+trunk = ["Dusky Rust", "Dark Rust", "Muted Ember", "Muted Rust", "Iron", "Muted Violet"]
+soil = ["Muted Ember", "Muted Rust", "Muted Amber", "Muted Violet"]
+sand = ["Faded Gold", "Pale Gold", "Faded Amber", "Faded Lime", "Faded Rust"]
+gravel = ["Fog", "Stone", "Pewter", "Silver", "Faded Cobalt"]
+stone = ["Stone", "Fog", "Pewter", "Muted Cobalt", "Muted Azure", "Muted Sky", "Faded Cobalt", "Faded Azure"]
+deep_stone = ["Iron", "Smoke", "Pewter", "Muted Cobalt", "Muted Azure", "Muted Violet"]
 [kind.generation]
 # Snow down to the waterline, the sea frozen over, a few hardy trees.
 snow_line = -20
@@ -121,6 +157,17 @@ day_zenith = [0.10, 0.36, 0.62]
 day_horizon = [0.55, 0.78, 0.70]
 color = [0.20, 0.62, 0.42]
 tints = [["turf", [190, 255, 170]], ["foliage", [170, 255, 160]]]
+[kind.colours]
+# Vivid greens, with now and then a wild canopy.
+turf = ["Strong Moss", "Bold Moss", "True Moss", "Strong Fern", "Bold Fern", "Strong Lime", "Bold Lime", "Rich Jade", "Strong Jade", "Bold Jade"]
+foliage = ["Rich Fern", "Strong Fern", "Rich Jade", "Strong Jade", "Dusky Jade", "Rich Moss", "Strong Moss", "Rich Lime", "Rich Teal", "Dusky Teal", "Rich Rose", "Rich Violet", "Strong Amber"]
+trunk = ["Dusky Rust", "Dark Rust", "Dusky Ember", "Muted Ember", "Dusky Amber", "Dark Crimson", "Muted Rose", "Dark Violet"]
+soil = ["Dusky Rust", "Dark Rust", "Dusky Ember", "Muted Ember", "Muted Rust", "Muted Crimson"]
+sand = ["Pale Gold", "Light Gold", "Faded Gold", "Light Lime", "Pale Lime", "Light Amber", "Pale Amber"]
+gravel = ["Fog", "Stone", "Pewter", "Muted Jade", "Muted Teal", "Faded Fern"]
+stone = ["Stone", "Pewter", "Fog", "Muted Fern", "Muted Jade", "Muted Teal", "Muted Moss", "Muted Violet"]
+deep_stone = ["Iron", "Smoke", "Ash", "Muted Jade", "Muted Teal", "Muted Violet"]
+snow = ["Snow", "Bone", "Pearl", "Misty Jade", "Misty Teal", "Misty Moss"]
 [kind.generation]
 # Tall mountains under dense, tall forest; caves bright with crystal.
 mountain_height = 190.0
