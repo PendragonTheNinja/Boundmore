@@ -1,6 +1,6 @@
 # Milestone 4: Many Worlds
 
-*Spec written 2026-10-18. In progress.*
+*Spec written 2026-10-18. Built 2026-10-19; awaiting Nathan's play-test.*
 
 ## Goal
 
@@ -46,10 +46,11 @@ Player-built portals and portal fuel (Nathan wants to discuss them), block colou
 
 ## Status
 
-- [ ] Contract, ADR, spec
-- [ ] Worldgen (agent)
-- [ ] Server (agent)
-- [ ] Client (agent)
-- [ ] Art (agent)
-- [ ] Integrated, play-tested headlessly
-- [ ] Nathan's play-test
+- [x] Contract, ADR, spec
+- [x] Worldgen: four kinds through `PlanetGenConfig` (surface blocks, layers, ice, ore table, trees), `GENERATOR_VERSION` 2. The default settings still make version 1 terrain block for block, so old planets keep their builds. Generation got slightly faster (about 2.5 ms a chunk).
+- [x] Server: four planets in one process (Verdance, Emberdune, Rimehold, Wildmere), one save file at `SAVE_VERSION` 3 (a version 2 planet is copied in and upgraded, keeping everything; the old file stays as a backup), warp shrines on a guarded plaza, travel, per-planet report, `bots --planets N`. A player who logs in far from the shrine is told which way it is (north is -Z).
+- [x] Client: travel with a "Travelling to" screen, the warp menu (E), per-planet sky and block tints (no re-mesh on travel), the other planets in the sky with phases, stars that now turn once a day. Screenshots `docs/media/m4-*.png`.
+- [x] Art: iron vein, sandstone, ice, warp shrine; iron item icons.
+- [x] Integrated: 190 tests, fmt and clippy clean; a real client travelled through all four planets; an M3 save upgraded and its characters logged in.
+- [x] Cost (criterion 8): 50 bots over two of four planets, bots on the same 4-core sandbox. Slow ticks were 85 in 95 s, mostly in the first 30 s while every bot loaded its view at once; leaving one core free of chunk loading brought it to 14 to 37, with almost none after the burst. Empty planets hold 0 chunks. Nathan's machine has the real number.
+- [ ] Nathan's play-test.
