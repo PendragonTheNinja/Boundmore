@@ -1235,6 +1235,8 @@ pub fn paint_named(name: &str, variant: u32) -> Option<Tex> {
         "claim_stone_side" => stations::claim_stone_side,
         "warp_shrine_top" => stations::warp_shrine_top,
         "warp_shrine_side" => stations::warp_shrine_side,
+        "storage_chest_top" => stations::storage_chest_top,
+        "storage_chest_side" => stations::storage_chest_side,
         _ => return None,
     };
     Some(f(ctx))

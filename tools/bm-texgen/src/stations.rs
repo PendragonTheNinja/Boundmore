@@ -1175,3 +1175,195 @@ pub fn warp_shrine_side(_ctx: Ctx) -> Tex {
     }
     tex
 }
+
+// ------------------------------------------------------------ storage chest
+
+/// A plank pixel for the chest: `lx`/`ly` are the offsets inside the plank
+/// (`len` long along its grain), so each board gets a lit upper edge, a dark
+/// lower joint and its own tone.
+fn chest_board(salt: u32, id: u32, x: usize, y: usize, ly: usize, h: usize, vertical: bool) -> Rgba {
+    let wood = plank_ramp();
+    let mut t = 0.5 + (unit(hash2(salt, id)) - 0.5) * 0.16 + grain(hash2(salt, 10 + id), x, y, vertical) * 0.3;
+    if ly == 0 {
+        t += 0.2;
+    }
+    if ly + 1 == h {
+        t -= 0.3;
+    }
+    wood.pick(t, x, y)
+}
+
+/// A frame pixel: darker wood than the boards, with a lit outer rim.
+fn chest_frame(salt: u32, x: usize, y: usize, lit: bool, shaded: bool) -> Rgba {
+    let wood = plank_ramp();
+    let mut t = 0.17 + grain(hash2(salt, 99), x, y, false) * 0.2;
+    if lit {
+        t += 0.2;
+    }
+    if shaded {
+        t -= 0.16;
+    }
+    wood.pick(t, x, y)
+}
+
+#[allow(clippy::too_many_arguments)]
+/// A flat iron strap pixel: lit on its upper/left edge, shaded on the
+/// lower/right, so a band reads as raised metal.
+fn strap(
+    tex: &mut Tex,
+    mask: &mut Mask,
+    iron: &Ramp,
+    x: usize,
+    y: usize,
+    top: bool,
+    bottom: bool,
+    left: bool,
+    right: bool,
+) {
+    let mut t = 0.52;
+    if top || left {
+        t += 0.26;
+    }
+    if bottom || right {
+        t -= 0.28;
+    }
+    tex.set(x, y, iron.pick(t, x, y));
+    mask.set(x, y);
+}
+
+/// A rivet: one bright pixel with the strap's dark under it.
+fn rivet(tex: &mut Tex, iron: &Ramp, x: usize, y: usize) {
+    tex.set(x, y, iron.at(7));
+    if x + 1 < SIZE {
+        tex.set(x + 1, y, iron.at(2));
+    }
+}
+
+/// Chest front: a dark wooden frame round horizontal boards, an iron band
+/// across the lid seam, corner brackets, and a lock plate with a keyhole in
+/// the upper half. The frame runs to every edge, so two chests side by side
+/// read as two chests; the band meets itself across the join.
+pub fn storage_chest_side(_ctx: Ctx) -> Tex {
+    let salt = seed("storage_chest_side");
+    let iron = iron_ramp();
+    let shade = Rgba::hex(0x1e0e18);
+    // Board rows between the frame (3 px) and the bottom rail.
+    let rows: [(usize, usize); 4] = [(3, 8), (8, 12), (15, 22), (22, 29)];
+    let mut tex = Tex::from_fn(|x, y| {
+        if !(3..SIZE - 3).contains(&y) || !(3..SIZE - 3).contains(&x) {
+            let lit = y == 0 || x == 0;
+            let shaded = y == SIZE - 1 || x == SIZE - 1;
+            return chest_frame(salt, x, y, lit, shaded);
+        }
+        for (i, (a, b)) in rows.iter().enumerate() {
+            if (*a..*b).contains(&y) {
+                return chest_board(salt, i as u32, x, y, y - a, b - a, false);
+            }
+        }
+        // Band rows get overpainted; wood underneath.
+        chest_board(salt, 7, x, y, 1, 3, false)
+    });
+    let mut metal = Mask::new();
+    // The band across the seam, y 12..15, running to both edges.
+    for y in 12..15 {
+        for x in 0..SIZE {
+            strap(&mut tex, &mut metal, &iron, x, y, y == 12, y == 14, false, false);
+        }
+    }
+    // Corner brackets: L shapes, arm 7 long, 3 thick, at all four corners.
+    for (cx, cy) in [(0usize, 0usize), (SIZE - 1, 0), (0, SIZE - 1), (SIZE - 1, SIZE - 1)] {
+        for k in 0..7usize {
+            for w in 0..3usize {
+                let (xa, ya) = (if cx == 0 { k } else { cx - k }, if cy == 0 { w } else { cy - w });
+                let (xb, yb) = (if cx == 0 { w } else { cx - w }, if cy == 0 { k } else { cy - k });
+                for (x, y) in [(xa, ya), (xb, yb)] {
+                    strap(
+                        &mut tex,
+                        &mut metal,
+                        &iron,
+                        x,
+                        y,
+                        y == 0,
+                        y == SIZE - 1,
+                        x == 0,
+                        x == SIZE - 1,
+                    );
+                }
+            }
+        }
+        let rx = if cx == 0 { 1 } else { cx - 2 };
+        let ry = if cy == 0 { 1 } else { cy - 1 };
+        rivet(&mut tex, &iron, rx, ry);
+    }
+    // Lock plate, upper half, centred.
+    let mut lock = Mask::new();
+    plate(&mut tex, &mut lock, &iron, 12, 8, 20, 18, 0.5);
+    // Keyhole: round head, narrow slot.
+    let hole = Rgba::hex(0x0b0a12);
+    for (x, y) in [
+        (15, 11),
+        (16, 11),
+        (15, 12),
+        (16, 12),
+        (15, 13),
+        (16, 13),
+        (15, 14),
+        (16, 14),
+        (15, 15),
+        (16, 15),
+    ] {
+        tex.set(x, y, hole);
+    }
+    for (x, y) in [(14, 11), (17, 11), (14, 12), (17, 12)] {
+        tex.set(x, y, hole);
+    }
+    tex.set(14, 10, iron.at(2));
+    tex.set(17, 10, iron.at(2));
+    for (x, y) in [(13, 9), (18, 9), (13, 16), (18, 16)] {
+        tex.set(x, y, iron.at(7));
+    }
+    for (x, y) in [(15, 10), (16, 10)] {
+        tex.set(x, y, hole);
+    }
+    metal.0.iter_mut().zip(lock.0.iter()).for_each(|(a, b)| *a |= *b);
+    cast_shadow(&mut tex, &metal, shade, 0.55);
+    tex
+}
+
+/// Chest lid: boards running left to right in a dark frame, two iron straps
+/// across them, rivets on every strap. Same wood and iron as the front.
+pub fn storage_chest_top(_ctx: Ctx) -> Tex {
+    let salt = seed("storage_chest_top");
+    let iron = iron_ramp();
+    let shade = Rgba::hex(0x1e0e18);
+    let h = 6usize;
+    let mut tex = Tex::from_fn(|x, y| {
+        if !(2..SIZE - 2).contains(&y) || !(2..SIZE - 2).contains(&x) {
+            let lit = y == 0 || x == 0;
+            let shaded = y == SIZE - 1 || x == SIZE - 1;
+            return chest_frame(salt, x, y, lit, shaded);
+        }
+        let p = (y - 2) / h;
+        let ly = (y - 2) % h;
+        let mut t = chest_board(salt, 20 + p as u32, x, y, ly, h, false);
+        // Butt joints in the boards, staggered.
+        let joint = [10usize, 22, 15, 6, 25][p.min(4)];
+        if x == joint {
+            t = plank_ramp().at(1);
+        }
+        t
+    });
+    let mut metal = Mask::new();
+    for x0 in [6usize, 23] {
+        for y in 0..SIZE {
+            for x in x0..x0 + 3 {
+                strap(&mut tex, &mut metal, &iron, x, y, false, false, x == x0, x == x0 + 2);
+            }
+        }
+        for y in [4usize, 16, 27] {
+            rivet(&mut tex, &iron, x0, y);
+        }
+    }
+    cast_shadow(&mut tex, &metal, shade, 0.55);
+    tex
+}
