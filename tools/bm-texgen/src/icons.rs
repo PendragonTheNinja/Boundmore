@@ -12,7 +12,7 @@
 use std::f32::consts::FRAC_1_SQRT_2;
 
 use crate::color::{Ramp, Rgba};
-use crate::materials::{coal_ramp, copper_ramp, plank_ramp, stone_ramp};
+use crate::materials::{coal_ramp, copper_ramp, native_iron_ramp, plank_ramp, rust_ramp, steel_ramp, stone_ramp};
 use crate::noise::{Rng, hash2, seed, unit};
 use crate::tex::{SIZE, Tex, c};
 
@@ -291,6 +291,7 @@ fn lashing(icon: &mut Icon, f: Frame, uc: f32, half_u: f32, half_v: f32) {
 enum Metal {
     Stone,
     Copper,
+    Iron,
 }
 
 impl Metal {
@@ -298,7 +299,18 @@ impl Metal {
         match self {
             Metal::Stone => stone_ramp(),
             Metal::Copper => copper_ramp(),
+            Metal::Iron => steel_ramp(),
         }
+    }
+
+    /// The seed of this metal's version of `tool`.
+    fn salt(self, tool: &str) -> u32 {
+        let metal = match self {
+            Metal::Stone => "stone",
+            Metal::Copper => "copper",
+            Metal::Iron => "iron",
+        };
+        seed(&format!("{metal}_{tool}"))
     }
 
     /// Knapped stone breaks into flat facets; cast copper is smooth.
@@ -308,17 +320,13 @@ impl Metal {
                 let (i, j) = ((u / 2.6).floor() as i32, ((v + u * 0.4) / 2.6).floor() as i32);
                 (unit(hash2(salt, (i * 31 + j) as u32)) - 0.5) * 0.2
             }
-            Metal::Copper => 0.0,
+            Metal::Copper | Metal::Iron => 0.0,
         }
     }
 }
 
 fn hammer(metal: Metal) -> Tex {
-    let salt = seed(if metal == Metal::Stone {
-        "stone_hammer"
-    } else {
-        "copper_hammer"
-    });
+    let salt = metal.salt("hammer");
     let f = Frame { ox: 5.5, oy: 26.5 };
     let ramp = metal.ramp();
     let mut icon = Icon::new();
@@ -345,7 +353,7 @@ fn hammer(metal: Metal) -> Tex {
         if u < uc - hu + 1.0 {
             t -= 0.2;
         }
-        if metal == Metal::Copper {
+        if metal != Metal::Stone {
             // A long sheen on the cast metal and a glint at its lit end.
             if (u - (uc + 1.2)).abs() < 0.6 && v < hv - 2.0 {
                 t += 0.2;
@@ -367,11 +375,7 @@ fn hammer(metal: Metal) -> Tex {
 }
 
 fn axe(metal: Metal) -> Tex {
-    let salt = seed(if metal == Metal::Stone {
-        "stone_axe"
-    } else {
-        "copper_axe"
-    });
+    let salt = metal.salt("axe");
     let f = Frame { ox: 7.5, oy: 27.5 };
     let ramp = metal.ramp();
     let mut icon = Icon::new();
@@ -396,7 +400,7 @@ fn axe(metal: Metal) -> Tex {
             t += ((-v - 2.5) / 7.5).clamp(0.0, 1.0) * 0.12;
             if v - edge < 1.5 {
                 // The honed edge.
-                t = if metal == Metal::Copper { 0.92 } else { 0.8 };
+                t = if metal == Metal::Stone { 0.8 } else { 0.92 };
                 if metal == Metal::Stone && ((u * 1.2).floor() as i32) % 2 == 0 {
                     t -= 0.12;
                 }
@@ -411,7 +415,7 @@ fn axe(metal: Metal) -> Tex {
         if eye && v > 2.2 {
             t -= 0.22;
         }
-        if metal == Metal::Copper && (du - 1.0).abs() < 0.6 && v < -3.5 && v - edge > 2.2 {
+        if metal != Metal::Stone && (du - 1.0).abs() < 0.6 && v < -3.5 && v - edge > 2.2 {
             t += 0.2;
         }
         Some(ramp.pick(t, x, y))
@@ -429,11 +433,7 @@ fn axe(metal: Metal) -> Tex {
 }
 
 fn shovel(metal: Metal) -> Tex {
-    let salt = seed(if metal == Metal::Stone {
-        "stone_shovel"
-    } else {
-        "copper_shovel"
-    });
+    let salt = metal.salt("shovel");
     let f = Frame { ox: 6.5, oy: 25.5 };
     let ramp = metal.ramp();
     let wood = plank_ramp();
@@ -481,14 +481,14 @@ fn shovel(metal: Metal) -> Tex {
         if u > b1 - 2.5 {
             t += 0.12;
         }
-        if metal == Metal::Copper && (v + 2.2).abs() < 0.5 && u > b0 + 1.5 && u < b1 - 3.0 {
+        if metal != Metal::Stone && (v + 2.2).abs() < 0.5 && u > b0 + 1.5 && u < b1 - 3.0 {
             t += 0.22;
         }
         Some(ramp.pick(t, x, y))
     });
     match metal {
         Metal::Stone => lashing(&mut icon, f, b0 - 0.6, 2.2, 1.9),
-        Metal::Copper => {
+        Metal::Copper | Metal::Iron => {
             // A riveted collar round the top of the handle.
             icon.layer(true, |x, y| {
                 let (u, v) = f.uv(x, y);
@@ -517,6 +517,30 @@ fn coal() -> Tex {
     icon.finish()
 }
 
+fn iron_ore() -> Tex {
+    let salt = seed("iron_ore");
+    let mut icon = Icon::new();
+    Lump::new(salt, 16.0, 17.0, 12.2, 8).draw(&mut icon, &stone_ramp(), 0.12, 0.8, false);
+    // Broad knots of rust-red ore, with steel-blue nodules bright in them.
+    let rust = rust_ramp();
+    for (i, &(x, y, r)) in [(12.5, 14.0, 5.2), (19.0, 20.5, 4.6)].iter().enumerate() {
+        Lump::new(hash2(salt, 10 + i as u32), x, y, r, 6).draw(&mut icon, &rust, 0.3, 0.92, false);
+    }
+    let steel = native_iron_ramp();
+    for (i, &(x, y, r)) in [
+        (9.0, 11.0, 2.4),
+        (21.0, 10.0, 2.8),
+        (22.0, 23.0, 2.2),
+        (10.0, 22.0, 2.6),
+    ]
+    .iter()
+    .enumerate()
+    {
+        Lump::new(hash2(salt, 20 + i as u32), x, y, r, 5).draw(&mut icon, &steel, 0.3, 0.98, true);
+    }
+    icon.finish()
+}
+
 fn copper_ore() -> Tex {
     let salt = seed("copper_ore");
     let mut icon = Icon::new();
@@ -536,10 +560,9 @@ fn copper_ore() -> Tex {
     icon.finish()
 }
 
-/// A bevelled copper bar in three-quarter view: a tapered top face in the
+/// A bevelled metal bar in three-quarter view: a tapered top face in the
 /// light, the long front face, the shaded end, a maker's mark on top.
-fn copper_ingot() -> Tex {
-    let ramp = copper_ramp();
+fn ingot(ramp: Ramp) -> Tex {
     let (len, depth, height) = (22.0f32, 9.0f32, 7.5f32);
     let (ox, oy) = (2.0f32, 23.0f32);
     let proj = |x: f32, y: f32, z: f32| (ox + x + z * 0.72, oy - y - z * 0.62);
@@ -614,13 +637,18 @@ pub fn paint_icon(name: &str) -> Option<Tex> {
     Some(match name {
         "coal" => coal(),
         "copper_ore" => copper_ore(),
-        "copper_ingot" => copper_ingot(),
+        "copper_ingot" => ingot(copper_ramp()),
+        "iron_ore" => iron_ore(),
+        "iron_ingot" => ingot(steel_ramp()),
         "stone_hammer" => hammer(Metal::Stone),
         "stone_shovel" => shovel(Metal::Stone),
         "stone_axe" => axe(Metal::Stone),
         "copper_hammer" => hammer(Metal::Copper),
         "copper_shovel" => shovel(Metal::Copper),
         "copper_axe" => axe(Metal::Copper),
+        "iron_hammer" => hammer(Metal::Iron),
+        "iron_shovel" => shovel(Metal::Iron),
+        "iron_axe" => axe(Metal::Iron),
         _ => return None,
     })
 }

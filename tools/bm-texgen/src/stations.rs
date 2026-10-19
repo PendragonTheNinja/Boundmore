@@ -1,5 +1,5 @@
-//! Crafting stations and other built blocks: the workbench, the furnace and
-//! the claim stone. Unlike terrain these are made things, so they are drawn
+//! Crafting stations and other built blocks: the workbench, the furnace,
+//! the claim stone and the warp shrine. Unlike terrain these are made things, so they are drawn
 //! as objects (frames, legs, bars, carved runes) rather than grown from noise,
 //! with the same palette rules: light from the top left, hue-shifted shade,
 //! chunky shapes that survive the mipmaps.
@@ -46,6 +46,26 @@ fn slate_ramp() -> Ramp {
 /// Rune light: pale blue, white at the core.
 fn rune_ramp() -> Ramp {
     Ramp::from_hex(&[0x1c2c66, 0x264a9e, 0x3874cc, 0x58a0ec, 0x88c8fa, 0xbde6ff, 0xeefbff])
+}
+
+/// The warp shrine's stone: a dark, warm plum-grey basalt, less blue than
+/// the claim stone's slate.
+fn basalt_ramp() -> Ramp {
+    Ramp::from_hex(&[
+        0x120e16, 0x1e1822, 0x2b2330, 0x3a3040, 0x4a3f50, 0x5d5064, 0x73647a, 0x8c7c92,
+    ])
+}
+
+/// Inlaid silver, cool and bright.
+fn silver_ramp() -> Ramp {
+    Ramp::from_hex(&[0x2c2a40, 0x4a4a64, 0x70728e, 0x9a9eb8, 0xc4c8da, 0xe6e8f2, 0xffffff])
+}
+
+/// Warp light: deep violet at the edge to white at the heart.
+fn warp_ramp() -> Ramp {
+    Ramp::from_hex(&[
+        0x240c44, 0x3e1676, 0x5c24aa, 0x7e3ad4, 0xa260ee, 0xc490fa, 0xe4c8ff, 0xfff6ff,
+    ])
 }
 
 const SOOT: Rgba = Rgba::hex(0x150d14);
@@ -146,7 +166,7 @@ fn grain(salt: u32, x: usize, y: usize, vertical: bool) -> f32 {
 
 /// Glyphs for runes, 5 x 5, top row first, bit 4 = left column. Invented
 /// for Boundmore: verticals and diagonals, like letters cut with a chisel.
-const RUNES: [[u8; 5]; 6] = [
+const RUNES: [[u8; 5]; 8] = [
     // A branching stem.
     [0b10101, 0b10101, 0b01110, 0b00100, 0b00100],
     // A ring round a seed.
@@ -159,6 +179,10 @@ const RUNES: [[u8; 5]; 6] = [
     [0b10001, 0b01010, 0b10101, 0b01010, 0b00100],
     // A forked bolt.
     [0b00010, 0b00100, 0b01110, 0b00100, 0b01000],
+    // A door under a lintel.
+    [0b11111, 0b01010, 0b01010, 0b01010, 0b11011],
+    // A hook turning back on itself.
+    [0b01110, 0b00001, 0b01101, 0b01001, 0b00110],
 ];
 
 /// Adds glyph `g` with its top-left at (x, y) to `mask`.
@@ -881,6 +905,272 @@ pub fn claim_stone_side(_ctx: Ctx) -> Tex {
             if value(salt ^ 5, 4, 1, c(x), 0.5) > 0.62 {
                 tex.set(x, y, light.at(5));
             }
+        }
+    }
+    tex
+}
+
+// ------------------------------------------------------------- warp shrine
+
+/// The shrine's basalt: big squared facets, softly mottled, darker and
+/// smoother than the claim stone's slate.
+fn basalt(salt: u32) -> Field {
+    let sites = Ctx::BASE.sites(salt, 11.0);
+    Field::from_fn(|x, y| {
+        let (fx, fy) = (c(x), c(y));
+        let k = cell(&sites, fx, fy, 1.0);
+        let s = &sites[k.index];
+        let mut t = 0.4 + (s.r[0] - 0.5) * 0.1;
+        t += k.rim(2.0) * 0.1;
+        t += (fbm(salt ^ 1, 4, 4, 2, fx, fy) - 0.5) * 0.14;
+        t
+    })
+}
+
+/// Distance from the middle of the face in an octagon metric.
+fn octagon(dx: f32, dy: f32) -> f32 {
+    dx.abs()
+        .max(dy.abs())
+        .max((dx.abs() + dy.abs()) * std::f32::consts::FRAC_1_SQRT_2)
+}
+
+/// A swirl of warp light: `arms` spiral arms turning inwards, brighter
+/// towards the heart. `r` is the distance from the heart, `edge` the
+/// radius at which it fades to the darkest violet.
+fn swirl(dx: f32, dy: f32, r: f32, edge: f32, arms: f32, twist: f32) -> f32 {
+    let a = dy.atan2(dx) / std::f32::consts::TAU;
+    let s = (a * arms + r * twist).rem_euclid(1.0);
+    let arm = 1.0 - smoothstep(0.0, 0.42, (s - 0.5).abs() * 2.0 - 0.2);
+    0.18 + arm * 0.3 + (1.0 - r / edge).max(0.0) * 0.45
+}
+
+/// Warp shrine top: a slab of dark basalt with an octagonal well in it,
+/// framed by a band of inlaid silver, a violet vortex of warp light turning
+/// down inside it to a white heart, and a silver stud set with a violet gem
+/// at each corner of the slab.
+pub fn warp_shrine_top(_ctx: Ctx) -> Tex {
+    let salt = seed("warp_shrine_top");
+    let rock = basalt_ramp();
+    let silver = silver_ramp();
+    let light = warp_ramp();
+    let field = basalt(salt);
+    let (well, band) = (9.2f32, 11.4f32);
+    let mut tex = Tex::from_fn(|x, y| {
+        let (dx, dy) = (c(x) - 16.0, c(y) - 16.0);
+        let o = octagon(dx, dy);
+        let facing = -(dx + dy) / dx.hypot(dy).max(1.0);
+        if o < well {
+            // The well: warp light, its far (bottom-right) lip lit violet
+            // and its near wall in shadow.
+            let mut t = swirl(dx, dy, o, well, 3.0, 0.11);
+            if o > well - 1.2 {
+                t -= facing * 0.22;
+            }
+            return light.pick(t, x, y);
+        }
+        if o < band {
+            // The silver band, rounded: lit on its top-left outer edge.
+            let mut t = 0.5;
+            if o > band - 0.9 {
+                t += facing * 0.3;
+            } else if o < well + 0.8 {
+                t -= facing * 0.3;
+            }
+            return silver.pick(t, x, y);
+        }
+        let mut t = field.at(x, y);
+        // A groove round the band, and the slab's dressed edge.
+        if o < band + 1.0 {
+            t = 0.1 - facing * 0.08;
+        }
+        if x == 0 || y == 0 {
+            t += 0.22;
+        }
+        if x == SIZE - 1 || y == SIZE - 1 {
+            t -= 0.22;
+        }
+        rock.pick(t, x, y)
+    });
+    // Faint light thrown on the silver from the well.
+    for y in 0..SIZE {
+        for x in 0..SIZE {
+            let o = octagon(c(x) - 16.0, c(y) - 16.0);
+            if (well..well + 1.0).contains(&o) {
+                tex.set(x, y, tex.get(x, y).mix(light.at(5), 0.35));
+            }
+        }
+    }
+    // The heart burns white, with a short cross of light.
+    for (x, y) in [(15, 15), (16, 15), (15, 16), (16, 16)] {
+        tex.set(x, y, light.lightest());
+    }
+    for (x, y) in [(15, 13), (16, 18), (13, 16), (18, 15)] {
+        tex.set(x, y, light.at(6));
+    }
+    // Corner studs: a silver diamond with a glowing violet gem.
+    let mut studs = Mask::new();
+    for (cx, cy) in [(4usize, 4usize), (27, 4), (4, 27), (27, 27)] {
+        for (dx, dy) in [
+            (0i32, -2i32),
+            (-1, -1),
+            (0, -1),
+            (1, -1),
+            (-2, 0),
+            (-1, 0),
+            (1, 0),
+            (2, 0),
+            (-1, 1),
+            (0, 1),
+            (1, 1),
+            (0, 2),
+        ] {
+            let (x, y) = ((cx as i32 + dx) as usize, (cy as i32 + dy) as usize);
+            let t = 0.55 - (dx + dy) as f32 * 0.12;
+            tex.set(x, y, silver.pick(t, x, y));
+            studs.set(x, y);
+        }
+        tex.set(cx, cy, light.at(6));
+    }
+    cast_shadow(&mut tex, &studs, SOOT, 0.45);
+    tex
+}
+
+/// Warp shrine side: a round-headed gateway in dark basalt, its arch of
+/// silver-capped voussoirs round a curtain of violet warp light, a keystone
+/// set with a gem, a glowing rune on each pillar, and a cornice and a plinth
+/// that run on into the next shrine.
+pub fn warp_shrine_side(_ctx: Ctx) -> Tex {
+    let salt = seed("warp_shrine_side");
+    let rock = basalt_ramp();
+    let silver = silver_ramp();
+    let light = warp_ramp();
+    let field = basalt(salt);
+    let (spring, r_in, r_out, sill) = (14.0f32, 7.0f32, 9.4f32, 27.0f32);
+    // Inside the opening, inside the arch (opening included).
+    let open = |fx: f32, fy: f32| {
+        let dx = fx - 16.0;
+        fy < sill && ((fy >= spring && dx.abs() < r_in) || dx.hypot(fy - spring) < r_in)
+    };
+    let arch = |fx: f32, fy: f32| {
+        let dx = fx - 16.0;
+        fy < sill && ((fy >= spring && dx.abs() < r_out) || dx.hypot(fy - spring) < r_out)
+    };
+    let mut tex = Tex::from_fn(|x, y| {
+        let (fx, fy) = (c(x), c(y));
+        let dx = fx - 16.0;
+        if open(fx, fy) {
+            // A curtain of light: brightest down the middle, shimmering in
+            // vertical streaks, with a swirl at the head of the arch.
+            let mut t = 0.3 + (1.0 - dx.abs() / r_in) * 0.32;
+            t += (smoothstep(0.35, 0.75, value(salt ^ 2, 8, 2, fx, fy)) - 0.5) * 0.24;
+            let r = dx.hypot(fy - (spring + 1.0));
+            if r < 5.0 {
+                t = t.max(swirl(dx, fy - (spring + 1.0), r, 5.5, 2.0, 0.2) + 0.1);
+            }
+            // The reveal: the near (top-left) inner wall throws a shadow.
+            if !open(fx - 1.0, fy) || !open(fx, fy - 1.0) {
+                t -= 0.2;
+            }
+            return light.pick(t, x, y);
+        }
+        if arch(fx, fy) {
+            // Voussoirs: silver-capped stones radiating round the opening,
+            // their joints every few pixels.
+            let (rx, ry) = (dx, (fy - spring).min(0.0));
+            let r = rx.hypot(ry);
+            let ang = ry.atan2(rx);
+            let mut t = 0.52;
+            let joint = if fy < spring {
+                ((ang / std::f32::consts::PI * 7.0).rem_euclid(1.0) - 0.5).abs() > 0.42
+            } else {
+                (fy as usize - spring as usize) % 5 == 4
+            };
+            let (nx, ny) = (rx / r.max(0.5), ry / r.max(0.5));
+            let facing = -(nx + ny) * std::f32::consts::FRAC_1_SQRT_2;
+            if r > r_out - 1.0 || dx.abs() > r_out - 1.0 && fy >= spring {
+                t += facing * 0.3;
+            }
+            if joint {
+                return rock.pick(0.1, x, y);
+            }
+            return silver.pick(t, x, y);
+        }
+        let mut t = field.at(x, y);
+        // Cornice: rows 0..4, lit lip, dark undercut.
+        if y < 4 {
+            t += 0.08;
+            if y == 0 {
+                t += 0.22;
+            }
+            if y == 3 {
+                t = 0.06;
+            }
+            return rock.pick(t, x, y);
+        }
+        // Plinth: rows 27..32, lit on its top step.
+        if fy > sill {
+            t += 0.04;
+            if y == 27 {
+                t += 0.24;
+            }
+            if y == SIZE - 1 {
+                t -= 0.2;
+            }
+            return rock.pick(t, x, y);
+        }
+        // Coursed blocks on the pillars, joints staggered course to course.
+        let course = (y - 4) / 6;
+        let row = (y - 4) % 6;
+        let jx = if course % 2 == 0 { 0 } else { 3 };
+        if row == 5 {
+            return rock.pick(0.08, x, y);
+        }
+        if x == jx || x == SIZE - 1 - jx {
+            return rock.pick(0.08, x, y);
+        }
+        if row == 0 {
+            t += 0.16;
+        }
+        if row == 4 {
+            t -= 0.08;
+        }
+        if x == jx + 1 || x == SIZE - jx {
+            t += 0.12;
+        }
+        rock.pick(t, x, y)
+    });
+    // The silver inlay along the cornice, meeting the next shrine's.
+    for x in 0..SIZE {
+        tex.set(x, 1, silver.pick(0.66, x, 1));
+        tex.set(x, 2, silver.pick(0.36, x, 2));
+    }
+    // Warp light spills onto the sill in front of the opening.
+    for y in 27..29 {
+        for x in 0..SIZE {
+            let dx = (c(x) - 16.0).abs();
+            if dx < r_in {
+                let k = (1.0 - dx / r_in) * if y == 27 { 0.6 } else { 0.3 };
+                tex.set(x, y, tex.get(x, y).mix(light.at(5), k));
+            }
+        }
+    }
+    // The keystone: a silver block at the crown with a glowing gem.
+    let mut key = Mask::new();
+    plate(&mut tex, &mut key, &silver, 14, 4, 18, 8, 0.56);
+    tex.set(15, 5, light.at(7));
+    tex.set(16, 5, light.at(6));
+    tex.set(15, 6, light.at(5));
+    tex.set(16, 6, light.at(4));
+    cast_shadow(&mut tex, &key, SOOT, 0.4);
+    // A rune on each pillar, and a few sparks in the curtain.
+    let mut marks = Mask::new();
+    rune(&mut marks, 6, 1, 13);
+    rune(&mut marks, 7, 26, 13);
+    glow(&mut tex, &marks, &light, 0.66);
+    for s in Ctx::BASE.sites(salt ^ 9, 4.0) {
+        let (x, y) = (s.x as usize % SIZE, s.y as usize % SIZE);
+        if s.r[0] < 0.4 && open(c(x), c(y)) && open(c(x) - 1.0, c(y)) && open(c(x), c(y) - 1.0) {
+            tex.set(x, y, light.lightest());
         }
     }
     tex
