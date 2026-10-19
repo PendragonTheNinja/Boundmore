@@ -505,6 +505,127 @@ fn shovel(metal: Metal) -> Tex {
     icon.finish()
 }
 
+// ----------------------------------------------------------------- chisels
+
+#[derive(Clone, Copy, PartialEq)]
+enum Tip {
+    Square,
+    Slope,
+    Bevel,
+    Round,
+}
+
+/// A chisel: a short handle with a leather grip, a ferrule (lashing on
+/// stone), and a flat blade whose tip tells the family. Precise chisels
+/// are slimmer, taper to a needle and carry a gem on the ferrule.
+fn chisel(metal: Metal, tip: Tip, precise: bool) -> Tex {
+    let name = match (tip, precise) {
+        (Tip::Square, false) => "square",
+        (Tip::Slope, false) => "slope",
+        (Tip::Bevel, false) => "bevel",
+        (Tip::Round, false) => "round",
+        (Tip::Square, true) => "precise_square",
+        (Tip::Slope, true) => "precise_slope",
+        (Tip::Bevel, true) => "precise_bevel",
+        (Tip::Round, true) => "precise_round",
+    };
+    let salt = metal.salt(&format!("{name}_chisel"));
+    let f = if precise {
+        Frame { ox: 3.5, oy: 28.5 }
+    } else {
+        Frame { ox: 4.5, oy: 27.5 }
+    };
+    let ramp = metal.ramp();
+    let mut icon = Icon::new();
+    let (b0, ut) = (13.5f32, if precise { 32.5f32 } else { 30.5f32 });
+    let w0 = if precise { 2.4 } else { 3.1 };
+    handle(&mut icon, f, 0.0, 14.5, salt);
+    // The blade half width at `u`, and where its tip ends at `v`.
+    let half = move |u: f32| {
+        if precise {
+            let k = ((u - (b0 + 5.5)) / (ut - b0 - 5.5)).clamp(0.0, 1.0);
+            w0 + (0.7 - w0) * k
+        } else {
+            w0
+        }
+    };
+    let end = move |v: f32| {
+        let w = w0;
+        match tip {
+            Tip::Square => ut,
+            Tip::Slope => ut - (v + w) * if precise { 0.9 } else { 1.2 },
+            Tip::Bevel => ut - v.abs() * if precise { 1.0 } else { 2.3 } - 0.2,
+            Tip::Round => ut - w * (1.0 - (1.0 - (v / w).powi(2)).max(0.0).sqrt()),
+        }
+    };
+    icon.layer(true, |x, y| {
+        let (u, v) = f.uv(x, y);
+        let hw = half(u);
+        if u < b0 || v.abs() > hw {
+            return None;
+        }
+        let e = end(if precise { v * w0 / hw.max(0.5) } else { v });
+        if u > e {
+            return None;
+        }
+        let mut t = 0.52 - v / hw * 0.2 + metal.facet(salt, u, v);
+        if v < -hw + 1.0 {
+            t += 0.26;
+        }
+        if v > hw - 1.0 {
+            t -= 0.26;
+        }
+        if tip == Tip::Round && !precise && v.abs() < 1.1 && u > b0 + 4.0 {
+            // The gouge's hollow, in shade on its far wall.
+            t -= if v > 0.0 { 0.12 } else { 0.0 } + 0.16;
+        }
+        if metal != Metal::Stone && (v + 0.9).abs() < 0.5 && u > b0 + 2.0 && u < e - 3.0 {
+            t += 0.2;
+        }
+        // The honed edge at the tip.
+        if e - u < 1.5 {
+            t = if metal == Metal::Stone { 0.82 } else { 0.95 };
+        }
+        Some(ramp.pick(t, x, y))
+    });
+    if metal == Metal::Stone {
+        lashing(&mut icon, f, b0 + 0.2, 2.6, 2.2);
+    } else {
+        // The ferrule, wider than the handle.
+        icon.layer(true, |x, y| {
+            let (u, v) = f.uv(x, y);
+            if (u - (b0 - 0.4)).abs() > 1.7 || v.abs() > 2.0 {
+                return None;
+            }
+            let mut t = 0.5 - v / 2.0 * 0.3;
+            if (u - (b0 - 0.4)).abs() < 0.5 && v < 0.2 {
+                t += 0.25;
+            }
+            Some(ramp.pick(t, x, y))
+        });
+    }
+    if precise {
+        // A gem set in the ferrule.
+        let gem = Ramp::from_hex(&[0x1c2a78, 0x2f5fd0, 0x4fa0ff, 0x9fe4ff, 0xe8fbff]);
+        icon.layer(true, |x, y| {
+            let (u, v) = f.uv(x, y);
+            let (du, dv) = (u - (b0 - 0.2), v);
+            if du.abs() + dv.abs() > 1.45 {
+                return None;
+            }
+            let t = if du - dv > 0.3 {
+                0.95
+            } else if du + dv > 0.3 {
+                0.4
+            } else {
+                0.75
+            };
+            Some(gem.pick(t, x, y))
+        });
+    }
+    icon.finish()
+}
+
 // ----------------------------------------------------------------- materials
 
 fn coal() -> Tex {
@@ -649,6 +770,12 @@ pub fn paint_icon(name: &str) -> Option<Tex> {
         "iron_hammer" => hammer(Metal::Iron),
         "iron_shovel" => shovel(Metal::Iron),
         "iron_axe" => axe(Metal::Iron),
+        "square_chisel" => chisel(Metal::Stone, Tip::Square, false),
+        "slope_chisel" => chisel(Metal::Copper, Tip::Slope, false),
+        "bevel_chisel" => chisel(Metal::Iron, Tip::Bevel, false),
+        "round_chisel" => chisel(Metal::Iron, Tip::Round, false),
+        "precise_square_chisel" => chisel(Metal::Iron, Tip::Square, true),
+        "precise_slope_chisel" => chisel(Metal::Iron, Tip::Slope, true),
         _ => return None,
     })
 }
