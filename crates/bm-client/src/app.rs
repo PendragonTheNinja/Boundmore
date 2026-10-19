@@ -1,11 +1,13 @@
 //! The client application: window events, the fixed-rate simulation, and the
 //! glue between network, world, prediction, menus and renderer.
 
+use crate::chat::{ChatAction, ChatBox};
 use crate::claims::{Claims, outline};
 use crate::icons::icon_for;
 use crate::items::Items;
 use crate::menus::{
-    self, Arrival, CraftingView, Drag, Hud, ItemIcons, LiveStation, LoginForm, Menu, Notices, TravelView, UiAction,
+    self, Arrival, CraftingView, Drag, Hud, ItemIcons, LiveStation, LoginForm, Menu, Notices, StorageWindow,
+    TravelView, UiAction,
 };
 use crate::net::{self, ConnectOptions, Link, NetEvent};
 use crate::predict::{Predictor, RemoteSample, Remotes};
@@ -21,7 +23,7 @@ use bm_core::{
 };
 use bm_protocol::{
     ClientDatagram, ClientMsg, EditAction, INPUT_REDUNDANCY, MIN_PASSWORD_LEN, PlanetInfo, PlanetSummary,
-    ServerDatagram, ServerMsg, Travel,
+    ServerDatagram, ServerMsg, StorageView, Travel,
 };
 use glam::{DVec3, Vec3};
 use std::collections::HashSet;
@@ -53,6 +55,8 @@ const XRAY_ALPHA: f32 = 0.22;
 /// arrival reads as a journey rather than a flicker, then fades out.
 const ARRIVAL_MIN: f64 = 0.8;
 const ARRIVAL_FADE: f64 = 0.5;
+/// The chat box's bottom edge sits this far up, clear of the hotbar's row.
+const CHAT_BOTTOM: f32 = 96.0;
 
 pub struct Options {
     /// Server address, name and password from the command line; with a
@@ -67,7 +71,8 @@ pub struct Options {
     pub assets: PathBuf,
     pub settings_path: PathBuf,
     /// `--demo-ui SCREEN`: run offline against `demo.rs`, opening SCREEN
-    /// (`hud`, `inventory`, `crafting`, `station`, `claims` or `login`).
+    /// (`hud`, `inventory`, `crafting`, `station`, `claims`, `shrine`,
+    /// `travel`, `travelling`, `sky`, `storage`, `chat` or `login`).
     pub demo: Option<String>,
 }
 
@@ -258,6 +263,13 @@ impl Session {
             .unwrap_or(self.welcome_tick as f64 + (local - self.welcome_local))
     }
 
+    /// The storage block aimed at (within reach, as aiming is), if any.
+    fn aiming_at_storage(&self) -> Option<BlockPos> {
+        let hit = self.target?;
+        let block = self.world.block(hit.block)?;
+        (self.world.registry.get(block).storage > 0).then_some(hit.block)
+    }
+
     /// Whether the block aimed at is a warp shrine.
     fn aiming_at_shrine(&self) -> Option<BlockPos> {
         let hit = self.target?;
@@ -282,6 +294,12 @@ pub struct App {
     menu: Option<Menu>,
     drag: Option<Drag>,
     live_station: Option<LiveStation>,
+    /// The open storage block's contents as the server last sent them.
+    storage_view: Option<StorageView>,
+    /// Storage blocks we closed whose `closed` answer has not come back yet:
+    /// that answer must not close the same block opened again meanwhile.
+    storage_closing: Vec<BlockPos>,
+    chat: ChatBox,
     claim_mode: bool,
     notices: Notices,
     status: String,
@@ -326,6 +344,9 @@ impl App {
             menu: None,
             drag: None,
             live_station: None,
+            storage_view: None,
+            storage_closing: Vec::new(),
+            chat: ChatBox::default(),
             claim_mode: false,
             notices: Notices::default(),
             status: "logging in".into(),
@@ -428,6 +449,10 @@ impl App {
             self.live_station = None;
             self.send(ClientMsg::WatchStation { pos: Some(pos) });
         }
+        if let Menu::Storage(pos) = menu {
+            self.storage_view = None;
+            self.send(ClientMsg::OpenStorage { pos: Some(pos) });
+        }
         self.menu = Some(menu);
         self.keys.clear();
         self.mouse = [false; 2];
@@ -442,9 +467,14 @@ impl App {
             self.send(ClientMsg::WatchStation { pos: None });
             self.live_station = None;
         }
+        if let Some(Menu::Storage(pos)) = self.menu {
+            self.send(ClientMsg::OpenStorage { pos: None });
+            self.storage_closing.push(pos);
+            self.storage_view = None;
+        }
         let was_open = self.menu.take().is_some();
         self.drag = None;
-        if was_open && regrab && self.session.is_some() {
+        if was_open && regrab && self.session.is_some() && !self.chat.open {
             self.set_grab(true);
         }
     }
@@ -472,6 +502,70 @@ impl App {
         }
     }
 
+    /// Opens the chat line: the mouse is let go and game keys stop. Opened
+    /// by a key, that key's press is kept out of the line.
+    fn open_chat(&mut self, by_key: bool) {
+        self.chat.open(by_key);
+        self.keys.clear();
+        self.mouse = [false; 2];
+        if let Some(s) = &mut self.session {
+            s.mining = None;
+        }
+        self.set_grab(false);
+    }
+
+    fn close_chat(&mut self) {
+        self.chat.close();
+        if self.menu.is_none() && self.session.is_some() {
+            self.set_grab(true);
+        }
+    }
+
+    /// E on a storage block: open it beside the inventory, unless it stands
+    /// on someone else's claim (the server refuses that too).
+    fn open_storage(&mut self, pos: BlockPos) {
+        let now = self.now();
+        let Some(s) = &self.session else { return };
+        if let Some(c) = s.claims.at(PlotPos::of(pos, s.world.shape))
+            && c.owner != s.account
+        {
+            let text = format!("This land belongs to {}", c.owner);
+            self.notices.push(text, now);
+            return;
+        }
+        // The server names storage by canonical position.
+        let pos = s.world.shape.wrap_block(pos);
+        self.open_menu(Menu::Storage(pos));
+    }
+
+    /// A `Storage` from the server: shown if it is the one open, and closing
+    /// the window when it is gone or out of reach.
+    fn storage_update(&mut self, view: StorageView) {
+        if view.closed
+            && let Some(i) = self.storage_closing.iter().position(|p| *p == view.pos)
+        {
+            // The answer to our own close, not news about the block.
+            self.storage_closing.remove(i);
+            return;
+        }
+        if self.menu != Some(Menu::Storage(view.pos)) {
+            return;
+        }
+        if view.closed {
+            self.storage_view = None;
+            // Already closed on the server: closing here asks for nothing.
+            self.menu = None;
+            self.drag = None;
+            if self.session.is_some() && !self.chat.open {
+                self.set_grab(true);
+            }
+            return;
+        }
+        let Some(s) = &self.session else { return };
+        let slots = crate::storage::sanitize(&s.items.registry, view.slots);
+        self.storage_view = Some(StorageView { slots, ..view });
+    }
+
     fn apply_actions(&mut self, actions: Vec<UiAction>) {
         for a in actions {
             match a {
@@ -496,6 +590,7 @@ impl App {
                     tracing::warn!("disconnected: {reason}");
                     let was_playing = self.session.is_some();
                     self.close_menu(false);
+                    self.chat.close();
                     self.claim_mode = false;
                     self.session = None;
                     self.link = None;
@@ -537,6 +632,8 @@ impl App {
         }
         let icons = self.build_icons(&items, &registry, &set, &w.planet.tints);
         tracing::info!("welcomed to {} as {} (#{})", w.planet.name, w.account, w.player_id);
+        self.chat.me = w.account.clone();
+        self.storage_closing.clear();
         self.status = format!("on {}", w.planet.name);
         // Remember who and where, never the password; and forget it here too.
         self.login.busy = false;
@@ -576,6 +673,8 @@ impl App {
     fn travel(&mut self, t: Travel) {
         let (now, local) = (self.now(), self.local_ticks());
         self.close_menu(false);
+        // The server closed every storage view before the journey.
+        self.storage_closing.clear();
         self.live_station = None;
         self.claim_mode = false;
         self.mouse = [false; 2];
@@ -602,6 +701,7 @@ impl App {
     fn handle_msg(&mut self, m: ServerMsg) {
         let m = match m {
             ServerMsg::Travel(t) => return self.travel(*t),
+            ServerMsg::Storage(view) => return self.storage_update(view),
             m => m,
         };
         let now = self.now();
@@ -631,7 +731,8 @@ impl App {
             ServerMsg::ClaimRemoved { id } => s.claims.remove(id),
             ServerMsg::Notice { text } => self.notices.push(text, now),
             ServerMsg::Universe { planets } => s.universe = planets,
-            ServerMsg::Welcome(_) | ServerMsg::Refused { .. } | ServerMsg::Travel(_) => {}
+            ServerMsg::Chat { lines } => self.chat.receive(lines, now),
+            ServerMsg::Welcome(_) | ServerMsg::Refused { .. } | ServerMsg::Travel(_) | ServerMsg::Storage(_) => {}
         }
     }
 
@@ -679,7 +780,7 @@ impl App {
     // ---- the frame ----
 
     fn sample_input(&self) -> PlayerInput {
-        let k = |c: KeyCode| self.grabbed && self.menu.is_none() && self.keys.contains(&c);
+        let k = |c: KeyCode| self.grabbed && self.menu.is_none() && !self.chat.open && self.keys.contains(&c);
         let (yaw, pitch) = PlayerInput::from_angles(self.yaw, self.pitch);
         PlayerInput {
             forward: k(KeyCode::KeyW) as i8 - k(KeyCode::KeyS) as i8,
@@ -698,7 +799,7 @@ impl App {
         self.handle_net();
 
         let input = self.sample_input();
-        let playing = self.grabbed && self.menu.is_none();
+        let playing = self.grabbed && self.menu.is_none() && !self.chat.open;
         let mouse = if playing && !self.claim_mode {
             self.mouse
         } else {
@@ -866,9 +967,18 @@ impl App {
     fn run_ui(&mut self) -> Option<(Vec<egui::ClippedPrimitive>, egui::TexturesDelta, f32)> {
         let window = self.window.clone()?;
         let e = self.egui.as_mut()?;
-        let raw = e.winit.take_egui_input(&window);
+        let mut raw = e.winit.take_egui_input(&window);
+        if self.chat.swallow {
+            // The Enter or T that opened the chat line is not part of it.
+            raw.events
+                .retain(|ev| !matches!(ev, egui::Event::Text(_) | egui::Event::Key { .. }));
+            self.chat.swallow = false;
+        }
         let now = self.start.elapsed().as_secs_f64();
         let mut actions = Vec::new();
+        let mut chat_actions = Vec::new();
+        let chat = &mut self.chat;
+        let storage_view = self.storage_view.as_ref();
         let notices = self.notices.visible(now);
         let menu = self.menu;
         let login = &mut self.login;
@@ -894,7 +1004,15 @@ impl App {
                     s.plot_allowance
                 )
             });
-            let aim_hint = (menu.is_none() && !claim_mode && s.aiming_at_shrine().is_some()).then_some(("E", "travel"));
+            let aim_hint = if menu.is_some() || claim_mode {
+                None
+            } else if s.aiming_at_shrine().is_some() {
+                Some(("E", "travel"))
+            } else if s.aiming_at_storage().is_some() {
+                Some(("E", "open"))
+            } else {
+                None
+            };
             menus::hud(
                 &ctx,
                 &Hud {
@@ -936,8 +1054,32 @@ impl App {
                     },
                     &mut actions,
                 ),
+                Some(Menu::Storage(pos)) => {
+                    let title = s
+                        .world
+                        .block(pos)
+                        .map(|b| s.world.registry.get(b))
+                        .filter(|d| d.storage > 0)
+                        .map(|d| bm_core::items::title_case(&d.name))
+                        .unwrap_or_else(|| "Storage".into());
+                    let slots = storage_view.filter(|v| v.pos == pos).map(|v| v.slots.as_slice());
+                    menus::storage(
+                        &ctx,
+                        &StorageWindow {
+                            items: &s.items,
+                            icons: &s.icons,
+                            selected: s.selected,
+                            title,
+                            pos,
+                            slots,
+                        },
+                        drag,
+                        &mut actions,
+                    );
+                }
                 None => {}
             }
+            chat_actions = chat.show(&ctx, CHAT_BOTTOM, now);
             if let Some(j) = &s.journey {
                 let alpha = match j.landed {
                     Some(l) => (1.0 - (now - l) / ARRIVAL_FADE).clamp(0.0, 1.0) as f32,
@@ -950,6 +1092,12 @@ impl App {
         let prims = e.ctx.tessellate(out.shapes, out.pixels_per_point);
         let ppp = out.pixels_per_point;
         self.apply_actions(actions);
+        for a in chat_actions {
+            match a {
+                ChatAction::Send(m) => self.send(m),
+                ChatAction::Close => self.close_chat(),
+            }
+        }
         Some((prims, out.textures_delta, ppp))
     }
 
@@ -1178,6 +1326,25 @@ impl App {
                     self.send(ClientMsg::Warp { shrine, planet: 1 });
                 }
             }
+            // Facing the demo chest, open beside the inventory.
+            "storage" => {
+                self.yaw = std::f64::consts::PI * 1.75;
+                self.pitch = -0.45;
+                self.open_menu(Menu::Storage(BlockPos::new(
+                    crate::demo::CHEST[0],
+                    crate::demo::CHEST[1],
+                    crate::demo::CHEST[2],
+                )));
+            }
+            // Lines on every channel, the box open for typing.
+            "chat" => {
+                self.pitch = -0.12;
+                if let Some(Link::Demo(d)) = &mut self.link {
+                    d.sample_chat();
+                }
+                self.open_chat(false);
+                self.chat.input = "/w Wren on my way".into();
+            }
             // Looking up at the other planets (pair with BOUNDMORE_TIME).
             "sky" => {
                 let local = self.local_ticks();
@@ -1328,10 +1495,16 @@ impl ApplicationHandler for App {
                     }
                     return;
                 }
-                if !in_game || egui_typing || event.repeat {
+                // Everything typed into the chat line is the line's: no game
+                // key, menu key or hotbar digit acts while it is open.
+                if !in_game || self.chat.open || egui_typing || event.repeat {
                     return;
                 }
                 match code {
+                    KeyCode::Enter | KeyCode::NumpadEnter | KeyCode::KeyT => {
+                        self.open_chat(true);
+                        return;
+                    }
                     KeyCode::Escape => {
                         if self.menu.is_some() {
                             self.close_menu(true);
@@ -1345,15 +1518,18 @@ impl ApplicationHandler for App {
                         self.toggle(m);
                     }
                     KeyCode::KeyE => {
-                        if matches!(self.menu, Some(Menu::Travel(_))) {
+                        if matches!(self.menu, Some(Menu::Travel(_) | Menu::Storage(_))) {
                             self.close_menu(true);
                         } else if self.menu.is_none()
                             && !self.claim_mode
                             && let Some(s) = &self.session
                             && !s.travelling()
-                            && let Some(shrine) = s.aiming_at_shrine()
                         {
-                            self.open_menu(Menu::Travel(shrine));
+                            if let Some(shrine) = s.aiming_at_shrine() {
+                                self.open_menu(Menu::Travel(shrine));
+                            } else if let Some(pos) = s.aiming_at_storage() {
+                                self.open_storage(pos);
+                            }
                         }
                     }
                     KeyCode::KeyP if self.menu.is_none() => {
@@ -1370,8 +1546,8 @@ impl ApplicationHandler for App {
                 }
             }
             WindowEvent::MouseInput { state, button, .. } => {
-                if !in_game || self.menu.is_some() {
-                    return; // the menus have it
+                if !in_game || self.menu.is_some() || self.chat.open {
+                    return; // the menus (or the chat box) have it
                 }
                 let down = state == ElementState::Pressed;
                 if down && !self.grabbed {
@@ -1399,7 +1575,7 @@ impl ApplicationHandler for App {
                 }
             }
             WindowEvent::MouseWheel { delta, .. } => {
-                if self.menu.is_some() {
+                if self.menu.is_some() || self.chat.open {
                     return;
                 }
                 let steps = match delta {
@@ -1422,6 +1598,7 @@ impl ApplicationHandler for App {
         if let DeviceEvent::MouseMotion { delta: (dx, dy) } = event
             && self.grabbed
             && self.menu.is_none()
+            && !self.chat.open
         {
             self.yaw = (self.yaw + dx * MOUSE_SENSITIVITY).rem_euclid(std::f64::consts::TAU);
             let limit = bm_core::movement::pitch_radians(bm_core::movement::PITCH_LIMIT);
@@ -1583,5 +1760,60 @@ mod tests {
             world.block(p).is_some_and(|b| world.flags.solid(b))
         });
         assert_eq!(s.aiming_at_shrine(), Some(shrine));
+    }
+
+    fn app() -> App {
+        App::new(Options {
+            server: String::new(),
+            name: None,
+            password: None,
+            register: false,
+            cert: PathBuf::new(),
+            vsync: false,
+            assets: PathBuf::from("assets"),
+            settings_path: std::env::temp_dir().join("boundmore-test-settings-unused.toml"),
+            demo: None,
+        })
+    }
+
+    fn closed(pos: BlockPos) -> StorageView {
+        StorageView {
+            pos,
+            slots: vec![],
+            closed: true,
+        }
+    }
+
+    #[test]
+    fn the_answer_to_our_own_close_does_not_close_a_reopened_chest() {
+        let mut a = app();
+        let pos = BlockPos::new(1, 2, 3);
+        a.open_menu(Menu::Storage(pos));
+        a.close_menu(false);
+        a.open_menu(Menu::Storage(pos));
+        assert_eq!(a.storage_closing, vec![pos]);
+        // The server confirms the first close: the window stays.
+        a.storage_update(closed(pos));
+        assert_eq!(a.menu, Some(Menu::Storage(pos)));
+        assert!(a.storage_closing.is_empty());
+        // Then it says the block is gone or out of reach: it closes, and
+        // nothing more is asked of the server.
+        a.storage_update(closed(pos));
+        assert_eq!(a.menu, None);
+        assert!(a.storage_closing.is_empty());
+        // Another block's close never touches this one.
+        a.open_menu(Menu::Storage(pos));
+        a.storage_update(closed(BlockPos::new(9, 9, 9)));
+        assert_eq!(a.menu, Some(Menu::Storage(pos)));
+    }
+
+    #[test]
+    fn chat_is_opened_and_closed_without_regrabbing_under_a_menu() {
+        let mut a = app();
+        a.open_chat(true);
+        assert!(a.chat.open && a.chat.swallow);
+        a.menu = Some(Menu::Inventory);
+        a.close_chat();
+        assert!(!a.chat.open && !a.grabbed);
     }
 }

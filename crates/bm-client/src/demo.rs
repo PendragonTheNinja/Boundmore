@@ -20,7 +20,8 @@ use bm_core::{
     LocalPos, MoveConfig, PlanetLook, PlanetShape, PlayerState, PlotPos, RecipeBook, Station,
 };
 use bm_protocol::{
-    ClaimView, ClientMsg, EditAction, JobView, PlanetInfo, PlanetSummary, ServerMsg, StationView, Travel, Welcome,
+    Channel, ChatLine, ClaimView, ClientMsg, EditAction, JobView, MAX_CHAT_LEN, PlanetInfo, PlanetSummary, ServerMsg,
+    StationView, StorageView, Travel, Welcome,
 };
 use glam::DVec3;
 use serde::Deserialize;
@@ -32,6 +33,8 @@ const GROUND: i64 = 43;
 const SHAPE: (u32, u32) = (8, 4);
 /// The warp shrine by the spawn, on every demo planet.
 pub const SHRINE: [i64; 3] = [128, 44, 131];
+/// A storage chest with a few things in it, on the first planet.
+pub const CHEST: [i64; 3] = [126, 44, 126];
 /// The demo's planets: name, kind, and the width shown for it in the sky and
 /// menu. (The demo's own patch is tiny; these are sizes real planets have.)
 const PLANETS: [(&str, &str, u32); 4] = [
@@ -84,6 +87,9 @@ pub struct Demo {
     stations: HashMap<BlockPos, DemoStation>,
     watched: Option<BlockPos>,
     claims: Vec<ClaimView>,
+    /// Storage blocks' contents by position (first planet only).
+    chests: HashMap<BlockPos, Vec<Option<ItemStack>>>,
+    open_chest: Option<BlockPos>,
     last: Instant,
     push_timer: f64,
 }
@@ -176,6 +182,25 @@ impl Demo {
                 plots: theirs,
             },
         ];
+        let mut chest = vec![None; 20];
+        let inside: [(usize, &str, u16, u16); 8] = [
+            (0, "copper_ore", 24, 0),
+            (1, "coal", 30, 0),
+            (2, "stone", 100, 0),
+            (3, "stone", 100, 0),
+            (5, "timber", 40, 0),
+            (6, "glass", 16, 0),
+            (10, "stone_axe", 1, 12),
+            (11, "copper_ingot", 5, 0),
+        ];
+        for (slot, name, count, wear) in inside {
+            chest[slot] = Some(ItemStack {
+                item: id(name),
+                count,
+                wear,
+            });
+        }
+        let chests = HashMap::from([(BlockPos::new(CHEST[0], CHEST[1], CHEST[2]), chest)]);
         let mut d = Self {
             account: account.to_string(),
             events: VecDeque::new(),
@@ -191,6 +216,8 @@ impl Demo {
             stations,
             watched: None,
             claims,
+            chests,
+            open_chest: None,
             last: Instant::now(),
             push_timer: 0.0,
         };
@@ -446,10 +473,93 @@ impl Demo {
                 }
             }
             ClientMsg::Edit { seq, pos, action, .. } => self.edit(seq, pos, action),
-            ClientMsg::Warp { planet, .. } => self.warp(planet),
+            ClientMsg::Warp { planet, .. } => {
+                self.open_chest = None;
+                self.warp(planet);
+            }
+            ClientMsg::OpenStorage { pos } => self.open_storage(pos),
+            ClientMsg::StorageMove { pos, from, to, count } => {
+                if self.open_chest == Some(pos)
+                    && let Some(chest) = self.chests.get_mut(&pos)
+                    && crate::storage::apply_move(&self.items, &mut self.inv.slots, chest, from, to, count)
+                {
+                    self.push_storage(pos, false);
+                }
+            }
+            ClientMsg::Chat { channel, text } => {
+                let text: String = text.chars().filter(|c| !c.is_control()).take(MAX_CHAT_LEN).collect();
+                let line = ChatLine {
+                    channel,
+                    from: self.account.clone(),
+                    text,
+                    time: unix_now(),
+                };
+                self.events
+                    .push_back(NetEvent::Msg(ServerMsg::Chat { lines: vec![line] }));
+            }
             ClientMsg::StartBreak { .. } | ClientMsg::Hello { .. } => {}
         }
         self.slots_since(&before);
+    }
+
+    fn open_storage(&mut self, pos: Option<BlockPos>) {
+        // As the server does: the block open before is closed first, and a
+        // close is confirmed.
+        if let Some(old) = self.open_chest.take() {
+            self.push_storage(old, true);
+        }
+        let Some(pos) = pos else { return };
+        if self.here == 0 && self.chests.contains_key(&pos) {
+            self.open_chest = Some(pos);
+            self.push_storage(pos, false);
+        } else {
+            self.push_storage(pos, true);
+        }
+    }
+
+    fn push_storage(&mut self, pos: BlockPos, closed: bool) {
+        let slots = match closed {
+            false => self.chests.get(&pos).cloned().unwrap_or_default(),
+            true => Vec::new(),
+        };
+        self.events
+            .push_back(NetEvent::Msg(ServerMsg::Storage(StorageView { pos, slots, closed })));
+    }
+
+    /// A little of each channel, as a server would send on joining and
+    /// after: the universe history first, then lines as they are said.
+    pub fn sample_chat(&mut self) {
+        let line = |channel: Channel, from: &str, text: &str| ChatLine {
+            channel,
+            from: from.into(),
+            text: text.into(),
+            time: unix_now(),
+        };
+        let me = self.account.clone();
+        let lines = vec![
+            line(Channel::Universe, "Ash", "Anyone found copper on Saffra yet?"),
+            line(
+                Channel::Universe,
+                "Marrow",
+                "Plenty in the river gravels by the big mesa.",
+            ),
+            line(Channel::Universe, "", "Wren arrived on Hearthmoor"),
+            line(Channel::Local, "Wren", "Is that your workbench? Nice spot."),
+            line(Channel::Planet, "Tamsin", "Selling glass, forty for a stack of timber."),
+            line(
+                Channel::Whisper(me.clone()),
+                "Wren",
+                "Want to dig the hill behind your claim together?",
+            ),
+            line(
+                Channel::Whisper("Wren".into()),
+                &me,
+                "Sure, give me a minute to empty my pack.",
+            ),
+            line(Channel::Local, &me, "Back in a moment."),
+            line(Channel::Universe, "", "Ash left"),
+        ];
+        self.events.push_back(NetEvent::Msg(ServerMsg::Chat { lines }));
     }
 
     fn craft(&mut self, recipe: u16, count: u16, station: Option<BlockPos>) {
@@ -488,7 +598,13 @@ impl Demo {
     fn edit(&mut self, seq: u32, pos: BlockPos, action: EditAction) {
         let pos = shape().wrap_block(pos);
         let old = self.ground(pos);
+        let full_chest = self.here == 0 && self.chests.get(&pos).is_some_and(|c| c.iter().any(Option::is_some));
         let (block, accepted) = match action {
+            EditAction::Break if full_chest => {
+                let name = bm_core::items::title_case(&self.blocks.get(old).name);
+                self.notice(&format!("Empty the {name} before breaking it"));
+                (old, false)
+            }
             EditAction::Break => match self.items.drop_of(old) {
                 Some(item) if self.inv.add_all(&self.items, item, 1).is_none() => {
                     self.notice("Your inventory is full");
@@ -513,6 +629,15 @@ impl Demo {
         };
         if accepted {
             self.planets[self.here].edits.insert(pos, block);
+            if self.here == 0 {
+                let slots = self.blocks.get(block).storage as usize;
+                if slots > 0 {
+                    self.chests.insert(pos, vec![None; slots]);
+                } else if self.chests.remove(&pos).is_some() && self.open_chest == Some(pos) {
+                    self.open_chest = None;
+                    self.push_storage(pos, true);
+                }
+            }
         }
         self.events.push_back(NetEvent::Msg(ServerMsg::EditResult {
             seq,
@@ -548,6 +673,7 @@ fn demo_planets(blocks: &BlockRegistry) -> Vec<DemoPlanet> {
                 put(130, 44, 126, b("furnace"));
                 put(126, 44, 131, b("claim_stone"));
                 put(124, 44, 125, b("glow_crystal"));
+                put(CHEST[0], CHEST[1], CHEST[2], b("storage_chest"));
             }
             if *kind != "arid" {
                 for (tx, tz) in [(121, 120), (137, 119), (117, 135), (140, 138)] {
@@ -594,6 +720,13 @@ fn demo_planets(blocks: &BlockRegistry) -> Vec<DemoPlanet> {
             }
         })
         .collect()
+}
+
+fn unix_now() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0)
 }
 
 fn recipe_index(book: &RecipeBook, items: &ItemRegistry, output: &str) -> u16 {
@@ -653,5 +786,76 @@ mod tests {
         // Warping to where you are is refused with a notice.
         d.send(ClientMsg::Warp { shrine, planet: 1 });
         assert!(matches!(&d.poll()[0], NetEvent::Msg(ServerMsg::Notice { .. })));
+    }
+
+    fn storage_views(ev: &[NetEvent]) -> Vec<StorageView> {
+        ev.iter()
+            .filter_map(|e| match e {
+                NetEvent::Msg(ServerMsg::Storage(v)) => Some(v.clone()),
+                _ => None,
+            })
+            .collect()
+    }
+
+    #[test]
+    fn the_demo_chest_opens_moves_and_refuses_breaking() {
+        use bm_protocol::SlotRef;
+        let mut d = Demo::new("Tester");
+        d.poll();
+        let pos = BlockPos::new(CHEST[0], CHEST[1], CHEST[2]);
+        d.send(ClientMsg::OpenStorage { pos: Some(pos) });
+        let views = storage_views(&d.poll());
+        assert_eq!(views.len(), 1);
+        assert!(!views[0].closed && views[0].slots.len() == 20);
+        let coal = views[0].slots[1].unwrap();
+        // Chest to an empty inventory slot: both sides are told.
+        d.send(ClientMsg::StorageMove {
+            pos,
+            from: SlotRef::Storage(1),
+            to: SlotRef::Inventory(35),
+            count: coal.count,
+        });
+        let ev = d.poll();
+        assert_eq!(storage_views(&ev)[0].slots[1], None);
+        assert!(
+            ev.iter()
+                .any(|e| matches!(e, NetEvent::Msg(ServerMsg::Slots { changes })
+            if changes.contains(&(35, Some(coal)))))
+        );
+        // A chest with things in it stays.
+        d.send(ClientMsg::Edit {
+            seq: 1,
+            at: 0,
+            pos,
+            action: EditAction::Break,
+        });
+        let ev = d.poll();
+        assert!(
+            ev.iter()
+                .any(|e| matches!(e, NetEvent::Msg(ServerMsg::EditResult { accepted: false, .. })))
+        );
+        assert!(ev.iter().any(|e| matches!(e, NetEvent::Msg(ServerMsg::Notice { text })
+            if text == "Empty the Storage Chest before breaking it")));
+        // Closing is confirmed.
+        d.send(ClientMsg::OpenStorage { pos: None });
+        let views = storage_views(&d.poll());
+        assert!(views.len() == 1 && views[0].closed && views[0].slots.is_empty());
+    }
+
+    #[test]
+    fn the_demo_echoes_chat_cleaned() {
+        let mut d = Demo::new("Tester");
+        d.poll();
+        d.send(ClientMsg::Chat {
+            channel: Channel::Planet,
+            text: format!("hi\u{7}{}", "x".repeat(400)),
+        });
+        let ev = d.poll();
+        let Some(NetEvent::Msg(ServerMsg::Chat { lines })) = ev.first() else {
+            panic!()
+        };
+        assert_eq!(lines[0].from, "Tester");
+        assert!(lines[0].text.starts_with("hix"));
+        assert_eq!(lines[0].text.chars().count(), MAX_CHAT_LEN);
     }
 }
