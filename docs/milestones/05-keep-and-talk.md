@@ -1,6 +1,6 @@
 # Milestone 5: Keep and Talk
 
-*Spec written 2026-10-19. In progress.*
+*Spec written 2026-10-19. Built 2026-10-19; awaiting Nathan's play-test.*
 
 ## Why now
 
@@ -37,9 +37,9 @@ Mail, Do Not Disturb, chat saved across restarts, guild chat, profanity filterin
 
 ## Status
 
-- [ ] Contract, spec
-- [ ] Server (agent)
-- [ ] Client (agent)
-- [ ] Art (agent)
-- [ ] Integrated, play-tested headlessly
-- [ ] Nathan's play-test
+- [x] Contract, spec
+- [x] Server: storage blocks (`planet_storage` table, same write batch, `SAVE_VERSION` unchanged), shared access rules with stations, chat channels, cleaning, rate limit, 50-line universe history, arrival and leave lines. 30 unit and 15 end-to-end tests.
+- [x] Client: chest window beside the inventory (drag, Shift-click, half-drag), chat box with fading lines, history, `/l /p /u /w /r`, channel colours. Screenshots `docs/media/m5-*.png`.
+- [x] Art: storage chest faces.
+- [x] Integrated: 215 tests, fmt and clippy clean; a real client spoke on the universe channel and saw it back.
+- [ ] Nathan's play-test. Not yet seen on a real server: a chest placed and used by hand, a two-player whisper (both covered by end-to-end tests).
