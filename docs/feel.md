@@ -87,6 +87,17 @@ Not built yet, from Boundless: energy per swing (damage / 50), skills (power, ma
 
 Not built yet, from Boundless: the better torch (tallow and sackcloth, at a workbench), gem torches (tinted light, brighter), lanterns (refinery: torch and glass), the glow forge boon (6, 9 or 12 m), the light-source skill.
 
+## Gathering and crafting (`assets/planets.toml` flora, `assets/recipes.toml`; M11)
+
+| Value | Now | Source, or guess |
+|---|---|---|
+| What each plant, boulder and fungus drops | tuning 4.4a (e.g. spikeleaf 1.3 fibrous leaves, a boulder 1.3 flint) | Boundless, exact |
+| Where each grows, and how thick | spikeleaf on sand and dry patches (starter world too), frostbell on snow, nightlily by water, the rest on turf; boulders everywhere; fungi in caves, the glowcap deepest; about 20 plants and 5 boulders a minute's walk on the starter world | **Guess** (Boundless's placement is not published). Does it feel like a Boundless world? |
+| Recipes, times, heat | Boundless's, item for item, up to iron (spec table) | Boundless, exact |
+| Glue | 2 sap | **Stand-in** until creatures bring bone (Nathan, 2026-10-20) |
+| Relic seam | as common as copper about 0.7 to 1 | **Guess** |
+| A plant whose ground breaks | falls, its drops to the breaker | **Guess** |
+
 ## World (`bm-server/src/config.rs`, `bm-worldgen`)
 
 | Value | Now | Check |

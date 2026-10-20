@@ -135,9 +135,33 @@ Spark, power coils, machine wear and spanners (a later machines milestone); the 
 
 ## Status
 
-- [x] Spec (this file)
-- [x] Contract and data (2026-10-20)
-- [ ] Server: machines, furnace heat and fuel, gathering drops
-- [ ] Worldgen: flora and the relic seam
-- [ ] Client and art: models and textures, machine screens
-- [ ] Integrated, tested, Nathan's play-test
+*Built 2026-10-20 on branch `claude/amazing-pascal-lwttor`; awaiting merge and Nathan's play-test.*
+
+- [x] Spec, contract and data (protocol 15)
+- [x] Server (`crates/bm-server/src/machines.rs`, `game/stations.rs`):
+  - The crafting table queues its own recipes. Hand recipes stay instant everywhere, a table included; Boundless queued them at a table.
+  - Four-block workbenches and extractors keep one record at the group's first block. A fifth touching block is refused ("Only 4 Workbench blocks can touch"); idle messages explain an incomplete machine.
+  - The furnace is a crucible on its base, with one fuel slot. Heat is drawn as each craft starts, and a craft waits without fuel. `StationFuel` moves fuel in and out.
+  - Fuel, jobs or output stop a furnace being broken; leftover heat alone does not (it rarely matches a recipe, so it would never be breakable), and it is lost when the furnace breaks.
+  - A plant falls with its ground and gives its drops to the breaker (a guess).
+  - `SAVE_VERSION` 4: a version 3 universe upgrades its station rows on opening (checked against one made by `main`).
+- [x] Worldgen (`bm-worldgen` `FloraSpec`, `planets.toml`):
+  - The relic seam is last in every kind's ores.
+  - Each kind has a flora list: spikeleaf on sand and in dry patches of the starter world, the other plants on turf by kind, frostbell on snow, nightlily by water, boulders everywhere, and six fungi on cave floors with the glowcap deepest.
+  - Placement is deterministic, never in water or solids, and a prop's ground is in its own chunk.
+  - Existing planets gain the seam and flora in chunks never saved ("flora added"); `GENERATOR_VERSION` unchanged; kind pins re-pinned, with the M8 pins kept and a test that old settings still give them.
+  - Starter world: about 20 plants and 5 boulders a minute's walk.
+- [x] Client and art:
+  - Plant models are crossed quads with cut-out textures; boulders are irregular rocks, varied per cell; fungi are a stem and cap.
+  - Textures for all 20 objects, the three machines and the seam; icons for all 28 new items.
+  - Crafting screens: hand recipes only in the hand, table recipes at a table, idle messages, and the furnace's fuel slot, heat and heat per recipe.
+  - `--demo-ui table`, `furnace`, `extractor` and `flora`; screenshots `docs/media/m11-flora.png`, `docs/media/m11-furnace.png`.
+- [x] Integrated: 402 tests, fmt and clippy clean; a live run against a real server showed the generated world with boulders, the starter hand stone, and no warnings or slow ticks.
+- [ ] Nathan's play-test. To judge:
+  - Where things grow and how many: all guesses, tunable in `planets.toml`.
+  - Machine and furnace behaviour against Boundless.
+  - Dragging fuel with a real mouse.
+- Follow-ups:
+  - Art: knot aloe looks thin in game; hornroot's flowers are boxy up close.
+  - Existing single workbench and furnace blocks need their partners (3 more workbench blocks; a crucible on the furnace) before they work again.
+  - Spark, coils, wear and spanners; the refinery, mixer, compactor and forge; bone and the real glue recipe; food and seeds: later milestones.
