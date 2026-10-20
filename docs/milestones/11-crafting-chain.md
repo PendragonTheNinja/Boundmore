@@ -111,14 +111,32 @@ Numbers come from `docs/research/boundless-tuning.md` 4.4 to 4.10 and the decode
 9. **Saves**: new blocks and items are appended; station contents keep their format or are versioned with an upgrade path. The upgrade check from `main` passes.
 10. **Tests** for each rule; screenshots of plants, boulders and fungi, the four-block workbench and the furnace.
 
+## Shared contract (built first, by the main session)
+
+- **bm-core**: `Station::CraftingTable`, `Station::Extractor` (appended; serde names `crafting_table`, `extractor`); `Assembly { Four, FurnaceBase, FurnaceCrucible }` and `BlockDef::assembly`; `Model { Torch, Plant, Boulder, Fungus }` and `BlockDef::model`; `Health::Plant` (800, never armoured: `mining`); `BlockDef::fuel` and `ItemDef::fuel` (heat when burnt); `Recipe::heat`.
+- **Data**: every block, item and recipe above, in `assets/`. Flora are floor props with `drops = ""` and their drops as `bonus`; they are not placeable.
+- **bm-protocol 15**:
+  - `StationView` gains `idle` (why it does not work), `fuel` and `heat`; its `pos` is the machine's first block.
+  - New `ClientMsg::StationFuel { pos, slot, count, into }`.
+
+## Plan and who does what
+
+| Part | Owner |
+|---|---|
+| Spec, contract, data | main session |
+| Server: four-block machines and furnaces (assembly checks, a group's one queue), the crafting table, fuel and heat, `StationFuel`, saves for fuel and heat, the crafting tests | agent (bm-server) |
+| Worldgen: flora placement (`planets.toml` lists per kind), the relic seam in every kind's ores, appended to existing planets as wayshards were | agent (bm-worldgen, planets.toml) |
+| Client and art: plant, boulder and fungus models (bm-mesh props), textures and icons (bm-texgen), the crafting table and machine screens, the furnace fuel slot and heat, hand crafting showing hand recipes | agent (bm-client, bm-mesh, bm-texgen) |
+| Integration, headless play-test, docs | main session |
+
 ## Non-goals
 
 Spark, power coils, machine wear and spanners (a later machines milestone); the refinery, mixer, compactor and forge; bone and the real glue recipe (creatures); food and farming (the beans, tubers and petals are kept for later); seeds; the gathering epic's dig-up-and-replant; the iron and titanium furnaces; Boundless's other chisel materials.
 
 ## Status
 
-- [ ] Spec (this file)
-- [ ] Contract and data
+- [x] Spec (this file)
+- [x] Contract and data (2026-10-20)
 - [ ] Server: machines, furnace heat and fuel, gathering drops
 - [ ] Worldgen: flora and the relic seam
 - [ ] Client and art: models and textures, machine screens

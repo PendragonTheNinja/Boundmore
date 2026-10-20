@@ -13,7 +13,8 @@
 #   translucent drawn in the blended pass (water, glass)
 #   breakable   false for the world floor
 #   placeable   may appear in the build hotbar
-#   health      soft (800) | hard (1200, the default) | seam (2400) | prop (two
+#   health      soft (800) | hard (1200, the default) | seam (2400) | plant
+#               (800, never armoured: plants, boulders, fungi) | prop (two
 #               swings of anything): with the planet's tier, how much damage
 #               breaking it takes (bm-core `mining`, tuning 2.2)
 #   opacity     for translucent blocks, how opaque they draw (default 1)
@@ -22,7 +23,8 @@
 #               assets/textures/blocks/ (docs/art-direction.md)
 #   material    rock | soil | wood | plant | crystal: which tools break it faster
 #   drops       the item it yields (default: its own item; "" for nothing)
-#   station     workbench | furnace: a crafting station
+#   station     crafting_table | workbench | extractor | furnace: a crafting
+#               station
 #   storage     slots of storage inside (0, the default: none)
 #   colourable  takes a palette colour (default true; ADR-0007)
 #   chisel      none (default) | slope (natural terrain, as in Boundless) | any
@@ -30,6 +32,10 @@
 #   mount       floor | north | east | south | west: a prop (a torch) drawn as
 #               a small model, on top of the block below or against the side
 #               of its neighbour that way (north = z - 1); not solid
+#   assembly    four | furnace_base | furnace_crucible: how a machine's
+#               blocks must stand to work (milestone 11)
+#   model       torch (default) | plant | boulder | fungus: how a prop draws
+#   fuel        heat it gives burnt in a furnace (0: not fuel; tuning 4.7)
 #   bonus       extra yields by planet tier 1 to 8, the expected count each:
 #               [{ item = "flint", per_tier = [0.015, ...] }] (tuning 4.4)
 
@@ -180,6 +186,8 @@ placeable = true
 health = "hard"
 textures = { side = "trunk_side", top = "trunk_top", bottom = "trunk_top" }
 material = "wood"
+fuel = 30
+bonus = [{ item = "sap", per_tier = [0.08, 0.08, 0.08, 0.08, 0.12, 0.12, 0.12, 0.12] }]
 
 [[block]]
 name = "foliage"
@@ -249,6 +257,7 @@ placeable = true
 health = "hard"
 textures = { all = "timber" }
 material = "wood"
+fuel = 15
 
 [[block]]
 name = "brick"
@@ -291,6 +300,8 @@ health = "hard"
 textures = { top = "workbench_top", side = "workbench_side", bottom = "timber" }
 material = "wood"
 station = "workbench"
+assembly = "four"
+fuel = 0
 
 [[block]]
 name = "furnace"
@@ -307,6 +318,7 @@ textures = { top = "furnace_top", side = "furnace_side", bottom = "stone" }
 material = "rock"
 station = "furnace"
 light = 7
+assembly = "furnace_base"
 
 [[block]]
 name = "claim_stone"
@@ -536,3 +548,406 @@ light = 10
 textures = { all = "torch" }
 mount = "west"
 drops = "torch"
+
+# Milestone 11: the crafting chain (docs/milestones/11-crafting-chain.md).
+[[block]]
+name = "crafting_table"
+colourable = false
+color = [160, 118, 72]
+top_color = [190, 150, 100]
+solid = true
+opaque = true
+translucent = false
+breakable = true
+placeable = true
+health = "hard"
+textures = { top = "crafting_table_top", side = "crafting_table_side", bottom = "timber" }
+material = "wood"
+station = "crafting_table"
+
+[[block]]
+name = "extractor"
+colourable = false
+color = [110, 116, 124]
+top_color = [140, 146, 150]
+solid = true
+opaque = true
+translucent = false
+breakable = true
+placeable = true
+health = "hard"
+textures = { top = "extractor_top", side = "extractor_side", bottom = "stone" }
+material = "rock"
+station = "extractor"
+assembly = "four"
+
+[[block]]
+name = "furnace_crucible"
+colourable = false
+color = [104, 98, 96]
+top_color = [150, 90, 60]
+solid = true
+opaque = true
+translucent = false
+breakable = true
+placeable = true
+health = "hard"
+textures = { top = "furnace_crucible_top", side = "furnace_crucible_side", bottom = "stone" }
+material = "rock"
+assembly = "furnace_crucible"
+
+[[block]]
+name = "relic_seam"
+color = [120, 112, 104]
+solid = true
+opaque = true
+translucent = false
+breakable = true
+placeable = false
+health = "seam"
+textures = { all = "relic_seam" }
+material = "rock"
+colourable = false
+drops = "relic_fragment"
+bonus = [{ item = "relic_fragment", per_tier = [0.5, 0.5, 0.7, 0.7, 1.05, 1.05, 1.05, 1.05] }]
+
+[[block]]
+name = "spikeleaf"
+colourable = false
+color = [176, 168, 96]
+solid = false
+opaque = false
+translucent = false
+breakable = true
+placeable = false
+health = "plant"
+textures = { all = "spikeleaf" }
+material = "plant"
+mount = "floor"
+model = "plant"
+drops = ""
+bonus = [{ item = "fibrous_leaf", per_tier = [1.3, 1.3, 1.3, 1.3, 1.3, 1.3, 1.3, 1.3] }, { item = "spicy_bean", per_tier = [0.17, 0.17, 0.17, 0.17, 0.17, 0.17, 0.17, 0.17] }, { item = "tuber", per_tier = [1.3, 1.3, 1.3, 1.3, 1.3, 1.3, 1.3, 1.3] }]
+
+[[block]]
+name = "hornroot"
+colourable = false
+color = [200, 120, 70]
+solid = false
+opaque = false
+translucent = false
+breakable = true
+placeable = false
+health = "plant"
+textures = { all = "hornroot" }
+material = "plant"
+mount = "floor"
+model = "plant"
+drops = ""
+bonus = [{ item = "spicy_bean", per_tier = [1.3, 1.3, 1.3, 1.3, 1.3, 1.3, 1.3, 1.3] }, { item = "sweet_bean", per_tier = [0.15, 0.15, 0.15, 0.15, 0.15, 0.15, 0.15, 0.15] }, { item = "bitter_bean", per_tier = [0.02, 0.02, 0.02, 0.02, 0.02, 0.02, 0.02, 0.02] }, { item = "waxy_tuber", per_tier = [1.3, 1.3, 1.3, 1.3, 1.3, 1.3, 1.3, 1.3] }]
+
+[[block]]
+name = "stiltfrond"
+colourable = false
+color = [96, 150, 90]
+solid = false
+opaque = false
+translucent = false
+breakable = true
+placeable = false
+health = "plant"
+textures = { all = "stiltfrond" }
+material = "plant"
+mount = "floor"
+model = "plant"
+drops = ""
+bonus = [{ item = "fleshy_leaf", per_tier = [1.3, 1.3, 1.3, 1.3, 1.3, 1.3, 1.3, 1.3] }, { item = "fibrous_leaf", per_tier = [0.15, 0.15, 0.15, 0.15, 0.15, 0.15, 0.15, 0.15] }, { item = "inky_leaf", per_tier = [0.05, 0.05, 0.05, 0.05, 0.05, 0.05, 0.05, 0.05] }, { item = "exotic_tuber", per_tier = [1.3, 1.3, 1.3, 1.3, 1.3, 1.3, 1.3, 1.3] }]
+
+[[block]]
+name = "nightlily"
+colourable = false
+color = [120, 90, 170]
+solid = false
+opaque = false
+translucent = false
+breakable = true
+placeable = false
+health = "plant"
+textures = { all = "nightlily" }
+material = "plant"
+mount = "floor"
+model = "plant"
+drops = ""
+bonus = [{ item = "inky_leaf", per_tier = [1.3, 1.3, 1.3, 1.3, 1.3, 1.3, 1.3, 1.3] }, { item = "petal", per_tier = [0.05, 0.05, 0.05, 0.05, 0.05, 0.05, 0.05, 0.05] }, { item = "tuber", per_tier = [1.3, 1.3, 1.3, 1.3, 1.3, 1.3, 1.3, 1.3] }]
+
+[[block]]
+name = "ridge_cactus"
+colourable = false
+color = [90, 140, 80]
+solid = false
+opaque = false
+translucent = false
+breakable = true
+placeable = false
+health = "plant"
+textures = { all = "ridge_cactus" }
+material = "plant"
+mount = "floor"
+model = "plant"
+drops = ""
+bonus = [{ item = "petal", per_tier = [1.4, 1.4, 1.4, 1.4, 1.4, 1.4, 1.4, 1.4] }, { item = "exotic_tuber", per_tier = [1.3, 1.3, 1.3, 1.3, 1.3, 1.3, 1.3, 1.3] }]
+
+[[block]]
+name = "knot_aloe"
+colourable = false
+color = [110, 160, 120]
+solid = false
+opaque = false
+translucent = false
+breakable = true
+placeable = false
+health = "plant"
+textures = { all = "knot_aloe" }
+material = "plant"
+mount = "floor"
+model = "plant"
+drops = ""
+bonus = [{ item = "fleshy_leaf", per_tier = [1.35, 1.35, 1.35, 1.35, 1.35, 1.35, 1.35, 1.35] }, { item = "waxy_tuber", per_tier = [1.3, 1.3, 1.3, 1.3, 1.3, 1.3, 1.3, 1.3] }]
+
+[[block]]
+name = "frostbell"
+colourable = false
+color = [220, 230, 240]
+solid = false
+opaque = false
+translucent = false
+breakable = true
+placeable = false
+health = "plant"
+textures = { all = "frostbell" }
+material = "plant"
+mount = "floor"
+model = "plant"
+drops = ""
+bonus = [{ item = "bitter_bean", per_tier = [1.2, 1.2, 1.2, 1.2, 1.2, 1.2, 1.2, 1.2] }, { item = "petal", per_tier = [0.3, 0.3, 0.3, 0.3, 0.3, 0.3, 0.3, 0.3] }, { item = "tuber", per_tier = [1.3, 1.3, 1.3, 1.3, 1.3, 1.3, 1.3, 1.3] }]
+
+[[block]]
+name = "curlfern"
+colourable = false
+color = [80, 150, 70]
+solid = false
+opaque = false
+translucent = false
+breakable = true
+placeable = false
+health = "plant"
+textures = { all = "curlfern" }
+material = "plant"
+mount = "floor"
+model = "plant"
+drops = ""
+bonus = [{ item = "sweet_bean", per_tier = [1.3, 1.3, 1.3, 1.3, 1.3, 1.3, 1.3, 1.3] }, { item = "fleshy_leaf", per_tier = [0.12, 0.12, 0.12, 0.12, 0.12, 0.12, 0.12, 0.12] }, { item = "tuber", per_tier = [1.3, 1.3, 1.3, 1.3, 1.3, 1.3, 1.3, 1.3] }]
+
+[[block]]
+name = "boulder"
+colourable = false
+color = [130, 128, 124]
+solid = false
+opaque = false
+translucent = false
+breakable = true
+placeable = false
+health = "plant"
+textures = { all = "boulder" }
+material = "rock"
+mount = "floor"
+model = "boulder"
+drops = ""
+bonus = [{ item = "flint", per_tier = [1.3, 1.3, 1.3, 1.3, 1.3, 1.3, 1.3, 1.3] }, { item = "opal", per_tier = [0.55, 0.55, 0.55, 0.55, 0.55, 0.55, 0.55, 0.55] }]
+
+[[block]]
+name = "stalk_boulder"
+colourable = false
+color = [150, 140, 120]
+solid = false
+opaque = false
+translucent = false
+breakable = true
+placeable = false
+health = "plant"
+textures = { all = "stalk_boulder" }
+material = "rock"
+mount = "floor"
+model = "boulder"
+drops = ""
+bonus = [{ item = "rock_salt", per_tier = [1.3, 1.3, 1.3, 1.3, 1.3, 1.3, 1.3, 1.3] }, { item = "olivine", per_tier = [1.35, 1.35, 1.35, 1.35, 1.35, 1.35, 1.35, 1.35] }]
+
+[[block]]
+name = "stacked_boulder"
+colourable = false
+color = [120, 116, 110]
+solid = false
+opaque = false
+translucent = false
+breakable = true
+placeable = false
+health = "plant"
+textures = { all = "stacked_boulder" }
+material = "rock"
+mount = "floor"
+model = "boulder"
+drops = ""
+bonus = [{ item = "flint", per_tier = [1.3, 1.3, 1.3, 1.3, 1.3, 1.3, 1.3, 1.3] }, { item = "sulphur", per_tier = [1.4, 1.4, 1.4, 1.4, 1.4, 1.4, 1.4, 1.4] }, { item = "opal", per_tier = [0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2] }]
+
+[[block]]
+name = "ring_boulder"
+colourable = false
+color = [140, 136, 140]
+solid = false
+opaque = false
+translucent = false
+breakable = true
+placeable = false
+health = "plant"
+textures = { all = "ring_boulder" }
+material = "rock"
+mount = "floor"
+model = "boulder"
+drops = ""
+bonus = [{ item = "rock_salt", per_tier = [1.3, 1.3, 1.3, 1.3, 1.3, 1.3, 1.3, 1.3] }, { item = "cobalt", per_tier = [1.4, 1.4, 1.4, 1.4, 1.4, 1.4, 1.4, 1.4] }]
+
+[[block]]
+name = "chip_boulder"
+colourable = false
+color = [110, 110, 118]
+solid = false
+opaque = false
+translucent = false
+breakable = true
+placeable = false
+health = "plant"
+textures = { all = "chip_boulder" }
+material = "rock"
+mount = "floor"
+model = "boulder"
+drops = ""
+bonus = [{ item = "flint", per_tier = [1.3, 1.3, 1.3, 1.3, 1.3, 1.3, 1.3, 1.3] }, { item = "cobalt", per_tier = [1.3, 1.3, 1.3, 1.3, 1.3, 1.3, 1.3, 1.3] }, { item = "opal", per_tier = [0.9, 0.9, 0.9, 0.9, 0.9, 0.9, 0.9, 0.9] }]
+
+[[block]]
+name = "tapered_boulder"
+colourable = false
+color = [136, 126, 116]
+solid = false
+opaque = false
+translucent = false
+breakable = true
+placeable = false
+health = "plant"
+textures = { all = "tapered_boulder" }
+material = "rock"
+mount = "floor"
+model = "boulder"
+drops = ""
+bonus = [{ item = "rock_salt", per_tier = [1.3, 1.3, 1.3, 1.3, 1.3, 1.3, 1.3, 1.3] }, { item = "saltpetre", per_tier = [1.4, 1.4, 1.4, 1.4, 1.4, 1.4, 1.4, 1.4] }]
+
+[[block]]
+name = "tarspot_cap"
+colourable = false
+color = [150, 60, 50]
+solid = false
+opaque = false
+translucent = false
+breakable = true
+placeable = false
+health = "plant"
+textures = { all = "tarspot_cap" }
+material = "plant"
+mount = "floor"
+model = "fungus"
+drops = ""
+bonus = [{ item = "reactive_lamella", per_tier = [1.25, 1.25, 1.25, 1.25, 1.25, 1.25, 1.25, 1.25] }, { item = "vital_orb", per_tier = [0.4, 0.4, 0.4, 0.4, 0.4, 0.4, 0.4, 0.4] }]
+
+[[block]]
+name = "tongue_bracket"
+colourable = false
+color = [200, 150, 90]
+solid = false
+opaque = false
+translucent = false
+breakable = true
+placeable = false
+health = "plant"
+textures = { all = "tongue_bracket" }
+material = "plant"
+mount = "floor"
+model = "fungus"
+drops = ""
+bonus = [{ item = "edible_lamella", per_tier = [1.5, 1.5, 1.5, 1.5, 1.5, 1.5, 1.5, 1.5] }, { item = "pulsating_orb", per_tier = [1.75, 1.75, 1.75, 1.75, 1.75, 1.75, 1.75, 1.75] }]
+
+[[block]]
+name = "branch_coral"
+colourable = false
+color = [220, 120, 150]
+solid = false
+opaque = false
+translucent = false
+breakable = true
+placeable = false
+health = "plant"
+textures = { all = "branch_coral" }
+material = "plant"
+mount = "floor"
+model = "fungus"
+drops = ""
+bonus = [{ item = "reactive_lamella", per_tier = [1.5, 1.5, 1.5, 1.5, 1.5, 1.5, 1.5, 1.5] }, { item = "vital_orb", per_tier = [1.4, 1.4, 1.4, 1.4, 1.4, 1.4, 1.4, 1.4] }]
+
+[[block]]
+name = "burst_cap"
+colourable = false
+color = [180, 100, 200]
+solid = false
+opaque = false
+translucent = false
+breakable = true
+placeable = false
+health = "plant"
+textures = { all = "burst_cap" }
+material = "plant"
+mount = "floor"
+model = "fungus"
+drops = ""
+bonus = [{ item = "edible_lamella", per_tier = [1.25, 1.25, 1.25, 1.25, 1.25, 1.25, 1.25, 1.25] }, { item = "pulsating_orb", per_tier = [0.6, 0.6, 0.6, 0.6, 0.6, 0.6, 0.6, 0.6] }]
+
+[[block]]
+name = "weeping_cap"
+colourable = false
+color = [120, 110, 160]
+solid = false
+opaque = false
+translucent = false
+breakable = true
+placeable = false
+health = "plant"
+textures = { all = "weeping_cap" }
+material = "plant"
+mount = "floor"
+model = "fungus"
+drops = ""
+bonus = [{ item = "edible_lamella", per_tier = [1.25, 1.25, 1.25, 1.25, 1.25, 1.25, 1.25, 1.25] }, { item = "shadow_orb", per_tier = [0.6, 0.6, 0.6, 0.6, 0.6, 0.6, 0.6, 0.6] }]
+
+[[block]]
+name = "glowcap"
+colourable = false
+color = [120, 220, 210]
+solid = false
+opaque = false
+translucent = false
+breakable = true
+placeable = false
+health = "plant"
+textures = { all = "glowcap" }
+material = "plant"
+mount = "floor"
+model = "fungus"
+drops = ""
+bonus = [{ item = "glowing_lamella", per_tier = [1.25, 1.25, 1.25, 1.25, 1.25, 1.25, 1.25, 1.25] }, { item = "shimmering_orb", per_tier = [0.6, 0.6, 0.6, 0.6, 0.6, 0.6, 0.6, 0.6] }]
+light = 6

@@ -53,6 +53,7 @@ pub fn base_health(health: Health) -> u32 {
         Health::Hard => 1200,
         Health::Seam => 2400,
         Health::Prop => PROP_HITS,
+        Health::Plant => 800,
     }
 }
 
@@ -97,7 +98,9 @@ pub fn swing_damage(tool: &ToolStats, def: &BlockDef, tier: u8, crit: bool, area
     if crit {
         d *= 1.0 + tool.crit_effect as f64;
     }
-    d = (d - armour(tier) as f64).max(0.0);
+    // Gathering objects are never armoured [tuning 2.2].
+    let armour = if def.health == Health::Plant { 0 } else { armour(tier) };
+    d = (d - armour as f64).max(0.0);
     if !right_tool(tool, def) {
         d *= WRONG_TOOL;
     }

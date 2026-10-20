@@ -133,11 +133,21 @@ pub struct BlockDef {
     /// from rock). Rolled by the server only.
     #[serde(default)]
     pub bonus: Vec<Bonus>,
+    /// How a machine's blocks must stand to work (milestone 11).
+    #[serde(default)]
+    pub assembly: Option<Assembly>,
+    /// The model a prop is drawn as (default: a torch).
+    #[serde(default)]
+    pub model: Model,
+    /// Heat it gives burnt in a furnace (its item; 0: not fuel).
+    #[serde(default)]
+    pub fuel: u16,
 }
 
 /// A block's health category [tuning 2.2]: soft 800 (soil, sand, foliage),
-/// hard 1200 (rock, gravel, wood, ice, crystal), seam 2400 (ore), and props
-/// that break in two swings of anything.
+/// hard 1200 (rock, gravel, wood, ice, crystal), seam 2400 (ore), plants
+/// (gathering objects: plants, boulders, fungi) 800 that ignore armour, and
+/// props that break in two swings of anything.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Health {
@@ -146,6 +156,7 @@ pub enum Health {
     Hard,
     Seam,
     Prop,
+    Plant,
 }
 
 /// Where a prop attaches: on top of the block below it, or against the side
@@ -232,12 +243,47 @@ pub enum Material {
 
 /// Where a recipe is made.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
-#[serde(rename_all = "lowercase")]
+#[serde(rename_all = "snake_case")]
 pub enum Station {
-    /// In the hands, instantly.
+    /// In the hands, instantly; a crafting table offers these too.
     Hand,
+    /// Four blocks touching (`Assembly::Four`).
     Workbench,
+    /// A crucible on a base (`Assembly::FurnaceBase`); burns fuel for heat.
     Furnace,
+    /// One block, crafting over time (milestone 11). Appended: saved stations
+    /// keep their kind.
+    CraftingTable,
+    /// Four blocks touching.
+    Extractor,
+}
+
+/// How a machine's blocks must stand for it to work (milestone 11, as in
+/// Boundless).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Assembly {
+    /// Four blocks of this machine touching by faces, in any shape.
+    Four,
+    /// A furnace's base: works with its crucible on top.
+    FurnaceBase,
+    /// A furnace's crucible: sits on its base; does nothing alone.
+    FurnaceCrucible,
+}
+
+/// The small model a prop is drawn as.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Model {
+    /// A stick with a flame (on floors and walls).
+    #[default]
+    Torch,
+    /// Crossed leaves and stems.
+    Plant,
+    /// A rock on the ground.
+    Boulder,
+    /// A cap on a stem.
+    Fungus,
 }
 
 fn full_opacity() -> f32 {
@@ -307,7 +353,7 @@ pub enum RegistryError {
     MissingTextures(String),
     #[error("block `{0}` gives off light {1}; the most is 15")]
     TooBright(String, u8),
-    #[error("prop `{0}` must be neither solid nor opaque, with health `prop`")]
+    #[error("prop `{0}` must be neither solid nor opaque, with health `prop` or `plant`")]
     BadProp(String),
     #[error("block `{0}` has a bonus with a negative or non-finite count")]
     BadBonus(String),
@@ -352,7 +398,7 @@ impl BlockRegistry {
             if d.light > 15 {
                 return Err(RegistryError::TooBright(d.name.clone(), d.light));
             }
-            if d.is_prop() && (d.solid || d.opaque || d.health != Health::Prop) {
+            if d.is_prop() && (d.solid || d.opaque || !matches!(d.health, Health::Prop | Health::Plant)) {
                 return Err(RegistryError::BadProp(d.name.clone()));
             }
             if d.bonus

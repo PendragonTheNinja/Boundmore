@@ -23,7 +23,7 @@ use glam::DVec3;
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
 
 /// Bump on any change to a message below. Client and server must match.
-pub const PROTOCOL_VERSION: u32 = 14;
+pub const PROTOCOL_VERSION: u32 = 15;
 
 /// QUIC application protocol name; also refuses non-Boundmore peers early.
 pub const ALPN: &[u8] = b"boundmore/1";
@@ -97,6 +97,16 @@ pub enum ClientMsg {
     WatchStation { pos: Option<BlockPos> },
     /// Move a station's finished output into the inventory (as much as fits).
     CollectStation { pos: BlockPos },
+    /// Move up to `count` fuel between inventory `slot` and the furnace at
+    /// `pos` (any of its blocks, in reach): `into` puts fuel in (only items
+    /// with `fuel > 0`; merging with what is there), else takes it out. The
+    /// server answers with `Slots` and `Station` (milestone 11).
+    StationFuel {
+        pos: BlockPos,
+        slot: u8,
+        count: u16,
+        into: bool,
+    },
     /// Add a plot to one of your claims; it must touch the claim by a face
     /// and be unclaimed, within your allowance.
     ClaimPlot { claim: u32, plot: PlotPos },
@@ -268,11 +278,20 @@ pub struct JobView {
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct StationView {
+    /// The machine's own position: for a four-block machine, its group's
+    /// first block (lowest y, then z, then x, canonical); any of its blocks
+    /// opens it (milestone 11).
     pub pos: BlockPos,
     pub station: Station,
     pub jobs: Vec<JobView>,
     /// Finished items waiting to be collected.
     pub output: Vec<ItemStack>,
+    /// Why it does not work yet, in plain words ("A workbench needs 4 blocks
+    /// touching", "A furnace needs its crucible on top"); None when it does.
+    pub idle: Option<String>,
+    /// A furnace's fuel slot, and the heat banked from fuel already burnt.
+    pub fuel: Option<ItemStack>,
+    pub heat: u32,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]

@@ -152,6 +152,10 @@ pub struct ItemDef {
     /// slot (a torch: its prop's light), 0 for none.
     #[serde(default)]
     pub held_light: u8,
+    /// Heat it gives burnt in a furnace's fuel slot (0: not fuel; tuning
+    /// 4.7: soft coal 100, trunk 30, timber 15, stick 7).
+    #[serde(default)]
+    pub fuel: u16,
 }
 
 impl ItemDef {
@@ -319,6 +323,8 @@ struct ItemEntry {
     #[serde(default)]
     portal_token: bool,
     icon: Option<String>,
+    #[serde(default)]
+    fuel: u16,
 }
 
 #[derive(Deserialize)]
@@ -428,7 +434,12 @@ impl ItemRegistry {
                     kind: ItemKind::Block(id),
                     stack: 100,
                     icon: None,
-                    held_light: if b.is_prop() { b.light } else { 0 },
+                    held_light: if b.is_prop() && b.model == crate::block::Model::Torch {
+                        b.light
+                    } else {
+                        0
+                    },
+                    fuel: b.fuel,
                 });
             }
         }
@@ -461,6 +472,7 @@ impl ItemRegistry {
                 stack: e.stack,
                 icon: e.icon,
                 held_light: 0,
+                fuel: e.fuel,
             });
         }
         let reg = Self::from_defs(defs, blocks)?;

@@ -23,6 +23,7 @@
 #             flies, reel_in and reel_out the rope's top speeds (blocks per
 #             second); a hookshot reels in by itself
 #   icon      texture in assets/textures/items/ (default: the name)
+#   fuel      heat it gives burnt in a furnace (0: not fuel; tuning 4.7)
 #   energy    (grapples, required; chisels, default 10) energy per shot or
 #             cut, from a bar of 600 (bm-core `energy`, tuning 1.1, 4.9)
 #
@@ -31,6 +32,8 @@
 
 [[item]]
 name = "coal"
+# Soft coal: 100 heat in a furnace (tuning 4.7).
+fuel = 100
 
 [[item]]
 name = "copper_ore"
@@ -173,6 +176,96 @@ tool = { class = "axe", damage = 300, action_speed = 20.0, durability = 600 }
 
 [[item]]
 name = "stick"
+fuel = 7
 
 [[item]]
 name = "flint"
+
+# Milestone 11: materials of the crafting chain and what gathering objects
+# drop (tuning 4.4a). Beans, tubers and petals wait for food; lamellae and
+# orbs for forging and bonding agents; opal, salts and fragments for later
+# recipes.
+
+[[item]]
+name = "stones"
+
+[[item]]
+name = "sap"
+
+[[item]]
+name = "glue"
+
+[[item]]
+name = "sackcloth"
+
+[[item]]
+name = "relic_fragment"
+
+[[item]]
+name = "fibrous_leaf"
+
+[[item]]
+name = "inky_leaf"
+
+[[item]]
+name = "fleshy_leaf"
+
+[[item]]
+name = "petal"
+
+[[item]]
+name = "spicy_bean"
+
+[[item]]
+name = "sweet_bean"
+
+[[item]]
+name = "bitter_bean"
+
+[[item]]
+name = "tuber"
+
+[[item]]
+name = "waxy_tuber"
+
+[[item]]
+name = "exotic_tuber"
+
+[[item]]
+name = "opal"
+
+[[item]]
+name = "rock_salt"
+
+[[item]]
+name = "olivine"
+
+[[item]]
+name = "sulphur"
+
+[[item]]
+name = "cobalt"
+
+[[item]]
+name = "saltpetre"
+
+[[item]]
+name = "reactive_lamella"
+
+[[item]]
+name = "edible_lamella"
+
+[[item]]
+name = "glowing_lamella"
+
+[[item]]
+name = "vital_orb"
+
+[[item]]
+name = "pulsating_orb"
+
+[[item]]
+name = "shadow_orb"
+
+[[item]]
+name = "shimmering_orb"

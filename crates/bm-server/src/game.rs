@@ -290,6 +290,8 @@ fn station_name(kind: Station) -> &'static str {
         Station::Hand => "hand",
         Station::Workbench => "Workbench",
         Station::Furnace => "Furnace",
+        Station::CraftingTable => "Crafting Table",
+        Station::Extractor => "Extractor",
     }
 }
 
@@ -674,6 +676,8 @@ impl Game {
                 }
             }
             Event::Msg { id, msg } => match msg {
+                // Milestone 11: furnace fuel (server agent).
+                ClientMsg::StationFuel { .. } => {}
                 ClientMsg::Edit { seq, at, pos, action } => self.queue(id, at, Queued::Edit { seq, pos, action }),
                 ClientMsg::Swing { seq, at, pos, slot } => self.queue(id, at, Queued::Swing { seq, at, pos, slot }),
                 ClientMsg::MoveItems { from, to, count } => {

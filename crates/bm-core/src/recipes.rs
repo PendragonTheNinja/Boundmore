@@ -13,6 +13,9 @@ pub struct Recipe {
     pub station: Station,
     /// Seconds per craft at a station (hand recipes are instant).
     pub seconds: f32,
+    /// Heat one craft burns at a furnace (milestone 11; 0 elsewhere).
+    #[serde(default)]
+    pub heat: u16,
 }
 
 impl Recipe {
@@ -50,6 +53,8 @@ struct RecipeEntry {
     station: Station,
     #[serde(default)]
     seconds: f32,
+    #[serde(default)]
+    heat: u16,
 }
 
 fn one() -> u16 {
@@ -93,6 +98,7 @@ impl RecipeBook {
                 } else {
                     e.seconds.max(0.0)
                 },
+                heat: if e.station == Station::Furnace { e.heat } else { 0 },
             });
         }
         Ok(Self { recipes })
@@ -133,13 +139,51 @@ mod tests {
                 .find(|r| r.output == id)
                 .unwrap_or_else(|| panic!("no recipe for {name}"))
         };
+        // Boundless's chain (milestone 11).
         assert_eq!(makes("timber").station, Station::Hand);
-        assert_eq!(makes("workbench").station, Station::Hand);
-        assert_eq!(makes("stone_hammer").station, Station::Workbench);
+        assert_eq!(makes("crafting_table").station, Station::Hand);
+        assert_eq!(makes("stones").station, Station::CraftingTable);
+        assert_eq!(makes("stone_hammer").station, Station::CraftingTable);
+        assert_eq!(makes("workbench").station, Station::CraftingTable);
+        assert_eq!(makes("workbench").output_count, 4);
         assert_eq!(makes("copper_ingot").station, Station::Furnace);
-        assert!(makes("copper_ingot").seconds > 0.0);
+        assert_eq!(makes("copper_ingot").heat, 100);
+        assert_eq!(makes("sackcloth").station, Station::Extractor);
         assert_eq!(makes("copper_hammer").station, Station::Workbench);
         assert!(makes("claim_stone").inputs.len() >= 2);
+
+        // Everything a recipe makes can be reached from what the world
+        // yields (block drops and bonus drops) and recipes needing nothing.
+        let mut have: std::collections::HashSet<ItemId> = std::collections::HashSet::new();
+        for (id, _) in blocks.iter() {
+            have.extend(items.drop_of(id));
+            have.extend(items.bonus_of(id).iter().map(|(i, _)| *i));
+        }
+        loop {
+            let before = have.len();
+            for r in &book.recipes {
+                if r.inputs.iter().all(|(i, _)| have.contains(i)) {
+                    have.insert(r.output);
+                }
+            }
+            if have.len() == before {
+                break;
+            }
+        }
+        for r in &book.recipes {
+            let name = &items.get(r.output).unwrap().name;
+            assert!(have.contains(&r.output), "{name} cannot be reached");
+        }
+        for name in [
+            "copper_hammer",
+            "iron_grapple",
+            "sackcloth",
+            "glue",
+            "extractor",
+            "torch",
+        ] {
+            assert!(have.contains(&items.id(name).unwrap()), "{name}");
+        }
     }
 
     #[test]

@@ -970,6 +970,9 @@ impl Demo {
                 station: s.station,
                 jobs: s.jobs.clone(),
                 output: s.output.clone(),
+                idle: None,
+                fuel: None,
+                heat: 0,
             };
             self.events.push_back(NetEvent::Msg(ServerMsg::Station(view)));
         }

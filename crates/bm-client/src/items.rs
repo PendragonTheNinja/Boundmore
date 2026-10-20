@@ -422,11 +422,13 @@ mod tests {
         let mut i = items();
         let hammer = i.registry.id("stone_hammer").unwrap();
         let r = i.recipes.recipes.iter().find(|r| r.output == hammer).unwrap().clone();
-        let stone = i.registry.id("stone").unwrap();
-        i.inventory.slots[0] = Some(ItemStack::coloured(stone, Colour(5), 2));
-        i.inventory.slots[1] = Some(ItemStack::new(stone, 1));
-        i.inventory.slots[2] = stack(&i, "timber", 2);
-        assert_eq!(i.craft_max(&r), 1, "two blue and one natural stone make three");
+        // A stone hammer takes 4 foliage (and 4 stones and 4 sticks).
+        let foliage = i.registry.id("foliage").unwrap();
+        i.inventory.slots[0] = Some(ItemStack::coloured(foliage, Colour(5), 3));
+        i.inventory.slots[1] = Some(ItemStack::new(foliage, 1));
+        i.inventory.slots[2] = stack(&i, "stones", 4);
+        i.inventory.slots[3] = stack(&i, "stick", 4);
+        assert_eq!(i.craft_max(&r), 1, "three blue and one natural foliage make four");
     }
 
     #[test]
@@ -435,9 +437,10 @@ mod tests {
         let hammer = i.registry.id("stone_hammer").unwrap();
         let r = i.recipes.recipes.iter().find(|r| r.output == hammer).unwrap().clone();
         assert_eq!(i.craft_max(&r), 0);
-        i.inventory.slots[0] = stack(&i, "stone", 10);
-        i.inventory.slots[1] = stack(&i, "timber", 5);
-        assert_eq!(i.craft_max(&r), 2); // 3 stone and 2 timber each
+        i.inventory.slots[0] = stack(&i, "stones", 12);
+        i.inventory.slots[1] = stack(&i, "stick", 9);
+        i.inventory.slots[2] = stack(&i, "foliage", 20);
+        assert_eq!(i.craft_max(&r), 2); // 4 stones, 4 sticks, 4 foliage each
     }
 
     #[test]

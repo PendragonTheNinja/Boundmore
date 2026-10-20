@@ -23,8 +23,8 @@ pub mod shape;
 pub mod time;
 
 pub use block::{
-    BlockDef, BlockFlags, BlockId, BlockRegistry, BlockState, Bonus, Chiselling, Colour, Health, Material, Mount,
-    RegistryError, Shape, Station,
+    BlockDef, BlockFlags, BlockId, BlockRegistry, BlockState, Bonus, Chiselling, Colour, Health, Material, Model,
+    Mount, RegistryError, Shape, Station,
 };
 pub use chunk::{CHUNK_FORMAT_VERSION, Chunk, ChunkDecodeError};
 pub use colours::{ColourDef, ColourError, ColourPalette};

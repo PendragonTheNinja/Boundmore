@@ -307,6 +307,9 @@ impl Stations {
                 station: kind,
                 jobs: Vec::new(),
                 output: Vec::new(),
+                idle: None,
+                fuel: None,
+                heat: 0,
             };
         };
         let jobs = st
@@ -330,6 +333,9 @@ impl Stations {
             station: st.kind,
             jobs,
             output: st.output.slots.iter().flatten().copied().collect(),
+            idle: None,
+            fuel: None,
+            heat: 0,
         }
     }
 
