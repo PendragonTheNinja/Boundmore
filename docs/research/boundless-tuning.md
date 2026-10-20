@@ -356,19 +356,40 @@ Seams take twice the hits' worth of health; soil/sand/foliage take two thirds. C
 - Energy: each swing costs the tool's energy per use (2.1); energy refills over time (energy regeneration epic: empty to full in about 3 s, Dhusk t/34506 2019-08-27). Forge "energy saver" −2 per level (2.6). Chisel energy halved in Release 196 (2018-08-08, t/14494).
 - Durability: one point per swing, regardless of how many blocks an AoE swing breaks (a13o t/23156: a 3×3 is "as good as a 9× multiplier on durability"; Dhusk t/34506: one 2600-durability T6 AoE hammer yielded 2802 topaz). Wear reducers: persisting food −5/−10/−15/−30/−40% durability drain (soup, stew, risotto, loaf, pie; willcrutchley t/17271, 2018-09-22); a durability-drain epic skill (value not found). Buffs and skills multiply rather than add (Nightstar t/63432). Totems got durability in Release 195 to stop macro use ("no tool should last forever", t/14250).
 
-### 2.5a Action speed to seconds per hit (a13o's "Boundless Stat Analysis" sheet)
+### 2.5a a13o's "Boundless Stat Analysis" sheet: action speed, area of effect, blocks
 
-Source: a13o's Google Sheet "Boundless Stat Analysis" (https://docs.google.com/spreadsheets/d/1L5_AifEeMMnHyeEcsXjmSNKKSLdDGcMlY-qGvTMuE2o), viewable but not downloadable; transcribed from Nathan's screenshots of its Tools tab, 2026-10-20. High confidence (it reproduces every other column of the tab: damage after armour, hits to break, DPS, lifetime).
+Source: a13o's Google Sheet "Boundless Stat Analysis" (https://docs.google.com/spreadsheets/d/1L5_AifEeMMnHyeEcsXjmSNKKSLdDGcMlY-qGvTMuE2o), view-only (no download), transcribed from Nathan's screenshots of all five tabs (Tools, AOE BPS, AOE DPS, Action Speed, Blocks), 2026-10-20. High confidence: each tab reproduces the others and the fan-site data in 2.1 to 2.3.
 
-The tab's "Atk Speed (s)" column, seconds per hit at each total action speed (base, +2 from the 5-point all-attributes skill, +16 from 8 points of Dexterity):
+**Seconds per hit from action speed (Action Speed tab).** The sheet's curve settings are min speed 5, max speed 150, time at min speed 1 s, time at max speed 0.05 s, curve power 3:
 
-| Action speed | 10 | 12 | 15 | 17 | 20 | 22 | 25 | 26 | 27 | 30 | 31 | 32 | 36 | 38 | 40 | 41 | 46 | 54 |
-|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
-| Seconds per hit | 0.91 | 0.87 | 0.82 | 0.78 | 0.73 | 0.70 | 0.66 | 0.64 | 0.63 | 0.59 | 0.58 | 0.56 | 0.51 | 0.49 | 0.46 | 0.45 | 0.40 | 0.33 |
+    seconds per hit = 0.05 + 0.95 * (1 - (s - 5) / 145)^3,   s = action speed clamped to 5..150
 
-Fitted (Boundmore, 2026-10-20): **seconds per hit = 1.311 * exp(-0.017 * speed) - 0.199**, within 0.006 s of every value above (the sheet rounds to 0.01). Valid for speeds 10 to 54 only: it goes to zero near 95, while players measured a cap near 120 to 125 (2.5), so above 54 use the measured chart in 2.5 until more of the sheet is transcribed.
+This reproduces every value in the tab's 5 to 150 table to the sheet's two decimals (checked 2026-10-20). Samples:
 
-Other rules the tab confirms: average damage = damage * (1 + crit chance * crit effect) (iron 700 at 20% and +20% = 728); DPS = average damage / seconds per hit; lifetime = durability * seconds per hit (copper 700 * 0.59 s = 6:53); hits to break a hard block = ceil(health / (damage - armour)) with health and armour by tier as in 2.2; the 5/5 attribute skill gives +5% damage, +2 action speed, +2% crit chance; 8 points of Power +40% damage, of Dexterity +16 action speed, of Agility +16% crit chance.
+| Action speed | 5 | 10 | 15 | 20 | 25 | 30 | 38 | 46 | 54 | 60 | 70 | 80 | 90 | 99 | 110 | 125 | 150 |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| Seconds per hit | 1.00 | 0.91 | 0.82 | 0.73 | 0.66 | 0.59 | 0.49 | 0.40 | 0.33 | 0.28 | 0.21 | 0.16 | 0.12 | 0.09 | 0.07 | 0.05 | 0.05 |
+
+So base tools hit every 0.49 s (speed 38) to 0.91 s (speed 10); players' "cap near 120 to 125" (2.5) is where the curve flattens onto its 0.05 s floor.
+
+**Tools tab rules:** average damage = damage * (1 + crit chance * crit effect) (iron: 700 * 1.04 = 728); DPS = average damage / seconds per hit; lifetime = durability * seconds per hit (copper: 700 * 0.59 s = 6:53); hits to break = ceil(block health / (damage - armour)); blocks per second = blocks hit / (hits * seconds per hit). Character bonuses the tab models: the 5-point all-attributes skill +5% damage, +2 action speed, +2% crit chance; 8 points of Power +40% damage; 8 of Dexterity +16 action speed; 8 of Agility +16% crit chance.
+
+**Area of effect (AOE BPS and AOE DPS tabs), the forge boon's shapes:**
+
+| Shape | Blocks hit | Damage to each |
+|---|---|---|
+| Unforged | 1 | 100% |
+| 1x2 | 2 | 60% |
+| 3x1 | 3 | 40% |
+| Cross | 5 | 40% |
+| 3x3 | 9 | 40% |
+| Random adjacent | 2 | 100% |
+
+On armoured tiers the sheet takes armour off first and applies the area multiplier after: per-block damage = (damage - armour) * multiplier (T3 copper 1x2: (400 - 100) * 0.6 = 180, 10 hits on 1800 rock, 0.34 blocks per second, as the tab shows; subtracting armour after the multiplier would give 0.26). Medium on whether the game itself did this (the sheet's model). The DPS tab also counts "voxels revealed" per shape (1x2: 8, 3x1: 11, cross: 13, random: 8, 3x3: 21).
+
+Blocks per second, unforged, tier 1 or 2 rock: copper 0.56, iron 0.55, titanium 0.76, diamond 1.22, ruby and sapphire 1.69 (each a 1 hit kill at 0.59 s). With the 3x3 shape: copper 1.91, diamond 5.49, amethyst and topaz 6.12. On tier 6 no metal tool below titanium does useful work (copper and stone 0, iron 0.03), which is why forging was the late game.
+
+**Blocks tab:** base health soft 800, hard 1200, seam 2400; tiers 1 to 8 multiply by 1, 1, 1.5, 2, 3, 4, 5, 6 with armour 0, 0, 100, 200, 400, 600, 800, 1000 (identical to 2.2). Tier 2 is x1.0 here too, so three sources say 1.0 and one 1.1: Boundmore uses 1.0 (Nathan, 2026-10-20: 1.1 only if there were no clear answer).
 
 ### 2.6 Forging (Centraforge) boons on tools
 
@@ -470,7 +491,7 @@ Bombs damage blocks too, through "impulse" damage: player-derived formula (willc
 ### Open questions
 
 1. How long a partially damaged block waits before healing back to full, and whether it heals gradually or all at once. No figure found.
-2. Action speed to seconds per hit: answered for speeds 10 to 54 in 2.5a; above 54 still only the hand-timed chart.
+2. Action speed to seconds per hit: answered exactly in 2.5a (a13o's curve, 5 to 150).
 3. Split of the +22 skill action speed between tool mastery (per point) and the tool epic; the action speed bonus of hammer epic.
 4. Exact category → tool type map for soft blocks (gravel and mud are "soft" for health, and players break them with shovels; confirm ash, growth, sponge).
 5. Durability drain epic size; energy pool size and regeneration rate per skill.
