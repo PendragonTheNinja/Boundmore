@@ -442,12 +442,12 @@ pub struct BlockBar {
     pub shields: u32,
 }
 
-const BAR_WIDTH: f32 = 72.0;
-const BAR_HEIGHT: f32 = 7.0;
+const BAR_WIDTH: f32 = 96.0;
+const BAR_HEIGHT: f32 = 8.0;
 const BAR_FULL: Color32 = Color32::from_rgb(150, 214, 120);
-const SHIELD_FILL: Color32 = Color32::from_rgb(178, 190, 206);
+const SHIELD_FILL: Color32 = Color32::from_rgb(196, 210, 232);
 /// The bar sits this far below the screen's centre.
-const BAR_DROP: f32 = 26.0;
+const BAR_DROP: f32 = 30.0;
 
 /// The fill colour for `left`: fresh green, through gold, to red.
 fn bar_colour(left: f32) -> Color32 {
@@ -481,31 +481,44 @@ fn paint_shield(painter: &egui::Painter, centre_x: f32, top: f32, w: f32) {
 }
 
 fn block_bar(ctx: &egui::Context, bar: &BlockBar) {
-    let shield_w = 9.0;
+    let shield_w = 11.0;
+    let shield_h = shield_w * 1.2;
     let shields_w = bar.shields as f32 * (shield_w + 3.0);
-    let width = BAR_WIDTH + if bar.shields > 0 { shields_w + 4.0 } else { 0.0 };
+    let width = BAR_WIDTH + if bar.shields > 0 { shields_w + 3.0 } else { 0.0 };
     egui::Area::new(Id::unique("block-health"))
         .anchor(Align2::CENTER_CENTER, vec2(0.0, BAR_DROP))
         .interactable(false)
         .order(egui::Order::Background)
         .show(ctx, |ui| {
-            let (rect, _) = ui.allocate_exact_size(vec2(width, shield_w * 1.2), Sense::hover());
-            let painter = ui.painter();
-            // Shields first, at the bar's left, like armour worn over it.
-            for i in 0..bar.shields {
-                let cx = rect.left() + shield_w / 2.0 + i as f32 * (shield_w + 3.0);
-                paint_shield(painter, cx, rect.top(), shield_w);
-            }
-            let left_x = rect.right() - BAR_WIDTH;
-            let back = Rect::from_min_size(
-                pos2(left_x, rect.center().y - BAR_HEIGHT / 2.0),
-                vec2(BAR_WIDTH, BAR_HEIGHT),
-            );
-            painter.rect_filled(back.expand(1.5), CornerRadius::same(4), Color32::from_black_alpha(170));
-            let fill = Rect::from_min_size(back.min, vec2(BAR_WIDTH * bar.left.clamp(0.0, 1.0), BAR_HEIGHT));
-            if fill.width() > 0.5 {
-                painter.rect_filled(fill, CornerRadius::same(3), bar_colour(bar.left));
-            }
+            // On a dark pill, like the other hints, so it reads on any block.
+            egui::Frame::new()
+                .fill(Color32::from_black_alpha(140))
+                .corner_radius(CornerRadius::same(8))
+                .inner_margin(egui::Margin::symmetric(7, 4))
+                .show(ui, |ui| {
+                    let (rect, _) = ui.allocate_exact_size(vec2(width, shield_h), Sense::hover());
+                    let painter = ui.painter();
+                    // Shields first, at the bar's left, like armour worn over it.
+                    for i in 0..bar.shields {
+                        let cx = rect.left() + shield_w / 2.0 + i as f32 * (shield_w + 3.0);
+                        paint_shield(painter, cx, rect.top(), shield_w);
+                    }
+                    let back = Rect::from_min_size(
+                        pos2(rect.right() - BAR_WIDTH, rect.center().y - BAR_HEIGHT / 2.0),
+                        vec2(BAR_WIDTH, BAR_HEIGHT),
+                    );
+                    painter.rect_filled(back, CornerRadius::same(3), Color32::from_rgb(38, 34, 32));
+                    let fill = Rect::from_min_size(back.min, vec2(BAR_WIDTH * bar.left.clamp(0.0, 1.0), BAR_HEIGHT));
+                    if fill.width() > 0.5 {
+                        painter.rect_filled(fill, CornerRadius::same(3), bar_colour(bar.left));
+                    }
+                    painter.rect_stroke(
+                        back,
+                        CornerRadius::same(3),
+                        Stroke::new(1.0, Color32::from_rgba_unmultiplied(240, 230, 210, 90)),
+                        StrokeKind::Outside,
+                    );
+                });
         });
 }
 
@@ -594,7 +607,7 @@ pub fn hud(ctx: &egui::Context, h: &Hud) {
     }
     if let Some((key, what)) = h.aim_hint {
         // Below the health bar when there is one.
-        let drop = if h.block_bar.is_some() { 56.0 } else { 44.0 };
+        let drop = if h.block_bar.is_some() { 62.0 } else { 44.0 };
         egui::Area::new(Id::unique("aim-hint"))
             .anchor(Align2::CENTER_CENTER, vec2(0.0, drop))
             .interactable(false)
