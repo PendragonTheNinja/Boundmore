@@ -12,8 +12,8 @@ What a Boundless player expects to find, and where each stands. "Ours" is the Bo
 | Worlds that wrap | No edge; walk round the world | **Done** (ADR-0002) |
 | Freeform building | Every block editable, huge palette, colours | **Done** for placing and breaking; palette and colours: M2 |
 | Shaped blocks (chisel) | Slopes, bevels, cuts on any block | M7. Decided (Nathan, 2026-10-19): Boundless's square, slope and bevel families on the 2x2x2 corner grid, precise versions as better-tier tools, plus a round family (rounded edges and corners; Nathan: try it and see how it works); lattice frames later; room in the shape encoding for 8 families. Terrain chisels as slopes only |
-| Mining by hand and tool | Hold to break; harder blocks, better tools; AoE tools later | **Done**: hold-to-break by hardness (M2), stone and copper tools that wear (M3). AoE tools later |
-| Light and darkness | Dark caves, torches, glowing ores, day and night | **Done** (M2) |
+| Mining by hand and tool | Swings that deal damage against block health; world tiers add health and armour; the right tool; more ore on harder worlds; AoE from forging | M9 (`milestones/09-mining-and-light.md`): Boundless's numbers exactly (Nathan, 2026-10-20). Energy, skills and forging later |
+| Light and darkness | Dark caves, torches, glowing ores, day and night | **Done** for light, dark and glowing blocks (M2). Torches, placed and held: M9. Gem torches, lanterns and tinted light later |
 | Inventory and crafting | Gather, craft at machines that run over time, upgrade with power | **Done** for inventory, hand crafting, workbench and furnace (M3). Power and more machines later |
 | Plots and beacons | Claim land so builds are protected; costs upkeep | **Done** for claims (M3). **Changed on purpose:** no fuel; a claim lapses after 6 months without a visit and its contents go back to the owner (the research below) |
 | Settlements | Plots near each other form ranked settlements | M8 |
@@ -41,11 +41,17 @@ What a Boundless player expects to find, and where each stands. "Ours" is the Bo
 
 **M7: Movement and shape.** Chisels and shaped blocks (slopes in terrain too), grapples, swimming improvements, far views (level-of-detail terrain).
 
-**M8: Society.** Shop stands, request baskets, settlements and their ranking, guilds, mail.
+**M8: Portals (built 2026-10-20).** Player-built portals linked by tokens, fuelled per trip (ADR-0009). See `milestones/08-portals.md`.
 
-**M9: Life.** Creatures, combat, hunting, meteors, temporary worlds.
+**M9: Mining and light.** Boundless's mining exactly (health by world tier, armour, swings at a rate set by action speed, the right tool, bonus yields by tier) and the basic torch. See `milestones/09-mining-and-light.md`.
 
-**M10: Ownership.** Rentable worlds, world customisation, and the operations work for running it as a service.
+*From here the order follows Nathan's direction (2026-10-19 and 2026-10-20): make it as close to Boundless as possible first. Next in line: Boundless's materials and crafting chain (crafting table, sticks and stones, sackcloth, glue, the machines; tuning section 4), then skills and progression (a proposal for Nathan first), energy and hunger, forging. Each gets its own spec and number when it starts.*
+
+**Society.** Shop stands, request baskets, settlements and their ranking, guilds, mail.
+
+**Life.** Creatures, combat, hunting, meteors, temporary worlds.
+
+**Ownership.** Rentable worlds, world customisation, and the operations work for running it as a service.
 
 ## Player research
 

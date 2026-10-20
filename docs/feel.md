@@ -49,6 +49,35 @@ Boundless burned shards every hour whether a portal was used or not (1 to 9 an h
 | Wayshard rarity | vein size 6, threshold 0.64, below y 68 and 24 under the surface: about 9 blocks per 32x32 column, heights 1 to 68 (median 30) under a surface near 147, about 30 times rarer than copper (measured 2026-10-20) | Nathan, 2026-10-20: found none in his first play, but keep them where they are (he will dig for them) |
 | Conduit recipe | 4 stone, 1 copper ingot, 1 wayshard for 2 | A 1 by 2 portal costs one wayshard |
 
+## Mining (`assets/items.toml`, `assets/blocks.toml`, `bm-core/src/mining.rs`; M9)
+
+Matched to Boundless's final numbers (Nathan, 2026-10-20: "as close to Boundless as humanly possible"; `docs/research/boundless-tuning.md` 2.1 to 2.5a, 4.4). Exact unless marked guess.
+
+| Value | Now | Source, or guess |
+|---|---|---|
+| Block health | soft 800 (soil, sand, snow, foliage), hard 1200 (rock, gravel, ash, wood, ice, crystal, glass, machines), seam 2400 (ores), x1, 1, 1.5, 2, 3, 4, 5, 6 by tier | Boundless, exact. Snow as soft, glass and machines as hard: **guesses** (no source) |
+| Armour | 0, 0, 100, 200, 400, 600, 800, 1000 by tier, off every hit | Boundless, exact |
+| Time between swings | a13o's curve: 1 s at action speed 5 to 0.05 s at 150 (copper 0.59 s, stone 0.82 s, iron 0.91 s) | Boundless, exact (a13o's sheet) |
+| Tools | wood 300 damage / speed 20 / 600 uses; stone 400 / 15 / 600; copper 400 / 30 / 700; iron 700 / 10 / 900, 20% crits at +20% | Boundless, exact |
+| Hand stone | 200 / 20 / 400, full damage on everything, crafted from nothing | Boundless's starter tool, exact |
+| Bare hand | 100 damage, speed 20, full damage on everything | **Guess.** Could a bare hand break blocks in Boundless, and how fast? |
+| Wrong tool | a quarter of the damage after armour | Boundless, medium (players' measurements) |
+| Healing | a block left alone 5 s heals to full at once | **Guess.** How long did a damaged block stay damaged? |
+| Bonus ore | copper, iron, coal +0.5 per seam on tiers 1 and 2, +0.7 on 3 and 4, +1.05 from 5; wayshards (ours) +0.5 from tier 5 | Boundless, exact for its ores; wayshards modelled on its gems |
+| Flint | rock 1.5% (tiers 1, 2), 2% (3, 4); gravel 5% | Boundless, exact |
+
+Not built yet, from Boundless: energy per swing (damage / 50), skills (power, mastery, epics, dexterity, luck), forging (the only source of area of effect), mining XP.
+
+## Light (`assets/blocks.toml`, M9)
+
+| Value | Now | Check |
+|---|---|---|
+| Torch | light 10 (reaches 9 blocks), placed on floors and walls or held | **Guess.** How far did a basic torch light, next to a glowing crystal? |
+| Glow crystal | light 12 | Boundless gleam was the reference for "fully lit" |
+| Torch recipe | 1 stick + 1 flint makes 4, by hand; 1 trunk makes 4 sticks | Boundless, exact |
+
+Not built yet, from Boundless: the better torch (tallow and sackcloth, at a workbench), gem torches (tinted light, brighter), lanterns (refinery: torch and glass), the glow forge boon (6, 9 or 12 m), the light-source skill.
+
 ## World (`bm-server/src/config.rs`, `bm-worldgen`)
 
 | Value | Now | Check |
@@ -68,6 +97,5 @@ Boundless burned shards every hour whether a portal was used or not (1 to 9 an h
 
 ## Not built yet, but to measure while playing
 
-- Break time by hand for soil, stone, wood; with a basic tool.
 - Day length.
 - How dark caves are without light.
