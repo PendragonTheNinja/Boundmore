@@ -36,19 +36,78 @@ impl ToolClass {
     }
 }
 
+/// A shape that one swing hits beyond the hit block (Boundless's area of
+/// effect forge boon [tuning 2.5a]; `mining::aoe_blocks`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub enum Aoe {
+    /// The hit block and the one below, 60% each.
+    #[serde(rename = "1x2")]
+    OneByTwo,
+    /// A row of three across the view, 40% each.
+    #[serde(rename = "3x1")]
+    ThreeByOne,
+    /// A plus of five facing the player, 40% each.
+    #[serde(rename = "cross")]
+    Cross,
+    /// A square of nine facing the player, 40% each.
+    #[serde(rename = "3x3")]
+    ThreeByThree,
+    /// The hit block and 1 to 4 random neighbours, full damage.
+    #[serde(rename = "random")]
+    Random,
+}
+
+impl Aoe {
+    /// Damage each block in the shape takes, as a fraction of a single hit.
+    pub fn multiplier(self) -> f64 {
+        match self {
+            Aoe::OneByTwo => 0.6,
+            Aoe::ThreeByOne | Aoe::Cross | Aoe::ThreeByThree => 0.4,
+            Aoe::Random => 1.0,
+        }
+    }
+}
+
+/// What a tool (or the bare hand) does to blocks [tuning 2.1]. Every swing
+/// costs one durability.
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+pub struct ToolStats {
+    /// Hammer, shovel or axe: full damage on what it suits, a quarter on the
+    /// rest. None suits everything (the hand stone, the bare hand).
+    pub class: Option<ToolClass>,
+    /// Damage per swing, before armour.
+    pub damage: u32,
+    /// Sets the time between swings (`mining::seconds_per_hit`).
+    pub action_speed: f32,
+    /// Chance (0..1) a swing is a critical hit.
+    pub crit_chance: f32,
+    /// A critical hit deals `1 + crit_effect` times the damage.
+    pub crit_effect: f32,
+    /// Swings before it breaks (unused for the hand).
+    pub durability: u16,
+    /// The shape one swing hits; None: one block.
+    pub aoe: Option<Aoe>,
+}
+
+impl ToolStats {
+    fn valid(&self) -> bool {
+        self.damage > 0
+            && self.action_speed.is_finite()
+            && self.action_speed > 0.0
+            && (0.0..=1.0).contains(&self.crit_chance)
+            && self.crit_effect.is_finite()
+            && self.crit_effect >= 0.0
+    }
+}
+
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub enum ItemKind {
     /// Places this block.
     Block(BlockId),
     /// Crafting material: ore, ingots, sticks.
     Material,
-    /// Breaks its materials `speed` times faster than a bare hand, for
-    /// `durability` blocks.
-    Tool {
-        class: ToolClass,
-        speed: f32,
-        durability: u16,
-    },
+    /// Breaks blocks (`mining`).
+    Tool(ToolStats),
     /// Cuts blocks into shapes of `family` (ADR-0008): one octant at a time
     /// when `precise`, else an edge's two. One use per cut.
     Chisel {
@@ -81,6 +140,10 @@ pub struct ItemDef {
     pub stack: u16,
     /// Icon texture for non-block items (`assets/textures/items/<name>.png`).
     pub icon: Option<String>,
+    /// Light it gives off around a player holding it in the selected hotbar
+    /// slot (a torch: its prop's light), 0 for none.
+    #[serde(default)]
+    pub held_light: u8,
 }
 
 impl ItemDef {
@@ -91,13 +154,9 @@ impl ItemDef {
         }
     }
 
-    pub fn tool(&self) -> Option<(ToolClass, f32, u16)> {
+    pub fn tool(&self) -> Option<ToolStats> {
         match self.kind {
-            ItemKind::Tool {
-                class,
-                speed,
-                durability,
-            } => Some((class, speed, durability)),
+            ItemKind::Tool(t) => Some(t),
             _ => None,
         }
     }
@@ -139,7 +198,7 @@ impl ItemDef {
     /// Uses before it breaks, for anything that wears.
     pub fn durability(&self) -> Option<u16> {
         match self.kind {
-            ItemKind::Tool { durability, .. }
+            ItemKind::Tool(ToolStats { durability, .. })
             | ItemKind::Chisel { durability, .. }
             | ItemKind::Grapple { durability, .. } => Some(durability),
             _ => None,
@@ -205,8 +264,10 @@ pub enum ItemError {
     Duplicate(String),
     #[error("item `{0}` has a stack size of 0")]
     ZeroStack(String),
-    #[error("tool `{0}` must stack to 1 and have speed > 0 and durability > 0")]
+    #[error("tool `{0}` must stack to 1, with damage, action speed and durability above 0 and a crit chance in 0..1")]
     BadTool(String),
+    #[error("the bare hand's stats are not valid")]
+    BadHand,
     #[error("block `{0}` drops `{1}`, which is not an item")]
     UnknownDrop(String, String),
     #[error("no item named `{0}`")]
@@ -219,6 +280,7 @@ pub enum ItemError {
 
 #[derive(Deserialize)]
 struct ItemFile {
+    hand: ToolEntry,
     #[serde(default)]
     item: Vec<ItemEntry>,
 }
@@ -261,9 +323,36 @@ struct ChiselEntry {
 
 #[derive(Deserialize)]
 struct ToolEntry {
-    class: ToolClass,
-    speed: f32,
+    #[serde(default)]
+    class: Option<ToolClass>,
+    damage: u32,
+    action_speed: f32,
+    #[serde(default)]
+    crit_chance: f32,
+    #[serde(default = "default_crit_effect")]
+    crit_effect: f32,
+    #[serde(default)]
     durability: u16,
+    #[serde(default)]
+    aoe: Option<Aoe>,
+}
+
+impl ToolEntry {
+    fn stats(&self) -> ToolStats {
+        ToolStats {
+            class: self.class,
+            damage: self.damage,
+            action_speed: self.action_speed,
+            crit_chance: self.crit_chance,
+            crit_effect: self.crit_effect,
+            durability: self.durability,
+            aoe: self.aoe,
+        }
+    }
+}
+
+fn default_crit_effect() -> f32 {
+    0.2
 }
 
 fn default_stack() -> u16 {
@@ -291,6 +380,9 @@ pub struct ItemRegistry {
     by_name: HashMap<String, ItemId>,
     /// What each block drops when broken, by block id.
     drops: Vec<Option<ItemId>>,
+    /// Extra yields by block id: (item, expected count per tier).
+    bonus: Vec<Vec<(ItemId, [f32; 8])>>,
+    hand: ToolStats,
 }
 
 impl ItemRegistry {
@@ -306,16 +398,13 @@ impl ItemRegistry {
                     kind: ItemKind::Block(id),
                     stack: 100,
                     icon: None,
+                    held_light: if b.is_prop() { b.light } else { 0 },
                 });
             }
         }
         for e in file.item {
             let kind = match (e.tool, e.chisel, e.grapple) {
-                (Some(t), None, None) => ItemKind::Tool {
-                    class: t.class,
-                    speed: t.speed,
-                    durability: t.durability,
-                },
+                (Some(t), None, None) => ItemKind::Tool(t.stats()),
                 (None, Some(c), None) => ItemKind::Chisel {
                     family: c.family,
                     precise: c.precise,
@@ -339,9 +428,10 @@ impl ItemRegistry {
                 kind,
                 stack: e.stack,
                 icon: e.icon,
+                held_light: 0,
             });
         }
-        let reg = Self::from_defs(defs, blocks)?;
+        let reg = Self::from_defs(defs, file.hand.stats(), blocks)?;
         Ok(reg)
     }
 
@@ -352,9 +442,12 @@ impl ItemRegistry {
 
     /// Builds and validates a registry from definitions (the server's own, or
     /// the copy a client receives in the handshake).
-    pub fn from_defs(defs: Vec<ItemDef>, blocks: &BlockRegistry) -> Result<Self, ItemError> {
+    pub fn from_defs(defs: Vec<ItemDef>, hand: ToolStats, blocks: &BlockRegistry) -> Result<Self, ItemError> {
         if defs.len() >= u16::MAX as usize {
             return Err(ItemError::TooMany);
+        }
+        if !hand.valid() {
+            return Err(ItemError::BadHand);
         }
         let mut by_name = HashMap::new();
         for (i, d) in defs.iter().enumerate() {
@@ -362,7 +455,7 @@ impl ItemRegistry {
                 return Err(ItemError::ZeroStack(d.name.clone()));
             }
             match d.kind {
-                ItemKind::Tool { speed, durability, .. } if d.stack != 1 || speed <= 0.0 || durability == 0 => {
+                ItemKind::Tool(t) if d.stack != 1 || t.durability == 0 || !t.valid() => {
                     return Err(ItemError::BadTool(d.name.clone()));
                 }
                 ItemKind::Chisel { durability, .. } if d.stack != 1 || durability == 0 => {
@@ -393,10 +486,44 @@ impl ItemRegistry {
             }
         }
         let mut drops = Vec::with_capacity(blocks.len());
+        let mut bonus = Vec::with_capacity(blocks.len());
         for (_, b) in blocks.iter() {
             drops.push(Self::resolve_drop(b, &by_name)?);
+            let mut extra = Vec::new();
+            for x in &b.bonus {
+                let item = by_name
+                    .get(&x.item)
+                    .copied()
+                    .ok_or_else(|| ItemError::UnknownDrop(b.name.clone(), x.item.clone()))?;
+                extra.push((item, x.per_tier));
+            }
+            bonus.push(extra);
         }
-        Ok(Self { defs, by_name, drops })
+        Ok(Self {
+            defs,
+            by_name,
+            drops,
+            bonus,
+            hand,
+        })
+    }
+
+    /// What a bare hand does to blocks.
+    pub fn hand(&self) -> ToolStats {
+        self.hand
+    }
+
+    /// The stats a swing uses holding `item` (None, or anything not a tool:
+    /// the bare hand).
+    pub fn swing_tool(&self, item: Option<ItemId>) -> ToolStats {
+        item.and_then(|i| self.get(i))
+            .and_then(|d| d.tool())
+            .unwrap_or(self.hand)
+    }
+
+    /// Extra yields of `block`: (item, expected count on each tier 1 to 8).
+    pub fn bonus_of(&self, block: BlockId) -> &[(ItemId, [f32; 8])] {
+        self.bonus.get(block.0 as usize).map_or(&[], |v| v.as_slice())
     }
 
     fn resolve_drop(b: &BlockDef, by_name: &HashMap<String, ItemId>) -> Result<Option<ItemId>, ItemError> {
@@ -455,16 +582,18 @@ impl ItemRegistry {
         self.defs.is_empty()
     }
 
-    /// Seconds to break `block` holding `tool` (None for a bare hand). A tool
-    /// helps only on the materials its class suits.
+    /// Seconds to break a fresh `block` on a tier 1 world holding `tool`
+    /// (None for a bare hand), with no critical hits: swings to break times
+    /// seconds per swing, less the first swing (it lands at once).
+    ///
+    /// Transitional: the hold-to-break path uses it until swings (milestone 9)
+    /// replace it.
     pub fn break_seconds(&self, block: &BlockDef, tool: Option<ItemId>) -> f32 {
-        let speed = tool
-            .and_then(|t| self.get(t))
-            .and_then(|d| d.tool())
-            .filter(|(class, _, _)| class.suits(block.material))
-            .map(|(_, speed, _)| speed)
-            .unwrap_or(1.0);
-        block.hardness / speed
+        let t = self.swing_tool(tool);
+        match crate::mining::hits_to_break(&t, block, 1) {
+            Some(hits) => ((hits - 1) as f64 * crate::mining::seconds_per_hit(t.action_speed)) as f32,
+            None => f32::INFINITY,
+        }
     }
 }
 
@@ -494,36 +623,87 @@ mod tests {
         assert_eq!(i.get(stone_item).unwrap().display, "Stone");
     }
 
+    const HAND: &str = "[hand]\ndamage = 100\naction_speed = 20.0\n";
+
     #[test]
-    fn tools_speed_up_only_their_materials() {
+    fn tools_have_boundless_stats() {
         let (b, i) = setup();
+        let copper = i.get(i.id("copper_hammer").unwrap()).unwrap().tool().unwrap();
+        assert_eq!(
+            (copper.damage, copper.action_speed, copper.durability),
+            (400, 30.0, 700),
+            "tuning 2.1"
+        );
+        let iron = i.get(i.id("iron_axe").unwrap()).unwrap().tool().unwrap();
+        assert_eq!((iron.damage, iron.crit_chance, iron.durability), (700, 0.2, 900));
+        assert_eq!(iron.class, Some(ToolClass::Axe));
+        assert!(
+            i.get(i.id("hand_stone").unwrap())
+                .unwrap()
+                .tool()
+                .unwrap()
+                .class
+                .is_none()
+        );
+        // Anything that is not a tool swings as a bare hand.
+        assert_eq!(i.swing_tool(Some(i.id("stone").unwrap())), i.hand());
+        assert_eq!(i.swing_tool(None), i.hand());
+        // The transitional hold time: copper on stone is 3 swings of 0.59 s,
+        // the first at once.
         let stone = b.get(b.id("stone").unwrap());
-        let soil = b.get(b.id("soil").unwrap());
-        let hammer = i.id("stone_hammer").unwrap();
-        assert!(i.break_seconds(stone, Some(hammer)) < i.break_seconds(stone, None));
-        assert_eq!(i.break_seconds(soil, Some(hammer)), i.break_seconds(soil, None));
-        let shovel = i.id("stone_shovel").unwrap();
-        assert!(i.break_seconds(soil, Some(shovel)) < soil.hardness);
-        let copper = i.id("copper_hammer").unwrap();
-        assert!(i.break_seconds(stone, Some(copper)) < i.break_seconds(stone, Some(hammer)));
+        let t = i.break_seconds(stone, Some(i.id("copper_hammer").unwrap()));
+        assert!((t - 1.18).abs() < 0.01, "{t}");
+    }
+
+    #[test]
+    fn torches_light_the_hand_and_seams_give_bonus_ore() {
+        let (b, i) = setup();
+        let torch = i.get(i.id("torch").unwrap()).unwrap();
+        assert!(torch.held_light > 0);
+        assert_eq!(i.get(i.id("glow_crystal").unwrap()).unwrap().held_light, 0);
+        let vein = b.id("copper_vein").unwrap();
+        let ore = i.id("copper_ore").unwrap();
+        assert!(i.bonus_of(vein).iter().any(|&(item, per)| item == ore && per[0] == 0.5));
+        let flint = i.id("flint").unwrap();
+        assert!(
+            i.bonus_of(b.id("gravel").unwrap())
+                .iter()
+                .any(|&(item, _)| item == flint)
+        );
+        assert!(i.bonus_of(b.id("soil").unwrap()).is_empty());
     }
 
     #[test]
     fn bad_catalogues_are_refused() {
         let b = BlockRegistry::builtin();
         assert!(matches!(
-            ItemRegistry::build(&b, "[[item]]\nname = \"stone\"\n"),
+            ItemRegistry::build(&b, &format!("{HAND}[[item]]\nname = \"stone\"\n")),
             Err(ItemError::Duplicate(_))
         ));
         assert!(matches!(
             ItemRegistry::build(
                 &b,
-                "[[item]]\nname = \"pick\"\nstack = 5\ntool = { class = \"hammer\", speed = 2.0, durability = 10 }\n"
+                &format!(
+                    "{HAND}[[item]]\nname = \"pick\"\nstack = 5\ntool = {{ class = \"hammer\", damage = 10, action_speed = 20.0, durability = 10 }}\n"
+                )
             ),
             Err(ItemError::BadTool(_))
         ));
+        assert!(matches!(
+            ItemRegistry::build(
+                &b,
+                &format!(
+                    "{HAND}[[item]]\nname = \"pick\"\nstack = 1\ntool = {{ class = \"hammer\", damage = 10, action_speed = 20.0, crit_chance = 2.0, durability = 10 }}\n"
+                )
+            ),
+            Err(ItemError::BadTool(_))
+        ));
+        assert!(matches!(
+            ItemRegistry::build(&b, "[hand]\ndamage = 0\naction_speed = 20.0\n"),
+            Err(ItemError::BadHand)
+        ));
         // The builtin blocks name drops that only the builtin items define.
-        assert!(matches!(ItemRegistry::build(&b, ""), Err(ItemError::UnknownDrop(..))));
+        assert!(matches!(ItemRegistry::build(&b, HAND), Err(ItemError::UnknownDrop(..))));
     }
 
     #[test]

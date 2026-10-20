@@ -657,6 +657,8 @@ impl Game {
             Event::Msg { id, msg } => match msg {
                 ClientMsg::Edit { seq, at, pos, action } => self.queue(id, at, Queued::Edit { seq, pos, action }),
                 ClientMsg::StartBreak { at, pos, slot } => self.queue(id, at, Queued::StartBreak { pos, slot }),
+                // Milestone 9: swings replace the hold (server agent).
+                ClientMsg::Swing { .. } => {}
                 ClientMsg::MoveItems { from, to, count } => {
                     self.change_inventory(id, |inv, items| {
                         inv.move_items(items, from as usize, to as usize, count)
@@ -746,6 +748,7 @@ impl Game {
             universe: self.universe(),
             blocks: pl.world.registry.defs().to_vec(),
             items: self.items.defs().to_vec(),
+            hand: self.items.hand(),
             colours: self.colours.clone(),
             recipes: self.recipes.recipes.clone(),
             inventory: inventory.clone(),
@@ -1110,6 +1113,7 @@ impl Game {
                                     .state
                                     .hook
                                     .map(|h| RemotePlayer::pack_hook(shape.delta(o.state.pos, h.pos))),
+                                light: 0,
                             },
                         ))
                     })
@@ -1235,7 +1239,7 @@ impl Game {
                 {
                     s.wear += 1;
                     if let Some(def) = self.items.get(s.item)
-                        && def.tool().is_some_and(|(_, _, durability)| s.wear >= durability)
+                        && def.tool().is_some_and(|t| s.wear >= t.durability)
                     {
                         broke = Some(format!("Your {} broke", def.display));
                         p.inventory.slots[slot] = None;
@@ -1407,7 +1411,7 @@ impl Game {
                 let wear = tool
                     .and_then(|t| self.items.get(t))
                     .and_then(|d| d.tool())
-                    .filter(|(class, _, _)| class.suits(def.material))
+                    .filter(|t| bm_core::mining::right_tool(t, def))
                     .and(p.mining.map(|m| m.slot as usize));
                 p.mining = None;
                 Ok(Accepted {

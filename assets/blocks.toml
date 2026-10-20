@@ -13,7 +13,9 @@
 #   translucent drawn in the blended pass (water, glass)
 #   breakable   false for the world floor
 #   placeable   may appear in the build hotbar
-#   hardness    seconds to break by hand (0 = instant)
+#   health      soft (800) | hard (1200, the default) | seam (2400) | prop (two
+#               swings of anything): with the planet's tier, how much damage
+#               breaking it takes (bm-core `mining`, tuning 2.2)
 #   opacity     for translucent blocks, how opaque they draw (default 1)
 #   light       light given off, 0-15 (default 0)
 #   textures    { all = "x" } or any of top / side / bottom; names are files in
@@ -25,6 +27,11 @@
 #   colourable  takes a palette colour (default true; ADR-0007)
 #   chisel      none (default) | slope (natural terrain, as in Boundless) | any
 #               which chisels may cut it (ADR-0008)
+#   mount       floor | north | east | south | west: a prop (a torch) drawn as
+#               a small model, on top of the block below or against the side
+#               of its neighbour that way (north = z - 1); not solid
+#   bonus       extra yields by planet tier 1 to 8, the expected count each:
+#               [{ item = "flint", per_tier = [0.015, ...] }] (tuning 4.4)
 
 [[block]]
 name = "air"
@@ -35,7 +42,7 @@ opaque = false
 translucent = false
 breakable = false
 placeable = false
-hardness = 0.0
+health = "hard"
 
 [[block]]
 name = "bedrock"
@@ -46,7 +53,7 @@ opaque = true
 translucent = false
 breakable = false
 placeable = false
-hardness = 0.0
+health = "hard"
 textures = { all = "bedrock" }
 material = "rock"
 
@@ -59,9 +66,10 @@ opaque = true
 translucent = false
 breakable = true
 placeable = true
-hardness = 0.6
+health = "hard"
 textures = { all = "stone" }
 material = "rock"
+bonus = [{ item = "flint", per_tier = [0.015, 0.015, 0.02, 0.02, 0, 0, 0, 0] }]
 
 [[block]]
 name = "deep_stone"
@@ -72,9 +80,10 @@ opaque = true
 translucent = false
 breakable = true
 placeable = true
-hardness = 0.9
+health = "hard"
 textures = { all = "deep_stone" }
 material = "rock"
+bonus = [{ item = "flint", per_tier = [0.015, 0.015, 0.02, 0.02, 0, 0, 0, 0] }]
 
 [[block]]
 name = "soil"
@@ -85,7 +94,7 @@ opaque = true
 translucent = false
 breakable = true
 placeable = true
-hardness = 0.3
+health = "soft"
 textures = { all = "soil" }
 material = "soil"
 
@@ -100,7 +109,7 @@ opaque = true
 translucent = false
 breakable = true
 placeable = true
-hardness = 0.3
+health = "soft"
 textures = { top = "turf_top", side = "turf_side", bottom = "soil" }
 material = "soil"
 drops = "soil"
@@ -114,7 +123,7 @@ opaque = true
 translucent = false
 breakable = true
 placeable = true
-hardness = 0.25
+health = "soft"
 textures = { all = "sand" }
 material = "soil"
 
@@ -127,9 +136,10 @@ opaque = true
 translucent = false
 breakable = true
 placeable = true
-hardness = 0.35
+health = "hard"
 textures = { all = "gravel" }
 material = "soil"
+bonus = [{ item = "flint", per_tier = [0.05, 0.05, 0.05, 0.05, 0.05, 0.05, 0.05, 0.05] }]
 
 [[block]]
 name = "snow"
@@ -140,7 +150,7 @@ opaque = true
 translucent = false
 breakable = true
 placeable = true
-hardness = 0.2
+health = "soft"
 textures = { all = "snow" }
 material = "soil"
 
@@ -153,7 +163,7 @@ opaque = false
 translucent = true
 breakable = false
 placeable = false
-hardness = 0.0
+health = "hard"
 opacity = 0.62
 textures = { all = "water" }
 
@@ -167,7 +177,7 @@ opaque = true
 translucent = false
 breakable = true
 placeable = true
-hardness = 0.5
+health = "hard"
 textures = { side = "trunk_side", top = "trunk_top", bottom = "trunk_top" }
 material = "wood"
 
@@ -179,7 +189,7 @@ opaque = true
 translucent = false
 breakable = true
 placeable = true
-hardness = 0.1
+health = "soft"
 textures = { all = "foliage" }
 material = "plant"
 
@@ -192,10 +202,11 @@ opaque = true
 translucent = false
 breakable = true
 placeable = false
-hardness = 0.8
+health = "seam"
 textures = { all = "coal_seam" }
 material = "rock"
 drops = "coal"
+bonus = [{ item = "coal", per_tier = [0.5, 0.5, 0.7, 0.7, 1.05, 1.05, 1.05, 1.05] }]
 
 [[block]]
 name = "copper_vein"
@@ -206,10 +217,11 @@ opaque = true
 translucent = false
 breakable = true
 placeable = false
-hardness = 1.0
+health = "seam"
 textures = { all = "copper_vein" }
 material = "rock"
 drops = "copper_ore"
+bonus = [{ item = "copper_ore", per_tier = [0.5, 0.5, 0.7, 0.7, 1.05, 1.05, 1.05, 1.05] }]
 
 [[block]]
 name = "glow_crystal"
@@ -220,7 +232,7 @@ opaque = true
 translucent = false
 breakable = true
 placeable = true
-hardness = 0.7
+health = "hard"
 textures = { all = "glow_crystal" }
 light = 12
 material = "crystal"
@@ -234,7 +246,7 @@ opaque = true
 translucent = false
 breakable = true
 placeable = true
-hardness = 0.4
+health = "hard"
 textures = { all = "timber" }
 material = "wood"
 
@@ -247,7 +259,7 @@ opaque = true
 translucent = false
 breakable = true
 placeable = true
-hardness = 0.7
+health = "hard"
 textures = { all = "brick" }
 material = "rock"
 
@@ -260,7 +272,7 @@ opaque = false
 translucent = true
 breakable = true
 placeable = true
-hardness = 0.2
+health = "hard"
 opacity = 0.28
 textures = { all = "glass" }
 material = "crystal"
@@ -275,7 +287,7 @@ opaque = true
 translucent = false
 breakable = true
 placeable = true
-hardness = 0.6
+health = "hard"
 textures = { top = "workbench_top", side = "workbench_side", bottom = "timber" }
 material = "wood"
 station = "workbench"
@@ -290,7 +302,7 @@ opaque = true
 translucent = false
 breakable = true
 placeable = true
-hardness = 1.0
+health = "hard"
 textures = { top = "furnace_top", side = "furnace_side", bottom = "stone" }
 material = "rock"
 station = "furnace"
@@ -306,7 +318,7 @@ opaque = true
 translucent = false
 breakable = true
 placeable = true
-hardness = 1.5
+health = "hard"
 textures = { top = "claim_stone_top", side = "claim_stone_side", bottom = "stone" }
 material = "rock"
 light = 6
@@ -323,10 +335,11 @@ opaque = true
 translucent = false
 breakable = true
 placeable = false
-hardness = 1.6
+health = "seam"
 textures = { all = "iron_vein" }
 material = "rock"
 drops = "iron_ore"
+bonus = [{ item = "iron_ore", per_tier = [0.5, 0.5, 0.7, 0.7, 1.05, 1.05, 1.05, 1.05] }]
 
 [[block]]
 name = "sandstone"
@@ -337,9 +350,10 @@ opaque = true
 translucent = false
 breakable = true
 placeable = true
-hardness = 0.9
+health = "hard"
 textures = { top = "sandstone_top", side = "sandstone_side", bottom = "sandstone_top" }
 material = "rock"
+bonus = [{ item = "flint", per_tier = [0.015, 0.015, 0.02, 0.02, 0, 0, 0, 0] }]
 
 [[block]]
 name = "ice"
@@ -350,7 +364,7 @@ opaque = false
 translucent = true
 breakable = true
 placeable = true
-hardness = 0.5
+health = "hard"
 opacity = 0.7
 textures = { all = "ice" }
 material = "crystal"
@@ -365,7 +379,7 @@ opaque = true
 translucent = false
 breakable = false
 placeable = false
-hardness = 0.0
+health = "hard"
 textures = { top = "warp_shrine_top", side = "warp_shrine_side", bottom = "stone" }
 material = "rock"
 light = 10
@@ -382,7 +396,7 @@ opaque = true
 translucent = false
 breakable = true
 placeable = true
-hardness = 0.8
+health = "hard"
 textures = { top = "storage_chest_top", side = "storage_chest_side", bottom = "timber" }
 material = "wood"
 storage = 20
@@ -398,7 +412,7 @@ opaque = true
 translucent = false
 breakable = true
 placeable = true
-hardness = 0.4
+health = "hard"
 textures = { all = "ash" }
 material = "soil"
 
@@ -413,11 +427,12 @@ opaque = true
 translucent = false
 breakable = true
 placeable = false
-hardness = 1.6
+health = "seam"
 textures = { all = "wayshard_vein" }
 material = "rock"
 light = 3
 drops = "wayshard"
+bonus = [{ item = "wayshard", per_tier = [0, 0, 0, 0, 0.5, 0.8, 0.8, 1.2] }]
 
 [[block]]
 name = "portal_conduit"
@@ -428,7 +443,7 @@ opaque = true
 translucent = false
 breakable = true
 placeable = true
-hardness = 1.0
+health = "hard"
 textures = { all = "portal_conduit" }
 material = "rock"
 
@@ -443,7 +458,81 @@ translucent = true
 opacity = 0.7
 breakable = false
 placeable = false
-hardness = 0.0
+health = "hard"
 textures = { all = "portal_surface" }
 light = 11
 drops = ""
+
+[[block]]
+name = "torch"
+colourable = false
+color = [236, 168, 72]
+solid = false
+opaque = false
+translucent = false
+breakable = true
+placeable = true
+health = "prop"
+light = 10
+textures = { all = "torch" }
+mount = "floor"
+
+[[block]]
+name = "torch_north"
+colourable = false
+color = [236, 168, 72]
+solid = false
+opaque = false
+translucent = false
+breakable = true
+placeable = false
+health = "prop"
+light = 10
+textures = { all = "torch" }
+mount = "north"
+drops = "torch"
+
+[[block]]
+name = "torch_east"
+colourable = false
+color = [236, 168, 72]
+solid = false
+opaque = false
+translucent = false
+breakable = true
+placeable = false
+health = "prop"
+light = 10
+textures = { all = "torch" }
+mount = "east"
+drops = "torch"
+
+[[block]]
+name = "torch_south"
+colourable = false
+color = [236, 168, 72]
+solid = false
+opaque = false
+translucent = false
+breakable = true
+placeable = false
+health = "prop"
+light = 10
+textures = { all = "torch" }
+mount = "south"
+drops = "torch"
+
+[[block]]
+name = "torch_west"
+colourable = false
+color = [236, 168, 72]
+solid = false
+opaque = false
+translucent = false
+breakable = true
+placeable = false
+health = "prop"
+light = 10
+textures = { all = "torch" }
+mount = "west"
+drops = "torch"

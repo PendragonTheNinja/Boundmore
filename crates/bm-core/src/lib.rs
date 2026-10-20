@@ -11,6 +11,7 @@ pub mod inventory;
 pub mod items;
 pub mod light;
 pub mod look;
+pub mod mining;
 pub mod movement;
 pub mod planet;
 pub mod plots;
@@ -21,14 +22,14 @@ pub mod shape;
 pub mod time;
 
 pub use block::{
-    BlockDef, BlockFlags, BlockId, BlockRegistry, BlockState, Chiselling, Colour, Material, RegistryError, Shape,
-    Station,
+    BlockDef, BlockFlags, BlockId, BlockRegistry, BlockState, Bonus, Chiselling, Colour, Health, Material, Mount,
+    RegistryError, Shape, Station,
 };
 pub use chunk::{CHUNK_FORMAT_VERSION, Chunk, ChunkDecodeError};
 pub use colours::{ColourDef, ColourError, ColourPalette};
 pub use coords::{BlockPos, CHUNK_SIZE, CHUNK_VOLUME, ChunkPos, LocalPos};
 pub use inventory::{HOTBAR_SLOTS, INVENTORY_SLOTS, Inventory};
-pub use items::{ItemDef, ItemError, ItemId, ItemKind, ItemRegistry, ItemStack, ToolClass};
+pub use items::{Aoe, ItemDef, ItemError, ItemId, ItemKind, ItemRegistry, ItemStack, ToolClass, ToolStats};
 pub use light::{BlockSource, ChunkLight, Light, LightMap, MAX_LIGHT};
 pub use look::{NO_TINT, PlanetLook};
 pub use movement::{

@@ -170,3 +170,33 @@ count = 2
 inputs = [["stone", 4], ["copper_ingot", 1], ["wayshard", 1]]
 station = "workbench"
 seconds = 4.0
+
+# Milestone 9 (Boundless's recipes, tuning 2.9 and the community recipe data):
+# the starter tool from nothing; sticks; wood tools at hand (Boundless: the
+# crafting table); the basic torch.
+
+[[recipe]]
+output = "hand_stone"
+inputs = []
+
+[[recipe]]
+output = "stick"
+count = 4
+inputs = [["trunk", 1]]
+
+[[recipe]]
+output = "wood_hammer"
+inputs = [["timber", 2], ["stick", 1], ["foliage", 1]]
+
+[[recipe]]
+output = "wood_shovel"
+inputs = [["timber", 2], ["stick", 1], ["foliage", 1]]
+
+[[recipe]]
+output = "wood_axe"
+inputs = [["timber", 2], ["stick", 1], ["foliage", 1]]
+
+[[recipe]]
+output = "torch"
+count = 4
+inputs = [["stick", 1], ["flint", 1]]

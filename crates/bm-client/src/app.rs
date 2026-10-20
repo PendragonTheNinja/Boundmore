@@ -755,6 +755,7 @@ impl App {
         };
         let items = match Items::new(
             w.items.clone(),
+            w.hand,
             w.recipes.clone(),
             w.inventory.clone(),
             w.colours.clone(),
@@ -917,6 +918,8 @@ impl App {
                 }
             }
             ServerMsg::BlockChanged { pos, block } => s.world.set_block(pos, block),
+            // Milestone 9: the client agent draws block health.
+            ServerMsg::BlockHealth { .. } => {}
             ServerMsg::EditResult { seq, pos, block, .. } => s.world.apply_edit_result(seq, pos, block),
             ServerMsg::PlayerJoined { id, name } => s.remotes.joined(id, name),
             ServerMsg::PlayerLeft { id } => s.remotes.left(id),
@@ -2115,6 +2118,7 @@ mod tests {
         let registry = BlockRegistry::from_defs(w.blocks.clone()).unwrap();
         let items = Items::new(
             w.items.clone(),
+            w.hand,
             w.recipes.clone(),
             w.inventory.clone(),
             w.colours.clone(),
@@ -2152,6 +2156,7 @@ mod tests {
                 yaw: 0,
                 pitch: 0,
                 hook: None,
+                light: 0,
             }],
         }
     }

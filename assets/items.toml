@@ -4,9 +4,14 @@
 #   name      unique; recipes and block `drops` refer to it
 #   display   what players see (default: the name in title case)
 #   stack     most per slot (default 100; tools must be 1)
-#   tool      { class = hammer | shovel | axe, speed, durability }
-#             speed: how many times faster than a bare hand on the materials
-#             its class suits (hammer: rock, crystal; shovel: soil; axe: wood, plant)
+#   tool      { class, damage, action_speed, crit_chance, crit_effect,
+#             durability, aoe } (Boundless's numbers, tuning 2.1; bm-core
+#             `mining`). class hammer | shovel | axe deals full damage on what
+#             it suits (hammer: rock, crystal, ore; shovel: soil, sand, gravel;
+#             axe: wood, plants) and a quarter on the rest; no class suits
+#             everything. action_speed sets the time between swings;
+#             crit_effect defaults to 0.2; aoe 1x2 | 3x1 | cross | 3x3 | random
+#             (none yet: forging brings it). One durability per swing.
 #   chisel    { family = square | slope | bevel | round, precise, durability }
 #             cuts blocks into shapes (ADR-0008); precise cuts one eighth of
 #             a block at a time, otherwise an edge's two
@@ -16,6 +21,14 @@
 #             flies, reel_in and reel_out the rope's top speeds (blocks per
 #             second); a hookshot reels in by itself
 #   icon      texture in assets/textures/items/ (default: the name)
+#
+# [hand] is what a bare hand (or anything that is not a tool) does to blocks.
+# Boundless's bare hand is not documented: a guess, half the hand stone's
+# damage (docs/feel.md).
+
+[hand]
+damage = 100
+action_speed = 20.0
 
 [[item]]
 name = "coal"
@@ -35,47 +48,47 @@ name = "iron_ingot"
 [[item]]
 name = "stone_hammer"
 stack = 1
-tool = { class = "hammer", speed = 2.5, durability = 150 }
+tool = { class = "hammer", damage = 400, action_speed = 15.0, durability = 600 }
 
 [[item]]
 name = "stone_shovel"
 stack = 1
-tool = { class = "shovel", speed = 2.5, durability = 150 }
+tool = { class = "shovel", damage = 400, action_speed = 15.0, durability = 600 }
 
 [[item]]
 name = "stone_axe"
 stack = 1
-tool = { class = "axe", speed = 2.5, durability = 150 }
+tool = { class = "axe", damage = 400, action_speed = 15.0, durability = 600 }
 
 [[item]]
 name = "copper_hammer"
 stack = 1
-tool = { class = "hammer", speed = 4.0, durability = 400 }
+tool = { class = "hammer", damage = 400, action_speed = 30.0, durability = 700 }
 
 [[item]]
 name = "copper_shovel"
 stack = 1
-tool = { class = "shovel", speed = 4.0, durability = 400 }
+tool = { class = "shovel", damage = 400, action_speed = 30.0, durability = 700 }
 
 [[item]]
 name = "copper_axe"
 stack = 1
-tool = { class = "axe", speed = 4.0, durability = 400 }
+tool = { class = "axe", damage = 400, action_speed = 30.0, durability = 700 }
 
 [[item]]
 name = "iron_hammer"
 stack = 1
-tool = { class = "hammer", speed = 6.0, durability = 900 }
+tool = { class = "hammer", damage = 700, action_speed = 10.0, crit_chance = 0.2, durability = 900 }
 
 [[item]]
 name = "iron_shovel"
 stack = 1
-tool = { class = "shovel", speed = 6.0, durability = 900 }
+tool = { class = "shovel", damage = 700, action_speed = 10.0, crit_chance = 0.2, durability = 900 }
 
 [[item]]
 name = "iron_axe"
 stack = 1
-tool = { class = "axe", speed = 6.0, durability = 900 }
+tool = { class = "axe", damage = 700, action_speed = 10.0, crit_chance = 0.2, durability = 900 }
 
 [[item]]
 name = "square_chisel"
@@ -132,3 +145,35 @@ name = "wayshard"
 name = "portal_token"
 stack = 1
 portal_token = true
+
+# Starter tools (Boundless's numbers, tuning 2.1): the hand stone is crafted
+# from nothing, as Boundless's starter tool was, and breaks anything at full
+# damage; wood tools come before stone.
+
+[[item]]
+name = "hand_stone"
+stack = 1
+tool = { damage = 200, action_speed = 20.0, durability = 400 }
+
+[[item]]
+name = "wood_hammer"
+stack = 1
+tool = { class = "hammer", damage = 300, action_speed = 20.0, durability = 600 }
+
+[[item]]
+name = "wood_shovel"
+stack = 1
+tool = { class = "shovel", damage = 300, action_speed = 20.0, durability = 600 }
+
+[[item]]
+name = "wood_axe"
+stack = 1
+tool = { class = "axe", damage = 300, action_speed = 20.0, durability = 600 }
+
+# Torch makings: sticks from trunks, flint from rock and gravel (tuning 4.4).
+
+[[item]]
+name = "stick"
+
+[[item]]
+name = "flint"

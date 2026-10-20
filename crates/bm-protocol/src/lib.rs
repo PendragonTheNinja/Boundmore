@@ -17,13 +17,13 @@
 
 use bm_core::{
     BlockDef, BlockPos, BlockState, ChunkPos, ColourPalette, DayCycle, Inventory, ItemDef, ItemStack, MoveConfig,
-    PlanetLook, PlanetShape, PlayerInput, PlayerState, PlotPos, Recipe, Station,
+    PlanetLook, PlanetShape, PlayerInput, PlayerState, PlotPos, Recipe, Station, ToolStats,
 };
 use glam::DVec3;
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
 
 /// Bump on any change to a message below. Client and server must match.
-pub const PROTOCOL_VERSION: u32 = 12;
+pub const PROTOCOL_VERSION: u32 = 13;
 
 /// QUIC application protocol name; also refuses non-Boundmore peers early.
 pub const ALPN: &[u8] = b"boundmore/1";
@@ -64,6 +64,16 @@ pub enum ClientMsg {
     /// is queued with the edits, so it can never overtake the break of the
     /// block before it.
     StartBreak { at: u32, pos: BlockPos, slot: u8 },
+    /// One swing of the item in hotbar `slot` (a tool, or anything: a
+    /// non-tool swings as a bare hand) at the block `pos`, following input
+    /// `at` (queued with the edits, like `Edit`). The server checks reach and
+    /// the time since the last swing on the input timeline
+    /// (`mining::swing_ticks` of the item that made it), then damages every
+    /// block the swing hits (`mining::aoe_blocks` from the look at `at`).
+    /// Blocks it breaks are answered with `EditResult { seq, .. }` each;
+    /// blocks it only damages with `BlockHealth`. Milestone 9: replaces
+    /// `StartBreak` and `EditAction::Break`.
+    Swing { seq: u32, at: u32, pos: BlockPos, slot: u8 },
     /// `at` is the input sequence the edit follows: the server applies it
     /// right after simulating that input, exactly where the client's
     /// prediction put it, so both judge "is a player in the way" on the same
@@ -191,6 +201,8 @@ pub struct Welcome {
     pub blocks: Vec<BlockDef>,
     /// The item catalogue (`ItemRegistry::from_defs` on the client).
     pub items: Vec<ItemDef>,
+    /// What a bare hand does to blocks.
+    pub hand: ToolStats,
     /// The colour palette (ADR-0007): ids 1 to 255, 0 is natural.
     pub colours: ColourPalette,
     pub recipes: Vec<Recipe>,
@@ -287,6 +299,14 @@ pub enum ServerMsg {
     BlockChanged {
         pos: BlockPos,
         block: BlockState,
+    },
+    /// Damage a block has taken so far (milestone 9), sent to everyone who
+    /// has its chunk whenever a swing changes it; 0 when it is reset (the
+    /// block changed, or a refused swing's truth). Healing after
+    /// `mining::HEAL_TICKS` without a hit is not sent: clients time it.
+    BlockHealth {
+        pos: BlockPos,
+        damage: u32,
     },
     /// Answer to the sender's `Edit`, carrying what the block now is: the
     /// predicted change if accepted, the true block if refused.
@@ -421,6 +441,8 @@ pub struct RemotePlayer {
     /// Their grapple hook while one is out, from their feet in 1/256 blocks
     /// (a hook never flies further than a grapple's range, well under 128).
     pub hook: Option<[i16; 3]>,
+    /// Light from what they hold in hand (a torch), 0 for none.
+    pub light: u8,
 }
 
 impl RemotePlayer {
@@ -544,6 +566,7 @@ mod tests {
                     yaw: u16::MAX,
                     pitch: i16::MIN,
                     hook: Some([i16::MIN; 3]),
+                    light: u8::MAX,
                 };
                 PLAYERS_PER_SNAPSHOT
             ],
@@ -607,6 +630,7 @@ mod tests {
                 .collect(),
             blocks: blocks.defs().to_vec(),
             items: items.defs().to_vec(),
+            hand: items.hand(),
             colours: ColourPalette::builtin(),
             recipes: recipes.recipes.clone(),
             inventory: Inventory::default(),

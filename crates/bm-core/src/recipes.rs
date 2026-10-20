@@ -30,7 +30,7 @@ pub enum RecipeError {
     Parse(#[from] toml::de::Error),
     #[error("recipe for `{0}`: {1}")]
     Item(String, ItemError),
-    #[error("recipe for `{0}` has no inputs or makes nothing")]
+    #[error("recipe for `{0}` makes nothing, or needs nothing at a station")]
     Empty(String),
 }
 
@@ -77,7 +77,10 @@ impl RecipeBook {
                 .iter()
                 .map(|(n, c)| Ok((id(n)?, *c)))
                 .collect::<Result<Vec<_>, RecipeError>>()?;
-            if inputs.is_empty() || e.count == 0 || inputs.iter().any(|(_, c)| *c == 0) {
+            // Only a hand recipe may need nothing (the hand stone, as
+            // Boundless's starter tool).
+            if (inputs.is_empty() && e.station != Station::Hand) || e.count == 0 || inputs.iter().any(|(_, c)| *c == 0)
+            {
                 return Err(RecipeError::Empty(e.output));
             }
             recipes.push(Recipe {

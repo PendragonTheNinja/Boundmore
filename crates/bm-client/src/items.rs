@@ -8,7 +8,7 @@
 
 use bm_core::{
     BlockRegistry, Colour, ColourPalette, INVENTORY_SLOTS, Inventory, ItemDef, ItemError, ItemKind, ItemRegistry,
-    ItemStack, Recipe, RecipeBook, ShapeFamily, ToolClass,
+    ItemStack, Recipe, RecipeBook, ShapeFamily, ToolClass, ToolStats,
 };
 use bm_protocol::ClientMsg;
 use std::collections::HashMap;
@@ -32,12 +32,13 @@ pub fn half(count: u16) -> u16 {
 impl Items {
     pub fn new(
         defs: Vec<ItemDef>,
+        hand: ToolStats,
         recipes: Vec<Recipe>,
         mut inventory: Inventory,
         colours: ColourPalette,
         blocks: &BlockRegistry,
     ) -> Result<Self, ItemError> {
-        let registry = ItemRegistry::from_defs(defs, blocks)?;
+        let registry = ItemRegistry::from_defs(defs, hand, blocks)?;
         // Index safety for everything below: exactly 40 slots, all valid.
         inventory.sanitize(&registry);
         let recipes = recipes
@@ -132,11 +133,15 @@ impl Items {
         };
         let mut lines = vec![self.name(stack)];
         match def.kind {
-            ItemKind::Tool { class, speed, .. } => {
+            ItemKind::Tool(t) => {
+                lines.push(match t.class {
+                    Some(class) => format!("Best on {}", tool_materials(class)),
+                    None => "Works on everything".into(),
+                });
                 lines.push(format!(
-                    "Breaks {} {} times faster",
-                    tool_materials(class),
-                    trim_float(speed)
+                    "{} damage, {} hits a second",
+                    t.damage,
+                    trim_float((1.0 / bm_core::mining::seconds_per_hit(t.action_speed)) as f32)
                 ));
                 if let Some((left, total)) = self.durability(stack) {
                     lines.push(format!("{left} of {total} uses left"));
@@ -263,6 +268,7 @@ mod tests {
         let book = RecipeBook::builtin(&reg);
         Items::new(
             reg.defs().to_vec(),
+            reg.hand(),
             book.recipes,
             Inventory::default(),
             ColourPalette::builtin(),
@@ -296,7 +302,15 @@ mod tests {
         let blocks = BlockRegistry::builtin();
         let reg = ItemRegistry::builtin(&blocks);
         let inv = Inventory { slots: vec![None; 3] };
-        let i = Items::new(reg.defs().to_vec(), vec![], inv, ColourPalette::builtin(), &blocks).unwrap();
+        let i = Items::new(
+            reg.defs().to_vec(),
+            reg.hand(),
+            vec![],
+            inv,
+            ColourPalette::builtin(),
+            &blocks,
+        )
+        .unwrap();
         assert_eq!(i.inventory.slots.len(), INVENTORY_SLOTS);
     }
 
@@ -329,11 +343,11 @@ mod tests {
         let i = items();
         let mut hammer = stack(&i, "stone_hammer", 1).unwrap();
         hammer.wear = 30;
-        assert_eq!(i.durability(&hammer), Some((120, 150)));
+        assert_eq!(i.durability(&hammer), Some((570, 600)));
         let tip = i.tooltip(&hammer);
         assert!(tip.starts_with("Stone Hammer\n"), "{tip}");
         assert!(
-            tip.contains("2.5 times faster") && tip.contains("120 of 150 uses left"),
+            tip.contains("400 damage, 1.22 hits a second") && tip.contains("570 of 600 uses left"),
             "{tip}"
         );
         assert_eq!(i.durability(&stack(&i, "stone", 1).unwrap()), None);

@@ -75,7 +75,7 @@ async fn hello(
         other => panic!("expected welcome, got {other:?}"),
     };
     let blocks = BlockRegistry::from_defs(welcome.blocks.clone()).unwrap();
-    let items = ItemRegistry::from_defs(welcome.items.clone(), &blocks).unwrap();
+    let items = ItemRegistry::from_defs(welcome.items.clone(), welcome.hand, &blocks).unwrap();
     let (mtx, msgs) = mpsc::unbounded_channel();
     tokio::spawn(async move {
         // Keep the endpoint alive as long as the stream is read.
@@ -289,7 +289,10 @@ impl TestClient {
         let hardness = self
             .chunks
             .get(&pos.chunk())
-            .map(|c| self.welcome.blocks[c.get(pos.local()).0 as usize].hardness)
+            .map(|c| {
+                self.items
+                    .break_seconds(&self.welcome.blocks[c.get(pos.local()).0 as usize], None)
+            })
             .unwrap_or(0.0);
         self.dig_with(seq, pos, HAND, hardness + 0.05).await
     }
@@ -639,7 +642,7 @@ async fn full_inventories_refuse_breaks_and_tools_break_faster_and_wear_out() {
         &[
             (0, "stone_hammer", 1, 0),
             (1, "stone", 10, 0),
-            (3, "stone_hammer", 1, 149),
+            (3, "stone_hammer", 1, 599),
         ],
     );
     let full: Vec<(usize, &str, u16, u16)> = (0..40).map(|i| (i, "copper_ingot", 100, 0)).collect();
@@ -663,7 +666,7 @@ async fn full_inventories_refuse_breaks_and_tools_break_faster_and_wear_out() {
     let mut alice = TestClient::login(&server, "Alice").await;
     alice.wait_for_chunk(feet.chunk()).await;
     let stone = alice.block("stone");
-    let hardness = alice.welcome.blocks[stone.0 as usize].hardness;
+    let hardness = alice.items.break_seconds(&alice.welcome.blocks[stone.0 as usize], None);
     let hammer_time = alice.items.break_seconds(
         &alice.welcome.blocks[stone.0 as usize],
         Some(alice.item("stone_hammer")),
@@ -780,6 +783,8 @@ async fn crafting_by_hand_and_at_a_workbench() {
     assert!(!alice.dig(3, feet).await.0, "a working station cannot be broken");
     alice.notice("Empty the Workbench before breaking it").await;
 
+    // The craft may have finished while she was digging; ask again.
+    alice.send(ClientMsg::WatchStation { pos: Some(feet) }).await;
     let done = alice.station(|v| !v.output.is_empty()).await;
     assert!(done.jobs.is_empty());
     assert_eq!(done.output[0].item, alice.item("stone_hammer"));
@@ -1029,8 +1034,10 @@ async fn digging_block_after_block_keeps_every_break() {
     let second = first.offset(0, -1, 0);
     carol.wait_for_chunk(first.chunk()).await;
     carol.wait_for_chunk(second.chunk()).await;
-    let hardness =
-        |c: &TestClient, p: BlockPos| c.welcome.blocks[c.chunks[&p.chunk()].get(p.local()).0 as usize].hardness;
+    let hardness = |c: &TestClient, p: BlockPos| {
+        c.items
+            .break_seconds(&c.welcome.blocks[c.chunks[&p.chunk()].get(p.local()).0 as usize], None)
+    };
     let (h1, h2) = (hardness(&carol, first), hardness(&carol, second));
     assert!(h1 > 0.0 && h2 > 0.0, "the ground takes time to break");
 

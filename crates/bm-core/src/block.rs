@@ -89,7 +89,10 @@ pub struct BlockDef {
     pub translucent: bool,
     pub breakable: bool,
     pub placeable: bool,
-    pub hardness: f32,
+    /// Health category: with the planet's tier, sets how much damage breaking
+    /// it takes (`mining::block_health`).
+    #[serde(default)]
+    pub health: Health,
     /// How opaque a translucent block draws (1 for everything else).
     #[serde(default = "full_opacity")]
     pub opacity: f32,
@@ -122,6 +125,69 @@ pub struct BlockDef {
     /// Which chisels may cut it (ADR-0008).
     #[serde(default)]
     pub chisel: Chiselling,
+    /// A prop drawn as a small model (a torch), standing on the floor or
+    /// hanging on a wall; it needs that neighbour to be solid. None: a block.
+    #[serde(default)]
+    pub mount: Option<Mount>,
+    /// Items it yields beyond its drop, by planet tier (seam bonus ore, flint
+    /// from rock). Rolled by the server only.
+    #[serde(default)]
+    pub bonus: Vec<Bonus>,
+}
+
+/// A block's health category [tuning 2.2]: soft 800 (soil, sand, foliage),
+/// hard 1200 (rock, gravel, wood, ice, crystal), seam 2400 (ore), and props
+/// that break in two swings of anything.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Health {
+    Soft,
+    #[default]
+    Hard,
+    Seam,
+    Prop,
+}
+
+/// Where a prop attaches: on top of the block below it, or against the side
+/// of the neighbour in that direction (`North` hangs on the block at z - 1;
+/// east +x, south +z, west -x).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Mount {
+    Floor,
+    North,
+    East,
+    South,
+    West,
+}
+
+impl Mount {
+    /// The offset to the block it attaches to.
+    pub fn support(self) -> (i64, i64, i64) {
+        match self {
+            Mount::Floor => (0, -1, 0),
+            Mount::North => (0, 0, -1),
+            Mount::East => (1, 0, 0),
+            Mount::South => (0, 0, 1),
+            Mount::West => (-1, 0, 0),
+        }
+    }
+
+    /// The mount for a prop placed against the face of a block at offset
+    /// `d` from the new prop (the support), if a prop can hang there.
+    pub fn from_support(d: (i64, i64, i64)) -> Option<Mount> {
+        [Mount::Floor, Mount::North, Mount::East, Mount::South, Mount::West]
+            .into_iter()
+            .find(|m| m.support() == d)
+    }
+}
+
+/// Extra yield of `item`: the expected count on each tier 1 to 8 (the whole
+/// part always, the rest as a chance; `mining::bonus_count`).
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct Bonus {
+    pub item: String,
+    pub per_tier: [f32; 8],
 }
 
 /// Which chisels may cut a block.
@@ -181,7 +247,12 @@ fn full_opacity() -> f32 {
 impl BlockDef {
     /// Whether the block produces geometry at all.
     pub fn renders(&self) -> bool {
-        self.opaque || self.translucent
+        self.opaque || self.translucent || self.mount.is_some()
+    }
+
+    /// A small model (a torch) rather than a block.
+    pub fn is_prop(&self) -> bool {
+        self.mount.is_some()
     }
 }
 
@@ -236,6 +307,10 @@ pub enum RegistryError {
     MissingTextures(String),
     #[error("block `{0}` gives off light {1}; the most is 15")]
     TooBright(String, u8),
+    #[error("prop `{0}` must be neither solid nor opaque, with health `prop`")]
+    BadProp(String),
+    #[error("block `{0}` has a bonus with a negative or non-finite count")]
+    BadBonus(String),
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -276,6 +351,15 @@ impl BlockRegistry {
             }
             if d.light > 15 {
                 return Err(RegistryError::TooBright(d.name.clone(), d.light));
+            }
+            if d.is_prop() && (d.solid || d.opaque || d.health != Health::Prop) {
+                return Err(RegistryError::BadProp(d.name.clone()));
+            }
+            if d.bonus
+                .iter()
+                .any(|b| b.per_tier.iter().any(|c| !(c.is_finite() && *c >= 0.0)))
+            {
+                return Err(RegistryError::BadBonus(d.name.clone()));
             }
             if by_name.insert(d.name.clone(), BlockId(i as u16)).is_some() {
                 return Err(RegistryError::Duplicate(d.name.clone()));

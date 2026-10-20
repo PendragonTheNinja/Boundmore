@@ -267,6 +267,7 @@ impl Demo {
             universe: self.universe(),
             blocks: self.blocks.defs().to_vec(),
             items: self.items.defs().to_vec(),
+            hand: self.items.hand(),
             colours: self.colours.clone(),
             recipes: self.book.recipes.clone(),
             inventory: self.inv.clone(),
@@ -1023,7 +1024,7 @@ impl Demo {
             ClientMsg::CollectReclaim { .. } => self.collect_reclaim(),
             ClientMsg::OpenPortal { pos } => self.open_portal(pos),
             ClientMsg::Portal { pos, action } => self.portal_action(pos, action),
-            ClientMsg::StartBreak { .. } | ClientMsg::Hello { .. } => {}
+            ClientMsg::StartBreak { .. } | ClientMsg::Swing { .. } | ClientMsg::Hello { .. } => {}
         }
         self.slots_since(&before);
     }
