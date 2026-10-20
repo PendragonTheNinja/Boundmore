@@ -356,6 +356,20 @@ Seams take twice the hits' worth of health; soil/sand/foliage take two thirds. C
 - Energy: each swing costs the tool's energy per use (2.1); energy refills over time (energy regeneration epic: empty to full in about 3 s, Dhusk t/34506 2019-08-27). Forge "energy saver" −2 per level (2.6). Chisel energy halved in Release 196 (2018-08-08, t/14494).
 - Durability: one point per swing, regardless of how many blocks an AoE swing breaks (a13o t/23156: a 3×3 is "as good as a 9× multiplier on durability"; Dhusk t/34506: one 2600-durability T6 AoE hammer yielded 2802 topaz). Wear reducers: persisting food −5/−10/−15/−30/−40% durability drain (soup, stew, risotto, loaf, pie; willcrutchley t/17271, 2018-09-22); a durability-drain epic skill (value not found). Buffs and skills multiply rather than add (Nightstar t/63432). Totems got durability in Release 195 to stop macro use ("no tool should last forever", t/14250).
 
+### 2.5a Action speed to seconds per hit (a13o's "Boundless Stat Analysis" sheet)
+
+Source: a13o's Google Sheet "Boundless Stat Analysis" (https://docs.google.com/spreadsheets/d/1L5_AifEeMMnHyeEcsXjmSNKKSLdDGcMlY-qGvTMuE2o), viewable but not downloadable; transcribed from Nathan's screenshots of its Tools tab, 2026-10-20. High confidence (it reproduces every other column of the tab: damage after armour, hits to break, DPS, lifetime).
+
+The tab's "Atk Speed (s)" column, seconds per hit at each total action speed (base, +2 from the 5-point all-attributes skill, +16 from 8 points of Dexterity):
+
+| Action speed | 10 | 12 | 15 | 17 | 20 | 22 | 25 | 26 | 27 | 30 | 31 | 32 | 36 | 38 | 40 | 41 | 46 | 54 |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| Seconds per hit | 0.91 | 0.87 | 0.82 | 0.78 | 0.73 | 0.70 | 0.66 | 0.64 | 0.63 | 0.59 | 0.58 | 0.56 | 0.51 | 0.49 | 0.46 | 0.45 | 0.40 | 0.33 |
+
+Fitted (Boundmore, 2026-10-20): **seconds per hit = 1.311 * exp(-0.017 * speed) - 0.199**, within 0.006 s of every value above (the sheet rounds to 0.01). Valid for speeds 10 to 54 only: it goes to zero near 95, while players measured a cap near 120 to 125 (2.5), so above 54 use the measured chart in 2.5 until more of the sheet is transcribed.
+
+Other rules the tab confirms: average damage = damage * (1 + crit chance * crit effect) (iron 700 at 20% and +20% = 728); DPS = average damage / seconds per hit; lifetime = durability * seconds per hit (copper 700 * 0.59 s = 6:53); hits to break a hard block = ceil(health / (damage - armour)) with health and armour by tier as in 2.2; the 5/5 attribute skill gives +5% damage, +2 action speed, +2% crit chance; 8 points of Power +40% damage, of Dexterity +16 action speed, of Agility +16% crit chance.
+
 ### 2.6 Forging (Centraforge) boons on tools
 
 From [BI-forge] (game trait table; costs are forge points per level). A tool can carry several boons; total points depend on the forge session (see section 6 of the mechanics notes).
@@ -456,7 +470,7 @@ Bombs damage blocks too, through "impulse" damage: player-derived formula (willc
 ### Open questions
 
 1. How long a partially damaged block waits before healing back to full, and whether it heals gradually or all at once. No figure found.
-2. Exact action speed → swing cooldown formula (only a hand-timed chart exists; a13o's sheet holds a formula but Google Sheets is unreachable: https://docs.google.com/spreadsheets/d/1L5_AifEeMMnHyeEcsXjmSNKKSLdDGcMlY-qGvTMuE2o).
+2. Action speed to seconds per hit: answered for speeds 10 to 54 in 2.5a; above 54 still only the hand-timed chart.
 3. Split of the +22 skill action speed between tool mastery (per point) and the tool epic; the action speed bonus of hammer epic.
 4. Exact category → tool type map for soft blocks (gravel and mud are "soft" for health, and players break them with shovels; confirm ash, growth, sponge).
 5. Durability drain epic size; energy pool size and regeneration rate per skill.
