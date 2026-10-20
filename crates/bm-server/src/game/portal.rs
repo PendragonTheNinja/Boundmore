@@ -372,18 +372,7 @@ impl Game {
     /// (and saved), and everyone who has the chunk hears of it (their light
     /// and mesh follow, as for any edit).
     fn set_block_for_all(&mut self, pi: usize, canon: BlockPos, state: BlockState) {
-        self.planets[pi].world.set_state(canon, state);
-        let chunk = canon.chunk();
-        for o in self
-            .players
-            .values()
-            .filter(|o| o.planet == pi && o.sent.contains(&chunk))
-        {
-            o.out.send(&ServerMsg::BlockChanged {
-                pos: canon,
-                block: state,
-            });
-        }
+        self.change_block(pi, canon, state, None);
     }
 
     /// Sets every conduit or surface block of a rectangle to `target`, if
@@ -663,7 +652,6 @@ impl Game {
         );
         if from_planet == to_planet {
             p.state = spawn;
-            p.mining = None;
             p.out.send(&ServerMsg::Teleport { spawn, tick: self.tick });
         } else {
             self.travel(id, to_planet, Some(spawn));

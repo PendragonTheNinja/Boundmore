@@ -6,6 +6,7 @@ pub mod chat;
 pub mod claims;
 pub mod config;
 pub mod crafting;
+pub mod damage;
 pub mod game;
 pub mod lapse;
 pub mod net;
@@ -108,7 +109,13 @@ pub fn start(cfg: ServerConfig) -> Result<RunningServer> {
     reserve_a_core_for_the_game_loop();
     std::fs::create_dir_all(&cfg.data_dir).with_context(|| format!("creating {}", cfg.data_dir.display()))?;
     let registry = Arc::new(BlockRegistry::builtin());
-    let items = ItemRegistry::builtin(&registry);
+    let items = match &cfg.items {
+        Some(path) => {
+            let toml = std::fs::read_to_string(path).with_context(|| format!("reading {}", path.display()))?;
+            ItemRegistry::build(&registry, &toml).with_context(|| format!("item catalogue {}", path.display()))?
+        }
+        None => ItemRegistry::builtin(&registry),
+    };
     let recipes = RecipeBook::builtin(&items);
     let kinds = PlanetKinds::builtin(&registry);
     for spec in &cfg.planets {

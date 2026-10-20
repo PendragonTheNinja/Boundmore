@@ -42,6 +42,8 @@ struct TestClient {
     token_names: HashMap<u32, String>,
     chunks: HashMap<ChunkPos, Chunk>,
     seq: u32,
+    /// The input the last swing followed, and its tool's ticks.
+    last_swing: Option<(u32, u32)>,
     /// The planet the player is on now, and where they arrived on it.
     planet: bm_protocol::PlanetInfo,
     spawn: PlayerState,
@@ -113,7 +115,18 @@ async fn hello(
         token_names: HashMap::new(),
         chunks: HashMap::new(),
         seq: 0,
+        last_swing: None,
     })
+}
+
+/// What one swing did to the block it hit.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Swung {
+    /// It stands, with this much damage taken.
+    Damaged(u32),
+    Broke,
+    /// The swing was refused: the block there, and its true damage.
+    Refused(BlockId, u32),
 }
 
 impl TestClient {
@@ -272,29 +285,79 @@ impl TestClient {
         write_msg(&mut self.send, &msg).await.unwrap();
     }
 
-    /// Holds break for `seconds` with hotbar `slot`, then breaks.
-    async fn dig_with(&mut self, seq: u32, pos: BlockPos, slot: u8, seconds: f32) -> (bool, BlockId) {
-        self.send(ClientMsg::StartBreak {
-            at: self.seq,
-            pos,
-            slot,
-        })
-        .await;
-        tokio::time::sleep(Duration::from_secs_f32(seconds)).await;
-        self.edit(seq, pos, EditAction::Break).await
+    /// Ticks the item in hotbar `slot` needs between swings.
+    fn swing_ticks(&self, slot: u8) -> u32 {
+        let item = self.inv.get(slot as usize).map(|s| s.item);
+        bm_core::mining::swing_ticks(self.items.swing_tool(item).action_speed)
     }
 
-    /// Holds break by hand for the block's hardness, then breaks it.
-    async fn dig(&mut self, seq: u32, pos: BlockPos) -> (bool, BlockId) {
-        let hardness = self
-            .chunks
-            .get(&pos.chunk())
-            .map(|c| {
-                self.items
-                    .break_seconds(&self.welcome.blocks[c.get(pos.local()).0 as usize], None)
+    /// One swing at `pos` with hotbar `slot`, following the last input sent,
+    /// and what the server said of the block it hit.
+    async fn swing(&mut self, seq: u32, pos: BlockPos, slot: u8) -> Swung {
+        let at = self.seq;
+        self.last_swing = Some((at, self.swing_ticks(slot)));
+        self.send(ClientMsg::Swing { seq, at, pos, slot }).await;
+        let shape = self.shape();
+        let canon = shape.wrap_block(pos);
+        let m = self
+            .until(|m| match m {
+                ServerMsg::EditResult { seq: s, pos: p, .. } => *s == seq && shape.wrap_block(*p) == canon,
+                ServerMsg::BlockHealth { pos: p, .. } => *p == canon,
+                _ => false,
             })
-            .unwrap_or(0.0);
-        self.dig_with(seq, pos, HAND, hardness + 0.05).await
+            .await;
+        match m {
+            ServerMsg::EditResult { accepted: true, .. } => Swung::Broke,
+            ServerMsg::EditResult { block, .. } => {
+                // The block's true damage follows a refusal.
+                match self
+                    .until(|m| matches!(m, ServerMsg::BlockHealth { pos: p, .. } if *p == canon))
+                    .await
+                {
+                    ServerMsg::BlockHealth { damage, .. } => Swung::Refused(block.id, damage),
+                    _ => unreachable!(),
+                }
+            }
+            ServerMsg::BlockHealth { damage, .. } => Swung::Damaged(damage),
+            _ => unreachable!(),
+        }
+    }
+
+    /// Sends idle inputs until the last swing's tool allows the next, as
+    /// the game's swing loop waits.
+    fn ready(&mut self) {
+        if let Some((at, ticks)) = self.last_swing {
+            let next = at + ticks;
+            if self.seq < next {
+                self.send_inputs(next - self.seq, PlayerInput::default());
+            }
+        }
+    }
+
+    /// Swings hotbar `slot` at `pos` at the tool's cadence until it breaks
+    /// (true) or a swing is refused (false); the block the server says is
+    /// there.
+    async fn dig_with(&mut self, seq: u32, pos: BlockPos, slot: u8) -> (bool, BlockId) {
+        for _ in 0..200 {
+            self.ready();
+            match self.swing(seq, pos, slot).await {
+                Swung::Broke => {
+                    self.settle().await;
+                    return (true, BlockId::AIR);
+                }
+                Swung::Refused(block, _) => {
+                    self.settle().await;
+                    return (false, block);
+                }
+                Swung::Damaged(_) => {}
+            }
+        }
+        panic!("200 swings did not break {pos:?}");
+    }
+
+    /// Digs `pos` by hand.
+    async fn dig(&mut self, seq: u32, pos: BlockPos) -> (bool, BlockId) {
+        self.dig_with(seq, pos, HAND).await
     }
 
     async fn edit(&mut self, seq: u32, pos: BlockPos, action: EditAction) -> (bool, BlockId) {
@@ -448,10 +511,29 @@ async fn two_players_share_one_world() {
     let joined = alice.until(|m| matches!(m, ServerMsg::PlayerJoined { .. })).await;
     assert!(matches!(joined, ServerMsg::PlayerJoined { ref name, .. } if name == "Bob"));
 
-    // Breaking without holding for the block's hardness is refused.
+    // A swing lands at once; another before the hand's cadence is refused,
+    // with the block's true damage.
+    assert_eq!(
+        alice.swing(90, feet, HAND).await,
+        Swung::Damaged(100),
+        "a bare hand deals 100"
+    );
+    assert_eq!(
+        alice.swing(91, feet, HAND).await,
+        Swung::Refused(ground, 100),
+        "a swing sooner than the cadence"
+    );
+    // Rules: bedrock cannot be broken; far blocks cannot be reached.
+    alice.ready();
+    let floor = BlockPos::new(feet.x, 0, feet.z);
     assert!(
-        !alice.edit(90, feet, EditAction::Break).await.0,
-        "instant break refused"
+        matches!(alice.swing(2, floor, HAND).await, Swung::Refused(..)),
+        "out of reach / unbreakable"
+    );
+    let far = BlockPos::new(feet.x + 40, feet.y, feet.z);
+    assert!(
+        matches!(alice.swing(3, far, HAND).await, Swung::Refused(..)),
+        "out of reach"
     );
 
     // Alice digs the block she stands on; it goes into her inventory, and
@@ -467,14 +549,6 @@ async fn two_players_share_one_world() {
         .await;
     assert_eq!(bob.chunks[&feet.chunk()].get(feet.local()), BlockId::AIR);
 
-    // Rules: bedrock cannot be broken; far blocks cannot be reached.
-    let floor = BlockPos::new(feet.x, 0, feet.z);
-    assert!(
-        !alice.edit(2, floor, EditAction::Break).await.0,
-        "out of reach / unbreakable"
-    );
-    let far = BlockPos::new(feet.x + 40, feet.y, feet.z);
-    assert!(!alice.edit(3, far, EditAction::Break).await.0, "out of reach");
     // An empty slot places nothing.
     assert!(
         !alice
@@ -489,8 +563,8 @@ async fn two_players_share_one_world() {
             .await
             .0
     );
-    // Place it back, spending what was gathered. Nobody has sent an input
-    // yet, so nobody has fallen: the hole is empty and can be filled.
+    // Place it back, spending what was gathered. No input has followed the
+    // last swing, so nobody has fallen: the hole is empty and can be filled.
     let (ok, placed) = alice
         .edit(
             4,
@@ -647,7 +721,7 @@ async fn edits_positions_and_inventories_survive_a_restart() {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
-async fn full_inventories_refuse_breaks_and_tools_break_faster_and_wear_out() {
+async fn full_inventories_refuse_breaks_and_tools_hit_harder_and_wear_out() {
     let dir = tempfile::tempdir().unwrap();
     seed(
         dir.path(),
@@ -655,7 +729,7 @@ async fn full_inventories_refuse_breaks_and_tools_break_faster_and_wear_out() {
         &[
             (0, "stone_hammer", 1, 0),
             (1, "stone", 10, 0),
-            (3, "stone_hammer", 1, 599),
+            (3, "stone_hammer", 1, 597),
         ],
     );
     let full: Vec<(usize, &str, u16, u16)> = (0..40).map(|i| (i, "copper_ingot", 100, 0)).collect();
@@ -671,43 +745,39 @@ async fn full_inventories_refuse_breaks_and_tools_break_faster_and_wear_out() {
     assert!(!ok, "break refused with a full inventory");
     assert_eq!(block, ground, "nothing destroyed");
     bob.notice("Your inventory is full").await;
-    // Making room lets it through.
+    // It stands one point short of breaking: making room, one more swing
+    // takes it.
     bob.send(ClientMsg::Discard { slot: 0 }).await;
-    assert!(bob.dig(2, feet).await.0);
+    bob.ready();
+    assert_eq!(bob.swing(2, feet, HAND).await, Swung::Broke);
     drop(bob);
 
     let mut alice = TestClient::login(&server, "Alice").await;
     alice.wait_for_chunk(feet.chunk()).await;
     let stone = alice.block("stone");
-    let hardness = alice.items.break_seconds(&alice.welcome.blocks[stone.0 as usize], None);
-    let hammer_time = alice.items.break_seconds(
-        &alice.welcome.blocks[stone.0 as usize],
-        Some(alice.item("stone_hammer")),
-    );
-    assert!(hammer_time < hardness * 0.5);
-
     assert!(alice.edit(10, feet, EditAction::Place { slot: 1, mount: None }).await.0);
-    // By hand, the hammer's time is far too short.
-    assert!(
-        !alice.dig_with(11, feet, HAND, hammer_time).await.0,
-        "a bare hand is slower"
+    // A bare hand deals 100 to stone, the stone hammer 400 (tuning 2.1):
+    // one swing by hand and three with the hammer break its 1200.
+    assert_eq!(alice.swing(11, feet, HAND).await, Swung::Damaged(100));
+    alice.ready();
+    assert_eq!(
+        alice.swing(12, feet, 0).await,
+        Swung::Damaged(500),
+        "the hammer hits harder"
     );
-    // With the hammer, an instant break is still too fast...
-    assert!(
-        !alice.dig_with(12, feet, 0, 0.0).await.0,
-        "refused faster than the tool allows"
-    );
-    // ...but its own time is enough, and the stone is gathered.
-    assert!(
-        alice.dig_with(13, feet, 0, hammer_time + 0.05).await.0,
-        "the hammer breaks stone faster"
-    );
-    assert_eq!(alice.count("stone"), 10);
-    assert_eq!(stack(&alice, 0).unwrap().wear, 1, "a matching break wears the tool");
+    alice.ready();
+    assert_eq!(alice.swing(13, feet, 0).await, Swung::Damaged(900));
+    alice.ready();
+    assert_eq!(alice.swing(14, feet, 0).await, Swung::Broke);
+    alice.settle().await;
+    assert_eq!(alice.count("stone"), 10, "the stone is gathered");
+    assert_eq!(stack(&alice, 0).unwrap().wear, 3, "every swing wears the tool");
+    assert_ne!(stone, BlockId::AIR);
 
-    // The worn-out hammer breaks on its last block.
-    assert!(alice.edit(14, feet, EditAction::Place { slot: 1, mount: None }).await.0);
-    assert!(alice.dig_with(15, feet, 3, hammer_time + 0.05).await.0);
+    // A hammer three uses from its end breaks with the stone, on its third
+    // swing.
+    assert!(alice.edit(15, feet, EditAction::Place { slot: 1, mount: None }).await.0);
+    assert!(alice.dig_with(16, feet, 3).await.0);
     alice.notice("Your Stone Hammer broke").await;
     assert_eq!(stack(&alice, 3), None, "the broken tool is gone");
     server.stop();
@@ -889,7 +959,7 @@ async fn claims_keep_other_players_out() {
     );
 
     // Bob cannot break or build there.
-    assert!(!bob.edit(1, feet, EditAction::Break).await.0);
+    assert!(!bob.dig(1, feet).await.0);
     bob.notice("This land belongs to Alice").await;
 
     // Alice grows and shrinks her claim.
@@ -1047,9 +1117,9 @@ async fn a_version_2_planet_opens_as_the_first_planet_with_everything_kept() {
 }
 
 /// Holding break straight on from one block to the next, as the game does:
-/// the break of the first block waits for the input it follows, and the hold
-/// on the next block, sent just after, must not overtake it (it did, and
-/// every second block was refused and flashed back).
+/// the break of the first block waits for the input it follows, and the swing
+/// at the next block, sent just after, must not overtake it (a hold did, in
+/// milestone 3, and every second block was refused and flashed back).
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn digging_block_after_block_keeps_every_break() {
     let dir = tempfile::tempdir().unwrap();
@@ -1059,54 +1129,45 @@ async fn digging_block_after_block_keeps_every_break() {
     let second = first.offset(0, -1, 0);
     carol.wait_for_chunk(first.chunk()).await;
     carol.wait_for_chunk(second.chunk()).await;
-    let hardness = |c: &TestClient, p: BlockPos| {
-        c.items
-            .break_seconds(&c.welcome.blocks[c.chunks[&p.chunk()].get(p.local()).0 as usize], None)
+    let tier = carol.planet.tier;
+    let hits = |c: &TestClient, p: BlockPos| {
+        let def = &c.welcome.blocks[c.chunks[&p.chunk()].get(p.local()).0 as usize];
+        bm_core::mining::hits_to_break(&c.items.hand(), def, tier).unwrap()
     };
-    let (h1, h2) = (hardness(&carol, first), hardness(&carol, second));
-    assert!(h1 > 0.0 && h2 > 0.0, "the ground takes time to break");
+    let (n1, n2) = (hits(&carol, first), hits(&carol, second));
+    assert!(n1 > 1 && n2 > 1, "the ground takes several swings");
+    let ticks = carol.swing_ticks(HAND);
 
-    // Inputs at the real rate, as the game sends them.
-    async fn hold(c: &mut TestClient, seconds: f32) {
-        for _ in 0..(seconds * 60.0).ceil() as u32 {
-            c.send_inputs(1, PlayerInput::default());
-            tokio::time::sleep(Duration::from_secs_f64(1.0 / 60.0)).await;
+    // Inputs at the real rate, as the game sends them, and each swing sent
+    // ten inputs before the one it follows: the last swing at the first
+    // block breaks it, and the first at the second (sent straight after)
+    // must not overtake it.
+    let base = carol.seq + 20;
+    let mut swings = (0..n1 + n2).map(|k| {
+        let (seq, pos) = if k < n1 { (1, first) } else { (2, second) };
+        (base + k * ticks, seq, pos)
+    });
+    let mut next = swings.next();
+    while let Some((at, seq, pos)) = next {
+        if carol.seq + 10 >= at {
+            carol
+                .send(ClientMsg::Swing {
+                    seq,
+                    at,
+                    pos,
+                    slot: HAND,
+                })
+                .await;
+            next = swings.next();
+            continue;
         }
+        carol.send_inputs(1, PlayerInput::default());
+        tokio::time::sleep(Duration::from_secs_f64(1.0 / 60.0)).await;
     }
-    carol
-        .send(ClientMsg::StartBreak {
-            at: carol.seq,
-            pos: first,
-            slot: HAND,
-        })
-        .await;
-    hold(&mut carol, h1 + 0.1).await;
-    // The break follows an input not sent yet; the next hold goes straight after.
-    let at = carol.seq + 1;
-    carol
-        .send(ClientMsg::Edit {
-            seq: 1,
-            at,
-            pos: first,
-            action: EditAction::Break,
-        })
-        .await;
-    carol
-        .send(ClientMsg::StartBreak {
-            at,
-            pos: second,
-            slot: HAND,
-        })
-        .await;
-    hold(&mut carol, h2 + 0.1).await;
-    carol
-        .send(ClientMsg::Edit {
-            seq: 2,
-            at: carol.seq,
-            pos: second,
-            action: EditAction::Break,
-        })
-        .await;
+    for _ in 0..30 {
+        carol.send_inputs(1, PlayerInput::default());
+        tokio::time::sleep(Duration::from_secs_f64(1.0 / 60.0)).await;
+    }
 
     let mut results = Vec::new();
     while results.len() < 2 {
@@ -1116,7 +1177,11 @@ async fn digging_block_after_block_keeps_every_break() {
             results.push((seq, accepted));
         }
     }
-    assert_eq!(results, vec![(1, true), (2, true)], "both breaks kept");
+    assert_eq!(
+        results,
+        vec![(1, true), (2, true)],
+        "both breaks kept, no swing refused"
+    );
 }
 
 /// Travel by warp shrine: refused away from one, accepted beside one; the
@@ -2657,5 +2722,253 @@ async fn a_lapsed_claims_portals_go_and_their_fuel_waits_in_reclaim() {
         "{:?}",
         alice.notices
     );
+    server.stop();
+}
+
+/// Places the item in hotbar `slot` at `pos`, on the face `mount` for a prop.
+async fn place(
+    c: &mut TestClient,
+    seq: u32,
+    pos: BlockPos,
+    slot: u8,
+    mount: Option<bm_core::Mount>,
+) -> (bool, BlockId) {
+    c.edit(seq, pos, EditAction::Place { slot, mount }).await
+}
+
+/// Milestone 9, acceptance 2 to 4 and 8: a copper hammer breaks stone in
+/// three swings on a tier 1 world, everyone who has the chunk hears the
+/// damage, a swing sooner than the tool's cadence is refused with the true
+/// damage, damage heals after a while alone, the wrong tool deals a
+/// quarter, and every swing wears the tool.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn copper_breaks_stone_in_three_swings_at_its_cadence_and_damage_heals() {
+    let dir = tempfile::tempdir().unwrap();
+    seed(
+        dir.path(),
+        "Alice",
+        &[
+            (0, "copper_hammer", 1, 0),
+            (1, "stone", 10, 0),
+            (2, "copper_shovel", 1, 0),
+        ],
+    );
+    let server = bm_server::start(config(dir.path())).unwrap();
+    let mut alice = TestClient::login(&server, "Alice").await;
+    let mut bob = TestClient::register(&server, "Bob").await;
+    assert_eq!(alice.planet.tier, 1, "the test planet is tier 1");
+    let feet = alice.feet();
+    let s = feet.offset(1, 1, 0);
+    alice.wait_for_chunk(s.chunk()).await;
+    bob.wait_for_chunk(s.chunk()).await;
+    let stone = alice.block("stone");
+    assert_eq!(alice.swing_ticks(0), 35, "0.59 s at action speed 30");
+
+    // Three swings: 400, 800, then it breaks.
+    assert!(place(&mut alice, 1, s, 1, None).await.0);
+    assert_eq!(alice.swing(2, s, 0).await, Swung::Damaged(400));
+    bob.until(|m| matches!(m, ServerMsg::BlockHealth { pos, damage: 400 } if *pos == s))
+        .await;
+    alice.ready();
+    assert_eq!(alice.swing(3, s, 0).await, Swung::Damaged(800));
+    alice.ready();
+    assert_eq!(alice.swing(4, s, 0).await, Swung::Broke);
+    bob.until(|m| matches!(m, ServerMsg::BlockChanged { pos, .. } if *pos == s))
+        .await;
+    alice.settle().await;
+    assert_eq!(alice.count("stone"), 10, "gathered");
+
+    // The cadence is exact on the input timeline: 34 inputs after a swing
+    // is too soon, 35 is not.
+    assert!(place(&mut alice, 5, s, 1, None).await.0);
+    alice.ready();
+    assert_eq!(alice.swing(6, s, 0).await, Swung::Damaged(400));
+    alice.send_inputs(34, PlayerInput::default());
+    assert_eq!(alice.swing(7, s, 0).await, Swung::Refused(stone, 400), "too fast");
+    alice.send_inputs(1, PlayerInput::default());
+    assert_eq!(alice.swing(8, s, 0).await, Swung::Damaged(800));
+
+    // Left alone for longer than the heal time, it is whole again.
+    tokio::time::sleep(Duration::from_secs_f64(bm_core::mining::HEAL_TICKS as f64 / 60.0 + 0.5)).await;
+    alice.ready();
+    assert_eq!(alice.swing(9, s, 0).await, Swung::Damaged(400), "healed");
+    // A shovel is the wrong tool for stone: a quarter of its 400.
+    alice.ready();
+    assert_eq!(alice.swing(10, s, 2).await, Swung::Damaged(500));
+    alice.settle().await;
+    assert_eq!(stack(&alice, 0).unwrap().wear, 6, "one per accepted swing");
+    assert_eq!(stack(&alice, 2).unwrap().wear, 1);
+    server.stop();
+}
+
+/// An item catalogue with a tool no recipe makes: an area tool for every
+/// block (forging, which gives areas in Boundless, does not exist yet).
+fn area_items(dir: &Path) -> std::path::PathBuf {
+    let path = dir.join("test-items.toml");
+    std::fs::write(
+        &path,
+        format!(
+            "{}\n[[item]]\nname = \"test_maul\"\nstack = 1\ntool = {{ damage = 5000, action_speed = 30.0, durability = 700, aoe = \"3x3\" }}\n",
+            include_str!("../../../assets/items.toml")
+        ),
+    )
+    .unwrap();
+    path
+}
+
+/// Acceptance 6: an area tool breaks its whole shape, the same damage on
+/// every block, but skips a block on someone else's claim without refusing.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn an_area_tool_breaks_its_shape_but_skips_another_players_claim() {
+    let dir = tempfile::tempdir().unwrap();
+    let items = area_items(dir.path());
+    seed(dir.path(), "Alice", &[(0, "test_maul", 1, 0)]);
+    seed(
+        dir.path(),
+        "Bob",
+        &[(0, "copper_shovel", 1, 0), (1, "claim_stone", 1, 0)],
+    );
+    let server = bm_server::start(ServerConfig {
+        items: Some(items),
+        ..config(dir.path())
+    })
+    .unwrap();
+    let mut alice = TestClient::login(&server, "Alice").await;
+    let mut bob = TestClient::login(&server, "Bob").await;
+    let shape = alice.shape();
+    let feet = alice.feet();
+    // A plot boundary across x near the feet (plots are 8 wide): the hit
+    // block is the first of its plot, and Bob claims the plot before it.
+    let bx = (feet.x - 4..=feet.x + 3)
+        .find(|x| x.rem_euclid(bm_core::PLOT_SIZE) == 0)
+        .unwrap();
+    let hit = BlockPos::new(bx, feet.y, feet.z);
+    let theirs = hit.offset(-1, 0, 0);
+    for c in [&mut alice, &mut bob] {
+        for dx in -1..=1 {
+            c.wait_for_chunk(hit.offset(dx, 0, -1).chunk()).await;
+            c.wait_for_chunk(hit.offset(dx, 0, 1).chunk()).await;
+        }
+    }
+    assert!(bob.dig_with(1, theirs, 0).await.0);
+    assert!(place(&mut bob, 2, theirs, 1, None).await.0);
+    alice.until(|m| matches!(m, ServerMsg::Claim(_))).await;
+    let claimed = PlotPos::of(theirs, shape);
+    let before: Vec<(BlockPos, BlockState)> = (-1..=1)
+        .flat_map(|dx| (-1..=1).map(move |dz| hit.offset(dx, 0, dz)))
+        .map(|p| (p, state_at(&alice, p)))
+        .collect();
+
+    // Looking straight down, the square lies flat around the hit block.
+    alice.send_inputs(
+        1,
+        PlayerInput {
+            pitch: i16::MIN,
+            ..Default::default()
+        },
+    );
+    assert_eq!(alice.swing(3, hit, 0).await, Swung::Broke);
+    alice.settle().await;
+    let mut skipped = 0;
+    for (p, was) in before {
+        if PlotPos::of(p, shape) == claimed {
+            assert_eq!(state_at(&alice, p), was, "{p:?} is on Bob's claim");
+            skipped += 1;
+        } else {
+            assert_eq!(state_at(&alice, p), BlockState::AIR, "{p:?} is in the square");
+        }
+    }
+    assert!(skipped >= 1);
+    assert_eq!(state_at(&alice, theirs).id, alice.block("claim_stone"));
+    assert!(alice.notices.is_empty(), "nothing refused: {:?}", alice.notices);
+    assert_eq!(stack(&alice, 0).unwrap().wear, 1, "one swing, one use");
+    server.stop();
+}
+
+/// Acceptance 9 and 10: a torch stands on a floor or hangs on a wall, only
+/// against something solid; it breaks in two swings of anything; breaking
+/// what it hangs on drops it into the breaker's pack; and others see the
+/// light of a torch held in the hand.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn torches_stand_and_hang_on_solid_blocks_and_fall_with_them() {
+    let dir = tempfile::tempdir().unwrap();
+    seed(
+        dir.path(),
+        "Alice",
+        &[(0, "copper_hammer", 1, 0), (1, "stone", 10, 0), (2, "torch", 10, 0)],
+    );
+    let server = bm_server::start(config(dir.path())).unwrap();
+    let mut alice = TestClient::login(&server, "Alice").await;
+    let mut bob = TestClient::register(&server, "Bob").await;
+    let feet = alice.feet();
+    for dx in -1..=4 {
+        for dz in -3..=4 {
+            alice.wait_for_chunk(feet.offset(dx, 1, dz).chunk()).await;
+        }
+    }
+    use bm_core::Mount;
+
+    // On the floor beside her.
+    let floor = feet.offset(1, 1, 0);
+    assert_eq!(
+        place(&mut alice, 1, floor, 2, Some(Mount::Floor)).await,
+        (true, alice.block("torch"))
+    );
+    assert_eq!(alice.count("torch"), 9);
+    // Not on top of a torch, nor without saying which face.
+    assert!(
+        !place(&mut alice, 2, floor.offset(0, 1, 0), 2, Some(Mount::Floor))
+            .await
+            .0
+    );
+    alice.notice("A torch needs something solid to stand on").await;
+    assert!(!place(&mut alice, 3, feet.offset(2, 1, 0), 2, None).await.0);
+    // Not hanging on air.
+    assert!(
+        !place(&mut alice, 4, feet.offset(3, 1, -2), 2, Some(Mount::East))
+            .await
+            .0
+    );
+    alice.notice("A torch needs something solid to hang on").await;
+    // On the side of a stone block: hung on the block to its north.
+    let wall = feet.offset(1, 1, 2);
+    assert!(place(&mut alice, 5, wall, 1, None).await.0);
+    let hung = wall.offset(0, 0, 1);
+    assert_eq!(
+        place(&mut alice, 6, hung, 2, Some(Mount::North)).await,
+        (true, alice.block("torch_north"))
+    );
+    assert_eq!(alice.count("torch"), 8);
+
+    // Two swings of a bare hand take a torch.
+    assert_eq!(alice.swing(7, floor, HAND).await, Swung::Damaged(1));
+    alice.ready();
+    assert_eq!(alice.swing(8, floor, HAND).await, Swung::Broke);
+    alice.settle().await;
+    assert_eq!(alice.count("torch"), 9);
+
+    // Breaking the stone drops the torch hung on it into her pack.
+    assert!(alice.dig_with(9, wall, 0).await.0);
+    assert_eq!(state_at(&alice, hung), BlockState::AIR, "the torch fell");
+    assert_eq!(alice.count("torch"), 10, "and is back in the pack");
+    assert_eq!(alice.count("stone"), 10);
+
+    // Holding a torch lights her for others; putting it away does not.
+    let alice_id = alice.welcome.player_id;
+    let light = alice.items.get(alice.item("torch")).unwrap().held_light;
+    assert!(light > 0);
+    for (slot, want) in [(2, light), (HAND, 0)] {
+        alice.send_inputs(
+            3,
+            PlayerInput {
+                slot,
+                ..Default::default()
+            },
+        );
+        tokio::time::sleep(Duration::from_millis(300)).await;
+        let (_, _, _, others) = bob.latest_snapshot().await;
+        let seen = others.iter().find(|o| o.id == alice_id).expect("bob sees alice");
+        assert_eq!(seen.light, want, "holding slot {slot}");
+    }
     server.stop();
 }

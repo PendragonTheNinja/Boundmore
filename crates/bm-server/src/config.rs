@@ -93,6 +93,10 @@ pub struct ServerConfig {
     /// Seconds a traveller's charge at one portal lasts: trips through it
     /// within this time are free.
     pub portal_charge_cooldown: u64,
+    /// An item catalogue to use instead of the built-in `assets/items.toml`
+    /// (tests use one to try tools no recipe makes yet). Saves name items,
+    /// so a catalogue may add items freely.
+    pub items: Option<PathBuf>,
 
     /// Save version 2 settings, still read so an old `server.toml` keeps its
     /// planet: they apply to the first planet.
@@ -123,6 +127,7 @@ impl Default for ServerConfig {
             portal_trip_cost_same_planet: 1,
             portal_trip_cost_other_planet: 2,
             portal_charge_cooldown: 3600,
+            items: None,
             planet_name: None,
             seed: None,
             width_chunks: None,

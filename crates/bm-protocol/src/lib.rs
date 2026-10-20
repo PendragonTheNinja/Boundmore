@@ -57,13 +57,6 @@ pub enum ClientMsg {
         /// Create the account (refused if the name is taken).
         register: bool,
     },
-    /// The player has started holding break on this block, holding the item
-    /// in hotbar `slot` (a tool, or anything: a non-tool breaks by hand). The
-    /// server times the hold from here: a break sooner than the tool allows
-    /// is refused. `at` is the input sequence it follows, as for `Edit`: it
-    /// is queued with the edits, so it can never overtake the break of the
-    /// block before it.
-    StartBreak { at: u32, pos: BlockPos, slot: u8 },
     /// One swing of the item in hotbar `slot` (a tool, or anything: a
     /// non-tool swings as a bare hand) at the block `pos`, following input
     /// `at` (queued with the edits, like `Edit`). The server checks reach and
@@ -71,8 +64,9 @@ pub enum ClientMsg {
     /// (`mining::swing_ticks` of the item that made it), then damages every
     /// block the swing hits (`mining::aoe_blocks` from the look at `at`).
     /// Blocks it breaks are answered with `EditResult { seq, .. }` each;
-    /// blocks it only damages with `BlockHealth`. Milestone 9: replaces
-    /// `StartBreak` and `EditAction::Break`.
+    /// blocks it only damages with `BlockHealth`. A refused swing is
+    /// answered with `EditResult { accepted: false }` (the true block) and
+    /// `BlockHealth` (its true damage) for the hit block.
     Swing { seq: u32, at: u32, pos: BlockPos, slot: u8 },
     /// `at` is the input sequence the edit follows: the server applies it
     /// right after simulating that input, exactly where the client's
@@ -175,8 +169,6 @@ pub enum Channel {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum EditAction {
-    /// The item yielded goes into the inventory; refused if it cannot fit.
-    Break,
     /// Places the block item in hotbar `slot`, spending one. For a prop (a
     /// torch), `mount` is the face it goes on, from the face the player
     /// clicked: `Floor` on top of the block below, a wall direction against
