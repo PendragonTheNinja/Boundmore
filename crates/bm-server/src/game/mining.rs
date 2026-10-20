@@ -100,10 +100,6 @@ impl Game {
         let p = self.players.get(&id).ok_or("no such player")?;
         let planet = &self.planets[pi];
         let state = planet.world.state(canon).ok_or("chunk not resident")?;
-        let def = planet.world.registry.get(state.id);
-        if state.id.is_air() || !def.breakable {
-            return Err("cannot break that".into());
-        }
         if planet.guarded(canon) {
             return Err(Refusal::Told(
                 "The ground around a warp shrine cannot be changed".into(),
@@ -113,6 +109,10 @@ impl Game {
             && c.owner != p.account
         {
             return Err(ClaimError::OwnedBy(c.owner_name.clone()).into());
+        }
+        let def = planet.world.registry.get(state.id);
+        if state.id.is_air() || !def.breakable {
+            return Err("cannot break that".into());
         }
         if planet.stations.has_contents(canon) || planet.storage.has_contents(canon) {
             return Err(Refusal::Told(format!(
