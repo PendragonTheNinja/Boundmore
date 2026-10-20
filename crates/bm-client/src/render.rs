@@ -39,6 +39,32 @@ struct Globals {
     screen: [f32; 4],
     sky_rotation: [[f32; 4]; 4],
     planets: [SkyPlanetGpu; MAX_SKY_PLANETS],
+    /// Held lights (`Renderer::set_point_lights`): xyz camera-relative, w
+    /// the level; the count is in `screen.w`.
+    point_lights: [[f32; 4]; MAX_POINT_LIGHTS],
+}
+
+/// Moving lights the terrain shader adds to block light (torches in hands).
+pub const MAX_POINT_LIGHTS: usize = 16;
+
+/// The nearest `MAX_POINT_LIGHTS` lights to the camera, camera-relative
+/// (each at the lap nearest the camera, ADR-0002), as the shader takes them.
+fn point_lights_gpu(shape: &PlanetShape, eye: DVec3, lights: &[(DVec3, u8)]) -> ([[f32; 4]; MAX_POINT_LIGHTS], usize) {
+    let mut near: Vec<(f64, DVec3, u8)> = lights
+        .iter()
+        .filter(|(_, level)| *level > 0)
+        .map(|&(p, level)| {
+            let rel = shape.nearest_lap(eye, p) - eye;
+            (rel.length_squared(), rel, level.min(15))
+        })
+        .collect();
+    near.sort_by(|a, b| a.0.total_cmp(&b.0));
+    let mut out = [[0.0; 4]; MAX_POINT_LIGHTS];
+    let n = near.len().min(MAX_POINT_LIGHTS);
+    for (slot, (_, rel, level)) in out.iter_mut().zip(near) {
+        *slot = [rel.x as f32, rel.y as f32, rel.z as f32, level as f32];
+    }
+    (out, n)
 }
 
 /// One planet in the sky. Must match `SkyPlanet` in shaders/common.wgsl.
@@ -210,6 +236,8 @@ pub struct Renderer {
     quad_indices: wgpu::Buffer,
     quad_capacity: u32,
     chunks: HashMap<ChunkPos, GpuChunk>,
+    /// Held lights in canonical world positions, with their levels.
+    point_lights: Vec<(DVec3, u8)>,
     instances: wgpu::Buffer,
     instance_capacity: usize,
     box_vertices: wgpu::Buffer,
@@ -630,6 +658,7 @@ impl Renderer {
             tints: Vec::new(),
             sampler,
             chunks: HashMap::new(),
+            point_lights: Vec::new(),
             stats: FrameStats::default(),
         };
         r.write_palette(&BlockRegistry::builtin());
@@ -763,6 +792,16 @@ impl Renderer {
         self.chunks.len()
     }
 
+    /// Moving lights for the next frames: each a canonical world position
+    /// (a hand holding a torch) and a light level, falling off one level per
+    /// block as block light does. Drawn in the shader on top of the meshed
+    /// block light (the brighter wins), so nothing re-meshes and `LightMap`
+    /// never sees them. The nearest [`MAX_POINT_LIGHTS`] are used.
+    pub fn set_point_lights(&mut self, lights: &[(DVec3, u8)]) {
+        self.point_lights.clear();
+        self.point_lights.extend_from_slice(lights);
+    }
+
     pub fn render(&mut self, scene: &Scene) {
         let frame = match self.surface.get_current_texture() {
             wgpu::CurrentSurfaceTexture::Success(f) | wgpu::CurrentSurfaceTexture::Suboptimal(f) => f,
@@ -779,6 +818,7 @@ impl Renderer {
         let sky = scene.sky;
         let fog_start = scene.fog_end * 0.55;
         let v4 = |c: [f32; 3], w: f32| [c[0], c[1], c[2], w];
+        let (point_lights, point_count) = point_lights_gpu(&scene.shape, cam.eye, &self.point_lights);
         self.queue.write_buffer(
             &self.globals,
             0,
@@ -794,10 +834,11 @@ impl Renderer {
                     self.config.width as f32,
                     self.config.height as f32,
                     scene.planets.len().min(MAX_SKY_PLANETS) as f32,
-                    0.0,
+                    point_count as f32,
                 ],
                 sky_rotation: Mat4::from_mat3(sky.sky_rotation).to_cols_array_2d(),
                 planets: sky_planets(scene.planets),
+                point_lights,
             }),
         );
 
@@ -1410,8 +1451,32 @@ mod tests {
     }
 
     #[test]
+    fn point_lights_are_camera_relative_nearest_first_across_the_seam() {
+        let shape = PlanetShape::new(4, 1);
+        let w = shape.width_blocks() as f64;
+        let eye = DVec3::new(1.0, 10.0, 1.0);
+        let mut lights = vec![
+            (DVec3::new(w - 2.0, 10.0, 1.0), 10),
+            (DVec3::new(30.0, 10.0, 30.0), 10),
+            (eye, 0),
+        ];
+        for i in 0..20 {
+            lights.push((DVec3::new(40.0 + i as f64, 10.0, 40.0), 12));
+        }
+        let (gpu, n) = point_lights_gpu(&shape, eye, &lights);
+        assert_eq!(n, MAX_POINT_LIGHTS);
+        // Across the seam, three blocks away; dark lights are dropped.
+        assert_eq!(gpu[0], [-3.0, 0.0, 0.0, 10.0]);
+        assert_eq!(gpu[1], [29.0, 0.0, 29.0, 10.0]);
+        assert!(gpu.iter().all(|l| l[3] > 0.0));
+    }
+
+    #[test]
     fn layouts_match_the_shaders() {
-        assert_eq!(std::mem::size_of::<Globals>(), 64 * 3 + 16 * 6 + 32 * MAX_SKY_PLANETS);
+        assert_eq!(
+            std::mem::size_of::<Globals>(),
+            64 * 3 + 16 * 6 + 32 * MAX_SKY_PLANETS + 16 * MAX_POINT_LIGHTS
+        );
         assert_eq!(std::mem::size_of::<ChunkInstance>(), 24);
         assert_eq!(std::mem::size_of::<Vertex>(), 8);
         assert_eq!(std::mem::size_of::<ShapedVertex>(), 16);

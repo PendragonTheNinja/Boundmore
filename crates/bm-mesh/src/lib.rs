@@ -16,7 +16,9 @@
 
 use bm_core::{BlockFlags, BlockId, CHUNK_SIZE, Chunk, ChunkLight, Colour, Light, LocalPos, Shape};
 
+pub mod props;
 pub mod shaped;
+pub use props::{PropTri, prop_model};
 pub use shaped::{ShapeTri, template};
 
 const N: usize = CHUNK_SIZE as usize;
@@ -624,7 +626,11 @@ pub const SHAPED_UNITS: f32 = 256.0;
 ///
 /// `xy`: x | y << 16, chunk-local in 1/[`SHAPED_UNITS`] of a block (0..=8192).
 /// `z`: z | texture face << 16 (3 bits, as [`Face::index`]) | ao << 19 (2 bits).
-/// `normal`: x, y, z as signed bytes (`unpack4x8snorm`).
+/// `normal`: x, y, z as signed bytes (`unpack4x8snorm`) | texture v << 24
+/// (6 bits, see `z`).
+/// `z` also carries, from bit 21, an explicit texture coordinate for props
+/// (bit 21 set: u in bits 22..27, v in `normal`'s, both in pixels of the
+/// 32 x 32 face, 0..=32); clear, the shader takes it from the position.
 /// `b`: as [`Vertex`]: block id | sky << 16 | block light << 20 | colour << 24.
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, bytemuck::Pod, bytemuck::Zeroable)]
@@ -646,6 +652,22 @@ impl ShapedVertex {
             normal: n(normal[0]) | n(normal[1]) << 8 | n(normal[2]) << 16,
             b: block.0 as u32 | (light.sky() as u32) << 16 | (light.block() as u32) << 20 | (c.0 as u32) << 24,
         }
+    }
+
+    /// The same vertex with an explicit texture coordinate, in pixels of
+    /// the 32 x 32 face (0..=32 each), for props.
+    pub fn with_uv(self, uv: [u8; 2]) -> Self {
+        let (u, v) = (uv[0].min(32) as u32, uv[1].min(32) as u32);
+        Self {
+            z: (self.z & 0x001f_ffff) | 1 << 21 | u << 22,
+            normal: (self.normal & 0x00ff_ffff) | v << 24,
+            ..self
+        }
+    }
+
+    /// The explicit texture coordinate, if the vertex has one.
+    pub fn uv(self) -> Option<[u8; 2]> {
+        (self.z >> 21 & 1 == 1).then(|| [(self.z >> 22 & 63) as u8, (self.normal >> 24 & 63) as u8])
     }
 
     /// Position in 1/[`SHAPED_UNITS`] of a block.
@@ -826,6 +848,9 @@ fn mesh_with(
     quads_to_vertices(&quads.opaque, &mut mesh.opaque);
     quads_to_vertices(&quads.translucent, &mut mesh.translucent);
     mesh_shaped(&padded, &light, flags, &mut mesh);
+    if center.palette().iter().any(|s| flags.mount(s.id).is_some()) {
+        props::mesh_props(&padded, &light, flags, &mut mesh.shaped_opaque);
+    }
     mesh
 }
 
