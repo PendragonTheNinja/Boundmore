@@ -1150,7 +1150,7 @@ pub fn portal(ctx: &egui::Context, v: &PortalWindow, actions: &mut Vec<UiAction>
             }
         };
         let b = crate::portal::buttons(v.items, view, v.pos);
-        let (is_open, state) = crate::portal::state_text(view);
+        let is_open = view.open;
 
         // What it is and where it leads.
         ui.horizontal(|ui| {
@@ -1181,8 +1181,7 @@ pub fn portal(ctx: &egui::Context, v: &PortalWindow, actions: &mut Vec<UiAction>
                 None => ui.label(egui::RichText::new("Not linked").color(MUTED)),
             };
         });
-        if !is_open {
-            let why = state.trim_start_matches("Dormant. ");
+        if let Some(why) = crate::portal::dormant_because(view) {
             ui.label(egui::RichText::new(why).color(SHORT).small());
         }
 

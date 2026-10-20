@@ -15,19 +15,18 @@ pub fn size_text(width: u8, height: u8) -> String {
     format!("{width} by {height}")
 }
 
-/// Whether the portal is open, and the line saying so (with why not).
-pub fn state_text(v: &PortalView) -> (bool, String) {
+/// Why a portal is dormant, when the window can say: None when it is open
+/// (or closed for a reason the view does not show).
+pub fn dormant_because(v: &PortalView) -> Option<&'static str> {
     if v.open {
-        return (true, "Open".into());
-    }
-    let why = if v.link.is_none() {
-        "Link it with a token from another portal of the same size"
+        None
+    } else if v.link.is_none() {
+        Some("Link it with a token from another portal of the same size")
     } else if v.fuel < v.trip_cost {
-        "Add wayshards to open it"
+        Some("Add wayshards to open it")
     } else {
-        "Opening when the server next looks"
-    };
-    (false, format!("Dormant. {why}"))
+        None
+    }
 }
 
 fn plural(n: u32, one: &str, many: &str) -> String {
@@ -229,7 +228,7 @@ mod tests {
     fn the_window_says_what_the_portal_is() {
         let v = view();
         assert_eq!(size_text(v.width, v.height), "2 by 3");
-        assert_eq!(state_text(&v), (true, "Open".into()));
+        assert_eq!(dormant_because(&v), None);
         assert_eq!(
             trip_text(&v),
             "Each traveller pays 1 wayshard, at most once every 1 hour"
@@ -239,13 +238,13 @@ mod tests {
             fuel: 0,
             ..view()
         };
-        assert_eq!(state_text(&empty), (false, "Dormant. Add wayshards to open it".into()));
+        assert_eq!(dormant_because(&empty), Some("Add wayshards to open it"));
         let unlinked = PortalView {
             open: false,
             link: None,
             ..view()
         };
-        assert!(state_text(&unlinked).1.starts_with("Dormant. Link it"));
+        assert!(dormant_because(&unlinked).unwrap().starts_with("Link it"));
         let far = PortalView {
             trip_cost: 2,
             cooldown_hours: 0.5,
@@ -256,7 +255,7 @@ mod tests {
             "Each traveller pays 2 wayshards, at most once every 30 minutes"
         );
         assert_eq!(hours_text(3.0), "3 hours");
-        for t in [trip_text(&far), state_text(&unlinked).1] {
+        for t in [trip_text(&far), dormant_because(&unlinked).unwrap().into()] {
             assert!(!t.contains('\u{2014}'), "no em dashes in player text");
         }
     }

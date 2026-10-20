@@ -54,7 +54,7 @@ const PLANETS: [(&str, &str, u32); 4] = [
 ];
 /// The portal demo's two open portals (`show_portals`), 1 by 2, ahead of
 /// the spawn: each one's lower block.
-pub const PORTALS: [[i64; 3]; 2] = [[124, 44, 122], [132, 44, 122]];
+pub const PORTALS: [[i64; 3]; 2] = [[122, 44, 121], [135, 44, 121]];
 /// Wayshards a demo portal's tank holds.
 const PORTAL_CAPACITY: u32 = 500;
 /// How long a new planet's ground is held back after a warp, by default.
@@ -1584,7 +1584,7 @@ mod tests {
         d.send(ClientMsg::OpenPortal { pos: Some(pos) });
         let v = portal_views(&d.poll()).pop().unwrap();
         assert_eq!((v.width, v.height, v.fuel, v.open), (1, 2, 37, true));
-        assert_eq!(v.link.as_deref(), Some("Hearthmoor, near 132, 122"));
+        assert_eq!(v.link.as_deref(), Some("Hearthmoor, near 135, 121"));
         // Take it all out: it goes dormant, its blocks turn to conduits.
         d.send(act(PortalAction::TakeFuel { count: 500 }));
         let ev = d.poll();
@@ -1610,7 +1610,7 @@ mod tests {
         assert!(
             ev.iter()
                 .any(|e| matches!(e, NetEvent::Msg(ServerMsg::TokenNames { names })
-            if names == &vec![(1, "1 by 2, Hearthmoor, near 124, 122".to_string())]))
+            if names == &vec![(1, "1 by 2, Hearthmoor, near 122, 121".to_string())]))
         );
         let own = d.inv.slots.iter().position(|s| s.is_some_and(|s| s.tag == 1)).unwrap();
         d.send(act(PortalAction::Link { slot: own as u8 }));

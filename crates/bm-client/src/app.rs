@@ -1789,8 +1789,15 @@ impl App {
                 }
                 if let Some(s) = &mut self.session {
                     s.selected = 8;
+                    // Back from the stations, so both portals show whole.
+                    s.me.teleport(bm_core::PlayerState {
+                        pos: DVec3::new(128.5, 44.0, 130.3),
+                        vel: DVec3::ZERO,
+                        on_ground: true,
+                        hook: None,
+                    });
                 }
-                (self.yaw, self.pitch) = (0.0, -0.08);
+                (self.yaw, self.pitch) = (0.0, -0.02);
                 let [x, y, z] = crate::demo::PORTALS[0];
                 self.open_menu(Menu::Portal(BlockPos::new(x, y, z)));
             }
