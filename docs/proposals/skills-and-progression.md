@@ -1,6 +1,19 @@
 # Proposal: skills and progression
 
-*Written 2026-10-20 for Nathan to decide. Nothing here is built. The numbers come from `docs/research/boundless-tuning.md` section 5 (levels, skills, XP), section 2.7 (skills that change mining) and section 1.6 (movement); player opinions from `docs/research/boundless-forum-feedback.md` (section 9 and principle 5).*
+*Written 2026-10-20 for Nathan to decide. Nothing here is built.*
+
+## Decided (Nathan, 2026-10-20)
+
+"I fully accept it all as long as it is completely following how Boundless did it." So every answer below is **exactly Boundless's live game (1.0 to Release 248)**, which overrides the recommendations that differed:
+
+- **Pages**: exactly Boundless. Up to 100 points each; a switch has a 15-minute cooldown unless you are at home; extra pages are bought with the currency Boundless gave per level (cubits, about 100 to 300 a level). That currency and the place to spend it (Boundless's Exchange) get built with the skills; not free pages.
+- **Respec**: free until level 20, one cleanse point per level, and resets bought with the same currency, as in Boundless.
+- **Death**: Boundless's XP debt (10% of the next level, half XP until repaid), when combat exists.
+- **Base movement and reach**: Boundless's untrained values (run 3.0, sprint 5.0, reach 4), raised by Agility and Control (Nathan's separate answer, the same day).
+- **Order of building**: as question 7 recommends (mining-related skills first, the rest with their systems).
+- **Names** stay Boundmore's own (CLAUDE.md: never Boundless's names or text); meanings and numbers are Boundless's.
+
+*The original proposal follows. The numbers come from `docs/research/boundless-tuning.md` section 5 (levels, skills, XP), section 2.7 (skills that change mining) and section 1.6 (movement); player opinions from `docs/research/boundless-forum-feedback.md` (section 9 and principle 5).*
 
 Progression is what players invest in for years, so the CLAUDE.md rule applies: build nothing here until you have decided. Each question below has a recommendation; answering "yes to all" is a complete answer.
 

@@ -68,9 +68,13 @@ Every number below comes from `docs/research/boundless-tuning.md` (section numbe
 - **Better lights**: the torch with tallow and sackcloth, gem torches (they tint their light: needs coloured light), lanterns (refinery and glass), the light-source skill.
 - Bombs, totem augments, tool rank.
 
+## Also decided while building (Nathan, 2026-10-20)
+
+- Base movement and reach match an untrained Boundless character: run 3.0, sprint 5.0 blocks a second, reach 4 (were 4.6, 7.6 and 7). Skills will raise them (`docs/proposals/skills-and-progression.md`).
+
 ## Questions for Nathan (built with the default meanwhile)
 
-1. **Bare hands.** Could a bare hand break blocks in Boundless, and how fast? Default: yes, as a hand stone at half damage (100, action speed 20, **guess**).
+1. **Bare hands.** Answered (Nathan, 2026-10-20): a bare hand **cannot** break blocks in Boundless. A swing needs a tool; every player starts with a hand stone and can craft another from nothing.
 2. **Healing.** How long did a damaged block stay damaged before healing, and did it heal all at once? Default: 5 s, all at once (**guess**).
 3. **Torch brightness.** How far did a basic torch light, next to a glowing crystal block? Default: light 10 against the crystal's 12 (**guess**).
 

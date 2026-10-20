@@ -6,15 +6,15 @@ Every value here was chosen as a sensible starting point, not measured from Boun
 
 | Value | Now | Check in Boundless |
 |---|---|---|
-| Walk speed | 4.6 blocks/s | Time a walk across a known distance |
-| Sprint speed | 7.6 blocks/s | Same, sprinting |
+| Walk speed | 3.0 blocks/s | **Nathan, 2026-10-20:** Boundless's untrained run, 3.0 m/s (tuning 1.6); Agility will add 0.3 a point |
+| Sprint speed | 5.0 blocks/s | **Nathan, 2026-10-20:** Boundless's untrained sprint, 5.0 m/s; Agility will add 0.6 a point |
 | Jump height | about 1.45 blocks (velocity 8.7, gravity 26) | Can you jump onto a 1-block ledge? A 2-block one? |
 | Gravity | 26 blocks/s² | Does falling feel floaty or heavy? |
 | Ground acceleration | 55 blocks/s² (full speed in about 0.14 s) | Is starting and stopping instant or eased? |
 | Air control | 14 blocks/s² | How much can you steer mid-jump? |
 | Swim speed | 3.2 blocks/s | |
 | Player size | 0.6 wide, collides 1.9 tall, drawn 2.0, eyes at 1.75 | **Set by Nathan (2026-10-18):** two blocks tall; nobody fits under less than two blocks. Height sliders in Boundless are visual only |
-| Reach | 7 blocks (`ServerConfig::reach`) | How far away can you break a block? |
+| Reach | 4 blocks (`ServerConfig::reach`) | **Nathan, 2026-10-20:** Boundless's untrained reach, 4 m; Control will add 1 a point |
 
 ## Grapples (`assets/items.toml`; rope feel in `bm-core/src/movement.rs`)
 
@@ -60,7 +60,7 @@ Matched to Boundless's final numbers (Nathan, 2026-10-20: "as close to Boundless
 | Time between swings | a13o's curve: 1 s at action speed 5 to 0.05 s at 150 (copper 0.59 s, stone 0.82 s, iron 0.91 s) | Boundless, exact (a13o's sheet) |
 | Tools | wood 300 damage / speed 20 / 600 uses; stone 400 / 15 / 600; copper 400 / 30 / 700; iron 700 / 10 / 900, 20% crits at +20% | Boundless, exact |
 | Hand stone | 200 / 20 / 400, full damage on everything, crafted from nothing | Boundless's starter tool, exact |
-| Bare hand | 100 damage, speed 20, full damage on everything | **Guess.** Could a bare hand break blocks in Boundless, and how fast? |
+| Bare hand | cannot break blocks; everyone carries the hand stone (crafted from nothing) | **Nathan, 2026-10-20:** in Boundless a bare hand cannot break blocks |
 | Wrong tool | a quarter of the damage after armour | Boundless, medium (players' measurements) |
 | Healing | a block left alone 5 s heals to full at once | **Guess.** How long did a damaged block stay damaged? |
 | Bonus ore | copper, iron, coal +0.5 per seam on tiers 1 and 2, +0.7 on 3 and 4, +1.05 from 5; wayshards (ours) +0.5 from tier 5 | Boundless, exact for its ores; wayshards modelled on its gems |
