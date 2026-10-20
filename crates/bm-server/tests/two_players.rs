@@ -2498,3 +2498,92 @@ async fn portals_carry_players_between_planets() {
     assert_eq!(state_at(&alice, a).id, alice.block("portal_conduit"), "dormant");
     server.stop();
 }
+
+/// A lapsing claim takes its portals with it: unlinked and gone, open
+/// surfaces turned to ash like the conduits, the tanks' fuel in reclaim.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn a_lapsed_claims_portals_go_and_their_fuel_waits_in_reclaim() {
+    let dir = tempfile::tempdir().unwrap();
+    seed(
+        dir.path(),
+        "Alice",
+        &[
+            (5, "claim_stone", 1, 0),
+            (6, "portal_conduit", 20, 0),
+            (1, "wayshard", 20, 0),
+        ],
+    );
+    let (a, b) = {
+        let server = bm_server::start(config(dir.path())).unwrap();
+        let mut alice = TestClient::login(&server, "Alice").await;
+        let feet = alice.feet();
+        alice.wait_for_chunk(feet.chunk()).await;
+        claim_around(&mut alice, 1, 5).await;
+        let (a, b) = (feet.offset(0, 1, 2), feet.offset(3, 1, -3));
+        conduit_column(&mut alice, 10, a.offset(0, -1, 0), 6).await;
+        conduit_column(&mut alice, 12, b.offset(0, -1, 0), 6).await;
+        open_portal(&mut alice, a).await;
+        portal_do(&mut alice, a, PortalAction::MakeToken).await;
+        alice.until(|m| matches!(m, ServerMsg::TokenNames { .. })).await;
+        alice.settle().await;
+        let a_id = new_token(&alice, &[]);
+        open_portal(&mut alice, b).await;
+        let slot = token_slot(&alice, a_id);
+        portal_do(&mut alice, b, PortalAction::Link { slot }).await;
+        portal_do(&mut alice, a, PortalAction::AddFuel { slot: 1, count: 6 }).await;
+        portal_do(&mut alice, b, PortalAction::AddFuel { slot: 1, count: 4 }).await;
+        alice.settle().await;
+        assert_eq!(state_at(&alice, a).id, alice.block("portal_surface"));
+        assert_eq!(alice.count("wayshard"), 10);
+        drop(alice);
+        server.stop();
+        (a, b)
+    };
+    {
+        let store = Store::open(&planet_file(dir.path())).unwrap();
+        let data = store.player("alice").unwrap().unwrap();
+        store
+            .write(&WriteBatch {
+                players: vec![(
+                    "alice".into(),
+                    PlayerData {
+                        last_seen: 1_000_000,
+                        ..data
+                    },
+                )],
+                ..Default::default()
+            })
+            .unwrap();
+    }
+    {
+        let server = bm_server::start(config(dir.path())).unwrap();
+        let mut bob = TestClient::register(&server, "Bob").await;
+        if !bob.welcome.claims.is_empty() {
+            bob.until(|m| matches!(m, ServerMsg::ClaimRemoved { .. })).await;
+        }
+        bob.wait_for_chunk(a.chunk()).await;
+        bob.wait_for_chunk(b.chunk()).await;
+        bob.settle().await;
+        let ash = bob.block("ash");
+        for p in [a, a.offset(0, 1, 0), b, b.offset(0, 1, 0)] {
+            assert_eq!(state_at(&bob, p).id, ash, "ash at {p:?}");
+        }
+        drop(bob);
+        server.stop();
+    }
+    let server = bm_server::start(config(dir.path())).unwrap();
+    let mut alice = TestClient::login(&server, "Alice").await;
+    alice.until(|m| matches!(m, ServerMsg::Reclaim { .. })).await;
+    let wayshard = alice.item("wayshard");
+    assert_eq!(alice.reclaim.clone().unwrap(), vec![ItemStack::new(wayshard, 10)]);
+    alice.settle().await;
+    assert!(
+        alice
+            .notices
+            .iter()
+            .any(|n| n.ends_with("Its stored items wait for you at any warp shrine.")),
+        "{:?}",
+        alice.notices
+    );
+    server.stop();
+}
