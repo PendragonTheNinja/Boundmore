@@ -9,6 +9,7 @@ pub mod crafting;
 pub mod damage;
 pub mod game;
 pub mod lapse;
+pub mod machines;
 pub mod net;
 pub mod planet;
 pub mod portals;

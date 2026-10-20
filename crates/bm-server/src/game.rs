@@ -15,7 +15,6 @@
 use crate::chat::{self, ChatLimit, Verdict};
 use crate::claims::ClaimError;
 use crate::config::ServerConfig;
-use crate::crafting::{self, CraftError, MAX_CRAFT_COUNT};
 use crate::damage::DamageMap;
 use crate::lapse::{self, Lapse};
 use crate::net::{Event, Outbox};
@@ -27,6 +26,7 @@ use crate::store::{PlayerData, Store, WriteBatch, load_slots, save_slots};
 
 mod mining;
 mod portal;
+mod stations;
 use anyhow::{Context, Result};
 use bm_core::movement::{self, MoveConfig, PlayerInput, PlayerState};
 use bm_core::{
@@ -676,8 +676,7 @@ impl Game {
                 }
             }
             Event::Msg { id, msg } => match msg {
-                // Milestone 11: furnace fuel (server agent).
-                ClientMsg::StationFuel { .. } => {}
+                ClientMsg::StationFuel { pos, slot, count, into } => self.station_fuel(id, pos, slot, count, into),
                 ClientMsg::Edit { seq, at, pos, action } => self.queue(id, at, Queued::Edit { seq, pos, action }),
                 ClientMsg::Swing { seq, at, pos, slot } => self.queue(id, at, Queued::Swing { seq, at, pos, slot }),
                 ClientMsg::MoveItems { from, to, count } => {
@@ -1301,8 +1300,36 @@ impl Game {
     /// `EditResult`), and any prop it held up, which falls into `by`'s pack.
     /// Every block change of play goes through here.
     pub(super) fn change_block(&mut self, pi: usize, canon: BlockPos, new: BlockState, by: Option<u32>) {
-        self.planets[pi].world.set_state(canon, new);
+        let old = self.planets[pi].world.set_state(canon, new);
         let reset = self.damage[pi].clear(canon, self.tick) && !new.id.is_air();
+        // A machine block coming or going can make or unmake a machine
+        // nearby: whoever watches one is told how it stands now.
+        let reg = &self.planets[pi].world.registry;
+        let machine_block = |s: Option<BlockState>| {
+            s.is_some_and(|s| {
+                let d = reg.get(s.id);
+                d.assembly.is_some() || d.station.is_some()
+            })
+        };
+        if machine_block(old) || machine_block(Some(new)) {
+            let shape = self.planets[pi].world.shape;
+            let near: BTreeSet<BlockPos> = self
+                .players
+                .values()
+                .filter(|o| o.planet == pi)
+                .filter_map(|o| o.watching)
+                .filter(|w| {
+                    let d = shape.delta(
+                        DVec3::new(w.x as f64, w.y as f64, w.z as f64),
+                        DVec3::new(canon.x as f64, canon.y as f64, canon.z as f64),
+                    );
+                    d.abs().max_element() <= 4.0
+                })
+                .collect();
+            for w in near {
+                self.push_station(pi, w);
+            }
+        }
         let chunk = canon.chunk();
         for (oid, o) in &self.players {
             if o.planet != pi || !o.sent.contains(&chunk) {
@@ -1422,6 +1449,15 @@ impl Game {
                 }
                 if block == self.claim_stone {
                     planet.claims.can_create(&p.account, canon, allowance)?;
+                }
+                // A working four-block machine never changes while it stands.
+                if reg.get(block).assembly == Some(bm_core::block::Assembly::Four)
+                    && crate::machines::exceeds_four(shape, |q| world.block(q), canon, block)
+                {
+                    return Err(Refusal::Told(format!(
+                        "Only 4 {} blocks can touch",
+                        bm_core::items::title_case(&reg.get(block).name)
+                    )));
                 }
                 if block == self.portal_conduit {
                     if !planet.claims.at_block(canon).is_some_and(|c| c.owner == p.account) {
@@ -1606,15 +1642,6 @@ impl Game {
         self.left_planet(from);
     }
 
-    /// The station at `pos` if this player may use it: loaded for them,
-    /// within reach, and not on someone else's claim.
-    fn station_access(&self, id: u32, pos: BlockPos) -> Result<(BlockPos, Station), Refusal> {
-        let (canon, block) = self.block_access(id, pos)?;
-        let planet = &self.planets[self.planet_of(id).ok_or("no such player")?];
-        let kind = planet.world.registry.get(block).station.ok_or("not a station")?;
-        Ok((canon, kind))
-    }
-
     /// The storage block at `pos` and its slots, if this player may use it
     /// (the rules of stations).
     fn storage_access(&self, id: u32, pos: BlockPos) -> Result<(BlockPos, usize), Refusal> {
@@ -1655,119 +1682,6 @@ impl Game {
         match r {
             Refusal::Told(text) => self.notice(id, &text),
             Refusal::Quiet(why) => tracing::debug!("refused request from #{id}: {why}"),
-        }
-    }
-
-    fn craft(&mut self, id: u32, index: u16, count: u16, station: Option<BlockPos>) {
-        let Some(recipe) = self.recipes.get(index).cloned() else {
-            return self.tell(id, "no such recipe".into());
-        };
-        if count == 0 || count > MAX_CRAFT_COUNT {
-            return self.notice(id, &CraftError::TooMany.to_string());
-        }
-        if recipe.station == Station::Hand {
-            if let Some(Err(e)) =
-                self.change_inventory(id, |inv, items| crafting::craft_by_hand(inv, items, &recipe, count))
-            {
-                self.notice(id, &e.to_string());
-            }
-            return;
-        }
-        let needs = format!("That is made at a {}", station_name(recipe.station));
-        let Some(pos) = station else {
-            return self.notice(id, &needs);
-        };
-        let canon = match self.station_access(id, pos) {
-            Ok((canon, kind)) if kind == recipe.station => canon,
-            Ok(_) => return self.notice(id, &needs),
-            Err(r) => return self.tell(id, r),
-        };
-        let Some(pi) = self.planet_of(id) else { return };
-        if !self.planets[pi].stations.has_room(canon) {
-            return self.notice(id, &CraftError::QueueFull.to_string());
-        }
-        match self.change_inventory(id, |inv, _| crafting::take_inputs(inv, &recipe, count)) {
-            Some(true) => {}
-            Some(false) => return self.notice(id, &CraftError::Materials.to_string()),
-            None => return,
-        }
-        if let Err(e) = self.planets[pi]
-            .stations
-            .queue(canon, recipe.station, index, count, self.tick)
-        {
-            // Unreachable (room was checked), but never take inputs silently.
-            tracing::error!("queueing at {canon:?} after taking inputs: {e}");
-        }
-        self.push_station(pi, canon);
-    }
-
-    fn watch(&mut self, id: u32, pos: Option<BlockPos>) {
-        let target = match pos {
-            None => None,
-            Some(pos) => match self.station_access(id, pos) {
-                Ok((canon, _)) => Some(canon),
-                Err(r) => {
-                    self.tell(id, r);
-                    None
-                }
-            },
-        };
-        let Some(pi) = self.planet_of(id) else { return };
-        let view = target.and_then(|canon| self.station_view(pi, canon));
-        let Some(p) = self.players.get_mut(&id) else { return };
-        p.watching = target;
-        if let Some(view) = view {
-            p.out.send(&ServerMsg::Station(view));
-        }
-    }
-
-    fn collect(&mut self, id: u32, pos: BlockPos) {
-        let canon = match self.station_access(id, pos) {
-            Ok((canon, _)) => canon,
-            Err(r) => return self.tell(id, r),
-        };
-        let Some(p) = self.players.get_mut(&id) else { return };
-        let pi = p.planet;
-        let stations = &mut self.planets[pi].stations;
-        let before = p.inventory.clone();
-        let moved = stations.collect(canon, &mut p.inventory, &self.items);
-        send_slots(p, &before);
-        if moved {
-            self.push_station(pi, canon);
-        } else if stations
-            .get(canon)
-            .is_some_and(|s| s.output.slots.iter().any(Option::is_some))
-        {
-            self.notice(id, "Your inventory is full");
-        }
-    }
-
-    fn station_view(&self, pi: usize, canon: BlockPos) -> Option<bm_protocol::StationView> {
-        let planet = &self.planets[pi];
-        let kind = match planet.stations.get(canon) {
-            Some(s) => s.kind,
-            None => planet
-                .world
-                .block(canon)
-                .and_then(|b| planet.world.registry.get(b).station)?,
-        };
-        Some(planet.stations.view(canon, kind, self.tick, &self.recipes))
-    }
-
-    /// Sends a station's state to everyone on its planet watching it.
-    fn push_station(&self, pi: usize, canon: BlockPos) {
-        let mut view = None;
-        for p in self
-            .players
-            .values()
-            .filter(|p| p.planet == pi && p.watching == Some(canon))
-        {
-            if view.is_none() {
-                view = self.station_view(pi, canon);
-            }
-            if let Some(v) = &view {
-                p.out.send(&ServerMsg::Station(v.clone()));
-            }
         }
     }
 

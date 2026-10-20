@@ -8,8 +8,17 @@
 //! (a few stacks); when the next craft would not fit, the queue pauses until
 //! someone collects.
 //!
-//! A station has data only while it holds jobs or output, and that is what
-//! stops it being broken.
+//! A furnace (milestone 11) also has a fuel slot and a bank of heat: each
+//! craft draws its recipe's heat as it starts, burning fuel items from the
+//! slot as needed; without enough, the craft waits, with no progress, until
+//! fuel arrives.
+//!
+//! A station has data only while it holds jobs, output, fuel or banked heat;
+//! jobs, output and fuel stop it being broken.
+//!
+//! Hand recipes are instant wherever they are asked for, a crafting table
+//! included (Boundless queued them at a table; instant keeps the hand and the
+//! table the same and costs nothing).
 
 use crate::store::{SavedJob, SavedStack, SavedStation, load_slots, save_slots};
 use bm_core::{BlockPos, Inventory, ItemRegistry, ItemStack, Recipe, RecipeBook, Station, TICK_HZ};
@@ -94,6 +103,13 @@ pub struct StationData {
     pub started: u64,
     /// `OUTPUT_STACKS` slots.
     pub output: Inventory,
+    /// A furnace's fuel slot: one stack of something that burns.
+    pub fuel: Option<ItemStack>,
+    /// Heat banked from fuel already burnt, drawn by each craft as it starts.
+    pub heat: u32,
+    /// The head job's current craft is waiting for heat: it has not started
+    /// (no progress) and starts when fuel arrives.
+    pub waiting: bool,
 }
 
 impl StationData {
@@ -105,17 +121,59 @@ impl StationData {
             output: Inventory {
                 slots: vec![None; OUTPUT_STACKS],
             },
+            fuel: None,
+            heat: 0,
+            waiting: false,
         }
     }
 
+    /// Nothing worth keeping a record for.
     fn is_empty(&self) -> bool {
-        self.jobs.is_empty() && self.output.slots.iter().all(Option::is_none)
+        !self.holds_anything() && self.heat == 0
+    }
+
+    /// Jobs, output or fuel: what stops it being broken. Banked heat alone
+    /// does not (a fire going out loses it): a furnace's leftover heat is
+    /// rarely exactly what any recipe takes, so it would never come free.
+    fn holds_anything(&self) -> bool {
+        !self.jobs.is_empty() || self.output.slots.iter().any(Option::is_some) || self.fuel.is_some()
+    }
+
+    /// Starts the head job's next craft at `tick`: it draws its recipe's
+    /// heat from the bank, burning fuel from the slot one item at a time as
+    /// needed. With not enough heat it waits (and keeps what it burnt
+    /// banked). Returns whether the craft is running.
+    fn start_craft(&mut self, tick: u64, items: &ItemRegistry, recipes: &RecipeBook) -> bool {
+        self.started = tick;
+        let need = self
+            .jobs
+            .front()
+            .and_then(|j| recipes.get(j.recipe))
+            .map_or(0, |r| r.heat as u32);
+        while self.heat < need {
+            let Some(f) = &mut self.fuel else { break };
+            let value = items.get(f.item).map_or(0, |d| d.fuel as u32);
+            if value == 0 {
+                break;
+            }
+            self.heat += value;
+            f.count -= 1;
+            if f.count == 0 {
+                self.fuel = None;
+            }
+        }
+        self.waiting = self.heat < need;
+        if !self.waiting {
+            self.heat -= need;
+        }
+        !self.waiting
     }
 }
 
 pub struct Stations {
     map: HashMap<BlockPos, StationData>,
-    /// Stations whose head job is running (not finished-and-waiting for room).
+    /// Stations whose head job is running (not finished-and-waiting for
+    /// room, nor waiting for heat).
     active: BTreeSet<BlockPos>,
     /// Changed since the last save.
     dirty: BTreeSet<BlockPos>,
@@ -138,10 +196,17 @@ impl Stations {
         for (pos, saved) in saved {
             let mut st = StationData::new(saved.kind);
             st.started = saved.started;
+            st.heat = saved.heat;
             let what = format!("station at {pos:?}");
+            let valid = |s: &ItemStack| s.count > 0 && items.get(s.item).is_some_and(|d| s.count <= d.stack);
             for (slot, stack) in st.output.slots.iter_mut().zip(load_slots(items, &saved.output, &what)) {
-                *slot = stack.filter(|s| s.count > 0 && items.get(s.item).is_some_and(|d| s.count <= d.stack));
+                *slot = stack.filter(valid);
             }
+            st.fuel = load_slots(items, std::slice::from_ref(&saved.fuel), &what)
+                .into_iter()
+                .next()
+                .flatten()
+                .filter(|s| valid(s) && items.get(s.item).is_some_and(|d| d.fuel > 0));
             for job in saved.jobs {
                 match find_recipe(&job, saved.kind, items, recipes) {
                     Some(recipe) if job.remaining > 0 => st.jobs.push_back(Job {
@@ -152,11 +217,12 @@ impl Stations {
                     None => refund(&mut st, &job, items, &what),
                 }
             }
+            st.waiting = saved.waiting && !st.jobs.is_empty();
             if st.is_empty() {
                 s.dirty.insert(pos);
                 continue;
             }
-            if !st.jobs.is_empty() {
+            if !st.jobs.is_empty() && !st.waiting {
                 s.active.insert(pos);
             }
             s.map.insert(pos, st);
@@ -168,25 +234,57 @@ impl Stations {
         self.map.get(&pos)
     }
 
-    /// Whether the station holds jobs or output (and so cannot be broken).
-    pub fn has_contents(&self, pos: BlockPos) -> bool {
+    /// Whether a record is kept at `pos` (contents, or banked heat).
+    pub fn exists(&self, pos: BlockPos) -> bool {
         self.map.contains_key(&pos)
     }
 
-    /// Queues `times` crafts of recipe `index` (inputs already taken).
-    pub fn queue(&mut self, pos: BlockPos, kind: Station, index: u16, times: u16, tick: u64) -> Result<(), CraftError> {
+    /// Whether the station holds jobs, output or fuel (and so cannot be
+    /// broken).
+    pub fn has_contents(&self, pos: BlockPos) -> bool {
+        self.map.get(&pos).is_some_and(StationData::holds_anything)
+    }
+
+    /// Moves a record to another block (a station saved at one block of a
+    /// four-block machine before milestone 11, to its group's first block).
+    /// Does nothing if `to` has one already.
+    pub fn relocate(&mut self, from: BlockPos, to: BlockPos) {
+        if from == to || self.map.contains_key(&to) {
+            return;
+        }
+        let Some(st) = self.map.remove(&from) else { return };
+        if self.active.remove(&from) {
+            self.active.insert(to);
+        }
+        self.map.insert(to, st);
+        self.dirty.insert(from);
+        self.dirty.insert(to);
+    }
+
+    /// Queues `times` crafts of recipe `index` (inputs already taken). The
+    /// first craft of an idle station starts at once, drawing its heat.
+    #[allow(clippy::too_many_arguments)]
+    pub fn queue(
+        &mut self,
+        pos: BlockPos,
+        kind: Station,
+        index: u16,
+        times: u16,
+        tick: u64,
+        items: &ItemRegistry,
+        recipes: &RecipeBook,
+    ) -> Result<(), CraftError> {
         let st = self.map.entry(pos).or_insert_with(|| StationData::new(kind));
         if st.jobs.len() >= MAX_JOBS {
             return Err(CraftError::QueueFull);
-        }
-        if st.jobs.is_empty() {
-            st.started = tick;
         }
         st.jobs.push_back(Job {
             recipe: index,
             remaining: times,
         });
-        self.active.insert(pos);
+        if st.jobs.len() == 1 && st.start_craft(tick, items, recipes) {
+            self.active.insert(pos);
+        }
         self.dirty.insert(pos);
         Ok(())
     }
@@ -194,6 +292,78 @@ impl Stations {
     /// Whether a queue of this station has room for one more job.
     pub fn has_room(&self, pos: BlockPos) -> bool {
         self.map.get(&pos).is_none_or(|s| s.jobs.len() < MAX_JOBS)
+    }
+
+    /// Puts up to `stack.count` of `stack` into the fuel slot of the station
+    /// at `pos` (merging with what is there, up to a stack). Returns how many
+    /// went in. A craft waiting for heat starts if it now has enough.
+    pub fn add_fuel(
+        &mut self,
+        pos: BlockPos,
+        kind: Station,
+        stack: ItemStack,
+        tick: u64,
+        items: &ItemRegistry,
+        recipes: &RecipeBook,
+    ) -> u16 {
+        let Some(def) = items.get(stack.item).filter(|d| d.fuel > 0) else {
+            return 0;
+        };
+        let st = self.map.entry(pos).or_insert_with(|| StationData::new(kind));
+        let put = match &mut st.fuel {
+            None => {
+                let n = stack.count.min(def.stack);
+                st.fuel = Some(ItemStack { count: n, ..stack });
+                n
+            }
+            Some(f)
+                if f.item == stack.item && f.colour == stack.colour && f.tag == stack.tag && f.wear == stack.wear =>
+            {
+                let n = stack.count.min(def.stack.saturating_sub(f.count));
+                f.count += n;
+                n
+            }
+            Some(_) => 0,
+        };
+        if put > 0 {
+            self.dirty.insert(pos);
+            if st.waiting && st.start_craft(tick, items, recipes) {
+                self.active.insert(pos);
+            }
+        } else if st.is_empty() {
+            self.map.remove(&pos);
+        }
+        put
+    }
+
+    /// Takes up to `count` from the fuel slot of the station at `pos`.
+    pub fn take_fuel(&mut self, pos: BlockPos, count: u16) -> Option<ItemStack> {
+        let st = self.map.get_mut(&pos)?;
+        let f = st.fuel.as_mut()?;
+        let n = count.min(f.count);
+        if n == 0 {
+            return None;
+        }
+        let taken = ItemStack { count: n, ..*f };
+        f.count -= n;
+        if f.count == 0 {
+            st.fuel = None;
+        }
+        self.dirty.insert(pos);
+        if st.is_empty() {
+            self.map.remove(&pos);
+        }
+        Some(taken)
+    }
+
+    /// Puts back fuel taken by [`Self::take_fuel`] that found no room.
+    pub fn return_fuel(&mut self, pos: BlockPos, kind: Station, stack: ItemStack) {
+        let st = self.map.entry(pos).or_insert_with(|| StationData::new(kind));
+        match &mut st.fuel {
+            Some(f) => f.count = f.count.saturating_add(stack.count),
+            None => st.fuel = Some(stack),
+        }
+        self.dirty.insert(pos);
     }
 
     /// Finishes every craft due by `tick`. Returns the stations that changed.
@@ -205,6 +375,10 @@ impl Stations {
                 idle.push(pos);
                 continue;
             };
+            if st.waiting {
+                idle.push(pos);
+                continue;
+            }
             let Some(job) = st.jobs.front_mut() else {
                 idle.push(pos);
                 continue;
@@ -227,8 +401,7 @@ impl Stations {
             if job.remaining == 0 {
                 st.jobs.pop_front();
             }
-            st.started = tick;
-            if st.jobs.is_empty() {
+            if st.jobs.is_empty() || !st.start_craft(tick, items, recipes) {
                 idle.push(pos);
             }
             changed.push(pos);
@@ -259,7 +432,7 @@ impl Stations {
         if moved {
             self.dirty.insert(pos);
             // There may be room now for a craft that was waiting.
-            if !st.jobs.is_empty() {
+            if !st.jobs.is_empty() && !st.waiting {
                 self.active.insert(pos);
             }
             if st.is_empty() {
@@ -269,9 +442,9 @@ impl Stations {
         moved
     }
 
-    /// Removes a station's data, returning everything in it: its output and
-    /// the inputs of every craft not yet finished (the one under way too).
-    /// Used when its claim lapses.
+    /// Removes a station's data, returning everything in it: its output, its
+    /// fuel, and the inputs of every craft not yet finished (the one under
+    /// way too). Banked heat is lost. Used when its claim lapses.
     pub fn take(&mut self, pos: BlockPos, recipes: &RecipeBook) -> Vec<ItemStack> {
         let Some(st) = self.map.remove(&pos) else {
             return Vec::new();
@@ -279,6 +452,7 @@ impl Stations {
         self.active.remove(&pos);
         self.dirty.insert(pos);
         let mut out: Vec<ItemStack> = st.output.slots.iter().flatten().copied().collect();
+        out.extend(st.fuel);
         for job in &st.jobs {
             let Some(r) = recipes.get(job.recipe) else { continue };
             for (item, n) in &r.inputs {
@@ -298,16 +472,23 @@ impl Stations {
         self.active.iter().copied()
     }
 
-    /// What a player sees. `kind` is the block's station kind, used for an
-    /// empty station.
-    pub fn view(&self, pos: BlockPos, kind: Station, tick: u64, recipes: &RecipeBook) -> StationView {
+    /// What a player sees. `kind` is the machine's station kind, used for an
+    /// empty station; `idle` why the machine does not work, if it does not.
+    pub fn view(
+        &self,
+        pos: BlockPos,
+        kind: Station,
+        idle: Option<String>,
+        tick: u64,
+        recipes: &RecipeBook,
+    ) -> StationView {
         let Some(st) = self.map.get(&pos) else {
             return StationView {
                 pos,
                 station: kind,
                 jobs: Vec::new(),
                 output: Vec::new(),
-                idle: None,
+                idle,
                 fuel: None,
                 heat: 0,
             };
@@ -318,7 +499,9 @@ impl Stations {
             .enumerate()
             .map(|(i, j)| {
                 let progress = match (i, recipes.get(j.recipe)) {
-                    (0, Some(r)) => (tick.saturating_sub(st.started) as f32 / craft_ticks(r) as f32).clamp(0.0, 1.0),
+                    (0, Some(r)) if !st.waiting => {
+                        (tick.saturating_sub(st.started) as f32 / craft_ticks(r) as f32).clamp(0.0, 1.0)
+                    }
                     _ => 0.0,
                 };
                 JobView {
@@ -333,9 +516,9 @@ impl Stations {
             station: st.kind,
             jobs,
             output: st.output.slots.iter().flatten().copied().collect(),
-            idle: None,
-            fuel: None,
-            heat: 0,
+            idle,
+            fuel: st.fuel,
+            heat: st.heat,
         }
     }
 
@@ -388,6 +571,9 @@ fn save_station(st: &StationData, items: &ItemRegistry, recipes: &RecipeBook) ->
             .collect(),
         started: st.started,
         output: save_slots(items, &st.output),
+        fuel: st.fuel.as_ref().and_then(|f| SavedStack::new(items, f)),
+        heat: st.heat,
+        waiting: st.waiting,
     }
 }
 
@@ -442,6 +628,10 @@ mod tests {
         recipes.recipes.iter().position(|r| r.output == id).unwrap() as u16
     }
 
+    fn coal(items: &ItemRegistry, n: u16) -> ItemStack {
+        ItemStack::new(items.id("coal").unwrap(), n)
+    }
+
     #[test]
     fn hand_crafts_are_all_or_nothing() {
         let (items, recipes) = setup();
@@ -452,7 +642,11 @@ mod tests {
         assert_eq!(craft_by_hand(&mut inv, &items, r, 3), Err(CraftError::Materials));
         assert_eq!(inv.count(items.id("trunk").unwrap()), 2);
         craft_by_hand(&mut inv, &items, r, 2).unwrap();
-        assert_eq!(inv.count(items.id("timber").unwrap()), 8);
+        assert_eq!(
+            inv.count(items.id("timber").unwrap()),
+            4,
+            "2 timber a trunk, as in Boundless"
+        );
         assert_eq!(inv.count(items.id("trunk").unwrap()), 0);
 
         // Outputs that cannot fit refuse the craft and keep the inputs.
@@ -464,31 +658,35 @@ mod tests {
         assert_eq!(full.count(items.id("trunk").unwrap()), 2);
         // Both trunks out free the slot for the timber.
         craft_by_hand(&mut full, &items, r, 2).unwrap();
-        assert_eq!(full.count(items.id("timber").unwrap()), 8);
+        assert_eq!(full.count(items.id("timber").unwrap()), 4);
     }
 
     #[test]
     fn jobs_finish_over_time_and_pause_when_the_output_is_full() {
         let (items, recipes) = setup();
-        let ingot = recipe_for(&items, &recipes, "copper_ingot");
-        let ticks = craft_ticks(recipes.get(ingot).unwrap());
+        let stones = recipe_for(&items, &recipes, "stones");
+        let r = recipes.get(stones).unwrap();
+        assert_eq!((r.station, r.output_count, r.heat), (Station::CraftingTable, 2, 0));
+        let ticks = craft_ticks(r);
         let pos = BlockPos::new(1, 2, 3);
         let mut s = Stations::new();
-        s.queue(pos, Station::Furnace, ingot, 3, 100).unwrap();
+        s.queue(pos, Station::CraftingTable, stones, 3, 100, &items, &recipes)
+            .unwrap();
         assert!(s.step(100 + ticks - 1, &items, &recipes).is_empty());
-        let v = s.view(pos, Station::Furnace, 100 + ticks / 2, &recipes);
+        let v = s.view(pos, Station::CraftingTable, None, 100 + ticks / 2, &recipes);
         assert!((v.jobs[0].progress - 0.5).abs() < 0.02);
+        assert_eq!((v.fuel, v.heat, v.idle), (None, 0, None));
         assert_eq!(s.step(100 + ticks, &items, &recipes), vec![pos]);
-        let v = s.view(pos, Station::Furnace, 100 + ticks, &recipes);
+        let v = s.view(pos, Station::CraftingTable, None, 100 + ticks, &recipes);
         assert_eq!((v.jobs[0].remaining, v.output.len()), (2, 1));
-        assert_eq!(v.output[0].count, 1);
+        assert_eq!(v.output[0].count, 2);
 
         // Fill the output with other things: the next craft waits.
         let st = s.map.get_mut(&pos).unwrap();
         for slot in st.output.slots.iter_mut().skip(1) {
             *slot = Some(ItemStack::new(items.id("glass").unwrap(), 100));
         }
-        st.output.slots[0] = Some(ItemStack::new(items.id("copper_ingot").unwrap(), 100));
+        st.output.slots[0] = Some(ItemStack::new(items.id("stones").unwrap(), 100));
         assert!(s.step(100 + 2 * ticks, &items, &recipes).is_empty());
         assert_eq!(s.running().count(), 0, "paused");
         assert_eq!(s.get(pos).unwrap().jobs[0].remaining, 2);
@@ -496,7 +694,7 @@ mod tests {
         // Collecting makes room and the waiting craft finishes at once.
         let mut inv = Inventory::default();
         assert!(s.collect(pos, &mut inv, &items));
-        assert_eq!(inv.count(items.id("copper_ingot").unwrap()), 100);
+        assert_eq!(inv.count(items.id("stones").unwrap()), 100);
         assert_eq!(s.step(100 + 5 * ticks, &items, &recipes), vec![pos]);
         assert_eq!(s.get(pos).unwrap().jobs[0].remaining, 1);
         assert_eq!(s.step(100 + 6 * ticks, &items, &recipes), vec![pos]);
@@ -504,54 +702,169 @@ mod tests {
         assert!(s.has_contents(pos), "output waits");
         let mut inv = Inventory::default();
         assert!(s.collect(pos, &mut inv, &items));
-        assert!(!s.has_contents(pos), "an empty station has no data");
+        assert!(!s.has_contents(pos) && !s.exists(pos), "an empty station has no data");
+    }
+
+    /// Each craft draws its heat as it starts, burning fuel as needed; with
+    /// none, it waits without progress until fuel arrives (soft coal 100,
+    /// a copper bar 100, an iron bar 150: tuning 4.7).
+    #[test]
+    fn furnace_crafts_burn_fuel_for_heat_and_wait_without_it() {
+        let (items, recipes) = setup();
+        let copper = recipe_for(&items, &recipes, "copper_ingot");
+        let iron = recipe_for(&items, &recipes, "iron_ingot");
+        assert_eq!(recipes.get(copper).unwrap().heat, 100);
+        assert_eq!(recipes.get(iron).unwrap().heat, 150);
+        let ticks = craft_ticks(recipes.get(copper).unwrap());
+        let pos = BlockPos::new(0, 30, 0);
+        let mut s = Stations::new();
+        s.queue(pos, Station::Furnace, copper, 2, 10, &items, &recipes).unwrap();
+        assert_eq!(s.running().count(), 0, "no heat: it waits");
+        assert!(s.step(10 + 2 * ticks, &items, &recipes).is_empty());
+        let v = s.view(pos, Station::Furnace, None, 10 + ticks, &recipes);
+        assert_eq!(v.jobs[0].progress, 0.0, "no progress while it waits");
+
+        // One coal: the first craft starts now, the bank spent.
+        let t = 1000;
+        assert_eq!(
+            s.add_fuel(pos, Station::Furnace, coal(&items, 1), t, &items, &recipes),
+            1
+        );
+        let st = s.get(pos).unwrap();
+        assert_eq!((st.fuel, st.heat, st.waiting, st.started), (None, 0, false, t));
+        assert_eq!(s.running().collect::<Vec<_>>(), vec![pos]);
+        let v = s.view(pos, Station::Furnace, None, t + ticks / 2, &recipes);
+        assert!((v.jobs[0].progress - 0.5).abs() < 0.02);
+        // It finishes; the second has nothing to burn and waits.
+        assert_eq!(s.step(t + ticks, &items, &recipes), vec![pos]);
+        let st = s.get(pos).unwrap();
+        assert!(st.waiting && st.jobs[0].remaining == 1);
+        assert_eq!(st.output.count(items.id("copper_ingot").unwrap()), 1);
+        assert_eq!(s.running().count(), 0);
+        // Five more: one burns, four wait in the slot.
+        let t = 5000;
+        assert_eq!(
+            s.add_fuel(pos, Station::Furnace, coal(&items, 5), t, &items, &recipes),
+            5
+        );
+        let st = s.get(pos).unwrap();
+        assert_eq!((st.fuel.map(|f| f.count), st.heat, st.waiting), (Some(4), 0, false));
+        assert_eq!(s.step(t + ticks, &items, &recipes), vec![pos]);
+        assert!(s.get(pos).unwrap().jobs.is_empty());
+
+        // An iron bar burns two coal and banks the 50 left over.
+        s.queue(pos, Station::Furnace, iron, 1, 9000, &items, &recipes).unwrap();
+        let st = s.get(pos).unwrap();
+        assert_eq!((st.fuel.map(|f| f.count), st.heat, st.waiting), (Some(2), 50, false));
+        let v = s.view(pos, Station::Furnace, None, 9000, &recipes);
+        assert_eq!((v.fuel.map(|f| f.count), v.heat), (Some(2), 50));
     }
 
     #[test]
-    fn taking_a_station_returns_its_output_and_unfinished_inputs() {
+    fn the_fuel_slot_takes_one_stack_of_something_that_burns() {
+        let (items, recipes) = setup();
+        let pos = BlockPos::new(5, 30, 5);
+        let mut s = Stations::new();
+        let stone = ItemStack::new(items.id("stone").unwrap(), 3);
+        assert_eq!(s.add_fuel(pos, Station::Furnace, stone, 0, &items, &recipes), 0);
+        assert!(!s.exists(pos), "nothing kept for a refusal");
+        let cap = items.get(items.id("coal").unwrap()).unwrap().stack;
+        assert_eq!(
+            s.add_fuel(pos, Station::Furnace, coal(&items, cap - 2), 0, &items, &recipes),
+            cap - 2
+        );
+        assert_eq!(
+            s.add_fuel(pos, Station::Furnace, coal(&items, 5), 0, &items, &recipes),
+            2,
+            "up to a stack"
+        );
+        let stick = ItemStack::new(items.id("stick").unwrap(), 4);
+        assert_eq!(
+            s.add_fuel(pos, Station::Furnace, stick, 0, &items, &recipes),
+            0,
+            "one kind at a time"
+        );
+        assert!(s.has_contents(pos), "fuel stops it being broken");
+        assert_eq!(s.take_fuel(pos, 3), Some(coal(&items, 3)));
+        assert_eq!(s.take_fuel(pos, u16::MAX), Some(coal(&items, cap - 3)));
+        assert_eq!(s.take_fuel(pos, 1), None);
+        assert!(!s.exists(pos));
+        s.return_fuel(pos, Station::Furnace, coal(&items, 2));
+        assert_eq!(s.get(pos).unwrap().fuel, Some(coal(&items, 2)));
+
+        // Banked heat alone is kept, but does not stop a break.
+        let iron = recipe_for(&items, &recipes, "iron_ingot");
+        s.queue(pos, Station::Furnace, iron, 1, 0, &items, &recipes).unwrap();
+        s.step(10_000, &items, &recipes);
+        let mut inv = Inventory::default();
+        assert!(s.collect(pos, &mut inv, &items));
+        assert_eq!(s.get(pos).unwrap().heat, 50);
+        assert!(s.exists(pos) && !s.has_contents(pos));
+    }
+
+    #[test]
+    fn taking_a_station_returns_its_output_fuel_and_unfinished_inputs() {
         let (items, recipes) = setup();
         let ingot = recipe_for(&items, &recipes, "copper_ingot");
         let r = recipes.get(ingot).unwrap().clone();
         let ticks = craft_ticks(&r);
         let pos = BlockPos::new(4, 5, 6);
         let mut s = Stations::new();
-        s.queue(pos, Station::Furnace, ingot, 3, 0).unwrap();
+        s.add_fuel(pos, Station::Furnace, coal(&items, 4), 0, &items, &recipes);
+        s.queue(pos, Station::Furnace, ingot, 3, 0, &items, &recipes).unwrap();
         s.step(ticks, &items, &recipes);
         s.take_dirty(&items, &recipes);
         let mut got = s.take(pos, &recipes);
         got.sort_by_key(|st| st.item);
-        let mut want = vec![ItemStack::new(r.output, r.output_count)];
+        let mut want = vec![ItemStack::new(r.output, r.output_count), coal(&items, 2)];
         want.extend(r.inputs.iter().map(|(i, n)| ItemStack::new(*i, n * 2)));
         want.sort_by_key(|st| st.item);
-        assert_eq!(got, want, "one ingot made, two crafts' inputs back");
+        assert_eq!(got, want, "one ingot made, two coal burnt, two crafts' inputs back");
         assert!(!s.has_contents(pos) && s.running().count() == 0);
         assert_eq!(s.take_dirty(&items, &recipes), vec![(pos, None)]);
         assert!(s.take(pos, &recipes).is_empty());
     }
 
     #[test]
-    fn stations_survive_a_save_and_refund_vanished_recipes() {
+    fn stations_survive_a_save_with_fuel_and_heat_and_refund_vanished_recipes() {
         let (items, recipes) = setup();
         let glass = recipe_for(&items, &recipes, "glass");
+        let iron = recipe_for(&items, &recipes, "iron_ingot");
         let pos = BlockPos::new(-7, 30, 9);
+        let waiting = BlockPos::new(1, 30, 9);
         let mut s = Stations::new();
-        s.queue(pos, Station::Furnace, glass, 4, 50).unwrap();
+        s.add_fuel(pos, Station::Furnace, coal(&items, 3), 50, &items, &recipes);
+        s.queue(pos, Station::Furnace, iron, 1, 50, &items, &recipes).unwrap();
+        s.queue(pos, Station::Furnace, glass, 4, 50, &items, &recipes).unwrap();
+        s.queue(waiting, Station::Furnace, glass, 1, 50, &items, &recipes)
+            .unwrap();
         let saved: Vec<_> = s
             .take_dirty(&items, &recipes)
             .into_iter()
             .map(|(p, st)| (p, st.unwrap()))
             .collect();
+        let st = &saved.iter().find(|(p, _)| *p == pos).unwrap().1;
+        assert_eq!((st.heat, st.waiting), (50, false));
+        assert_eq!(st.fuel.as_ref().map(|f| (f.item.as_str(), f.count)), Some(("coal", 1)));
         let t = Stations::load(saved.clone(), &items, &recipes);
         assert_eq!(t.get(pos), s.get(pos));
-        assert_eq!(t.running().collect::<Vec<_>>(), vec![pos]);
+        assert_eq!(t.get(waiting), s.get(waiting));
+        assert!(t.get(waiting).unwrap().waiting);
+        assert_eq!(
+            t.running().collect::<Vec<_>>(),
+            vec![pos],
+            "a waiting craft stays waiting"
+        );
 
         // A recipe that changed: its inputs come back as output.
         let mut changed = saved;
-        changed[0].1.jobs[0].inputs = vec![("sand".into(), 3)];
+        let i = changed.iter().position(|(p, _)| *p == pos).unwrap();
+        changed[i].1.jobs[1].inputs = vec![("sand".into(), 3)];
         let t = Stations::load(changed, &items, &recipes);
         let st = t.get(pos).unwrap();
-        assert!(st.jobs.is_empty());
+        assert_eq!(st.jobs.len(), 1);
         assert_eq!(st.output.count(items.id("sand").unwrap()), 12);
+        assert_eq!(st.heat, 50);
     }
 
     #[test]
@@ -562,9 +875,37 @@ mod tests {
         let pos = BlockPos::new(0, 0, 0);
         let mut s = Stations::new();
         for _ in 0..MAX_JOBS {
-            s.queue(pos, Station::Furnace, glass, 1, 0).unwrap();
+            s.queue(pos, Station::Furnace, glass, 1, 0, &items, &recipes).unwrap();
         }
         assert!(!s.has_room(pos));
-        assert_eq!(s.queue(pos, Station::Furnace, glass, 1, 0), Err(CraftError::QueueFull));
+        assert_eq!(
+            s.queue(pos, Station::Furnace, glass, 1, 0, &items, &recipes),
+            Err(CraftError::QueueFull)
+        );
+    }
+
+    #[test]
+    fn a_record_moves_to_its_machines_first_block() {
+        let (items, recipes) = setup();
+        let stones = recipe_for(&items, &recipes, "stones");
+        let (from, to) = (BlockPos::new(3, 20, 3), BlockPos::new(2, 20, 3));
+        let mut s = Stations::new();
+        s.queue(from, Station::Workbench, stones, 1, 0, &items, &recipes)
+            .unwrap();
+        s.take_dirty(&items, &recipes);
+        s.relocate(from, to);
+        assert!(!s.exists(from) && s.has_contents(to));
+        assert_eq!(s.running().collect::<Vec<_>>(), vec![to]);
+        let dirty: Vec<_> = s
+            .take_dirty(&items, &recipes)
+            .into_iter()
+            .map(|(p, st)| (p, st.is_some()))
+            .collect();
+        assert_eq!(dirty, vec![(to, true), (from, false)]);
+        // Never over another record.
+        s.queue(from, Station::Workbench, stones, 1, 0, &items, &recipes)
+            .unwrap();
+        s.relocate(from, to);
+        assert!(s.exists(from) && s.exists(to));
     }
 }

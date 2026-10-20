@@ -70,7 +70,11 @@ const V2_STATIONS: TableDefinition<&[u8], &[u8]> = TableDefinition::new("station
 ///
 /// 3 (M4): one file per universe, tables keyed by planet; player data records
 /// the planet; claim ids are unique across the universe.
-pub const SAVE_VERSION: u32 = 3;
+///
+/// 4 (M11): a station saves its furnace fuel slot, banked heat and whether
+/// its current craft's heat is paid ([`SavedStation`]); version 3 rows are
+/// rewritten with an empty slot, no heat and the craft paid.
+pub const SAVE_VERSION: u32 = 4;
 
 /// The universe file in the data directory.
 pub const UNIVERSE_FILE: &str = "universe.redb";
@@ -317,7 +321,43 @@ pub struct SavedStation {
     /// Universe tick the craft in progress began.
     pub started: u64,
     pub output: Vec<Option<SavedStack>>,
+    /// A furnace's fuel slot (save version 4).
+    pub fuel: Option<SavedStack>,
+    /// Heat banked from fuel already burnt (save version 4).
+    pub heat: u32,
+    /// The head job's current craft waits for heat: it has not started, and
+    /// starts when fuel arrives (save version 4).
+    pub waiting: bool,
 }
+
+/// The layouts save version 3 wrote, kept only to read them for the upgrade.
+mod v3 {
+    use super::*;
+
+    #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+    pub struct SavedStation {
+        pub kind: Station,
+        pub jobs: Vec<SavedJob>,
+        pub started: u64,
+        pub output: Vec<Option<SavedStack>>,
+    }
+
+    impl From<SavedStation> for super::SavedStation {
+        fn from(s: SavedStation) -> Self {
+            Self {
+                kind: s.kind,
+                jobs: s.jobs,
+                started: s.started,
+                output: s.output,
+                fuel: None,
+                heat: 0,
+                waiting: false,
+            }
+        }
+    }
+}
+
+pub use v3::SavedStation as V3SavedStation;
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct SavedClaim {
@@ -563,9 +603,24 @@ impl Store {
                         SAVE_VERSION
                     );
                 }
-                if u.save_version < SAVE_VERSION {
+                if u.save_version < 3 {
                     bail!("no upgrade from universe save version {}", u.save_version);
                 }
+                let u = if u.save_version == 3 {
+                    let tx = self.db.begin_write()?;
+                    let n = upgrade_3_to_4(&tx)?;
+                    let u = UniverseMeta {
+                        save_version: SAVE_VERSION,
+                        ..u
+                    };
+                    tx.open_table(META)?
+                        .insert("universe", postcard::to_stdvec(&u)?.as_slice())?;
+                    tx.commit()?;
+                    tracing::info!("upgraded the universe from save version 3 to {SAVE_VERSION} ({n} stations)");
+                    u
+                } else {
+                    u
+                };
                 // Older chunk formats still decode (`Chunk::decode` reads
                 // every earlier version); chunks are rewritten in the current
                 // one as they change. Only a newer format is refused.
@@ -647,6 +702,7 @@ impl Store {
             upgrade_1_to_2(&tx)?;
         }
         let report = upgrade_2_to_3(&tx, &meta, kinds)?;
+        upgrade_3_to_4(&tx)?;
         tx.commit()?;
         tracing::info!(
             "upgraded planet `{}` from save version {from} to {SAVE_VERSION}: it is planet 0 of the universe",
@@ -917,6 +973,31 @@ impl Store {
     }
 }
 
+/// Version 4 gives every station a fuel slot, banked heat and a waiting
+/// flag: each version 3 row is rewritten with an empty slot, no heat and its
+/// craft paid (a job under way keeps going as it did). A row that does not
+/// read as version 3 is left untouched and reported, as `stations` reports
+/// a corrupt row. Returns how many rows were rewritten.
+fn upgrade_3_to_4(tx: &WriteTransaction) -> Result<usize> {
+    let mut t = tx.open_table(STATIONS)?;
+    let old: Vec<(Vec<u8>, Vec<u8>)> = t
+        .iter()?
+        .map(|r| r.map(|(k, v)| (k.value().to_vec(), v.value().to_vec())))
+        .collect::<Result<_, _>>()?;
+    let mut n = 0;
+    for (k, v) in old {
+        match postcard::from_bytes::<v3::SavedStation>(&v) {
+            Ok(s) => {
+                let new: SavedStation = s.into();
+                t.insert(k.as_slice(), postcard::to_stdvec(&new)?.as_slice())?;
+                n += 1;
+            }
+            Err(e) => tracing::error!("a version 3 station is corrupt ({e}); left as it was"),
+        }
+    }
+    Ok(n)
+}
+
 /// Version 2 adds accounts, inventories, stations and claims. Version 1's
 /// players were keyed by the name they typed and held only a position: each
 /// becomes the character of whoever registers that name (lowercased; if two
@@ -1171,7 +1252,7 @@ pub mod legacy {
         meta: &V2PlanetMeta,
         chunks: &[(ChunkPos, Vec<u8>)],
         players: &[V2Player],
-        stations: &[(BlockPos, SavedStation)],
+        stations: &[(BlockPos, V3SavedStation)],
         claims: &[(u32, &str, &str, BlockPos, Vec<PlotPos>)],
         clock: u64,
     ) -> Result<()> {
@@ -1285,6 +1366,13 @@ mod tests {
             }],
             started: 99,
             output: vec![Some(stack.clone()), None],
+            fuel: Some(SavedStack {
+                item: "coal".into(),
+                count: 4,
+                wear: 0,
+            }),
+            heat: 50,
+            waiting: true,
         };
         let claim = SavedClaim {
             planet: 2,
@@ -1405,6 +1493,9 @@ mod tests {
             jobs: vec![],
             started: 0,
             output: vec![],
+            fuel: None,
+            heat: 0,
+            waiting: false,
         };
         s.write(&WriteBatch {
             stations: vec![(u16::MAX, BlockPos::new(1, 1, 1), Some(st.clone()))],
@@ -1467,6 +1558,87 @@ mod tests {
         legacy::write_v2_planet(&path, &meta, &[], &[], &[], &[], 0).unwrap();
         let s = Store::open(&path).unwrap();
         assert!(s.universe(&kinds()).is_err(), "an unknown generator is refused");
+    }
+
+    /// A version 3 universe (M4 to M10) opens: its stations are rewritten
+    /// with an empty fuel slot, no heat and their craft paid, and the
+    /// universe is marked version 4; it then reopens as it is.
+    #[test]
+    fn a_version_3_universe_gains_fuel_and_heat_on_its_stations() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("u.redb");
+        let old = V3SavedStation {
+            kind: Station::Furnace,
+            jobs: vec![SavedJob {
+                output: "glass".into(),
+                output_count: 1,
+                inputs: vec![("sand".into(), 2), ("soil".into(), 2)],
+                remaining: 2,
+            }],
+            started: 77,
+            output: vec![
+                Some(SavedStack {
+                    item: "glass".into(),
+                    count: 1,
+                    wear: 0,
+                }),
+                None,
+            ],
+        };
+        let spot = BlockPos::new(3, -4, 5);
+        {
+            let s = Store::open(&path).unwrap();
+            let tx = s.db.begin_write().unwrap();
+            tx.open_table(META)
+                .unwrap()
+                .insert(
+                    "universe",
+                    postcard::to_stdvec(&UniverseMeta {
+                        save_version: 3,
+                        chunk_format: CHUNK_FORMAT_VERSION,
+                    })
+                    .unwrap()
+                    .as_slice(),
+                )
+                .unwrap();
+            {
+                let mut t = tx.open_table(STATIONS).unwrap();
+                t.insert(
+                    block_key(1, spot).as_slice(),
+                    postcard::to_stdvec(&old).unwrap().as_slice(),
+                )
+                .unwrap();
+                // A row no version reads stays as it was.
+                t.insert(block_key(1, BlockPos::new(0, 0, 0)).as_slice(), [0xffu8; 3].as_slice())
+                    .unwrap();
+            }
+            tx.commit().unwrap();
+        }
+        let s = Store::open(&path).unwrap();
+        assert!(s.universe(&kinds()).unwrap().is_none());
+        let want: SavedStation = old.clone().into();
+        assert_eq!((want.fuel.clone(), want.heat, want.waiting), (None, 0, false));
+        assert_eq!(s.stations(1).unwrap(), vec![(spot, want.clone())]);
+        let version = |s: &Store| {
+            let tx = s.db.begin_read().unwrap();
+            let bytes = tx
+                .open_table(META)
+                .unwrap()
+                .get("universe")
+                .unwrap()
+                .unwrap()
+                .value()
+                .to_vec();
+            postcard::from_bytes::<UniverseMeta>(&bytes).unwrap().save_version
+        };
+        assert_eq!(version(&s), SAVE_VERSION);
+        drop(s);
+        let s = Store::open(&path).unwrap();
+        assert!(
+            s.universe(&kinds()).unwrap().is_none(),
+            "reopens without upgrading again"
+        );
+        assert_eq!(s.stations(1).unwrap(), vec![(spot, want)]);
     }
 
     /// A universe saved before chunk format 2 opens (old chunks still decode)
@@ -1582,7 +1754,7 @@ mod tests {
             count: 3,
             wear: 0,
         };
-        let st = SavedStation {
+        let st = V3SavedStation {
             kind: Station::Workbench,
             jobs: vec![],
             started: 0,
@@ -1614,7 +1786,7 @@ mod tests {
             }
         );
         assert_eq!(s.chunk(0, ChunkPos::new(-1, 1, 0)).unwrap(), Some(vec![1]));
-        assert_eq!(s.stations(0).unwrap(), vec![(BlockPos::new(1, -2, 3), st)]);
+        assert_eq!(s.stations(0).unwrap(), vec![(BlockPos::new(1, -2, 3), st.into())]);
         let (claims, next) = s.claims().unwrap();
         assert_eq!(
             (claims[0].0, claims[0].1.planet, claims[0].1.owner_name.as_str(), next),

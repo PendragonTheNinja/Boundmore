@@ -117,7 +117,11 @@ impl Game {
         if state.id.is_air() || !def.breakable {
             return Err("cannot break that".into());
         }
-        if planet.stations.has_contents(canon) || planet.storage.has_contents(canon) {
+        // A machine's contents belong to all its blocks.
+        if let Some(name) = self.machine_contents(pi, canon) {
+            return Err(Refusal::Told(format!("Empty the {name} before breaking it")));
+        }
+        if planet.storage.has_contents(canon) {
             return Err(Refusal::Told(format!(
                 "Empty the {} before breaking it",
                 title_case(&def.name)
@@ -339,12 +343,21 @@ impl Game {
             }
         }
         for (at, s) in fallen {
+            // A gathering object (a plant on the floor) gives what gathering
+            // it would: its bonus yield (a guess; Boundless's rule for a
+            // plant whose ground goes is not recorded).
+            let bonus = bonus_yield(&self.items, s.id, self.planets[pi].tier, &mut self.rng);
+            let drop = drop_of(self, pi, s);
             if let Some(id) = by
-                && let Some((item, colour)) = drop_of(self, pi, s)
                 && let Some(p) = self.players.get_mut(&id)
             {
                 let before = p.inventory.clone();
-                p.inventory.add_coloured(&self.items, item, colour, 1);
+                if let Some((item, colour)) = drop {
+                    p.inventory.add_coloured(&self.items, item, colour, 1);
+                }
+                for (item, n) in bonus {
+                    p.inventory.add(&self.items, item, n);
+                }
                 send_slots(p, &before);
             }
             // Everyone hears of it, the breaker too: they did not ask for it.
