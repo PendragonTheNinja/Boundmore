@@ -8,7 +8,7 @@
 use crate::icons::{ICON_SIZE, IconSource};
 use crate::items::Items;
 use bm_core::{BlockPos, BlockRegistry, Colour, HOTBAR_SLOTS, INVENTORY_SLOTS, ItemId, ItemStack, Station};
-use bm_protocol::{ClientMsg, PlanetSummary, SlotRef, StationView};
+use bm_protocol::{ClientMsg, PlanetSummary, PortalView, SlotRef, StationView};
 use egui::{
     Align, Align2, Color32, CornerRadius, FontId, Id, Layout, Rect, Sense, Stroke, StrokeKind, Ui, Vec2, pos2, vec2,
 };
@@ -46,6 +46,8 @@ pub enum Menu {
     Travel(BlockPos),
     /// The storage block at this block, beside the inventory.
     Storage(BlockPos),
+    /// The portal one of whose blocks is here (ADR-0009).
+    Portal(BlockPos),
 }
 
 #[derive(Default)]
@@ -1101,6 +1103,190 @@ fn station_panel(ui: &mut Ui, v: &CraftingView, pos: BlockPos, actions: &mut Vec
         .clicked()
     {
         actions.push(UiAction::Send(ClientMsg::CollectStation { pos }));
+    }
+}
+
+// ---- portals ----
+
+/// The portal window: the portal E was pressed on (`pos`) and the server's
+/// last word on it (None until the first `Portal` arrives).
+pub struct PortalWindow<'a> {
+    pub items: &'a Items,
+    pub icons: &'a ItemIcons,
+    pub pos: BlockPos,
+    pub view: Option<&'a PortalView>,
+}
+
+const OPEN_GREEN: Color32 = Color32::from_rgb(150, 214, 120);
+const PORTAL_VIOLET: Color32 = Color32::from_rgb(168, 140, 255);
+
+fn action_button(ui: &mut Ui, label: &str, enabled: bool, why_not: &str) -> bool {
+    let resp = ui.add_enabled(
+        enabled,
+        egui::Button::new(egui::RichText::new(label).strong()).min_size(vec2(0.0, 30.0)),
+    );
+    if enabled {
+        resp.clicked()
+    } else {
+        resp.on_disabled_hover_text(why_not);
+        false
+    }
+}
+
+pub fn portal(ctx: &egui::Context, v: &PortalWindow, actions: &mut Vec<UiAction>) {
+    let mut open = true;
+    window("Portal").open(&mut open).show(ctx, |ui| {
+        ui.set_width(420.0);
+        let Some(view) = v.view else {
+            ui.horizontal(|ui| {
+                ui.spinner();
+                ui.label(egui::RichText::new("Opening").color(MUTED));
+            });
+            return;
+        };
+        let send = |actions: &mut Vec<UiAction>, m: Option<ClientMsg>| {
+            if let Some(m) = m {
+                actions.push(UiAction::Send(m));
+            }
+        };
+        let b = crate::portal::buttons(v.items, view, v.pos);
+        let is_open = view.open;
+
+        // What it is and where it leads.
+        ui.horizontal(|ui| {
+            ui.label(
+                egui::RichText::new(crate::portal::size_text(view.width, view.height))
+                    .strong()
+                    .size(19.0),
+            );
+            ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                let (text, colour) = if is_open {
+                    ("Open", OPEN_GREEN)
+                } else {
+                    ("Dormant", MUTED)
+                };
+                egui::Frame::new()
+                    .stroke(Stroke::new(1.5, colour))
+                    .corner_radius(CornerRadius::same(8))
+                    .inner_margin(egui::Margin::symmetric(8, 1))
+                    .show(ui, |ui| {
+                        ui.label(egui::RichText::new(text).color(colour).strong());
+                    });
+            });
+        });
+        ui.horizontal(|ui| {
+            ui.label(egui::RichText::new("Leads to").color(MUTED));
+            match &view.link {
+                Some(to) => ui.label(egui::RichText::new(to).color(PORTAL_VIOLET).strong()),
+                None => ui.label(egui::RichText::new("Not linked").color(MUTED)),
+            };
+        });
+        if let Some(why) = crate::portal::dormant_because(view) {
+            ui.label(egui::RichText::new(why).color(SHORT).small());
+        }
+
+        // The tank.
+        ui.add_space(8.0);
+        heading(ui, "Tank");
+        let frac = view.fuel as f32 / view.capacity.max(1) as f32;
+        ui.add(
+            egui::ProgressBar::new(frac.clamp(0.0, 1.0))
+                .desired_height(16.0)
+                .fill(Color32::from_rgb(118, 92, 168))
+                .text(
+                    egui::RichText::new(format!("{} of {} wayshards", view.fuel, view.capacity))
+                        .color(TEXT)
+                        .small(),
+                ),
+        );
+        ui.label(egui::RichText::new(crate::portal::trip_text(view)).color(MUTED).small());
+        ui.horizontal(|ui| {
+            let carried = crate::portal::wayshards_carried(v.items);
+            let label = if carried > 0 {
+                format!("Add fuel ({carried})")
+            } else {
+                "Add fuel".into()
+            };
+            let why = if carried == 0 {
+                "You carry no wayshards"
+            } else {
+                "The tank is full"
+            };
+            if action_button(ui, &label, !b.add_fuel.is_empty(), why) {
+                actions.extend(b.add_fuel.iter().cloned().map(UiAction::Send));
+            }
+            let why = if view.fuel == 0 {
+                "The tank is empty"
+            } else {
+                "No room in your pack"
+            };
+            if action_button(ui, "Take all", b.take_all.is_some(), why) {
+                send(actions, b.take_all.clone());
+            }
+            if let Some(ClientMsg::Portal {
+                action: bm_protocol::PortalAction::TakeFuel { count },
+                ..
+            }) = b.take_stack
+                && action_button(ui, &format!("Take {count}"), true, "")
+            {
+                send(actions, b.take_stack.clone());
+            }
+        });
+
+        // Linking.
+        ui.add_space(8.0);
+        heading(ui, "Link");
+        ui.horizontal(|ui| {
+            if action_button(ui, "Make token", b.make_token.is_some(), "No room in your pack") {
+                send(actions, b.make_token.clone());
+            }
+            if action_button(ui, "Unlink", b.unlink.is_some(), "It is not linked") {
+                send(actions, b.unlink.clone());
+            }
+        });
+        ui.label(
+            egui::RichText::new("Take a token to another portal of the same size and link it there.")
+                .color(MUTED)
+                .small(),
+        );
+        ui.add_space(4.0);
+        ui.label(egui::RichText::new("Link with a token").color(MUTED));
+        let tokens = crate::portal::tokens(v.items, view);
+        if tokens.is_empty() {
+            ui.label(egui::RichText::new("You carry no portal tokens.").color(MUTED).small());
+        }
+        for t in tokens {
+            ui.horizontal(|ui| {
+                let stack = v.items.slot(t.slot as usize);
+                let (rect, _) = ui.allocate_exact_size(Vec2::splat(28.0), Sense::hover());
+                if let Some(stack) = stack {
+                    paint_icon(ui.painter(), rect, v.icons.get(&stack), 1.0);
+                }
+                let resp = ui.add_enabled(
+                    t.refused.is_none(),
+                    egui::Button::new(egui::RichText::new(&t.name)).min_size(vec2(0.0, 28.0)),
+                );
+                match t.refused {
+                    Some(why) => {
+                        resp.on_disabled_hover_text(format!(
+                            "{why}: links only to a {} portal",
+                            crate::portal::size_text(view.width, view.height)
+                        ));
+                    }
+                    None => {
+                        if resp
+                            .on_hover_text("Uses the token up and links the two portals")
+                            .clicked()
+                        {
+                            actions.push(UiAction::Send(crate::portal::link_request(v.pos, t.slot)));
+                        }
+                    }
+                }
+            });
+        }
+    });
+    if !open {
+        actions.push(UiAction::CloseMenu);
     }
 }
 

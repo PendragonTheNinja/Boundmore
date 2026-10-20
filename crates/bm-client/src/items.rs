@@ -11,6 +11,7 @@ use bm_core::{
     ItemStack, Recipe, RecipeBook, ShapeFamily, ToolClass,
 };
 use bm_protocol::ClientMsg;
+use std::collections::HashMap;
 
 pub struct Items {
     pub registry: ItemRegistry,
@@ -18,6 +19,9 @@ pub struct Items {
     pub inventory: Inventory,
     /// The colour palette from the welcome (ADR-0007), for names.
     pub colours: ColourPalette,
+    /// What each portal token links to, by tag, as the server last said
+    /// (`TokenNames`): "2 by 3, Verdance, near 812, 140".
+    pub token_names: HashMap<u32, String>,
 }
 
 /// How much a "half" drag carries: the larger half, so one item still moves.
@@ -45,7 +49,18 @@ impl Items {
             recipes: RecipeBook { recipes },
             inventory,
             colours,
+            token_names: HashMap::new(),
         })
+    }
+
+    /// Takes in a `TokenNames`: new names are added, known ones renamed.
+    pub fn set_token_names(&mut self, names: Vec<(u32, String)>) {
+        self.token_names.extend(names);
+    }
+
+    /// What the portal token with this tag links to, if the server said.
+    pub fn token_name(&self, tag: u32) -> Option<&str> {
+        self.token_names.get(&tag).map(String::as_str)
     }
 
     /// Applies a `Slots` update. Out-of-range slots and unknown items are
@@ -155,7 +170,10 @@ impl Items {
                     lines.push(format!("{left} of {total} uses left"));
                 }
             }
-            ItemKind::PortalToken => lines.push("Links two portals of the same size".into()),
+            ItemKind::PortalToken => lines.push(match self.token_name(stack.tag) {
+                Some(name) => format!("Links to: {name}"),
+                None => "Links two portals of the same size".into(),
+            }),
             ItemKind::Block(_) => lines.push("A block you can place".into()),
             ItemKind::Material => lines.push("A crafting material".into()),
         }
@@ -339,6 +357,28 @@ mod tests {
         };
         assert_eq!(short.name(&ItemStack::coloured(stone, Colour(200), 1)), "Stone");
         assert!(!tip.contains('\u{2014}'));
+    }
+
+    #[test]
+    fn token_tooltips_name_where_they_lead() {
+        let mut i = items();
+        let token = i.registry.id("portal_token").unwrap();
+        let bound = ItemStack::tagged(token, 17);
+        assert_eq!(
+            i.tooltip(&bound),
+            "Portal Token\nLinks two portals of the same size",
+            "before the server names it"
+        );
+        i.set_token_names(vec![(17, "2 by 3, Verdance, near 812, 140".into())]);
+        assert_eq!(
+            i.tooltip(&bound),
+            "Portal Token\nLinks to: 2 by 3, Verdance, near 812, 140"
+        );
+        // Another token keeps the general line; a later name replaces one.
+        assert!(i.tooltip(&ItemStack::tagged(token, 18)).ends_with("same size"));
+        i.set_token_names(vec![(17, "1 by 2, Saffra, near 5, 6".into())]);
+        assert!(i.tooltip(&bound).ends_with("Links to: 1 by 2, Saffra, near 5, 6"));
+        assert!(!i.tooltip(&bound).contains('\u{2014}'));
     }
 
     #[test]

@@ -41,6 +41,9 @@ pub struct Predictor {
     pub correction: DVec3,
     pub corrections: u64,
     last_snapshot_tick: u64,
+    /// Moved by the server on this planet (`jump`): the next snapshot is
+    /// where we are, not a disagreement to count.
+    adopt_next: bool,
 }
 
 impl Predictor {
@@ -53,6 +56,7 @@ impl Predictor {
             correction: DVec3::ZERO,
             corrections: 0,
             last_snapshot_tick: 0,
+            adopt_next: false,
         }
     }
 
@@ -65,6 +69,25 @@ impl Predictor {
         self.previous = spawn;
         self.history.clear();
         self.correction = DVec3::ZERO;
+    }
+
+    /// The server moved us on this planet at server tick `tick` (through a
+    /// portal): a jump, not a correction. Inputs still in flight were sent
+    /// before we knew; the server applies them after the move, so they are
+    /// kept. Snapshots from before the move are ignored, and the first one
+    /// after it is taken as where we are, with every input it has not seen
+    /// replayed from there: from then on prediction agrees again.
+    pub fn jump(&mut self, to: PlayerState, tick: u64) {
+        self.correction = DVec3::ZERO;
+        if tick < self.last_snapshot_tick {
+            // A snapshot from after the move overtook the message and has
+            // put us there already.
+            return;
+        }
+        self.state = to;
+        self.previous = to;
+        self.last_snapshot_tick = tick;
+        self.adopt_next = true;
     }
 
     /// Runs one tick on a fresh input, with `grapple` what the item in
@@ -114,6 +137,22 @@ impl Predictor {
         self.last_snapshot_tick = tick;
         while self.history.front().is_some_and(|e| e.seq < ack) {
             self.history.pop_front();
+        }
+        if std::mem::take(&mut self.adopt_next) {
+            // The first word after a jump: where the server put us, plus
+            // whatever it has not applied yet. Not a misprediction.
+            self.state = server;
+            if self.history.front().is_some_and(|e| e.seq == ack) {
+                self.history.pop_front();
+            }
+            for e in self.history.iter_mut() {
+                movement::step(&mut self.state, &e.input, cfg, e.grapple.as_ref(), shape, world);
+                e.state = self.state;
+            }
+            self.seq = self.seq.max(ack);
+            self.previous = self.state;
+            self.correction = DVec3::ZERO;
+            return;
         }
         if self.history.is_empty() {
             // Nothing predicted since joining or arriving: the server's state
@@ -481,6 +520,72 @@ mod tests {
         assert_eq!(p.corrections, 0);
         // Then prediction carries on from there, numbered after the old inputs.
         assert_eq!(p.tick(walk(1), None, &cfg, shape(), &w), 21);
+    }
+
+    #[test]
+    fn a_jump_keeps_the_inputs_in_flight_and_is_no_correction() {
+        let (cfg, w) = (MoveConfig::default(), Floor(10));
+        let inputs: Vec<PlayerInput> = (1..=100).map(walk).collect();
+        let portal = PlayerState {
+            pos: DVec3::new(4.5, 10.0, 3.5),
+            ..Default::default()
+        };
+        // The server: one tick per input; after input 50 (tick 50) it walks
+        // us through a portal.
+        let mut truth = server_states(&inputs[..50], &w);
+        let mut s = portal;
+        for i in &inputs[50..] {
+            movement::step(&mut s, i, &cfg, None, shape(), &w);
+            truth.push(s);
+        }
+        let mut p = Predictor::new(spawn());
+        for (i, input) in inputs[..60].iter().enumerate() {
+            p.tick(*input, None, &cfg, shape(), &w);
+            if i >= 5 && i % 3 == 0 && i < 50 {
+                let ack = i as u32 - 4;
+                p.reconcile(i as u64, ack, truth[ack as usize - 1], &cfg, shape(), &w);
+            }
+        }
+        // Inputs 51 to 60 are in flight when the Teleport arrives.
+        p.jump(portal, 50);
+        assert_eq!(p.state, portal);
+        assert_eq!(p.seq, 60, "sequences carry on");
+        // A snapshot from before the move, arriving late, is ignored.
+        p.reconcile(48, 47, truth[46], &cfg, shape(), &w);
+        assert_eq!(p.state, portal);
+        for input in &inputs[60..70] {
+            p.tick(*input, None, &cfg, shape(), &w);
+        }
+        // The first snapshot after the move has seen up to input 56: we take
+        // it and replay 57 to 70 from there.
+        p.reconcile(56, 56, truth[55], &cfg, shape(), &w);
+        assert_eq!(p.state, truth[69]);
+        assert_eq!(p.correction, DVec3::ZERO);
+        // And prediction agrees from then on.
+        for (i, input) in inputs[70..].iter().enumerate() {
+            p.tick(*input, None, &cfg, shape(), &w);
+            let ack = 66 + i as u32;
+            p.reconcile(60 + i as u64, ack, truth[ack as usize - 1], &cfg, shape(), &w);
+        }
+        assert_eq!(p.corrections, 0);
+        assert_eq!(p.state, truth[99]);
+    }
+
+    #[test]
+    fn a_jump_already_overtaken_by_a_snapshot_changes_nothing() {
+        let (cfg, w) = (MoveConfig::default(), Floor(10));
+        let mut p = Predictor::new(spawn());
+        for i in 1..=10 {
+            p.tick(walk(i), None, &cfg, shape(), &w);
+        }
+        let there = PlayerState {
+            pos: DVec3::new(2.5, 10.0, 2.5),
+            ..Default::default()
+        };
+        p.reconcile(30, 10, there, &cfg, shape(), &w);
+        let now = p.state;
+        p.jump(there, 25);
+        assert_eq!(p.state, now);
     }
 
     #[test]
