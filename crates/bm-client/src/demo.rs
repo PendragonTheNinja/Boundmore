@@ -1163,7 +1163,7 @@ impl Demo {
                     _ => (BlockState::AIR, true),
                 }
             }
-            EditAction::Place { slot } => {
+            EditAction::Place { slot, .. } => {
                 let stack = self.inv.get(slot as usize);
                 let block = stack.and_then(|s| self.items.get(s.item)).and_then(|d| d.block());
                 match (block, stack) {
@@ -1513,7 +1513,10 @@ mod tests {
             seq: 1,
             at: 0,
             pos,
-            action: EditAction::Place { slot: slot as u8 },
+            action: EditAction::Place {
+                slot: slot as u8,
+                mount: None,
+            },
         });
         let placed = d.poll().into_iter().find_map(|e| match e {
             NetEvent::Msg(ServerMsg::EditResult { block, accepted, .. }) => Some((block, accepted)),

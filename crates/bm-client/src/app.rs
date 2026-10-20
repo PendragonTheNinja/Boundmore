@@ -1251,7 +1251,10 @@ impl App {
                     seq: s.edit_seq,
                     at: s.me.seq,
                     pos: at,
-                    action: EditAction::Place { slot: slot as u8 },
+                    action: EditAction::Place {
+                        slot: slot as u8,
+                        mount: None,
+                    },
                 });
                 s.place_cooldown = PLACE_REPEAT;
             }

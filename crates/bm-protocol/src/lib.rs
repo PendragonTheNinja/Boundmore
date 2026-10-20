@@ -16,8 +16,8 @@
 //! decoders bound sizes, and the server validates content.
 
 use bm_core::{
-    BlockDef, BlockPos, BlockState, ChunkPos, ColourPalette, DayCycle, Inventory, ItemDef, ItemStack, MoveConfig,
-    PlanetLook, PlanetShape, PlayerInput, PlayerState, PlotPos, Recipe, Station, ToolStats,
+    BlockDef, BlockPos, BlockState, ChunkPos, ColourPalette, DayCycle, Inventory, ItemDef, ItemStack, Mount,
+    MoveConfig, PlanetLook, PlanetShape, PlayerInput, PlayerState, PlotPos, Recipe, Station, ToolStats,
 };
 use glam::DVec3;
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
@@ -177,8 +177,12 @@ pub enum Channel {
 pub enum EditAction {
     /// The item yielded goes into the inventory; refused if it cannot fit.
     Break,
-    /// Places the block item in hotbar `slot`, spending one.
-    Place { slot: u8 },
+    /// Places the block item in hotbar `slot`, spending one. For a prop (a
+    /// torch), `mount` is the face it goes on, from the face the player
+    /// clicked: `Floor` on top of the block below, a wall direction against
+    /// that side neighbour (`ItemRegistry::prop_block` picks the variant).
+    /// None for ordinary blocks.
+    Place { slot: u8, mount: Option<Mount> },
     /// Cuts (or, with `restore`, fills back) the octants in `octants` of the
     /// block, with the chisel in hotbar `slot` (ADR-0008). A precise chisel
     /// moves exactly one octant, an ordinary one an edge pair

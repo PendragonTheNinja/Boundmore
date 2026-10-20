@@ -476,7 +476,19 @@ async fn two_players_share_one_world() {
     let far = BlockPos::new(feet.x + 40, feet.y, feet.z);
     assert!(!alice.edit(3, far, EditAction::Break).await.0, "out of reach");
     // An empty slot places nothing.
-    assert!(!alice.edit(6, feet, EditAction::Place { slot: HAND }).await.0);
+    assert!(
+        !alice
+            .edit(
+                6,
+                feet,
+                EditAction::Place {
+                    slot: HAND,
+                    mount: None
+                }
+            )
+            .await
+            .0
+    );
     // Place it back, spending what was gathered. Nobody has sent an input
     // yet, so nobody has fallen: the hole is empty and can be filled.
     let (ok, placed) = alice
@@ -485,6 +497,7 @@ async fn two_players_share_one_world() {
             feet,
             EditAction::Place {
                 slot: gathered_slot as u8,
+                mount: None,
             },
         )
         .await;
@@ -494,7 +507,7 @@ async fn two_players_share_one_world() {
     // But not where the players stand.
     let body = feet.offset(0, 1, 0);
     assert!(
-        !alice.edit(5, body, EditAction::Place { slot: 1 }).await.0,
+        !alice.edit(5, body, EditAction::Place { slot: 1, mount: None }).await.0,
         "placing into a player is refused"
     );
     assert_eq!(alice.count("stone"), 10, "a refused place spends nothing");
@@ -673,7 +686,7 @@ async fn full_inventories_refuse_breaks_and_tools_break_faster_and_wear_out() {
     );
     assert!(hammer_time < hardness * 0.5);
 
-    assert!(alice.edit(10, feet, EditAction::Place { slot: 1 }).await.0);
+    assert!(alice.edit(10, feet, EditAction::Place { slot: 1, mount: None }).await.0);
     // By hand, the hammer's time is far too short.
     assert!(
         !alice.dig_with(11, feet, HAND, hammer_time).await.0,
@@ -693,7 +706,7 @@ async fn full_inventories_refuse_breaks_and_tools_break_faster_and_wear_out() {
     assert_eq!(stack(&alice, 0).unwrap().wear, 1, "a matching break wears the tool");
 
     // The worn-out hammer breaks on its last block.
-    assert!(alice.edit(14, feet, EditAction::Place { slot: 1 }).await.0);
+    assert!(alice.edit(14, feet, EditAction::Place { slot: 1, mount: None }).await.0);
     assert!(alice.dig_with(15, feet, 3, hammer_time + 0.05).await.0);
     alice.notice("Your Stone Hammer broke").await;
     assert_eq!(stack(&alice, 3), None, "the broken tool is gone");
@@ -756,7 +769,19 @@ async fn crafting_by_hand_and_at_a_workbench() {
     let slot = (0..10)
         .find(|&i| stack(&alice, i).is_some_and(|s| s.item == alice.item("workbench")))
         .unwrap();
-    assert!(alice.edit(2, feet, EditAction::Place { slot: slot as u8 }).await.0);
+    assert!(
+        alice
+            .edit(
+                2,
+                feet,
+                EditAction::Place {
+                    slot: slot as u8,
+                    mount: None
+                }
+            )
+            .await
+            .0
+    );
     alice.send(ClientMsg::WatchStation { pos: Some(feet) }).await;
     let empty = alice.station(|_| true).await;
     assert!(empty.jobs.is_empty() && empty.output.is_empty());
@@ -810,7 +835,7 @@ async fn station_jobs_continue_across_a_restart() {
         let feet = alice.feet();
         alice.wait_for_chunk(feet.chunk()).await;
         assert!(alice.dig(1, feet).await.0);
-        assert!(alice.edit(2, feet, EditAction::Place { slot: 5 }).await.0);
+        assert!(alice.edit(2, feet, EditAction::Place { slot: 5, mount: None }).await.0);
         let furnace = alice.recipe("furnace");
         alice.send(ClientMsg::WatchStation { pos: Some(feet) }).await;
         alice
@@ -851,7 +876,7 @@ async fn claims_keep_other_players_out() {
     assert_eq!(alice.welcome.plot_allowance, 64);
 
     assert!(alice.dig(1, feet).await.0);
-    assert!(alice.edit(2, feet, EditAction::Place { slot: 5 }).await.0);
+    assert!(alice.edit(2, feet, EditAction::Place { slot: 5, mount: None }).await.0);
     let claim = match bob.until(|m| matches!(m, ServerMsg::Claim(_))).await {
         ServerMsg::Claim(c) => c,
         _ => unreachable!(),
@@ -1126,7 +1151,7 @@ async fn warp_shrines_take_players_between_planets() {
     assert!(!alice.dig(2, feet).await.0, "nor the ground beside it");
     assert!(
         !alice
-            .edit(3, shrine.offset(0, 1, 0), EditAction::Place { slot: 1 })
+            .edit(3, shrine.offset(0, 1, 0), EditAction::Place { slot: 1, mount: None })
             .await
             .0,
         "nor can it be built over"
@@ -1234,7 +1259,7 @@ async fn storage_chests_hold_items_for_everyone_who_opens_them() {
     assert!(alice.storage(|v| v.pos == feet).await.closed);
 
     assert!(alice.dig(1, feet).await.0);
-    assert!(alice.edit(2, feet, EditAction::Place { slot: 5 }).await.0);
+    assert!(alice.edit(2, feet, EditAction::Place { slot: 5, mount: None }).await.0);
     alice.send(ClientMsg::OpenStorage { pos: Some(feet) }).await;
     let v = alice.storage(|v| v.pos == feet).await;
     assert!(!v.closed);
@@ -1320,7 +1345,7 @@ async fn storage_contents_survive_a_restart_and_close_out_of_reach() {
         let feet = alice.feet().offset(0, 0, 5);
         alice.wait_for_chunk(feet.chunk()).await;
         assert!(alice.dig(1, feet).await.0);
-        assert!(alice.edit(2, feet, EditAction::Place { slot: 5 }).await.0);
+        assert!(alice.edit(2, feet, EditAction::Place { slot: 5, mount: None }).await.0);
         alice.send(ClientMsg::OpenStorage { pos: Some(feet) }).await;
         alice
             .send(ClientMsg::StorageMove {
@@ -1393,9 +1418,14 @@ async fn chests_on_a_claim_open_only_for_its_owner() {
     alice.wait_for_chunk(beside.chunk()).await;
     bob.wait_for_chunk(feet.chunk()).await;
     assert!(alice.dig(1, feet).await.0);
-    assert!(alice.edit(2, feet, EditAction::Place { slot: 5 }).await.0);
+    assert!(alice.edit(2, feet, EditAction::Place { slot: 5, mount: None }).await.0);
     assert!(alice.dig(3, beside).await.0);
-    assert!(alice.edit(4, beside, EditAction::Place { slot: 6 }).await.0);
+    assert!(
+        alice
+            .edit(4, beside, EditAction::Place { slot: 6, mount: None })
+            .await
+            .0
+    );
     let claim = match bob.until(|m| matches!(m, ServerMsg::Claim(_))).await {
         ServerMsg::Claim(c) => c,
         _ => unreachable!(),
@@ -1606,11 +1636,19 @@ async fn a_lapsed_claim_turns_to_ash_and_its_contents_wait_in_reclaim() {
         let (coloured, natural, chest, dug, plain) = (spots[0], spots[1], spots[2], spots[3], spots[4]);
 
         assert!(alice.dig(1, feet).await.0);
-        assert!(alice.edit(2, feet, EditAction::Place { slot: 5 }).await.0, "claimed");
+        assert!(
+            alice.edit(2, feet, EditAction::Place { slot: 5, mount: None }).await.0,
+            "claimed"
+        );
         let mut seq = 3;
         for (pos, slot) in [(coloured, 1), (natural, 2), (chest, 6)] {
             assert!(alice.dig(seq, pos).await.0);
-            assert!(alice.edit(seq + 1, pos, EditAction::Place { slot }).await.0);
+            assert!(
+                alice
+                    .edit(seq + 1, pos, EditAction::Place { slot, mount: None })
+                    .await
+                    .0
+            );
             seq += 2;
         }
         assert!(alice.dig(seq, dug).await.0);
@@ -1772,9 +1810,9 @@ async fn an_online_owner_never_lapses_and_leaving_starts_the_clock() {
     bob.wait_for_chunk(feet.chunk()).await;
     let spot = spots_in_plot(&alice, feet)[0];
     assert!(alice.dig(1, feet).await.0);
-    assert!(alice.edit(2, feet, EditAction::Place { slot: 5 }).await.0);
+    assert!(alice.edit(2, feet, EditAction::Place { slot: 5, mount: None }).await.0);
     assert!(alice.dig(3, spot).await.0);
-    assert!(alice.edit(4, spot, EditAction::Place { slot: 1 }).await.0);
+    assert!(alice.edit(4, spot, EditAction::Place { slot: 1, mount: None }).await.0);
 
     // Several checks pass with her here.
     tokio::time::sleep(Duration::from_millis(2500)).await;
@@ -1849,7 +1887,7 @@ async fn chisels_cut_and_fill_back_by_the_rules() {
 
     // A timber block standing on the ground beside her takes any family.
     let t = feet.offset(1, 1, 0);
-    assert!(alice.edit(3, t, EditAction::Place { slot: 3 }).await.0);
+    assert!(alice.edit(3, t, EditAction::Place { slot: 3, mount: None }).await.0);
     assert_eq!(state_at(&alice, t), BlockState::plain(timber));
     // A precise chisel moves exactly one octant.
     assert!(!alice.edit(4, t, chisel(1, 0x03, false)).await.0, "two octants");
@@ -1917,7 +1955,7 @@ async fn chisels_respect_claims() {
     let feet = alice.feet();
     alice.wait_for_chunk(feet.chunk()).await;
     assert!(alice.dig(1, feet).await.0);
-    assert!(alice.edit(2, feet, EditAction::Place { slot: 5 }).await.0);
+    assert!(alice.edit(2, feet, EditAction::Place { slot: 5, mount: None }).await.0);
     // Natural ground beside her, in the claim stone's plot.
     let t = spots_in_plot(&alice, feet)[0];
     let mut bob = TestClient::login(&server, "Bob").await;
@@ -1942,7 +1980,7 @@ async fn players_walk_up_half_slabs_on_the_server() {
     for dx in [1, 2] {
         let t = feet.offset(dx, 1, 0);
         for action in [
-            EditAction::Place { slot: 3 },
+            EditAction::Place { slot: 3, mount: None },
             chisel(0, 0x30, false),
             chisel(0, 0xc0, false),
         ] {
@@ -2064,7 +2102,10 @@ async fn claim_around(c: &mut TestClient, seq: u32, slot: u8) {
     let feet = c.feet();
     c.claim = None;
     assert!(c.dig(seq, feet).await.0);
-    assert!(c.edit(seq + 1, feet, EditAction::Place { slot }).await.0, "claimed");
+    assert!(
+        c.edit(seq + 1, feet, EditAction::Place { slot, mount: None }).await.0,
+        "claimed"
+    );
     if c.claim.is_none() {
         c.until(|m| matches!(m, ServerMsg::Claim(_))).await;
     }
@@ -2103,9 +2144,13 @@ async fn claim_around(c: &mut TestClient, seq: u32, slot: u8) {
 async fn conduit_column(c: &mut TestClient, seq: u32, ground: BlockPos, slot: u8) {
     for (i, dy) in [1, 2].into_iter().enumerate() {
         assert!(
-            c.edit(seq + i as u32, ground.offset(0, dy, 0), EditAction::Place { slot })
-                .await
-                .0,
+            c.edit(
+                seq + i as u32,
+                ground.offset(0, dy, 0),
+                EditAction::Place { slot, mount: None }
+            )
+            .await
+            .0,
             "conduit placed"
         );
     }
@@ -2228,7 +2273,7 @@ async fn portals_link_fuel_and_carry_players_paying_once_per_cooldown() {
     // Not on her claim (she has none yet).
     assert!(
         !alice
-            .edit(1, feet.offset(1, 1, 0), EditAction::Place { slot: 6 })
+            .edit(1, feet.offset(1, 1, 0), EditAction::Place { slot: 6, mount: None })
             .await
             .0
     );
@@ -2245,7 +2290,7 @@ async fn portals_link_fuel_and_carry_players_paying_once_per_cooldown() {
     conduit_column(&mut alice, 14, l, 6).await;
     assert!(
         alice
-            .edit(16, l.offset(-1, 1, 0), EditAction::Place { slot: 6 })
+            .edit(16, l.offset(-1, 1, 0), EditAction::Place { slot: 6, mount: None })
             .await
             .0
     );
@@ -2267,7 +2312,12 @@ async fn portals_link_fuel_and_carry_players_paying_once_per_cooldown() {
     assert_eq!((v.capacity, v.trip_cost, v.cooldown_hours), (500, 1, 1.0));
 
     // A conduit against it would change its shape.
-    assert!(!alice.edit(17, a.offset(1, 1, 0), EditAction::Place { slot: 6 }).await.0);
+    assert!(
+        !alice
+            .edit(17, a.offset(1, 1, 0), EditAction::Place { slot: 6, mount: None })
+            .await
+            .0
+    );
     alice.notice("That would change the shape of a portal").await;
 
     // A token of A, named for what it opens.

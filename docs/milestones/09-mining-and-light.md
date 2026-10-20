@@ -48,6 +48,7 @@ Every number below comes from `docs/research/boundless-tuning.md` (section numbe
 
 - **bm-core `mining.rs`**: block health and armour by category and tier; `seconds_per_hit`, `swing_ticks`; `swing_damage` (armour, wrong tool, area multiplier, crit); `is_crit` hash; `aoe_blocks` (the shape's blocks from the hit block and the look direction); `heal` rule constants. Pure functions, tested.
 - **Catalogue**: `BlockDef::health` (category) replaces `hardness`; `ToolStats { class, damage, action_speed, crit_chance, crit_effect, durability, aoe }`; the bare hand's stats (`ItemRegistry::hand`); `BlockDef::bonus` (extra drops by tier).
+- **Torch placement**: `EditAction::Place { slot, mount }` (the clicked face for a prop), `ItemRegistry::prop_block` (the variant block for an item and a mount: `torch`, `torch_north`, ...).
 - **bm-protocol 13**: `ClientMsg::Swing { seq, at, pos, slot }` replaces `StartBreak` and `EditAction::Break`; `ServerMsg::BlockHealth { pos, damage }` (damage taken so far, sent to everyone watching that chunk, 0 when healed or reset); broken blocks answer with `EditResult` (the swinger, one per block) and `BlockChanged` (others), as edits do; `PlanetInfo::tier`; `RemotePlayer::light` (held light level).
 
 ## Plan and who does what
@@ -75,7 +76,7 @@ Every number below comes from `docs/research/boundless-tuning.md` (section numbe
 
 ## Status
 
-- [ ] Spec (this file), contract, data
+- [x] Spec (this file), contract, data (2026-10-20)
 - [ ] Server
 - [ ] Client
 - [ ] Torches

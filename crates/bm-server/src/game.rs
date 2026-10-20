@@ -1423,7 +1423,7 @@ impl Game {
                     },
                 })
             }
-            EditAction::Place { slot } => {
+            EditAction::Place { slot, .. } => {
                 let slot = slot as usize;
                 if slot >= HOTBAR_SLOTS {
                     return Err("not a hotbar slot".into());

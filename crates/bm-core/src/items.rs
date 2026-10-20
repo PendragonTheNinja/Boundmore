@@ -5,7 +5,7 @@
 //! as ore and ingots, tools) is listed in `assets/items.toml`. Like blocks,
 //! items are data the server sends to clients in the handshake.
 
-use crate::block::{BlockDef, BlockId, BlockRegistry, Colour, Material};
+use crate::block::{BlockDef, BlockId, BlockRegistry, Colour, Material, Mount};
 use crate::movement::{self, GrappleSpec};
 use crate::shape::ShapeFamily;
 use serde::{Deserialize, Serialize};
@@ -558,6 +558,23 @@ impl ItemRegistry {
         self.drops.get(block.0 as usize).copied().flatten()
     }
 
+    /// The block that places `item` with `mount`: the item's own block when
+    /// its mount matches, else a variant with that mount that drops the item
+    /// (`torch_north` for `torch`). None for anything but a prop, or a mount
+    /// it has no variant for.
+    pub fn prop_block(&self, blocks: &BlockRegistry, item: ItemId, mount: Mount) -> Option<BlockId> {
+        let own = self.get(item)?.block()?;
+        let def = blocks.get(own);
+        def.mount?;
+        if def.mount == Some(mount) {
+            return Some(own);
+        }
+        blocks
+            .iter()
+            .find(|(id, b)| b.mount == Some(mount) && self.drop_of(*id) == Some(item))
+            .map(|(id, _)| id)
+    }
+
     /// The item that places `block`.
     pub fn item_for_block(&self, block: BlockId) -> Option<ItemId> {
         self.defs
@@ -671,6 +688,16 @@ mod tests {
                 .any(|&(item, _)| item == flint)
         );
         assert!(i.bonus_of(b.id("soil").unwrap()).is_empty());
+    }
+
+    #[test]
+    fn torches_have_a_variant_for_every_face() {
+        let (b, i) = setup();
+        let torch = i.id("torch").unwrap();
+        assert_eq!(i.prop_block(&b, torch, Mount::Floor), Some(b.id("torch").unwrap()));
+        assert_eq!(i.prop_block(&b, torch, Mount::West), Some(b.id("torch_west").unwrap()));
+        assert_eq!(i.drop_of(b.id("torch_north").unwrap()), Some(torch));
+        assert_eq!(i.prop_block(&b, i.id("stone").unwrap(), Mount::Floor), None);
     }
 
     #[test]
