@@ -11,6 +11,7 @@ mod demo;
 mod icons;
 mod items;
 mod menus;
+mod mining;
 mod net;
 mod portal;
 mod predict;

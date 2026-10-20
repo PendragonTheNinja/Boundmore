@@ -135,6 +135,20 @@ impl ClientWorld {
         }
     }
 
+    /// Undoes our prediction `seq` at `p` when the server has told us
+    /// otherwise without an `EditResult` for it (a swing it answered with
+    /// `BlockHealth`: the block still stands). A later prediction at the
+    /// block is left to its own answer.
+    pub fn revert_prediction(&mut self, seq: u32, p: BlockPos) {
+        let p = self.shape.wrap_block(p);
+        if let Some(&(latest, before)) = self.pending.get(&p)
+            && latest == seq
+        {
+            self.pending.remove(&p);
+            self.set_block(p, before);
+        }
+    }
+
     fn dirty_block(&mut self, p: BlockPos) {
         let c = p.chunk();
         self.mesher.dirty.insert(c);
@@ -391,5 +405,24 @@ mod tests {
             },
         );
         assert_eq!(w.state(BlockPos::new(7, 7, 7)).unwrap().shape, Shape::FULL);
+    }
+
+    #[test]
+    fn a_break_the_server_did_not_make_is_undone() {
+        let registry = BlockRegistry::builtin();
+        let stone = registry.id("stone").unwrap();
+        let mut w = ClientWorld::new(PlanetShape::new(4, 2), registry);
+        let mut c = Chunk::empty();
+        c.set_state(LocalPos::new(1, 2, 3), BlockState::plain(stone));
+        w.insert_chunk(ChunkPos::new(0, 0, 0), c);
+        let p = BlockPos::new(1, 2, 3);
+        w.predict_edit(7, p, BlockState::AIR);
+        assert_eq!(w.block(p), Some(BlockId::AIR));
+        // Another seq's answer does not undo it.
+        w.revert_prediction(6, p);
+        assert_eq!(w.block(p), Some(BlockId::AIR));
+        w.revert_prediction(7, p);
+        assert_eq!(w.block(p), Some(stone));
+        assert_eq!(w.pending_edits(), 0);
     }
 }

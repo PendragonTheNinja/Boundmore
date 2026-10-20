@@ -430,6 +430,83 @@ pub struct Hud<'a> {
     pub aim_hint: Option<(&'static str, &'static str)>,
     /// Something waits in the reclaim (items from a lapsed claim).
     pub reclaim_waiting: bool,
+    /// The aimed block's health, shown under the crosshair.
+    pub block_bar: Option<BlockBar>,
+}
+
+/// A block's health bar: what is left (0 to 1), and one shield per 100
+/// armour of the planet's tier, as Boundless showed it.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct BlockBar {
+    pub left: f32,
+    pub shields: u32,
+}
+
+const BAR_WIDTH: f32 = 72.0;
+const BAR_HEIGHT: f32 = 7.0;
+const BAR_FULL: Color32 = Color32::from_rgb(150, 214, 120);
+const SHIELD_FILL: Color32 = Color32::from_rgb(178, 190, 206);
+/// The bar sits this far below the screen's centre.
+const BAR_DROP: f32 = 26.0;
+
+/// The fill colour for `left`: fresh green, through gold, to red.
+fn bar_colour(left: f32) -> Color32 {
+    let mix = |a: Color32, b: Color32, t: f32| {
+        let l = |x: u8, y: u8| (x as f32 + (y as f32 - x as f32) * t).round() as u8;
+        Color32::from_rgb(l(a.r(), b.r()), l(a.g(), b.g()), l(a.b(), b.b()))
+    };
+    if left > 0.5 {
+        mix(GOLD, BAR_FULL, (left - 0.5) * 2.0)
+    } else {
+        mix(RED, GOLD, left * 2.0)
+    }
+}
+
+/// A small heater shield, `w` wide, its top edge at `top`.
+fn paint_shield(painter: &egui::Painter, centre_x: f32, top: f32, w: f32) {
+    let h = w * 1.2;
+    let (l, r) = (centre_x - w / 2.0, centre_x + w / 2.0);
+    let points = vec![
+        pos2(l, top),
+        pos2(r, top),
+        pos2(r, top + h * 0.5),
+        pos2(centre_x, top + h),
+        pos2(l, top + h * 0.5),
+    ];
+    painter.add(egui::Shape::convex_polygon(
+        points,
+        SHIELD_FILL,
+        Stroke::new(1.2, Color32::from_black_alpha(200)),
+    ));
+}
+
+fn block_bar(ctx: &egui::Context, bar: &BlockBar) {
+    let shield_w = 9.0;
+    let shields_w = bar.shields as f32 * (shield_w + 3.0);
+    let width = BAR_WIDTH + if bar.shields > 0 { shields_w + 4.0 } else { 0.0 };
+    egui::Area::new(Id::unique("block-health"))
+        .anchor(Align2::CENTER_CENTER, vec2(0.0, BAR_DROP))
+        .interactable(false)
+        .order(egui::Order::Background)
+        .show(ctx, |ui| {
+            let (rect, _) = ui.allocate_exact_size(vec2(width, shield_w * 1.2), Sense::hover());
+            let painter = ui.painter();
+            // Shields first, at the bar's left, like armour worn over it.
+            for i in 0..bar.shields {
+                let cx = rect.left() + shield_w / 2.0 + i as f32 * (shield_w + 3.0);
+                paint_shield(painter, cx, rect.top(), shield_w);
+            }
+            let left_x = rect.right() - BAR_WIDTH;
+            let back = Rect::from_min_size(
+                pos2(left_x, rect.center().y - BAR_HEIGHT / 2.0),
+                vec2(BAR_WIDTH, BAR_HEIGHT),
+            );
+            painter.rect_filled(back.expand(1.5), CornerRadius::same(4), Color32::from_black_alpha(170));
+            let fill = Rect::from_min_size(back.min, vec2(BAR_WIDTH * bar.left.clamp(0.0, 1.0), BAR_HEIGHT));
+            if fill.width() > 0.5 {
+                painter.rect_filled(fill, CornerRadius::same(3), bar_colour(bar.left));
+            }
+        });
 }
 
 /// The HUD's reminder while the reclaim holds anything.
@@ -512,9 +589,14 @@ pub fn hud(ctx: &egui::Context, h: &Hud) {
                 });
         });
     }
+    if let Some(bar) = &h.block_bar {
+        block_bar(ctx, bar);
+    }
     if let Some((key, what)) = h.aim_hint {
+        // Below the health bar when there is one.
+        let drop = if h.block_bar.is_some() { 56.0 } else { 44.0 };
         egui::Area::new(Id::unique("aim-hint"))
-            .anchor(Align2::CENTER_CENTER, vec2(0.0, 44.0))
+            .anchor(Align2::CENTER_CENTER, vec2(0.0, drop))
             .interactable(false)
             .order(egui::Order::Background)
             .show(ctx, |ui| {

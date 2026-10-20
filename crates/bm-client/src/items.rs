@@ -135,7 +135,7 @@ impl Items {
         match def.kind {
             ItemKind::Tool(t) => {
                 lines.push(match t.class {
-                    Some(class) => format!("Best on {}", tool_materials(class)),
+                    Some(class) => format!("Best on {}; a quarter of the damage on the rest", tool_materials(class)),
                     None => "Works on everything".into(),
                 });
                 lines.push(format!(
@@ -143,6 +143,13 @@ impl Items {
                     t.damage,
                     trim_float((1.0 / bm_core::mining::seconds_per_hit(t.action_speed)) as f32)
                 ));
+                if t.crit_chance > 0.0 {
+                    lines.push(format!(
+                        "{}% chance of a critical hit, {} times the damage",
+                        trim_float(t.crit_chance * 100.0),
+                        trim_float(1.0 + t.crit_effect)
+                    ));
+                }
                 if let Some((left, total)) = self.durability(stack) {
                     lines.push(format!("{left} of {total} uses left"));
                 }
@@ -179,6 +186,10 @@ impl Items {
                 Some(name) => format!("Links to: {name}"),
                 None => "Links two portals of the same size".into(),
             }),
+            ItemKind::Block(_) if def.held_light > 0 => {
+                lines.push("Stands on a floor or hangs on a wall".into());
+                lines.push("Lights the way while held".into());
+            }
             ItemKind::Block(_) => lines.push("A block you can place".into()),
             ItemKind::Material => lines.push("A crafting material".into()),
         }
@@ -350,8 +361,29 @@ mod tests {
             tip.contains("400 damage, 1.22 hits a second") && tip.contains("570 of 600 uses left"),
             "{tip}"
         );
+        assert!(tip.contains("Best on rock, ore and crystal"), "{tip}");
+        assert!(!tip.contains("critical"), "stone never crits: {tip}");
         assert_eq!(i.durability(&stack(&i, "stone", 1).unwrap()), None);
         assert!(!tip.contains('\u{2014}'), "no em dashes in player text");
+        let iron = i.tooltip(&stack(&i, "iron_hammer", 1).unwrap());
+        assert!(
+            iron.contains("700 damage, 1.1 hits a second")
+                && iron.contains("20% chance of a critical hit, 1.2 times the damage"),
+            "{iron}"
+        );
+        let hand = i.tooltip(&stack(&i, "hand_stone", 1).unwrap());
+        assert!(
+            hand.contains("Works on everything") && hand.contains("200 damage"),
+            "{hand}"
+        );
+        let torch = i.tooltip(&stack(&i, "torch", 4).unwrap());
+        assert!(
+            torch.contains("hangs on a wall") && torch.contains("while held"),
+            "{torch}"
+        );
+        for t in [iron, hand, torch] {
+            assert!(!t.contains('\u{2014}'));
+        }
     }
 
     #[test]
