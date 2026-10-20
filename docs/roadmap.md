@@ -14,7 +14,8 @@ What a Boundless player expects to find, and where each stands. "Ours" is the Bo
 | Shaped blocks (chisel) | Slopes, bevels, cuts on any block | M7. Decided (Nathan, 2026-10-19): Boundless's square, slope and bevel families on the 2x2x2 corner grid, precise versions as better-tier tools, plus a round family (rounded edges and corners; Nathan: try it and see how it works); lattice frames later; room in the shape encoding for 8 families. Terrain chisels as slopes only |
 | Mining by hand and tool | Swings that deal damage against block health; world tiers add health and armour; the right tool; more ore on harder worlds; AoE from forging | M9 (`milestones/09-mining-and-light.md`): Boundless's numbers exactly (Nathan, 2026-10-20). Energy, skills and forging later |
 | Light and darkness | Dark caves, torches, glowing ores, day and night | **Done** for light, dark and glowing blocks (M2). Torches, placed and held: M9. Gem torches, lanterns and tinted light later |
-| Inventory and crafting | Gather, craft at machines that run over time, upgrade with power | **Done** for inventory, hand crafting, workbench and furnace (M3). Power and more machines later |
+| Inventory and crafting | Gather, craft at machines that run over time, upgrade with power | **Done** for inventory, hand crafting, workbench and furnace (M3). Boundless's own chain and machines: M11. Power and spark later |
+| Gathering objects | Plants, flowers, boulders and fungi as models on every world; the main source of leaves, flint, food and forge materials | M11 (Nathan, 2026-10-20: "the plants are really important") |
 | Plots and beacons | Claim land so builds are protected; costs upkeep | **Done** for claims (M3). **Changed on purpose:** no fuel; a claim lapses after 6 months without a visit and its contents go back to the owner (the research below) |
 | Settlements | Plots near each other form ranked settlements | M8 |
 | Portals and travel | Player-built portals link planets; warps; grapples | Warp shrines at each spawn (M4, free for now). Player-built portals need fuel, less punishing than Boundless (Nathan, 2026-10-19). Agreed (Nathan, 2026-10-19): a portal never disappears (dormant when empty, reopens when refuelled), uses no fuel while idle, and charges each player at most once per portal per cooldown (a tunable; a day is one option, shorter is fine), so back-and-forth trips cannot drain it. Decided (Nathan, 2026-10-19): the fuel is a new mined crystal (wayshards), the portal's own tank pays per trip, portals link with tokens as in Boundless, see-through windows come in a later milestone. Built as M8 (`docs/milestones/08-portals.md`, ADR-0009). Grapples: M7 part 2 (built 2026-10-19), one hook at a time; dual grapples later |
@@ -45,7 +46,11 @@ What a Boundless player expects to find, and where each stands. "Ours" is the Bo
 
 **M9: Mining and light.** Boundless's mining exactly (health by world tier, armour, swings at a rate set by action speed, the right tool, bonus yields by tier) and the basic torch. See `milestones/09-mining-and-light.md`.
 
-*From here the order follows Nathan's direction (2026-10-19 and 2026-10-20): make it as close to Boundless as possible first. Next in line: Boundless's materials and crafting chain (crafting table, sticks and stones, sackcloth, glue, the machines; tuning section 4), then skills and progression (a proposal for Nathan first), energy and hunger, forging. Each gets its own spec and number when it starts.*
+**M10: Energy.** Each swing, grapple shot and chisel cut costs energy from a bar of 600, as in Boundless. See `milestones/10-energy.md`.
+
+**M11: The crafting chain** (decided 2026-10-20, spec to write). Boundless's materials and machines up to iron tools: crafting table, stones, sticks, the two-part stone furnace with fuel and heat, an old-tech seam, sap and glue (2 sap until creatures bring bone), the extractor and sackcloth. Also the **gatherable plants, boulders and fungi** scattered over every world, which give fibrous leaves, flint, beans, petals, lamellae and orbs (tuning 4.4a).
+
+*After that, still Boundless first (Nathan, 2026-10-19 and 2026-10-20): skills and progression exactly as Boundless's live game (`proposals/skills-and-progression.md`), creatures and combat (bone, tallow and hide, then glue's real recipe), food and hunger, forging. Each gets its own spec and number when it starts.*
 
 **Society.** Shop stands, request baskets, settlements and their ranking, guilds, mail.
 
