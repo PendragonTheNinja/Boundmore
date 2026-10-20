@@ -462,6 +462,7 @@ impl BlockRegistry {
             translucent: self.defs.iter().map(|d| d.translucent).collect(),
             light: self.defs.iter().map(|d| d.light).collect(),
             mount: self.defs.iter().map(|d| d.mount).collect(),
+            model: self.defs.iter().map(|d| d.model).collect(),
         }
     }
 }
@@ -474,6 +475,7 @@ pub struct BlockFlags {
     translucent: Vec<bool>,
     light: Vec<u8>,
     mount: Vec<Option<Mount>>,
+    model: Vec<Model>,
 }
 
 impl BlockFlags {
@@ -502,6 +504,13 @@ impl BlockFlags {
     #[inline]
     pub fn mount(&self, id: BlockId) -> Option<Mount> {
         self.mount.get(id.0 as usize).copied().flatten()
+    }
+
+    /// The model a prop is drawn as (meaningless for blocks that are not
+    /// props).
+    #[inline]
+    pub fn model(&self, id: BlockId) -> Model {
+        self.model.get(id.0 as usize).copied().unwrap_or_default()
     }
 
     /// Number of ids in the catalogue the tables were built from.

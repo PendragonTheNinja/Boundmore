@@ -303,6 +303,18 @@ fn fs_opaque(in: VsOut) -> @location(0) vec4<f32> {
     return vec4<f32>(shade(in, albedo(in).rgb), 1.0);
 }
 
+// Cut blocks and props: as opaque, but texels with alpha under one half are
+// cut out (a plant's picture on its clear background). Only the shaped list
+// takes the discard, so the greedy cube pass keeps its early depth test.
+@fragment
+fn fs_cutout(in: VsOut) -> @location(0) vec4<f32> {
+    let a = albedo(in);
+    if (a.a < 0.5) {
+        discard;
+    }
+    return vec4<f32>(shade(in, a.rgb), 1.0);
+}
+
 @fragment
 fn fs_translucent(in: VsOut) -> @location(0) vec4<f32> {
     let a = albedo(in);
