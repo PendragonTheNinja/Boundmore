@@ -1306,7 +1306,7 @@ Source keys used below:
 
 ---
 
-## 5.1 Level curve and per-level rewards
+### 5.1 Level curve and per-level rewards
 
 XP to next level, cumulative XP, skill points and cubits per level (WIKI-Level; matches R195 "4 at level 2, then 2 per level, 100 by 50"). Confidence H for skill points; M for cubits (wiki, no dev table).
 
@@ -1373,7 +1373,7 @@ Post-50 rules over time:
 - Live economy (2021-04): level 50+ costs 200,000 XP and gives 300 cubits = 666 XP per cubit (Rydralain, https://forum.playboundless.com/t/55781 #8, M).
 - T249 (never live): 2 SP per level up to level 180; skill cap per page 359 then 367; points no longer shared between pages; XP per level keeps rising from 50 to 180; level ~190 costs 1,352,000 XP for 1,000 cubits; cubits grow by 5 per level to the cap (T249 and t/55781 #8, H for the notes, M for the 249.2 numbers).
 
-## 5.2 Skill pages, points, resets
+### 5.2 Skill pages, points, resets
 
 | Rule | Value | Source | Conf. |
 |---|---|---|---|
@@ -1388,7 +1388,7 @@ Post-50 rules over time:
 | Unlock levels | Attributes L1; Mastery L2; Crafting L4; Epic 1 L6; Endurance L8; Epic 2 L10; Exploration L12; Epic 3 L14 | WIKI-Skill | M |
 | Skill types | basic = 1 SP per rank, multi-rank; epic = 5 SP, one rank, some pairs mutually exclusive | R195 | H |
 
-## 5.3 Attributes (1.0 to R248)
+### 5.3 Attributes (1.0 to R248)
 
 Every attribute starts at 10. Each point of an "X Bonus" skill adds 10 (max 8 points, attribute 90). **Attributes Bonus** adds 2 to every attribute per point (max 5 points, so +10 everywhere: the equivalent of a ninth point). Max attribute 100. (WIKI-Attribute; Pfiffel https://forum.playboundless.com/t/29895 #2 2019-05: "100 Vitality = 8 in Vitality Bonus + 5 in Attribute Bonus"; PFF damage calculator uses 0 to 9 "levels", H.)
 
@@ -1403,7 +1403,7 @@ Every attribute starts at 10. Each point of an "X Bonus" skill adds 10 (max 8 po
 | Luck | Extra drops from blocks, plants, creatures | No published per-point number; wiki table only shows attribute 10..90. Player: Luck 50 (3 pts + 5 Attribute Bonus) gives "double drops fairly often" on titanium | WIKI-Luck Bonus; PendragonTheNinja t/9648 2017-09 | L |
 | Zeal | Max energy; buff duration (+), debuff duration (−) | Base energy 600; no per-point table found. Player: max Zeal at L50 = 1,933 energy (T194 era) | WIKI-Citizen; schasm t/14150 #248 2018-07 | L |
 
-## 5.4 Skill tree, 1.0 to R248 (live)
+### 5.4 Skill tree, 1.0 to R248 (live)
 
 Ranks in parentheses. Effects are from wiki, dev notes and player data; where a number is missing the skill is listed with "no number found". Category gates from 5.2.
 
@@ -1487,7 +1487,7 @@ Damage Epic (triples the Power share of the damage multiplier; PFF formula and T
 ### Testing 249 additions (never live)
 Sword Mastery (5), Shield Mastery (5), Sword Epic, Colour Spray Crafting skill, Goo and Tint Epic; most either/or links removed except combat DPS/tank/healer links (T249, H).
 
-## 5.5 XP sources and amounts
+### 5.5 XP sources and amounts
 
 | Source | Amount | Source | Conf. |
 |---|---|---|---|
@@ -1505,12 +1505,12 @@ Sword Mastery (5), Shield Mastery (5), Sword Epic, Colour Spray Crafting skill, 
 | Teaching food doubles XP (players) | ×2 | t/60112 2023 | L |
 | Defeat penalty | XP debt of 10% of XP needed for next level; 50% of new XP repays it until cleared; revive avoids it; Death Penalty Epic halves it | T194.1 | H |
 
-## 5.6 Feats (selected, WIKI-Feat, M)
+### 5.6 Feats (selected, WIKI-Feat, M)
 Five tiers each. Examples: Blocks placed 250 / 2,500 / 10,000 / 100,000 / 1,000,000; Blocks chiselled 50 / 500 / 5,000 / 10,000 / 100,000; Creatures defeated 100 / 1,000 / 10,000 / 100,000 / 500,000; Skill points spent 25 / 100 / 200 / 500 / 1,000; Meteorite cores 10 / 100 / 250 / 500 / 1,000. T194 made early tiers richer and late tiers poorer.
 
 ---
 
-## 5.7 Forging (Centraforge)
+### 5.7 Forging (Centraforge)
 
 ### Session model (step by step)
 1. Place gear (or a smart stack: every item gets the same result) in the Centraforge; build a deck of ingredients (6 slots, 10 with Forging Epic; up to 100 of each) (R195; t/58621).
