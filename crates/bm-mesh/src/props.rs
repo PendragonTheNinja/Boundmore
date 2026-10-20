@@ -1,10 +1,12 @@
-//! Props: blocks drawn as a small model instead of a cube (a torch).
+//! Props: blocks drawn as a small model instead of a cube (a torch, and the
+//! gathering objects: plants, boulders and fungi).
 //!
 //! A prop is any block with a `mount` (`BlockDef::is_prop`). It is never
 //! opaque, so it hides no neighbouring face and casts no occlusion; its own
 //! triangles go into the chunk's shaped opaque list ([`ShapedVertex`]) with
 //! explicit texture coordinates, because a tilted stick cannot take its
-//! texture from its position the way a cube face does.
+//! texture from its position the way a cube face does. Its block's `model`
+//! (`BlockFlags::model`) says which model it is.
 //!
 //! The torch model, in sixteenths of a block: a stick 2 wide and 9 tall with
 //! a flame cap 3 wide from 8 to 11 on top. On the floor it stands upright in
@@ -18,11 +20,30 @@
 //! rows 28..32; the flame's sides take columns 13..19 of rows 6..12 and its
 //! top the bright core, columns 14..18 of rows 8..12.
 //!
-//! Light: the stick takes the cell's own light (a torch emits, so its cell is
-//! lit); the flame is drawn at full block light, since it is the light.
+//! Gathering objects (milestone 11) stand on the floor, and each cell's copy
+//! is a little different (size, turn, offset), from a hash of its position
+//! and block ([`prop_seed`]), so a field of them never looks stamped out.
+//! Their textures:
+//! - **plant**: two crossed upright quads, about 0.8 wide and 0.9 tall, each
+//!   drawn from both sides and showing the whole texture: a picture of the
+//!   plant on a clear background (alpha below one half is cut out by the
+//!   shader), its foot on the bottom row;
+//! - **boulder**: one or two low rocks (irregular six-sided lumps, bulging
+//!   at the waist and drawn in at the top), about 0.7 wide and 0.45 tall;
+//!   tops take the texture's top left quarter (columns 0..16 of rows 0..16,
+//!   the footprint seen from above), sides its lower half (rows 16..32, the
+//!   foot on the bottom row, running once round the rock);
+//! - **fungus**: a mushroom (a stem and a wider cap) with up to two small
+//!   ones at its foot; the cap's top takes columns 0..16 of rows 0..16, its
+//!   rim columns 16..32 of rows 0..8, the gills underneath columns 16..32 of
+//!   rows 8..16, the stem columns 0..16 of rows 16..32.
+//!
+//! Light: every model takes the cell's own light (a torch or a glowcap
+//! emits, so its cell is lit); a torch's flame is drawn at full block light,
+//! since it is the light. Props have no ambient occlusion.
 
 use crate::{Padded, PaddedLight, ShapedVertex};
-use bm_core::{BlockFlags, CHUNK_SIZE, Light, Mount};
+use bm_core::{BlockFlags, BlockId, CHUNK_SIZE, Light, Model, Mount};
 
 const N: i32 = CHUNK_SIZE;
 
@@ -213,8 +234,323 @@ pub fn prop_model(mount: Mount) -> &'static [PropTri] {
     MODELS[i].get_or_init(|| torch_model(mount))
 }
 
+// ------------------------------------------------------- gathering objects
+
+/// A tiny deterministic generator for one cell's variation.
+struct Rng(u32);
+
+impl Rng {
+    fn next(&mut self) -> f32 {
+        self.0 = self.0.wrapping_mul(0x9e37_79b9).wrapping_add(0x7f4a_7c15);
+        let mut h = self.0;
+        h ^= h >> 15;
+        h = h.wrapping_mul(0x2c1b_3c6d);
+        h ^= h >> 12;
+        h = h.wrapping_mul(0x297a_2d39);
+        h ^= h >> 15;
+        (h >> 8) as f32 / (1u32 << 24) as f32
+    }
+
+    fn range(&mut self, lo: f32, hi: f32) -> f32 {
+        lo + (hi - lo) * self.next()
+    }
+}
+
+/// The variation seed of a prop: its chunk-local cell and its block, so
+/// neighbours differ, and two kinds in one place differ too.
+pub fn prop_seed(x: i32, y: i32, z: i32, block: BlockId) -> u32 {
+    let mut h = (x as u32).wrapping_mul(73_856_093)
+        ^ (y as u32).wrapping_mul(19_349_663)
+        ^ (z as u32).wrapping_mul(83_492_791)
+        ^ (block.0 as u32).wrapping_mul(2_654_435_761);
+    h ^= h >> 13;
+    h = h.wrapping_mul(1_274_126_177);
+    h ^ (h >> 16)
+}
+
+const PLANT_RECT: Rect = [0, 0, 32, 32];
+/// The same picture seen from behind: its left edge stays at the same end.
+const PLANT_BACK: Rect = [32, 0, 0, 32];
+const BOULDER_TOP: Rect = [0, 0, 16, 16];
+const BOULDER_SIDE: Rect = [0, 16, 32, 32];
+const CAP_TOP: Rect = [0, 0, 16, 16];
+const CAP_RIM: Rect = [16, 0, 32, 8];
+const CAP_GILLS: Rect = [16, 8, 32, 16];
+const STEM_SIDE: Rect = [0, 16, 16, 32];
+
+fn sub(a: [f32; 3], b: [f32; 3]) -> [f32; 3] {
+    [a[0] - b[0], a[1] - b[1], a[2] - b[2]]
+}
+
+fn cross(a: [f32; 3], b: [f32; 3]) -> [f32; 3] {
+    [
+        a[1] * b[2] - a[2] * b[1],
+        a[2] * b[0] - a[0] * b[2],
+        a[0] * b[1] - a[1] * b[0],
+    ]
+}
+
+fn dot(a: [f32; 3], b: [f32; 3]) -> f32 {
+    a[0] * b[0] + a[1] * b[1] + a[2] * b[2]
+}
+
+fn unit(v: [f32; 3]) -> [f32; 3] {
+    let l = dot(v, v).sqrt().max(1e-6);
+    [v[0] / l, v[1] / l, v[2] / l]
+}
+
+/// Pushes a flat quad as two triangles. `corners` run bottom left, bottom
+/// right, top right, top left as the texture rectangle reads; the winding
+/// is turned, if need be, so the quad faces along `outward`.
+fn quad(out: &mut Vec<PropTri>, corners: [[f32; 3]; 4], rect: Rect, outward: [f32; 3], tex_face: u8) {
+    let [u0, v0, u1, v1] = rect;
+    let mut pos = corners;
+    let mut uv = [[u0, v1], [u1, v1], [u1, v0], [u0, v0]];
+    let mut n = unit(cross(sub(pos[1], pos[0]), sub(pos[3], pos[0])));
+    if dot(n, outward) < 0.0 {
+        pos.swap(1, 3);
+        uv.swap(1, 3);
+        n = [-n[0], -n[1], -n[2]];
+    }
+    for [a, b, c] in [[0, 1, 2], [0, 2, 3]] {
+        out.push(PropTri {
+            pos: [pos[a], pos[b], pos[c]],
+            normal: n,
+            uv: [uv[a], uv[b], uv[c]],
+            tex_face,
+            flame: false,
+        });
+    }
+}
+
+/// A lump: a box turned by `turn` about the vertical through `centre`
+/// (x, z), from `y[0]` to `y[1]`, with half sizes `half` at the bottom and
+/// `top` at the top (smaller for a bevelled rock or a domed cap). Its sides
+/// take `rects[0]`; with `caps`, its top (`rects[1]`) and its underside
+/// (`rects[2]`).
+struct Lump {
+    centre: [f32; 2],
+    turn: f32,
+    y: [f32; 2],
+    half: [f32; 2],
+    top: [f32; 2],
+    rects: [Rect; 3],
+    caps: (bool, bool),
+}
+
+impl Lump {
+    fn push(&self, out: &mut Vec<PropTri>) {
+        let (s, c) = self.turn.sin_cos();
+        let at = |h: [f32; 2], i: usize, y: f32| {
+            // Corners counter-clockwise seen from above.
+            let (sx, sz) = [(-1.0, -1.0), (1.0, -1.0), (1.0, 1.0), (-1.0, 1.0)][i];
+            let (lx, lz) = (sx * h[0], sz * h[1]);
+            [self.centre[0] + lx * c - lz * s, y, self.centre[1] + lx * s + lz * c]
+        };
+        let [y0, y1] = self.y;
+        let [side, top, under] = self.rects;
+        let mid = [self.centre[0], (y0 + y1) * 0.5, self.centre[1]];
+        for i in 0..4 {
+            let j = (i + 1) % 4;
+            let corners = [
+                at(self.half, j, y0),
+                at(self.half, i, y0),
+                at(self.top, i, y1),
+                at(self.top, j, y1),
+            ];
+            let face: [f32; 3] = std::array::from_fn(|a| corners.iter().map(|p| p[a]).sum::<f32>() / 4.0);
+            quad(out, corners, side, sub(face, mid), 0);
+        }
+        if self.caps.0 {
+            let corners = [
+                at(self.top, 3, y1),
+                at(self.top, 2, y1),
+                at(self.top, 1, y1),
+                at(self.top, 0, y1),
+            ];
+            quad(out, corners, top, [0.0, 1.0, 0.0], 2);
+        }
+        if self.caps.1 {
+            let corners = [
+                at(self.half, 0, y0),
+                at(self.half, 1, y0),
+                at(self.half, 2, y0),
+                at(self.half, 3, y0),
+            ];
+            quad(out, corners, under, [0.0, -1.0, 0.0], 3);
+        }
+    }
+}
+
+/// A plant: two crossed upright quads, each drawn from both sides.
+fn plant(out: &mut Vec<PropTri>, r: &mut Rng) {
+    let scale = r.range(0.85, 1.0);
+    let (foot, crown, height) = (0.36 * scale, 0.44 * scale, 0.9 * scale);
+    let centre = [0.5 + r.range(-0.05, 0.05), 0.5 + r.range(-0.05, 0.05)];
+    let turn = r.range(0.0, std::f32::consts::FRAC_PI_2);
+    for k in 0..2 {
+        let a = turn + k as f32 * std::f32::consts::FRAC_PI_2;
+        let (s, c) = a.sin_cos();
+        let p = |w: f32, y: f32| [centre[0] + c * w, y, centre[1] + s * w];
+        let front = [p(-foot, 0.0), p(foot, 0.0), p(crown, height), p(-crown, height)];
+        let n = unit(cross(sub(front[1], front[0]), sub(front[3], front[0])));
+        quad(out, front, PLANT_RECT, n, 0);
+        let back = [front[1], front[0], front[3], front[2]];
+        quad(out, back, PLANT_BACK, [-n[0], -n[1], -n[2]], 0);
+    }
+}
+
+/// Pushes one triangle with explicit texture coordinates, wound to face
+/// along `outward`.
+fn tri(out: &mut Vec<PropTri>, pos: [[f32; 3]; 3], uv: [[u8; 2]; 3], outward: [f32; 3], tex_face: u8) {
+    let mut pos = pos;
+    let mut uv = uv;
+    let mut n = unit(cross(sub(pos[1], pos[0]), sub(pos[2], pos[0])));
+    if dot(n, outward) < 0.0 {
+        pos.swap(1, 2);
+        uv.swap(1, 2);
+        n = [-n[0], -n[1], -n[2]];
+    }
+    out.push(PropTri {
+        pos,
+        normal: n,
+        uv,
+        tex_face,
+        flame: false,
+    });
+}
+
+/// A rock: an irregular six-sided lump in two tiers, bulging a little at
+/// its waist and drawn in to a smaller top, so it reads as a stone rather
+/// than a box. `half` is its half size along its own axes, `turn` its turn.
+fn rock(out: &mut Vec<PropTri>, r: &mut Rng, centre: [f32; 2], half: [f32; 2], height: f32) {
+    const SIDES: usize = 6;
+    let turn = r.range(0.0, std::f32::consts::TAU);
+    let radii: [f32; SIDES] = std::array::from_fn(|_| r.range(0.85, 1.0));
+    let waist = r.range(0.45, 0.6);
+    let top_scale = r.range(0.5, 0.68);
+    // Rings: the foot, the waist (bulging), the top (drawn in).
+    let rings = [(0.0, 1.0), (height * waist, 1.04), (height, top_scale)];
+    let (s, c) = turn.sin_cos();
+    let at = |i: usize, (y, k): (f32, f32)| {
+        let a = i as f32 / SIDES as f32 * std::f32::consts::TAU;
+        let (lx, lz) = (a.cos() * half[0] * radii[i] * k, a.sin() * half[1] * radii[i] * k);
+        [centre[0] + lx * c - lz * s, y, centre[1] + lx * s + lz * c]
+    };
+    let [u0, v0, u1, v1] = BOULDER_SIDE;
+    let v_waist = v1 - ((v1 - v0) as f32 * waist) as u8;
+    let mid = [centre[0], height * 0.5, centre[1]];
+    for i in 0..SIDES {
+        let j = (i + 1) % SIDES;
+        let (ua, ub) = (
+            u0 + ((u1 - u0) as usize * i / SIDES) as u8,
+            u0 + ((u1 - u0) as usize * (i + 1) / SIDES) as u8,
+        );
+        for (tier, (va, vb)) in [(v1, v_waist), (v_waist, v0)].into_iter().enumerate() {
+            let corners = [
+                at(i, rings[tier]),
+                at(j, rings[tier]),
+                at(j, rings[tier + 1]),
+                at(i, rings[tier + 1]),
+            ];
+            let face: [f32; 3] = std::array::from_fn(|a| corners.iter().map(|p| p[a]).sum::<f32>() / 4.0);
+            quad(out, corners, [ua, vb, ub, va], sub(face, mid), 0);
+        }
+    }
+    // The top: a fan from its middle, its texture the footprint seen from
+    // above.
+    let [t0, s0, t1, s1] = BOULDER_TOP;
+    let span = half[0].max(half[1]) * 2.0;
+    let uv = |p: [f32; 3]| {
+        let fu = ((p[0] - centre[0]) / span + 0.5).clamp(0.0, 1.0);
+        let fv = ((p[2] - centre[1]) / span + 0.5).clamp(0.0, 1.0);
+        [
+            t0 + ((t1 - t0) as f32 * fu).round() as u8,
+            s0 + ((s1 - s0) as f32 * fv).round() as u8,
+        ]
+    };
+    let apex = [centre[0], height, centre[1]];
+    for i in 0..SIDES {
+        let (a, b) = (at(i, rings[2]), at((i + 1) % SIDES, rings[2]));
+        tri(out, [apex, a, b], [uv(apex), uv(a), uv(b)], [0.0, 1.0, 0.0], 2);
+    }
+}
+
+/// A boulder: a low rock and, often, a smaller one beside it.
+fn boulder(out: &mut Vec<PropTri>, r: &mut Rng) {
+    let half = [r.range(0.37, 0.42), r.range(0.31, 0.37)];
+    let height = r.range(0.34, 0.46);
+    let centre = [0.5 + r.range(-0.03, 0.03), 0.5 + r.range(-0.03, 0.03)];
+    rock(out, r, centre, half, height);
+    if r.next() < 0.65 {
+        let a = r.range(0.0, std::f32::consts::TAU);
+        let half = [r.range(0.11, 0.16), r.range(0.1, 0.15)];
+        let height = r.range(0.14, 0.24);
+        rock(out, r, [0.5 + a.cos() * 0.27, 0.5 + a.sin() * 0.27], half, height);
+    }
+}
+
+/// One mushroom, `scale` of full size, standing at `centre`: a stem (its
+/// top hidden under the cap) and a domed cap showing its gills beneath.
+fn mushroom(out: &mut Vec<PropTri>, r: &mut Rng, centre: [f32; 2], scale: f32) {
+    let turn = r.range(0.0, std::f32::consts::FRAC_PI_2);
+    let stem = r.range(0.06, 0.085) * scale;
+    let cap = r.range(0.22, 0.28) * scale;
+    let thick = r.range(0.12, 0.17) * scale;
+    let cap_y = r.range(0.24, 0.36) * scale;
+    Lump {
+        centre,
+        turn,
+        y: [0.0, cap_y],
+        half: [stem, stem],
+        top: [stem, stem],
+        rects: [STEM_SIDE; 3],
+        caps: (false, false),
+    }
+    .push(out);
+    Lump {
+        centre,
+        turn,
+        y: [cap_y, cap_y + thick],
+        half: [cap, cap],
+        top: [cap * 0.6, cap * 0.6],
+        rects: [CAP_RIM, CAP_TOP, CAP_GILLS],
+        caps: (true, true),
+    }
+    .push(out);
+}
+
+/// A fungus: one mushroom and up to two small ones at its foot.
+fn fungus(out: &mut Vec<PropTri>, r: &mut Rng) {
+    let a = r.range(0.0, std::f32::consts::TAU);
+    let (s, c) = a.sin_cos();
+    let scale = r.range(0.9, 1.05);
+    mushroom(out, r, [0.5 + c * 0.06, 0.5 + s * 0.06], scale);
+    let small = (r.next() * 3.0) as usize;
+    for k in 0..small {
+        let b = a + std::f32::consts::PI + (k as f32 - 0.5) * 1.3 + r.range(-0.2, 0.2);
+        let (s, c) = b.sin_cos();
+        let scale = r.range(0.48, 0.6);
+        mushroom(out, r, [0.5 + c * 0.26, 0.5 + s * 0.26], scale);
+    }
+}
+
+/// Appends the triangles of a gathering object's model for its variation
+/// `seed` ([`prop_seed`]). A torch adds nothing: its model is
+/// [`prop_model`].
+pub fn flora_model(model: Model, seed: u32, out: &mut Vec<PropTri>) {
+    let mut r = Rng(seed);
+    match model {
+        Model::Torch => {}
+        Model::Plant => plant(out, &mut r),
+        Model::Boulder => boulder(out, &mut r),
+        Model::Fungus => fungus(out, &mut r),
+    }
+}
+
 /// The triangles of every prop in the chunk.
 pub fn mesh_props(p: &Padded, light: &PaddedLight, flags: &BlockFlags, out: &mut Vec<ShapedVertex>) {
+    let mut scratch = Vec::new();
     for y in 0..N {
         for z in 0..N {
             for x in 0..N {
@@ -222,10 +558,18 @@ pub fn mesh_props(p: &Padded, light: &PaddedLight, flags: &BlockFlags, out: &mut
                 let Some(mount) = flags.mount(me) else {
                     continue;
                 };
+                let tris = match flags.model(me) {
+                    Model::Torch => prop_model(mount),
+                    model => {
+                        scratch.clear();
+                        flora_model(model, prop_seed(x, y, z, me), &mut scratch);
+                        &scratch[..]
+                    }
+                };
                 let own = light.get(x, y, z);
                 let colour = p.colour(x, y, z);
                 let base = [x as f32, y as f32, z as f32];
-                for t in prop_model(mount) {
+                for t in tris {
                     let l = if t.flame { Light::new(own.sky(), 15) } else { own };
                     for k in 0..3 {
                         let pos = std::array::from_fn(|a| base[a] + t.pos[k][a]);
@@ -476,5 +820,148 @@ mod tests {
         }
         // The floor beside the torch is lit by it.
         assert!(mesh.opaque.iter().any(|v| v.face() == 2 && v.block_light() >= 9));
+    }
+
+    fn flora(model: Model, seed: u32) -> Vec<PropTri> {
+        let mut v = Vec::new();
+        flora_model(model, seed, &mut v);
+        v
+    }
+
+    fn bounds(m: &[PropTri]) -> ([f32; 3], [f32; 3]) {
+        let mut lo = [f32::MAX; 3];
+        let mut hi = [f32::MIN; 3];
+        for p in corners(m) {
+            for a in 0..3 {
+                lo[a] = lo[a].min(p[a]);
+                hi[a] = hi[a].max(p[a]);
+            }
+        }
+        (lo, hi)
+    }
+
+    const SEEDS: std::ops::Range<u32> = 0..400;
+
+    #[test]
+    fn flora_models_have_their_triangles_inside_the_cell_facing_out() {
+        for model in [Model::Plant, Model::Boulder, Model::Fungus] {
+            for seed in SEEDS {
+                let m = flora(model, seed);
+                let n = m.len();
+                match model {
+                    // Two crossed quads, both sides.
+                    Model::Plant => assert_eq!(n, 2 * 2 * 2),
+                    // One or two rocks of six sides in two tiers and a
+                    // six-triangle top.
+                    Model::Boulder => assert!(n == 30 || n == 60, "{n}"),
+                    // One to three mushrooms: a stem's four sides, a cap's
+                    // four sides, top and gills.
+                    _ => assert!([20, 40, 60].contains(&n), "{n}"),
+                }
+                for t in &m {
+                    for p in t.pos {
+                        assert!(
+                            p.iter().all(|v| (0.0..=1.0).contains(v)),
+                            "{model:?} {seed} corner {p:?} leaves the cell"
+                        );
+                    }
+                    assert!(t.uv.iter().all(|uv| uv[0] <= 32 && uv[1] <= 32));
+                    assert!((dot(t.normal, t.normal) - 1.0).abs() < 1e-3);
+                    let wind = cross(sub(t.pos[1], t.pos[0]), sub(t.pos[2], t.pos[0]));
+                    assert!(dot(wind, t.normal) > 0.0, "{model:?} {seed} winds inward");
+                    assert!(!t.flame);
+                }
+                let (lo, hi) = bounds(&m);
+                assert_eq!(lo[1], 0.0, "{model:?} stands on the floor");
+                let (w, d) = (hi[0] - lo[0], hi[2] - lo[2]);
+                match model {
+                    Model::Plant => {
+                        assert!((0.75..=0.91).contains(&hi[1]), "plant height {}", hi[1]);
+                        assert!(w.max(d) > 0.5 && w.max(d) < 0.96, "plant width {w} {d}");
+                    }
+                    Model::Boulder => {
+                        assert!((0.33..=0.47).contains(&hi[1]), "boulder height {}", hi[1]);
+                        assert!(w.max(d) > 0.5 && w.max(d) < 0.98, "boulder width {w} {d}");
+                    }
+                    _ => {
+                        assert!((0.3..=0.6).contains(&hi[1]), "fungus height {}", hi[1]);
+                        assert!(w.max(d) > 0.38, "fungus width {w} {d}");
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn plants_show_both_sides_of_the_same_picture() {
+        let m = flora(Model::Plant, 7);
+        // Each quad has a back twin: the same corners, the opposite normal,
+        // and the same texture coordinate at each corner.
+        for pair in m.chunks(4) {
+            let (front, back) = (&pair[..2], &pair[2..]);
+            assert!(dot(front[0].normal, back[0].normal) < -0.99);
+            for f in front {
+                for (k, p) in f.pos.iter().enumerate() {
+                    let twin = back
+                        .iter()
+                        .flat_map(|b| b.pos.iter().zip(b.uv))
+                        .find(|(q, _)| sub(**q, *p).iter().all(|v| v.abs() < 1e-6))
+                        .expect("the back has the corner");
+                    assert_eq!(twin.1, f.uv[k], "the picture is not mirrored at {p:?}");
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn neighbouring_flora_differ() {
+        for model in [Model::Plant, Model::Boulder, Model::Fungus] {
+            let b = BlockId(40);
+            let here = flora(model, prop_seed(3, 5, 3, b));
+            assert_eq!(here, flora(model, prop_seed(3, 5, 3, b)), "deterministic");
+            for (x, z) in [(4, 3), (3, 4), (2, 3)] {
+                assert_ne!(
+                    here,
+                    flora(model, prop_seed(x, 5, z, b)),
+                    "{model:?} repeats at {x} {z}"
+                );
+            }
+            assert_ne!(here, flora(model, prop_seed(3, 5, 3, BlockId(41))));
+        }
+        // A fungus patch has single mushrooms and clusters.
+        let sizes: std::collections::BTreeSet<usize> = SEEDS.map(|s| flora(Model::Fungus, s).len()).collect();
+        assert_eq!(sizes.len(), 3, "{sizes:?}");
+    }
+
+    #[test]
+    fn flora_is_drawn_as_models_lit_by_their_cell_and_hides_nothing() {
+        let r = BlockRegistry::builtin();
+        let stone = r.id("stone").unwrap();
+        for (name, model) in [
+            ("spikeleaf", Model::Plant),
+            ("boulder", Model::Boulder),
+            ("glowcap", Model::Fungus),
+        ] {
+            let id = r.id(name).unwrap();
+            assert_eq!(r.flags().model(id), model, "{name}");
+            let mut c = Chunk::empty();
+            c.set(LocalPos::new(4, 4, 6), stone);
+            c.set(LocalPos::new(4, 5, 6), id);
+            let mesh = mesh_chunk(&c, &NO_NEIGHBORS, BlockId::AIR, &r.flags());
+            assert_eq!(mesh.opaque.len(), 6 * 4, "{name}: the stone keeps its faces");
+            assert!(mesh.opaque.iter().all(|v| v.ao() == 3), "{name} casts no occlusion");
+            let want = flora(model, prop_seed(4, 5, 6, id)).len() * 3;
+            assert_eq!(mesh.shaped_opaque.len(), want, "{name}");
+            for v in &mesh.shaped_opaque {
+                assert_eq!((v.block(), v.ao()), (id, 3));
+                assert!(v.uv().is_some());
+                assert_eq!(v.light(), Light::OPEN_SKY, "{name} takes its cell's light");
+                let p = v.position().map(|q| q as f32 / SHAPED_UNITS);
+                assert!(
+                    (4.0..=5.0).contains(&p[0]) && (5.0..=6.0).contains(&p[1]) && (6.0..=7.0).contains(&p[2]),
+                    "{name} {p:?}"
+                );
+            }
+        }
     }
 }

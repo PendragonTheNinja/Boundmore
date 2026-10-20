@@ -501,7 +501,7 @@ impl Renderer {
             "shaped opaque",
             &terrain,
             "vs_shaped",
-            "fs_opaque",
+            "fs_cutout",
             &shaped_buffers,
             TriangleList,
             Some(wgpu::Face::Back),
