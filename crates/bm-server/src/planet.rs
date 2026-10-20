@@ -18,7 +18,7 @@ use bm_core::{
     PlayerState, PlotPos, RecipeBook,
 };
 use bm_protocol::{PlanetInfo, PlanetSummary};
-use bm_worldgen::{GENERATOR_VERSION, Generator, OreSpec, PlanetGenConfig, PlanetKinds};
+use bm_worldgen::{FloraSpec, GENERATOR_VERSION, Generator, OreSpec, PlanetGenConfig, PlanetKinds};
 use glam::DVec3;
 use std::collections::{BTreeSet, HashMap};
 use std::sync::Arc;
@@ -278,11 +278,19 @@ pub fn open(
         );
     }
     if let Some(kind) = cat.kinds.get(&saved.kind) {
-        let kind_ores = kind.generation(saved.generation.seed).ores;
-        let added = extend_ores(&mut saved.generation, &kind_ores);
+        let kind_generation = kind.generation(saved.generation.seed);
+        let added = extend_ores(&mut saved.generation, &kind_generation.ores);
         if !added.is_empty() {
             store.put_planet(id, &saved)?;
             tracing::info!("{}: {} added to its ores", saved.name, added.join(", "));
+        }
+        let flora = extend_flora(&mut saved.generation, &kind_generation.flora);
+        if flora > 0 {
+            store.put_planet(id, &saved)?;
+            tracing::info!(
+                "{}: flora added ({flora} entries: plants, boulders and fungi, in chunks not yet saved)",
+                saved.name
+            );
         }
     }
     saved
@@ -347,13 +355,31 @@ pub fn open(
 /// a new ore, and only in chunks never saved. Never reorders or removes: a
 /// list that is not a prefix is left alone. Returns the blocks appended.
 pub fn extend_ores(generation: &mut PlanetGenConfig, kind_ores: &[OreSpec]) -> Vec<String> {
-    let n = generation.ores.len();
-    if kind_ores.len() <= n || kind_ores[..n] != generation.ores[..] {
-        return Vec::new();
+    extend_list(&mut generation.ores, kind_ores)
+        .iter()
+        .map(|o| o.block.clone())
+        .collect()
+}
+
+/// Appends the flora (M11's plants, boulders and fungi) a planet's kind
+/// lists after the planet's own saved list, by the same rule as
+/// [`extend_ores`]: flora is tried in order and the first to grow in a cell
+/// wins, so what an older planet grew stays where it was, and props appear
+/// only in chunks never saved. A planet made before M11 has none, so it
+/// gains the kind's whole list. Returns how many entries were appended.
+pub fn extend_flora(generation: &mut PlanetGenConfig, kind_flora: &[FloraSpec]) -> usize {
+    extend_list(&mut generation.flora, kind_flora).len()
+}
+
+/// Appends `kind[saved.len()..]` to `saved` when `saved` is a strict prefix
+/// of `kind`, returning what was appended; otherwise leaves it alone.
+fn extend_list<'a, T: Clone + PartialEq>(saved: &mut Vec<T>, kind: &'a [T]) -> &'a [T] {
+    let n = saved.len();
+    if kind.len() <= n || kind[..n] != saved[..] {
+        return &[];
     }
-    let new = &kind_ores[n..];
-    generation.ores.extend_from_slice(new);
-    new.iter().map(|o| o.block.clone()).collect()
+    saved.extend_from_slice(&kind[n..]);
+    &kind[n..]
 }
 
 /// Makes sure the planet's shrine stands, placing it (and cutting its plaza)
@@ -506,12 +532,20 @@ mod tests {
         let registry = BlockRegistry::builtin();
         let kinds = PlanetKinds::builtin(&registry);
         let kind = kinds.get("arid").unwrap().generation(5);
-        assert_eq!(kind.ores.last().unwrap().block, "wayshard_vein");
-        // A planet made before wayshards gains them, once.
+        let n = kind.ores.len();
+        assert_eq!(kind.ores[n - 2].block, "wayshard_vein");
+        assert_eq!(kind.ores[n - 1].block, "relic_seam");
+        // A planet made before wayshards gains them and the relic seam, once,
+        // after its own ores in their order.
         let mut old = kind.clone();
-        old.ores.pop();
-        assert_eq!(extend_ores(&mut old, &kind.ores), vec!["wayshard_vein".to_string()]);
+        old.ores.truncate(n - 2);
+        let before = old.ores.clone();
+        assert_eq!(
+            extend_ores(&mut old, &kind.ores),
+            vec!["wayshard_vein".to_string(), "relic_seam".to_string()]
+        );
         assert_eq!(old, kind);
+        assert_eq!(old.ores[..n - 2], before[..], "its old ores first, in order");
         assert!(extend_ores(&mut old, &kind.ores).is_empty(), "already there");
         // A list that is not a prefix (reordered, or an ore of its own) is left alone.
         let mut odd = kind.clone();
@@ -525,6 +559,59 @@ mod tests {
         more.ores.push(kind.ores[0].clone());
         assert!(extend_ores(&mut more, &kind.ores).is_empty());
         assert_eq!(more.ores.len(), kind.ores.len() + 1);
+    }
+
+    #[test]
+    fn flora_is_only_ever_appended() {
+        let registry = BlockRegistry::builtin();
+        let kinds = PlanetKinds::builtin(&registry);
+        let kind = kinds.get("temperate").unwrap().generation(5);
+        assert!(!kind.flora.is_empty());
+        // A planet made before M11 has none, and gains the kind's whole list once.
+        let mut old = kind.clone();
+        old.flora.clear();
+        assert_eq!(extend_flora(&mut old, &kind.flora), kind.flora.len());
+        assert_eq!(old, kind);
+        assert_eq!(extend_flora(&mut old, &kind.flora), 0, "already there");
+        // A list of its own (not a prefix) is left alone.
+        let mut odd = kind.clone();
+        odd.flora.truncate(1);
+        odd.flora[0].density *= 2.0;
+        let before = odd.clone();
+        assert_eq!(extend_flora(&mut odd, &kind.flora), 0);
+        assert_eq!(odd, before);
+    }
+
+    /// A planet saved before M11 (no relic seam, no flora) gains both on
+    /// opening, saved, after its old ores; opening again changes nothing.
+    #[test]
+    fn an_old_planet_gains_the_relic_seam_and_flora_on_opening() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = Store::open(&dir.path().join("u.redb")).unwrap();
+        let registry = Arc::new(BlockRegistry::builtin());
+        let kinds = PlanetKinds::builtin(&registry);
+        let items = ItemRegistry::builtin(&registry);
+        let recipes = RecipeBook::builtin(&items);
+        let spec = PlanetSpec::new("Old", "lush", 3, 16);
+        let mut saved = new_record(0, &spec, 12, &kinds).unwrap();
+        let full = saved.generation.clone();
+        saved.generation.ores.pop();
+        saved.generation.flora.clear();
+        let old_ores = saved.generation.ores.clone();
+        store.put_planet(0, &saved).unwrap();
+        let cat = Catalogue {
+            registry: &registry,
+            items: &items,
+            recipes: &recipes,
+            kinds: &kinds,
+        };
+        open(&store, 0, &spec, 12, 4, &cat, Vec::new()).unwrap();
+        let reopened = store.planet(0).unwrap().unwrap().generation;
+        assert_eq!(reopened, full, "saved");
+        assert_eq!(reopened.ores[..old_ores.len()], old_ores[..]);
+        assert_eq!(reopened.ores.last().unwrap().block, "relic_seam");
+        open(&store, 0, &spec, 12, 4, &cat, Vec::new()).unwrap();
+        assert_eq!(store.planet(0).unwrap().unwrap().generation, full, "once");
     }
 
     #[test]
