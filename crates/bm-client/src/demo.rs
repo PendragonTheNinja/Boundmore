@@ -55,6 +55,9 @@ const PLANETS: [(&str, &str, u32); 4] = [
 /// The portal demo's two open portals (`show_portals`), 1 by 2, ahead of
 /// the spawn: each one's lower block.
 pub const PORTALS: [[i64; 3]; 2] = [[122, 44, 121], [135, 44, 121]];
+/// The half-broken stone block of `show_mining`, on the ground ahead of the
+/// spawn.
+pub const MINED: BlockPos = BlockPos::new(128, 44, 126);
 /// Wayshards a demo portal's tank holds.
 const PORTAL_CAPACITY: u32 = 500;
 /// How long a new planet's ground is held back after a warp, by default.
@@ -122,6 +125,15 @@ pub struct Demo {
     portals: Vec<DemoPortal>,
     open_portal: Option<usize>,
     colours: ColourPalette,
+    /// Damage blocks have taken (first planet's rules, any planet):
+    /// position -> (damage, input of the last hit).
+    damage: HashMap<BlockPos, (u32, u32)>,
+    /// The input and interval of the last swing, for the cadence.
+    last_swing: Option<(u32, u32)>,
+    /// `show_mining`: a block someone else keeps chipping at, so its bar
+    /// stays up for a screenshot; re-sent every second.
+    chipped: Option<(BlockPos, u32)>,
+    chip_timer: f64,
     last: Instant,
     push_timer: f64,
 }
@@ -252,6 +264,10 @@ impl Demo {
             portals: Vec::new(),
             open_portal: None,
             colours: ColourPalette::builtin(),
+            damage: HashMap::new(),
+            last_swing: None,
+            chipped: None,
+            chip_timer: 0.0,
             last: Instant::now(),
             push_timer: 0.0,
         };
@@ -877,6 +893,14 @@ impl Demo {
         let dt = self.last.elapsed().as_secs_f64();
         self.last = Instant::now();
         self.run_stations(dt);
+        self.chip_timer += dt;
+        if let Some((pos, damage)) = self.chipped
+            && self.chip_timer >= 1.0
+        {
+            self.chip_timer = 0.0;
+            self.events
+                .push_back(NetEvent::Msg(ServerMsg::BlockHealth { pos, damage }));
+        }
         if self.release.is_some_and(|r| Instant::now() >= r) {
             self.release = None;
             let held = std::mem::take(&mut self.held);
@@ -1024,7 +1048,11 @@ impl Demo {
             ClientMsg::CollectReclaim { .. } => self.collect_reclaim(),
             ClientMsg::OpenPortal { pos } => self.open_portal(pos),
             ClientMsg::Portal { pos, action } => self.portal_action(pos, action),
-            ClientMsg::StartBreak { .. } | ClientMsg::Swing { .. } | ClientMsg::Hello { .. } => {}
+            ClientMsg::Swing { seq, at, pos, slot } => self.swing(seq, at, pos, slot),
+            ClientMsg::Hello { .. } => {}
+            // The old hold-to-break message, until the protocol drops it.
+            #[allow(unreachable_patterns)]
+            _ => {}
         }
         self.slots_since(&before);
     }
@@ -1122,8 +1150,8 @@ impl Demo {
         }
     }
 
-    /// One use of the chisel in `slot`; it breaks at its durability.
-    fn wear_chisel(&mut self, slot: usize) {
+    /// One use of the tool or chisel in `slot`; it breaks at its durability.
+    fn wear(&mut self, slot: usize) {
         let before = self.inv.clone();
         if let Some(s) = self.inv.slots[slot].as_mut() {
             s.wear += 1;
@@ -1138,34 +1166,142 @@ impl Demo {
         self.slots_since(&before);
     }
 
+    /// One swing, by the server's rules (`bm_core::mining`): the cadence on
+    /// the input timeline, damage by tier with armour and the right tool,
+    /// a critical roll per block, healing after `HEAL_TICKS` alone, breaks
+    /// answered with `EditResult`, damage with `BlockHealth`. The demo has
+    /// no look direction (it gets no inputs): an area tool's shape faces
+    /// east. Unlike the server it checks no reach.
+    fn swing(&mut self, seq: u32, at: u32, pos: BlockPos, slot: u8) {
+        use bm_core::mining::{HEAL_TICKS, aoe_blocks, block_health, is_crit, swing_damage, swing_ticks};
+        let hit = shape().wrap_block(pos);
+        let heal = HEAL_TICKS as u32;
+        self.damage.retain(|_, (_, last)| at < last.saturating_add(heal));
+        let health_of = |d: &Self, p: BlockPos| d.damage.get(&p).map_or(0, |e| e.0);
+        if let Some((last_at, ticks)) = self.last_swing
+            && at < last_at.saturating_add(ticks)
+        {
+            // Too soon: refused, and the block's truth sent back.
+            let damage = health_of(self, hit);
+            self.events
+                .push_back(NetEvent::Msg(ServerMsg::BlockHealth { pos: hit, damage }));
+            return;
+        }
+        let item = self.inv.get(slot as usize).map(|s| s.item);
+        let tool = self.items.swing_tool(item);
+        self.last_swing = Some((at, swing_ticks(tool.action_speed)));
+        let tier = self.planets[self.here].info.tier;
+        let area = tool.aoe.map_or(1.0, bm_core::Aoe::multiplier);
+        let mut done = Vec::new();
+        for p in aoe_blocks(tool.aoe, hit, DVec3::X, 1, at) {
+            if !shape().contains_y(p.y) {
+                continue;
+            }
+            let p = shape().wrap_block(p);
+            if done.contains(&p) {
+                continue;
+            }
+            done.push(p);
+            let state = self.ground(p);
+            let def = self.blocks.get(state.id);
+            if state.id.is_air() || !def.breakable {
+                continue;
+            }
+            let crit = is_crit(tool.crit_chance, 1, at, p);
+            let dealt = swing_damage(&tool, def, tier, crit, area);
+            if dealt == 0 {
+                continue;
+            }
+            let total = health_of(self, p) + dealt;
+            if total < block_health(def, tier) {
+                self.damage.insert(p, (total, at));
+                self.events
+                    .push_back(NetEvent::Msg(ServerMsg::BlockHealth { pos: p, damage: total }));
+                continue;
+            }
+            self.break_block(seq, p, state, at);
+        }
+        if item.is_some_and(|i| self.items.get(i).is_some_and(|d| d.tool().is_some())) {
+            self.wear(slot as usize);
+        }
+    }
+
+    /// Breaks `state` at `pos` for our swing `seq`: its drop goes into the
+    /// inventory, refused if there is no room or it is a chest with things
+    /// in it.
+    fn break_block(&mut self, seq: u32, pos: BlockPos, state: BlockState, at: u32) {
+        let old = state.id;
+        let full_chest = self.here == 0 && self.chests.get(&pos).is_some_and(|c| c.iter().any(Option::is_some));
+        if full_chest {
+            let name = bm_core::items::title_case(&self.blocks.get(old).name);
+            self.notice(&format!("Empty the {name} before breaking it"));
+            return self.answer_edit(seq, pos, state, false);
+        }
+        // A block that yields itself keeps its colour (ADR-0007).
+        let drop = self.items.drop_of(old).map(|item| {
+            let keeps = self.items.get(item).and_then(|d| d.block()) == Some(old);
+            (item, if keeps { state.colour } else { Colour::NATURAL })
+        });
+        if let Some((item, colour)) = drop
+            && self.inv.add_all_coloured(&self.items, item, colour, 1).is_none()
+        {
+            // As the server: one point short of breaking, and the truth.
+            self.notice("Your inventory is full");
+            self.answer_edit(seq, pos, state, false);
+            let damage = bm_core::mining::block_health(self.blocks.get(old), self.planets[self.here].info.tier) - 1;
+            self.damage.insert(pos, (damage, at));
+            self.events
+                .push_back(NetEvent::Msg(ServerMsg::BlockHealth { pos, damage }));
+            return;
+        }
+        self.answer_edit(seq, pos, BlockState::AIR, true);
+    }
+
+    /// Takes the player to the third tier world, facing a stone block on
+    /// the ground two blocks ahead that someone has half broken, a stone
+    /// hammer in hand (`--demo-ui mining`).
+    pub fn show_mining(&mut self) {
+        let lush = self
+            .planets
+            .iter()
+            .position(|p| p.info.tier == 3)
+            .expect("a tier 3 demo planet");
+        let pos = MINED;
+        let stone = BlockState::plain(self.blocks.id("stone").expect("builtin block"));
+        self.planets[lush].edits.insert(pos, stone);
+        let health = bm_core::mining::block_health(self.blocks.get(stone.id), 3);
+        self.chipped = Some((pos, health * 3 / 5));
+        self.chip_timer = 1.0;
+        self.hold = Some(Duration::ZERO);
+        let id = self.planets[lush].info.id;
+        self.warp(id);
+    }
+
     fn edit(&mut self, seq: u32, pos: BlockPos, action: EditAction) {
         let pos = shape().wrap_block(pos);
         let old_state = self.ground(pos);
         let old = old_state.id;
-        let full_chest = self.here == 0 && self.chests.get(&pos).is_some_and(|c| c.iter().any(Option::is_some));
         let (block, accepted) = match action {
-            EditAction::Break if full_chest => {
-                let name = bm_core::items::title_case(&self.blocks.get(old).name);
-                self.notice(&format!("Empty the {name} before breaking it"));
-                (old_state, false)
-            }
-            EditAction::Break => {
-                // A block that yields itself keeps its colour (ADR-0007).
-                let drop = self.items.drop_of(old).map(|item| {
-                    let keeps = self.items.get(item).and_then(|d| d.block()) == Some(old);
-                    (item, if keeps { old_state.colour } else { Colour::NATURAL })
-                });
-                match drop {
-                    Some((item, colour)) if self.inv.add_all_coloured(&self.items, item, colour, 1).is_none() => {
-                        self.notice("Your inventory is full");
-                        (old_state, false)
-                    }
-                    _ => (BlockState::AIR, true),
-                }
-            }
-            EditAction::Place { slot, .. } => {
+            EditAction::Place { slot, mount } => {
                 let stack = self.inv.get(slot as usize);
-                let block = stack.and_then(|s| self.items.get(s.item)).and_then(|d| d.block());
+                let own = stack.and_then(|s| self.items.get(s.item)).and_then(|d| d.block());
+                // A prop goes on the face named, which must be solid.
+                let block = match (stack, mount) {
+                    (Some(s), Some(m)) => self.items.prop_block(&self.blocks, s.item, m).filter(|_| {
+                        let (dx, dy, dz) = m.support();
+                        let support = self.ground(shape().wrap_block(pos.offset(dx, dy, dz)));
+                        self.blocks.get(support.id).solid
+                    }),
+                    (Some(s), None)
+                        if self
+                            .items
+                            .prop_block(&self.blocks, s.item, bm_core::Mount::Floor)
+                            .is_some() =>
+                    {
+                        None
+                    }
+                    _ => own,
+                };
                 match (block, stack) {
                     (Some(b), Some(s)) if old.is_air() => {
                         self.inv.take_one(slot as usize);
@@ -1190,7 +1326,7 @@ impl Demo {
                         match bm_core::chisel::apply(self.blocks.get(old), old_state, family, precise, octants, restore)
                         {
                             Ok(shape) => {
-                                self.wear_chisel(slot as usize);
+                                self.wear(slot as usize);
                                 (BlockState { shape, ..old_state }, true)
                             }
                             Err(bm_core::chisel::Refused::Told(t)) => {
@@ -1203,8 +1339,18 @@ impl Demo {
                     None => (old_state, false),
                 }
             }
+            // Breaking is by swings now (`ClientMsg::Swing`); the old break
+            // action, until the protocol drops it, is refused.
+            #[allow(unreachable_patterns)]
+            _ => (old_state, false),
         };
+        self.answer_edit(seq, pos, block, accepted);
+    }
+
+    /// Records an edit's verdict and answers it, as the server does.
+    fn answer_edit(&mut self, seq: u32, pos: BlockPos, block: BlockState, accepted: bool) {
         if accepted {
+            self.damage.remove(&pos);
             self.planets[self.here].edits.insert(pos, block);
             if self.here == 0 {
                 let slots = self.blocks.get(block.id).storage as usize;
@@ -1319,6 +1465,125 @@ fn recipe_index(book: &RecipeBook, items: &ItemRegistry, output: &str) -> u16 {
 mod tests {
     use super::*;
 
+    /// Swings at `pos` with hotbar `slot` as often as allowed until the
+    /// demo answers with an `EditResult`; returns that poll's events.
+    fn swing_until_answered(d: &mut Demo, pos: BlockPos, slot: u8) -> Vec<NetEvent> {
+        for n in 1..100 {
+            d.send(ClientMsg::Swing {
+                seq: 1000 + n,
+                at: n * 60,
+                pos,
+                slot,
+            });
+            let ev = d.poll();
+            if ev
+                .iter()
+                .any(|e| matches!(e, NetEvent::Msg(ServerMsg::EditResult { pos: p, .. }) if *p == pos))
+            {
+                return ev;
+            }
+        }
+        panic!("never broke")
+    }
+
+    fn healths(ev: &[NetEvent]) -> Vec<(BlockPos, u32)> {
+        ev.iter()
+            .filter_map(|e| match e {
+                NetEvent::Msg(ServerMsg::BlockHealth { pos, damage }) => Some((*pos, *damage)),
+                _ => None,
+            })
+            .collect()
+    }
+
+    #[test]
+    fn the_demo_answers_swings_like_the_server() {
+        let mut d = Demo::new("Tester");
+        d.poll();
+        // Slot 0 holds a stone hammer: three swings break stone on tier 1,
+        // each 0.82 s (49 ticks) after the last.
+        let stone = BlockPos::new(128, 39, 128);
+        assert_eq!(d.ground(stone).id, d.blocks.id("stone").unwrap());
+        let swing_at = |d: &mut Demo, pos, seq, at| {
+            d.send(ClientMsg::Swing { seq, at, pos, slot: 0 });
+            d.poll()
+        };
+        let swing = |d: &mut Demo, seq, at| {
+            d.send(ClientMsg::Swing {
+                seq,
+                at,
+                pos: stone,
+                slot: 0,
+            });
+            d.poll()
+        };
+        let ticks = bm_core::mining::swing_ticks(15.0);
+        assert_eq!(ticks, 49);
+        assert_eq!(healths(&swing(&mut d, 1, 10)), [(stone, 400)]);
+        // Too soon: refused, the truth sent back.
+        assert_eq!(healths(&swing(&mut d, 2, 10 + ticks - 1)), [(stone, 400)]);
+        assert_eq!(healths(&swing(&mut d, 3, 10 + ticks)), [(stone, 800)]);
+        let ev = swing(&mut d, 4, 10 + 2 * ticks);
+        assert!(ev.iter().any(|e| matches!(e,
+            NetEvent::Msg(ServerMsg::EditResult { seq: 4, accepted: true, block, .. }) if block.id.is_air())));
+        assert_eq!(d.ground(stone), BlockState::AIR);
+        // Every swing wore the hammer (the refused one did not).
+        assert_eq!(d.inv.slots[0].unwrap().wear, 38 + 3);
+        // Left alone for five seconds, damage heals.
+        let next = BlockPos::new(129, 39, 128);
+        let at = 10 + 3 * ticks;
+        assert_eq!(healths(&swing_at(&mut d, next, 5, at)), [(next, 400)]);
+        let later = at + bm_core::mining::HEAL_TICKS as u32;
+        assert_eq!(
+            healths(&swing_at(&mut d, next, 6, later)),
+            [(next, 400)],
+            "healed, then hit afresh"
+        );
+        // A torch goes on the face named, and only on a solid one.
+        let torch = d.items.id("torch").unwrap();
+        d.inv.slots[5] = Some(ItemStack::new(torch, 4));
+        let place = |d: &mut Demo, pos, mount| {
+            d.send(ClientMsg::Edit {
+                seq: 9,
+                at: 0,
+                pos,
+                action: EditAction::Place {
+                    slot: 5,
+                    mount: Some(mount),
+                },
+            });
+            d.poll().into_iter().find_map(|e| match e {
+                NetEvent::Msg(ServerMsg::EditResult { block, accepted, .. }) => Some((block, accepted)),
+                _ => None,
+            })
+        };
+        // In the hole, hung on the stone to its north.
+        let (b, ok) = place(&mut d, stone, bm_core::Mount::North).unwrap();
+        assert!(ok && b.id == d.blocks.id("torch_north").unwrap(), "{b:?}");
+        // Two swings of anything break it.
+        let ev = swing_until_answered(&mut d, stone, 0);
+        assert!(
+            ev.iter()
+                .any(|e| matches!(e, NetEvent::Msg(ServerMsg::EditResult { accepted: true, .. })))
+        );
+        assert_eq!(d.ground(stone), BlockState::AIR);
+        // Over open air there is nothing to stand on.
+        let (_, ok) = place(&mut d, BlockPos::new(128, 46, 128), bm_core::Mount::Floor).unwrap();
+        assert!(!ok);
+        // A full pack leaves a block one point short, and says so.
+        let glass = d.items.id("glass").unwrap();
+        for slot in d.inv.slots.iter_mut().skip(1) {
+            *slot = Some(ItemStack::new(glass, 64));
+        }
+        let rock = BlockPos::new(130, 39, 128);
+        let ev = swing_until_answered(&mut d, rock, 0);
+        assert!(
+            ev.iter()
+                .any(|e| matches!(e, NetEvent::Msg(ServerMsg::EditResult { accepted: false, .. })))
+        );
+        assert_eq!(healths(&ev), [(rock, 1199)]);
+        assert_eq!(d.ground(rock).id, d.blocks.id("stone").unwrap());
+    }
+
     #[test]
     fn the_demo_answers_like_a_server() {
         let mut d = Demo::new("Tester");
@@ -1401,13 +1666,7 @@ mod tests {
             if changes.contains(&(35, Some(coal)))))
         );
         // A chest with things in it stays.
-        d.send(ClientMsg::Edit {
-            seq: 1,
-            at: 0,
-            pos,
-            action: EditAction::Break,
-        });
-        let ev = d.poll();
+        let ev = swing_until_answered(&mut d, pos, 0);
         assert!(
             ev.iter()
                 .any(|e| matches!(e, NetEvent::Msg(ServerMsg::EditResult { accepted: false, .. })))
@@ -1525,13 +1784,7 @@ mod tests {
         let (block, accepted) = placed.unwrap();
         assert!(accepted);
         assert_eq!(block.colour, stack.colour);
-        d.send(ClientMsg::Edit {
-            seq: 2,
-            at: 0,
-            pos,
-            action: EditAction::Break,
-        });
-        d.poll();
+        swing_until_answered(&mut d, pos, 0);
         assert_eq!(
             d.inv.slots[slot].unwrap().count,
             stack.count,

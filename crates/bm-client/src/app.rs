@@ -6,9 +6,10 @@ use crate::claims::{Claims, outline};
 use crate::icons::icon_for;
 use crate::items::Items;
 use crate::menus::{
-    self, Arrival, CraftingView, Drag, Hud, ItemIcons, LiveStation, LoginForm, Menu, Notices, PortalWindow, ShrineTab,
-    StorageWindow, TravelView, UiAction,
+    self, Arrival, BlockBar, CraftingView, Drag, Hud, ItemIcons, LiveStation, LoginForm, Menu, Notices, PortalWindow,
+    ShrineTab, StorageWindow, TravelView, UiAction,
 };
+use crate::mining::{BlockHit, DamageMap, SwingInput, Swinger, predict_swing};
 use crate::net::{self, ConnectOptions, Link, NetEvent};
 use crate::predict::{Predictor, RemoteSample, Remotes};
 use crate::render::{BoxInstance, Camera, EguiFrame, LineVertex, Renderer, Scene};
@@ -16,10 +17,11 @@ use crate::settings::Settings;
 use crate::sky::Sky;
 use crate::textures::TextureSet;
 use crate::world::ClientWorld;
+use bm_core::mining::swing_ticks;
 use bm_core::movement::{MoveConfig, PlayerInput};
 use bm_core::{
-    BlockId, BlockPos, BlockRegistry, BlockState, Chunk, Colour, DayCycle, HOTBAR_SLOTS, ItemId, ItemStack, PlanetLook,
-    PlanetShape, PlotPos, RayHit, Shape, TICK_DT, raycast, raycast_shaped,
+    BlockId, BlockPos, BlockRegistry, BlockState, Chunk, Colour, DayCycle, HOTBAR_SLOTS, ItemId, ItemStack, Mount,
+    PlanetLook, PlanetShape, PlotPos, RayHit, Shape, TICK_DT, raycast, raycast_shaped,
 };
 use bm_protocol::{
     ClientDatagram, ClientMsg, EditAction, INPUT_REDUNDANCY, MIN_PASSWORD_LEN, PlanetInfo, PlanetSummary, PortalView,
@@ -79,18 +81,9 @@ pub struct Options {
     /// `--demo-ui SCREEN`: run offline against `demo.rs`, opening SCREEN
     /// (`hud`, `inventory`, `crafting`, `station`, `claims`, `shrine`,
     /// `travel`, `travelling`, `sky`, `storage`, `chat`, `colours`,
-    /// `coloured-icons`, `reclaim`, `shapes`, `chisel`, `grapple`, `portal`
-    /// or `login`).
+    /// `coloured-icons`, `reclaim`, `shapes`, `chisel`, `grapple`, `portal`,
+    /// `mining` or `login`).
     pub demo: Option<String>,
-}
-
-/// The block being broken: where, holding what, and how far along (0 to 1).
-#[derive(Clone, Copy)]
-struct Mining {
-    pos: BlockPos,
-    slot: usize,
-    item: Option<ItemId>,
-    progress: f64,
 }
 
 /// The journey to another planet, shown until its ground has arrived.
@@ -109,6 +102,8 @@ struct Session {
     /// Every planet on the server, for the travel menu and the sky.
     universe: Vec<PlanetSummary>,
     account: String,
+    /// Ours, from the welcome: critical hits and random areas hash it.
+    player_id: u32,
     /// Server tick in the welcome and our clock when it arrived, for the time
     /// of day before the first snapshot.
     welcome_tick: u64,
@@ -135,7 +130,10 @@ struct Session {
     chisel: Option<(BlockPos, crate::chisel::Plan)>,
     /// The plot claim mode points at.
     claim_target: Option<PlotPos>,
-    mining: Option<Mining>,
+    /// When our next swing may land (milestone 9, `crate::mining`).
+    swinger: Swinger,
+    /// Damage blocks have taken, ours predicted and the server's word.
+    damage: DamageMap,
     warp_shrine: BlockId,
     portal_conduit: BlockId,
     portal_surface: BlockId,
@@ -168,6 +166,7 @@ impl Session {
         let shape = w.planet.shape;
         Ok(Self {
             account: w.account,
+            player_id: w.player_id,
             welcome_tick: w.tick,
             welcome_local: local_ticks,
             movement: w.movement,
@@ -187,7 +186,8 @@ impl Session {
             use_target: None,
             chisel: None,
             claim_target: None,
-            mining: None,
+            swinger: Swinger::default(),
+            damage: DamageMap::default(),
             warp_shrine,
             portal_conduit,
             portal_surface,
@@ -201,7 +201,7 @@ impl Session {
 
     /// Moves us to another planet. Everything of the old one goes: chunks,
     /// meshes in flight (the new world has its own mesher), light, edits
-    /// waiting for an answer, remote players, claims, aim and mining.
+    /// waiting for an answer, remote players, claims, aim and block damage.
     /// Inventory, hotbar choice and input sequences carry on.
     fn arrive(&mut self, t: Travel, now: f64, local_ticks: f64) {
         let shape = t.planet.shape;
@@ -215,7 +215,7 @@ impl Session {
         self.target = None;
         self.use_target = None;
         self.claim_target = None;
-        self.mining = None;
+        self.damage.reset();
         self.place_cooldown = 0.0;
         self.journey = Some(Journey {
             to: Arrival {
@@ -238,7 +238,6 @@ impl Session {
         self.target = None;
         self.use_target = None;
         self.chisel = None;
-        self.mining = None;
     }
 
     /// Aims from `eye` along `dir`, within reach: `target` for breaking and
@@ -253,11 +252,135 @@ impl Session {
                 if surfaces && st.id == surface {
                     return Some(Shape::FULL);
                 }
+                // A prop (a torch) is not solid, but is aimed at by its
+                // whole cell so it can be broken (and a block placed by it).
+                if world.registry.get(st.id).is_prop() {
+                    return Some(Shape::FULL);
+                }
                 world.flags.solid(st.id).then(|| world.block_shape(p))
             })
         };
         self.target = aim(false);
         self.use_target = aim(true);
+    }
+
+    /// What a right click holding `item` would place against the target: its
+    /// block and, for a prop, the mount from the face aimed at (on top, or
+    /// hanging on a side of a solid block; never underneath). None when it
+    /// cannot be placed there.
+    fn place_choice(&self, item: ItemId) -> Option<(BlockId, Option<Mount>)> {
+        let registry = &self.items.registry;
+        let block = registry.get(item)?.block()?;
+        if registry.prop_block(&self.world.registry, item, Mount::Floor).is_none() {
+            return Some((block, None));
+        }
+        let hit = self.target?;
+        let support = self.world.block(hit.block)?;
+        if !self.world.flags.solid(support) {
+            return None;
+        }
+        let mount = crate::mining::mount_for_face(hit.normal)?;
+        Some((registry.prop_block(&self.world.registry, item, mount)?, Some(mount)))
+    }
+
+    /// One swing at `pos`, following input `at`, with the item in hotbar
+    /// `slot` and looking along `look`: starts the cooldown and predicts the
+    /// damage and breaks the server will rule (`crate::mining`). Returns the
+    /// message to send, or None when there is nothing breakable to swing at.
+    fn swing(&mut self, pos: BlockPos, at: u32, slot: usize, look: DVec3) -> Option<ClientMsg> {
+        let block = self.world.block(pos)?;
+        if block.is_air() || !self.world.registry.get(block).breakable {
+            return None;
+        }
+        let item = self.items.slot(slot).map(|h| h.item);
+        let tool = self.items.registry.swing_tool(item);
+        self.swinger.swung(at, swing_ticks(tool.action_speed));
+        self.edit_seq += 1;
+        let seq = self.edit_seq;
+        let world = &self.world;
+        let input = SwingInput {
+            tool: &tool,
+            hit: pos,
+            look,
+            player: self.player_id,
+            at,
+            tier: self.planet.tier,
+            shape: world.shape,
+            registry: &world.registry,
+        };
+        let hits = predict_swing(&input, &self.damage, |p| world.block(p));
+        for h in hits {
+            // With no room for what it yields the server refuses the break;
+            // predicting it would only flash the block away.
+            let fits = self
+                .items
+                .registry
+                .drop_of(h.block)
+                .is_none_or(|d| self.items.inventory.can_fit(&self.items.registry, d, 1));
+            // A full pack leaves it one point short, as the server does.
+            let h = match h.breaks && !fits {
+                true => {
+                    let health = bm_core::mining::block_health(self.world.registry.get(h.block), self.planet.tier);
+                    BlockHit {
+                        breaks: false,
+                        damage: (health - 1).saturating_sub(self.damage.damage(h.pos)),
+                        ..h
+                    }
+                }
+                false => h,
+            };
+            self.damage.hit(seq, at, &h);
+            if h.breaks {
+                self.world.predict_edit(seq, h.pos, BlockState::AIR);
+            }
+        }
+        Some(ClientMsg::Swing {
+            seq,
+            at,
+            pos: self.world.shape.wrap_block(pos),
+            slot: slot as u8,
+        })
+    }
+
+    /// `ServerMsg::BlockHealth`: the server's word on a block's damage. If
+    /// it answers a swing we predicted would break the block, the block
+    /// still stands.
+    fn block_health(&mut self, pos: BlockPos, damage: u32) {
+        let pos = self.world.shape.wrap_block(pos);
+        if let Some(seq) = self.damage.server_health(pos, damage, self.me.seq) {
+            self.world.revert_prediction(seq, pos);
+        }
+    }
+
+    /// `ServerMsg::EditResult`: settles our edit (a placed block, a cut, a
+    /// broken one). Accepted, the block starts again at full health;
+    /// refused, the server's word on its damage follows (`BlockHealth`), so
+    /// our guesses about it go.
+    fn edit_result(&mut self, seq: u32, pos: BlockPos, block: BlockState) {
+        self.world.apply_edit_result(seq, pos, block);
+        self.damage.clear(self.world.shape.wrap_block(pos));
+    }
+
+    /// `ServerMsg::BlockChanged`: someone else changed a block.
+    fn block_changed(&mut self, pos: BlockPos, block: BlockState) {
+        self.world.set_block(pos, block);
+        self.damage.clear(self.world.shape.wrap_block(pos));
+    }
+
+    /// The aimed block's health for the HUD and the cracks: where it is,
+    /// what is left (0 to 1) and the planet's shields (one per 100 armour).
+    /// None when aiming at nothing breakable.
+    fn target_health(&self) -> Option<(BlockPos, f32, u32)> {
+        let hit = self.target?;
+        let block = self.world.block(hit.block)?;
+        let def = self.world.registry.get(block);
+        if block.is_air() || !def.breakable {
+            return None;
+        }
+        let pos = self.world.shape.wrap_block(hit.block);
+        let tier = self.planet.tier;
+        let left = crate::mining::health_left(def, tier, self.damage.damage(pos));
+        Some((hit.block, left, bm_core::mining::armour(tier) / 100))
     }
 
     /// Whether a block is part of a portal (a conduit, or an open surface).
@@ -549,9 +672,6 @@ impl App {
         self.menu = Some(menu);
         self.keys.clear();
         self.mouse = [false; 2];
-        if let Some(s) = &mut self.session {
-            s.mining = None;
-        }
         self.set_grab(false);
     }
 
@@ -605,9 +725,6 @@ impl App {
         self.chat.open(by_key);
         self.keys.clear();
         self.mouse = [false; 2];
-        if let Some(s) = &mut self.session {
-            s.mining = None;
-        }
         self.set_grab(false);
     }
 
@@ -917,10 +1034,9 @@ impl App {
                     r.remove_chunk(s.world.shape.wrap_chunk(pos));
                 }
             }
-            ServerMsg::BlockChanged { pos, block } => s.world.set_block(pos, block),
-            // Milestone 9: the client agent draws block health.
-            ServerMsg::BlockHealth { .. } => {}
-            ServerMsg::EditResult { seq, pos, block, .. } => s.world.apply_edit_result(seq, pos, block),
+            ServerMsg::BlockChanged { pos, block } => s.block_changed(pos, block),
+            ServerMsg::BlockHealth { pos, damage } => s.block_health(pos, damage),
+            ServerMsg::EditResult { seq, pos, block, .. } => s.edit_result(seq, pos, block),
             ServerMsg::PlayerJoined { id, name } => s.remotes.joined(id, name),
             ServerMsg::PlayerLeft { id } => s.remotes.left(id),
             ServerMsg::Slots { changes } => s.items.apply_slots(&changes),
@@ -1059,6 +1175,8 @@ impl App {
         }) {
             s.me.teleport(pose);
         }
+        // The first input this frame runs: a swing lands no earlier.
+        let first_seq = s.me.seq + 1;
         let mut ticks = 0;
         while self.accumulator >= TICK_DT && ticks < MAX_TICKS_PER_FRAME {
             self.accumulator -= TICK_DT;
@@ -1101,10 +1219,6 @@ impl App {
             PlotPos::of(at, world.shape)
         });
 
-        // Breaking takes `break_seconds` of holding: the block's hardness,
-        // shortened by a suitable tool in the selected slot. The server times
-        // the same hold from our StartBreak (ADR-0004), so the progress here
-        // is a prediction of what it will accept.
         let slot = s.selected;
         let held = s.items.slot(slot);
         // A chisel in hand cuts with the left button and fills with the
@@ -1168,69 +1282,26 @@ impl App {
             }
         }
         let mouse = if chisel.is_some() { [false; 2] } else { mouse };
-        let mut mining = s.mining.take();
+        // Swinging: holding break swings the selected item (a non-tool is
+        // the bare hand) at once, then every `swing_ticks` of the item that
+        // made the last swing. The server rules each swing on the same input
+        // timeline (ADR-0004); `Session::swing` predicts what it will do.
+        s.damage.heal(s.me.seq);
         if mouse[0]
             && let Some(hit) = s.target
+            && let Some(at) = s.swinger.next(first_seq, s.me.seq)
+            && let Some(msg) = s.swing(hit.block, at, slot, bm_core::movement::look_dir(input.yaw, input.pitch))
         {
-            let block = s.world.block(hit.block).unwrap_or(BlockId::AIR);
-            let def = s.world.registry.get(block);
-            if def.breakable {
-                let item = held.map(|h| h.item);
-                let seconds = s.items.registry.break_seconds(def, item) as f64;
-                let progress = match mining {
-                    Some(m) if m.pos == hit.block && m.slot == slot && m.item == item => m.progress,
-                    _ => {
-                        if seconds > 0.0 {
-                            link.send(ClientMsg::StartBreak {
-                                at: s.me.seq,
-                                pos: hit.block,
-                                slot: slot as u8,
-                            });
-                        }
-                        0.0
-                    }
-                };
-                let progress = if seconds > 0.0 { progress + dt / seconds } else { 1.0 };
-                if progress >= 1.0 {
-                    s.edit_seq += 1;
-                    // With no room for what it yields the server refuses the
-                    // break; predicting it would only flash the block away.
-                    let fits = s
-                        .items
-                        .registry
-                        .drop_of(block)
-                        .is_none_or(|d| s.items.inventory.can_fit(&s.items.registry, d, 1));
-                    if fits {
-                        s.world.predict_edit(s.edit_seq, hit.block, BlockState::AIR);
-                    }
-                    link.send(ClientMsg::Edit {
-                        seq: s.edit_seq,
-                        at: s.me.seq,
-                        pos: hit.block,
-                        action: EditAction::Break,
-                    });
-                    mining = None;
-                } else {
-                    mining = Some(Mining {
-                        pos: hit.block,
-                        slot,
-                        item,
-                        progress,
-                    });
-                }
-            } else {
-                mining = None;
-            }
-        } else {
-            mining = None;
+            link.send(msg);
         }
-        s.mining = mining;
 
         // Placing spends one of the selected item, so only a block item can.
-        let place_block = held.and_then(|h| s.items.def(&h)).and_then(|d| d.block());
+        // A prop (a torch) goes on the face clicked: on top, or hanging on a
+        // side; never under a block, and only on a solid one.
+        let place = held.and_then(|h| s.place_choice(h.item));
         if mouse[1]
             && s.place_cooldown <= 0.0
-            && let (Some(hit), Some(block)) = (s.target, place_block)
+            && let (Some(hit), Some((block, mount))) = (s.target, place)
         {
             let at = hit.adjacent();
             let free = s
@@ -1253,7 +1324,7 @@ impl App {
                     pos: at,
                     action: EditAction::Place {
                         slot: slot as u8,
-                        mount: None,
+                        mount,
                     },
                 });
                 s.place_cooldown = PLACE_REPEAT;
@@ -1337,6 +1408,10 @@ impl App {
                     claim_mode: claim_help,
                     aim_hint,
                     reclaim_waiting: !s.reclaim.is_empty(),
+                    block_bar: (menu.is_none() && !claim_mode && s.chisel.is_none())
+                        .then(|| s.target_health())
+                        .flatten()
+                        .map(|(_, left, shields)| BlockBar { left, shields }),
                 },
             );
             match menu {
@@ -1615,7 +1690,11 @@ impl App {
             }
         }
         let view_radius = s.view_radius;
-        let breaking = s.mining.map(|m| (m.pos, m.progress as f32));
+        // Cracks on the aimed block once it has taken damage.
+        let breaking = s
+            .target_health()
+            .filter(|&(_, left, _)| left < 1.0)
+            .map(|(pos, left, _)| (pos, 1.0 - left));
         let Some(r) = &mut self.renderer else { return };
         r.render(&Scene {
             camera: &camera,
@@ -1807,6 +1886,17 @@ impl App {
                 (self.yaw, self.pitch) = (0.0, -0.02);
                 let [x, y, z] = crate::demo::PORTALS[0];
                 self.open_menu(Menu::Portal(BlockPos::new(x, y, z)));
+            }
+            // On a tier 3 world, a stone hammer in hand, looking at a half
+            // broken stone block: its health bar and one shield.
+            "mining" => {
+                if let Some(Link::Demo(d)) = &mut self.link {
+                    d.show_mining();
+                }
+                if let Some(s) = &mut self.session {
+                    s.selected = 0;
+                }
+                (self.yaw, self.pitch) = (0.0, -0.5);
             }
             // The shrine window on its Reclaim tab, with things waiting.
             "reclaim" => {
@@ -2183,12 +2273,8 @@ mod tests {
         assert!(s.claims.iter().count() > 0);
         s.world.predict_edit(1, BlockPos::new(128, 43, 128), BlockState::AIR);
         assert_eq!(s.world.pending_edits(), 1);
-        s.mining = Some(Mining {
-            pos: BlockPos::new(129, 43, 128),
-            slot: 0,
-            item: None,
-            progress: 0.5,
-        });
+        s.block_health(BlockPos::new(129, 43, 128), 600);
+        assert_eq!(s.damage.len(), 1);
         let centre = BlockPos::new(128, 44, 128).chunk();
         s.world.schedule_meshing(centre, 64);
         for _ in 0..12 {
@@ -2215,7 +2301,7 @@ mod tests {
             "players"
         );
         assert_eq!(s.claims.iter().count(), 0, "claims");
-        assert!(s.mining.is_none() && s.target.is_none());
+        assert!(s.damage.is_empty() && s.target.is_none());
         assert_eq!(s.me.state, spawn);
         assert_eq!(s.me.seq, seq, "input sequences carry on");
         assert!(s.travelling());
@@ -2260,6 +2346,102 @@ mod tests {
             world.block(p).is_some_and(|b| world.flags.solid(b))
         });
         assert_eq!(s.aiming_at_shrine(), Some(shrine));
+    }
+
+    /// Hands what the demo answered to the session, as `handle_msg` does.
+    fn deliver(s: &mut Session, events: Vec<NetEvent>) {
+        for e in events {
+            match e {
+                NetEvent::Msg(ServerMsg::BlockHealth { pos, damage }) => s.block_health(pos, damage),
+                NetEvent::Msg(ServerMsg::EditResult { seq, pos, block, .. }) => s.edit_result(seq, pos, block),
+                NetEvent::Msg(ServerMsg::Notice { .. }) => {}
+                NetEvent::Msg(ServerMsg::BlockChanged { pos, block }) => s.block_changed(pos, block),
+                NetEvent::Msg(ServerMsg::Slots { changes }) => s.items.apply_slots(&changes),
+                _ => {}
+            }
+        }
+    }
+
+    #[test]
+    fn swings_predict_what_the_demo_rules() {
+        let (mut s, mut demo, msgs) = session_on_the_demo();
+        for m in msgs {
+            if let ServerMsg::Chunk { pos, data } = m {
+                s.world.insert_chunk(pos, Chunk::decode(&data).unwrap());
+            }
+        }
+        // Slot 0 holds a stone hammer; stone lies under the soil. Three
+        // swings, each as soon as the cooldown allows.
+        let pos = BlockPos::new(128, 39, 128);
+        let stone = s.world.registry.id("stone").unwrap();
+        assert_eq!(s.world.block(pos), Some(stone));
+        let mut at = 5;
+        for n in 0..3 {
+            let swing_at = s.swinger.next(at, at + 1).unwrap();
+            let msg = s.swing(pos, swing_at, 0, DVec3::NEG_Z).unwrap();
+            assert_eq!(s.swinger.next(swing_at, swing_at + 48), None, "cooling down");
+            let predicted = s.damage.damage(pos);
+            // Broken at once on the third, before the answer.
+            assert_eq!(s.world.block(pos) == Some(BlockId::AIR), n == 2, "swing {n}");
+            demo.send(msg);
+            deliver(&mut s, demo.poll());
+            if n < 2 {
+                assert_eq!(s.damage.damage(pos), predicted, "the answer agrees");
+                assert_eq!(predicted, 400 * (n + 1));
+            }
+            at = s.swinger.ready_at();
+        }
+        assert_eq!(s.world.block(pos), Some(BlockId::AIR));
+        assert_eq!(s.world.pending_edits(), 0, "the break settled");
+        assert!(s.damage.is_empty());
+
+        // A swing at nothing breakable makes none, and starts no cooldown.
+        let ready = s.swinger.ready_at();
+        assert!(s.swing(pos, ready, 0, DVec3::NEG_Z).is_none());
+        assert_eq!(s.swinger.ready_at(), ready);
+    }
+
+    #[test]
+    fn torches_go_on_the_face_aimed_at() {
+        let (mut s, _, msgs) = session_on_the_demo();
+        for m in msgs {
+            if let ServerMsg::Chunk { pos, data } = m {
+                s.world.insert_chunk(pos, Chunk::decode(&data).unwrap());
+            }
+        }
+        let torch = s.items.registry.id("torch").unwrap();
+        let registry = s.world.registry.clone();
+        let block = |n: &str| registry.id(n).unwrap();
+        let ground = BlockPos::new(128, 43, 128);
+        let aim = |s: &mut Session, at: BlockPos, normal: [i64; 3]| {
+            s.target = Some(RayHit {
+                block: at,
+                normal,
+                distance: 2.0,
+                point: DVec3::ZERO,
+            });
+        };
+        aim(&mut s, ground, [0, 1, 0]);
+        assert_eq!(s.place_choice(torch), Some((block("torch"), Some(Mount::Floor))));
+        aim(&mut s, ground, [1, 0, 0]);
+        assert_eq!(
+            s.place_choice(torch),
+            Some((block("torch_west"), Some(Mount::West))),
+            "east of the block, hanging on it"
+        );
+        aim(&mut s, ground, [0, -1, 0]);
+        assert_eq!(s.place_choice(torch), None, "never underneath");
+        // Ordinary blocks name no mount.
+        let stone = s.items.registry.id("stone").unwrap();
+        assert_eq!(s.place_choice(stone), Some((block("stone"), None)));
+        // A placed torch is aimed at (so it can be broken), though not solid.
+        let above = BlockPos::new(128, 44, 128);
+        s.world.predict_edit(1, above, BlockState::plain(block("torch")));
+        s.aim(DVec3::new(128.5, 46.0, 128.5), DVec3::NEG_Y);
+        assert_eq!(s.target.map(|t| t.block), Some(above));
+        // But a torch is no support for another.
+        aim(&mut s, above, [0, 1, 0]);
+        assert_eq!(s.place_choice(torch), None);
     }
 
     fn app() -> App {
