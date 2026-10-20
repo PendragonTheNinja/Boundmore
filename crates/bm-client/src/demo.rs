@@ -46,7 +46,7 @@ pub const SHAPES_VIEW: [f64; 3] = [128.5, 46.0, 130.5];
 pub const GRAPPLE_BEAM: [i64; 3] = [124, 56, 118];
 /// The torch demo's hall (`show_torches`), inside: west and east x, north
 /// and south z, and its highest open layer. The spawn is at its south end.
-pub const TORCH_HALL: (i64, i64, i64, i64, i64) = (125, 132, 116, 129, 47);
+pub const TORCH_HALL: (i64, i64, i64, i64, i64) = (124, 132, 106, 129, 47);
 /// The demo's planets: name, kind, and the width shown for it in the sky and
 /// menu. (The demo's own patch is tiny; these are sizes real planets have.)
 const PLANETS: [(&str, &str, u32); 4] = [
@@ -547,9 +547,10 @@ impl Demo {
         self.events.extend(chunks.into_iter().map(NetEvent::Msg));
     }
 
-    /// A sealed stone hall around the spawn, dark but for its torches: one
-    /// standing on the floor and two on the walls at the far (north) end,
-    /// none near the spawn, and torches in the hotbar's last slot.
+    /// A long sealed stone hall around the spawn, dark but for the torches at
+    /// its far (north) half: one standing on the floor and three on the
+    /// walls. The spawn end is out of their reach, for the held torch in the
+    /// hotbar's last slot.
     pub fn show_torches(&mut self) {
         let b = |n: &str| BlockState::plain(self.blocks.id(n).expect("builtin block"));
         let stone = b("stone");
@@ -564,9 +565,10 @@ impl Demo {
             }
         }
         let y = GROUND + 1;
-        put.push((BlockPos::new(x0 + 2, y, z0 + 2), b("torch")));
-        put.push((BlockPos::new(x0 + 4, y + 1, z0), b("torch_north")));
-        put.push((BlockPos::new(x1, y + 1, z0 + 5), b("torch_east")));
+        put.push((BlockPos::new(127, y, 115), b("torch")));
+        put.push((BlockPos::new(x1, y + 1, 112), b("torch_east")));
+        put.push((BlockPos::new(x0, y + 1, 109), b("torch_west")));
+        put.push((BlockPos::new(129, y + 1, z0), b("torch_north")));
         let planet = &mut self.planets[0];
         planet.flat = true;
         planet.edits.clear();
