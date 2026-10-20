@@ -1681,32 +1681,32 @@ Two spreadsheets Nathan added on 2026-10-20 (downloaded from Google Sheets as .x
 
 | Boon | Category | Effect per level | Applies to |
 |---|---|---|---|
-| Energy Saver | Ease | Levels 1-10, Stamina Drain -2 per level, Rank +10 per level | | Tools, Slingbows, Fists, Bombs, Grapples, Spanners, Chisels |
-| Busy Bee | Lightness | Levels 1-10, Action Speed +5 per level, Rank +10 per level | | Tools, Slingbows, Fists, Bombs, Grapples, Spanners, Chisels |
-| Critically Lucky | Ease | Levels 1-10, Critical Chance +5% per level, Rank +10 per level | | Tools, Slingbows, Fists |
-| Hard Hitter | Effect | Levels 1-10, Critical Effect +10% per level, Rank +10 per level | | Tools, Slingbows, Fists |
-| Devastating Damage | Effect | Levels 1-10, Damage +50 & +10% per level, Rank +10 per level | | Tools, Slingbows, Fists, Bombs |
-| Heavy-duty | Longevity | Levels 1-10, Durability +200 per level, Rank +10 per level | | Tools, Slingbows, Fists, Grapples, Spanners, Chisels |
-| Knockback | Effect | Levels 1-10, Knockback +2 per level, Rank +10 per level | | Bombs |
-| Bigger Boom | Longevity | Levels 1-10, Area of Effect +0.3 per level, Rank +10 per level | | Bombs |
-| Fly Fast | Lightness | Levels 1-10, Projectile Speed +5 per level, Rank +10 per level | | Slingbows, Grapples |
-| Reel Speedster | Effect | Levels 1-10, Reel In and Out Speed +5 per level, Rank +10 per level | | Grapples |
-| Far Reaching | Longevity | Levels 1-10, Max Length +3 per level, Rank +10 per level | | Grapples |
-| Long-Range | Longevity | Levels 1-10, Max Length +3 per level, Rank +10 per level | | Slingbows, Fists |
-| Wear and Tear | Effect | Levels 1-10, Wear Removed Per Hit +100 & +10% per level, Rank +10 per level | | Spanners |
-| Glow | Glow | Levels 1-3, Light Source Intensity +1 per level, Light Source Radius +6 per level, Rank +20 per level starting at 30 | | Tools, Slingbows, Fists, Bombs, Grapples, Spanners, Chisels |
-| Magnetic Collector | Special | Levels 1-3, Drop Auto Harvest True each level, Drop Attraction Range +2 per level, Rank +20 per level starting at 30 | | Tools, Fists, Spanners, Chisels |
-| Transformation | Effect | Level 1, On Hit Action Changes Block Type, Rank +50 | | Chisels |
-| Regenerator | Special | Level 1, On Hit Action Regenerates World, Area of Effect +100%?, Rank +50 | | Bombs |
-| Flanker's Force / Low Blow / Cross Purposes / All-rounder / Random Acts | Special | Levels 1-5, Rank +20 per level starting at 10, Damage Adjacent Blocks (1: Horizontal, Damage -60%; 2: Below, Damage -40%; 3: Cross, Damage -60%; 4: All, Damage -60%; 5: Random) | | Tools, Fists, Spanners |
-| Double-Shot / Triple-Shot / Quadruple-Shot / Quintuple-Shot / Sextuple-Shot | Special | Levels 1-5, Rank +20 per level starting at 10, Multi Shot Spread Angle 0.15, Multi Shot Count +1 per level, Offset & Damage (1: Offset ~1.57, Damage -50%; 2: Offset ~1.57, Damage -60%; 3: Offset ~0.5, Damage -60%; 4: Offset ~0.8, Damage -60%; 5: Offset ~0.9, Damage -60%) | | Slingbows |
-| Heavy-Weight Projectile | Effect | Levels 1-5, Projectile Speed -10, Projectile Fall Off +0.1 per level, Damage +10% per level, Rank +20 per level starting at 10 | | Slingbows |
-| Light Flight | Lightness | Levels 1-5, Projectile Fall Off -10% per level, Projectile Speed (1: +10; 2: +12; 3: +15; 4: +20; 5: +30), Rank +20 per level starting at 10 | | Slingbows |
-| Let 'em Bleed | Special | Levels 1-5, Status Effect Applied On Hit (Type: Damage Over Time From Item; Level, +1 per level), Rank +20 per level starting at 10 | | Slingbows |
-| Slow and Steady | Special | Levels 1-5, Status Effect Applied On Hit (Type: Focus Slow; Level: +1 per level), Rank +20 per level starting at 10 | | Slingbows |
-| Weakness | Special | Levels 1-5, Status Effect Applied On Hit (Type: Weak; Level: +1 per level), Rank +20 per level starting at 10 | | Slingbows |
-| Hot on Their Heals Boon I / II / III | Special | Levels 1-3, Damage Type Healing, Damage Applies to (2: Burst Stamina; 3: Status Effect Duration), Rank +20 per level starting at 30 | | Bombs |
-| Hookshot | Special | Level 1, Hookshot True, Reel In Speed +20, Rank +20 | | Grapples |
+| Energy Saver | Ease | Levels 1-10, Stamina Drain -2 per level, Rank +10 per level | Tools, Slingbows, Fists, Bombs, Grapples, Spanners, Chisels |
+| Busy Bee | Lightness | Levels 1-10, Action Speed +5 per level, Rank +10 per level | Tools, Slingbows, Fists, Bombs, Grapples, Spanners, Chisels |
+| Critically Lucky | Ease | Levels 1-10, Critical Chance +5% per level, Rank +10 per level | Tools, Slingbows, Fists |
+| Hard Hitter | Effect | Levels 1-10, Critical Effect +10% per level, Rank +10 per level | Tools, Slingbows, Fists |
+| Devastating Damage | Effect | Levels 1-10, Damage +50 & +10% per level, Rank +10 per level | Tools, Slingbows, Fists, Bombs |
+| Heavy-duty | Longevity | Levels 1-10, Durability +200 per level, Rank +10 per level | Tools, Slingbows, Fists, Grapples, Spanners, Chisels |
+| Knockback | Effect | Levels 1-10, Knockback +2 per level, Rank +10 per level | Bombs |
+| Bigger Boom | Longevity | Levels 1-10, Area of Effect +0.3 per level, Rank +10 per level | Bombs |
+| Fly Fast | Lightness | Levels 1-10, Projectile Speed +5 per level, Rank +10 per level | Slingbows, Grapples |
+| Reel Speedster | Effect | Levels 1-10, Reel In and Out Speed +5 per level, Rank +10 per level | Grapples |
+| Far Reaching | Longevity | Levels 1-10, Max Length +3 per level, Rank +10 per level | Grapples |
+| Long-Range | Longevity | Levels 1-10, Max Length +3 per level, Rank +10 per level | Slingbows, Fists |
+| Wear and Tear | Effect | Levels 1-10, Wear Removed Per Hit +100 & +10% per level, Rank +10 per level | Spanners |
+| Glow | Glow | Levels 1-3, Light Source Intensity +1 per level, Light Source Radius +6 per level, Rank +20 per level starting at 30 | Tools, Slingbows, Fists, Bombs, Grapples, Spanners, Chisels |
+| Magnetic Collector | Special | Levels 1-3, Drop Auto Harvest True each level, Drop Attraction Range +2 per level, Rank +20 per level starting at 30 | Tools, Fists, Spanners, Chisels |
+| Transformation | Effect | Level 1, On Hit Action Changes Block Type, Rank +50 | Chisels |
+| Regenerator | Special | Level 1, On Hit Action Regenerates World, Area of Effect +100%?, Rank +50 | Bombs |
+| Flanker's Force / Low Blow / Cross Purposes / All-rounder / Random Acts | Special | Levels 1-5, Rank +20 per level starting at 10, Damage Adjacent Blocks (1: Horizontal, Damage -60%; 2: Below, Damage -40%; 3: Cross, Damage -60%; 4: All, Damage -60%; 5: Random) | Tools, Fists, Spanners |
+| Double-Shot / Triple-Shot / Quadruple-Shot / Quintuple-Shot / Sextuple-Shot | Special | Levels 1-5, Rank +20 per level starting at 10, Multi Shot Spread Angle 0.15, Multi Shot Count +1 per level, Offset & Damage (1: Offset ~1.57, Damage -50%; 2: Offset ~1.57, Damage -60%; 3: Offset ~0.5, Damage -60%; 4: Offset ~0.8, Damage -60%; 5: Offset ~0.9, Damage -60%) | Slingbows |
+| Heavy-Weight Projectile | Effect | Levels 1-5, Projectile Speed -10, Projectile Fall Off +0.1 per level, Damage +10% per level, Rank +20 per level starting at 10 | Slingbows |
+| Light Flight | Lightness | Levels 1-5, Projectile Fall Off -10% per level, Projectile Speed (1: +10; 2: +12; 3: +15; 4: +20; 5: +30), Rank +20 per level starting at 10 | Slingbows |
+| Let 'em Bleed | Special | Levels 1-5, Status Effect Applied On Hit (Type: Damage Over Time From Item; Level, +1 per level), Rank +20 per level starting at 10 | Slingbows |
+| Slow and Steady | Special | Levels 1-5, Status Effect Applied On Hit (Type: Focus Slow; Level: +1 per level), Rank +20 per level starting at 10 | Slingbows |
+| Weakness | Special | Levels 1-5, Status Effect Applied On Hit (Type: Weak; Level: +1 per level), Rank +20 per level starting at 10 | Slingbows |
+| Hot on Their Heals Boon I / II / III | Special | Levels 1-3, Damage Type Healing, Damage Applies to (2: Burst Stamina; 3: Status Effect Duration), Rank +20 per level starting at 30 | Bombs |
+| Hookshot | Special | Level 1, Hookshot True, Reel In Speed +20, Rank +20 | Grapples |
 
 | Quirk (one level, on an item while held) | Effect | Applies to |
 |---|---|---|
