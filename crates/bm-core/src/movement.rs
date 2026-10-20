@@ -48,6 +48,10 @@ pub struct MoveConfig {
     /// enough to clear a shore one block above the surface.
     pub water_exit_velocity: f64,
     pub max_fall_speed: f64,
+    /// No player moves faster than this, however flung or reeled: Boundless
+    /// capped players and creatures at 40 m/s so the world can stream in
+    /// ahead of them (`docs/research/boundless-tuning.md` 1.4).
+    pub max_speed: f64,
     /// Lean acceleration while hanging from a grapple in the air (WASD
     /// pumps the swing; there is no speed cap, as in a real swing).
     pub swing_accel: f64,
@@ -73,7 +77,9 @@ impl Default for MoveConfig {
             water_gravity_scale: 0.2,
             water_drag: 3.5,
             water_exit_velocity: 10.5,
-            max_fall_speed: 55.0,
+            // Boundless's terminal fall speed (tuning 1.4).
+            max_fall_speed: 40.0,
+            max_speed: 40.0,
             swing_accel: 9.0,
             fling_drag: 0.4,
             // Nathan, 2026-10-18: a character reads as two blocks tall, and
@@ -142,17 +148,19 @@ pub fn look_dir(yaw: u16, pitch: i16) -> DVec3 {
     DVec3::new(f.x * cp, sp, f.z * cp)
 }
 
-/// What a grapple does, from its item (`assets/items.toml`). Every number is
-/// a calibration target (`docs/feel.md`).
+/// What a grapple does, from its item (`assets/items.toml`; Boundless's
+/// numbers in `docs/research/boundless-tuning.md` 1.1).
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
 pub struct GrappleSpec {
     /// How far the hook flies before it is lost; also the longest rope.
     pub range: f64,
     /// Hook flight speed, blocks per second.
     pub shot_speed: f64,
-    /// Rope taken in or paid out per second.
-    pub reel_speed: f64,
-    /// Reels in by itself once stuck (a hookshot): pulls, swings poorly.
+    /// The rope's top speed coming in and going out, blocks per second.
+    pub reel_in_speed: f64,
+    pub reel_out_speed: f64,
+    /// Reels in by itself once stuck (a hookshot): pulls, swings poorly. In
+    /// Boundless a forge boon, not a kind of grapple.
     pub hookshot: bool,
 }
 
@@ -168,12 +176,21 @@ pub struct Hook {
     pub rope: f64,
     /// The block it is stuck in; None while it flies.
     pub stuck: Option<BlockPos>,
+    /// How fast the rope is being taken in (out when negative), blocks per
+    /// second: it gathers speed at [`REEL_ACCEL`] up to the grapple's reel
+    /// speed, and stops when the reel is let go.
+    pub reel: f64,
 }
 
 /// Where the rope meets the body, above the feet: the hands.
 pub const ROPE_HEIGHT: f64 = 1.2;
 /// The shortest rope: reeling in stops here.
 pub const ROPE_MIN: f64 = 1.0;
+/// How fast the reel gathers speed, blocks per second squared. Boundless
+/// reeled like a force towards the grapple's reel speed, not a fixed rope
+/// speed: players measured about 40 blocks of travel to reach 40 blocks per
+/// second (tuning 1.4), which is about this.
+pub const REEL_ACCEL: f64 = 20.0;
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Serialize, Deserialize)]
 pub struct PlayerState {
@@ -191,6 +208,9 @@ pub struct PlayerState {
 pub struct StepEvents {
     /// A grapple was fired (it wears by one).
     pub fired: bool,
+    /// A grapple was let go by firing again (it wears by one too, as in
+    /// Boundless; putting it away costs nothing).
+    pub released: bool,
 }
 
 impl PlayerState {
@@ -272,13 +292,17 @@ pub fn step(
         // Nothing in hand holds the rope: putting the grapple away lets go.
         None => s.hook = None,
         // Firing again lets go of a stuck hook or recalls a flying one.
-        Some(_) if input.fire && s.hook.is_some() => s.hook = None,
+        Some(_) if input.fire && s.hook.is_some() => {
+            s.hook = None;
+            events.released = true;
+        }
         Some(g) if input.fire => {
             s.hook = Some(Hook {
                 pos: s.eye(cfg),
                 vel: look_dir(input.yaw, input.pitch) * g.shot_speed,
                 rope: 0.0,
                 stuck: None,
+                reel: 0.0,
             });
             events.fired = true;
         }
@@ -361,10 +385,14 @@ pub fn step(
             let n = r / dist;
             let out = s.vel.dot(n);
             if dist + out * dt > rope {
-                let wanted = ((rope - dist) / dt).max(-cfg.max_fall_speed);
+                let wanted = ((rope - dist) / dt).max(-cfg.max_speed);
                 s.vel += n * (wanted - out);
             }
         }
+    }
+    let speed = s.vel.length();
+    if speed > cfg.max_speed {
+        s.vel *= cfg.max_speed / speed;
     }
 
     // Stepping up (ADR-0008): only a walker on the ground who is not rising
@@ -446,16 +474,31 @@ fn hook_tick(
     if !world.solid(block) {
         return None;
     }
-    let reel = match reel.clamp(-1, 1) {
-        0 if g.hookshot => 1,
-        r => r,
+    let target = match reel.clamp(-1, 1) {
+        1 => g.reel_in_speed,
+        -1 => -g.reel_out_speed,
+        _ if g.hookshot => g.reel_in_speed,
+        _ => 0.0,
     };
-    if reel > 0 {
+    // The reel gathers speed towards its target and stops at once when let
+    // go, so the rope holds where it was left.
+    h.reel = if target == 0.0 {
+        0.0
+    } else if h.reel < target {
+        (h.reel + REEL_ACCEL * dt).min(target)
+    } else {
+        (h.reel - REEL_ACCEL * dt).max(target)
+    };
+    if h.reel > 0.0 {
         // Slack is taken up at once, so reeling in always pulls.
         let dist = planet.delta(h.pos, hands).length();
         h.rope = h.rope.min(dist);
     }
-    h.rope = (h.rope - reel as f64 * g.reel_speed * dt).clamp(ROPE_MIN, g.range);
+    let rope = h.rope - h.reel * dt;
+    h.rope = rope.clamp(ROPE_MIN, g.range);
+    if h.rope != rope {
+        h.reel = 0.0;
+    }
     Some(h)
 }
 
@@ -1003,7 +1046,8 @@ mod tests {
     const GRAPPLE: GrappleSpec = GrappleSpec {
         range: 26.0,
         shot_speed: 65.0,
-        reel_speed: 7.0,
+        reel_in_speed: 10.0,
+        reel_out_speed: 10.0,
         hookshot: false,
     };
 
@@ -1091,7 +1135,11 @@ mod tests {
         let reel_in = PlayerInput { reel: 1, ..up() };
         hold(&mut s, reel_in, 60, Some(&GRAPPLE), &w);
         assert!(!s.on_ground);
-        assert!(s.pos.y > 15.0, "a second of reeling at 7 per second: {}", s.pos.y);
+        assert!(
+            s.pos.y > 15.0,
+            "a second of reeling, gathering speed to 10 per second: {}",
+            s.pos.y
+        );
         // Let go of the reel: hanging, not falling.
         let y = s.pos.y;
         hold(&mut s, up(), 120, Some(&GRAPPLE), &w);
@@ -1103,12 +1151,58 @@ mod tests {
     }
 
     #[test]
+    fn the_reel_gathers_speed_and_stops_when_let_go() {
+        let mut w = world();
+        ceiling(&mut w, 22);
+        let mut s = standing(5.5, 10.0);
+        hold(&mut s, fire(up()), 1, Some(&GRAPPLE), &w);
+        hold(&mut s, up(), 20, Some(&GRAPPLE), &w);
+        let reel_in = PlayerInput { reel: 1, ..up() };
+        hold(&mut s, reel_in, 1, Some(&GRAPPLE), &w);
+        let h = s.hook.unwrap();
+        assert!(
+            (h.reel - REEL_ACCEL * TICK_DT).abs() < 1e-12,
+            "one tick of gathering: {}",
+            h.reel
+        );
+        hold(&mut s, reel_in, 60, Some(&GRAPPLE), &w);
+        assert_eq!(
+            s.hook.unwrap().reel,
+            GRAPPLE.reel_in_speed,
+            "up to the grapple's reel speed"
+        );
+        hold(&mut s, up(), 1, Some(&GRAPPLE), &w);
+        assert_eq!(s.hook.unwrap().reel, 0.0);
+    }
+
+    #[test]
+    fn nobody_moves_faster_than_the_cap() {
+        let mut w = world();
+        w.floor = -1000;
+        let cfg = MoveConfig::default();
+        let mut s = PlayerState {
+            pos: DVec3::new(5.5, 500.0, 5.5),
+            vel: DVec3::new(60.0, 0.0, 0.0),
+            ..Default::default()
+        };
+        for _ in 0..600 {
+            hold(&mut s, PlayerInput::default(), 1, None, &w);
+            assert!(s.vel.length() <= cfg.max_speed + 1e-9, "{:?}", s.vel);
+        }
+        assert!(
+            (s.vel.y + cfg.max_fall_speed).abs() < 1.0,
+            "falls at about the terminal speed: {:?}",
+            s.vel
+        );
+    }
+
+    #[test]
     fn a_hookshot_reels_by_itself() {
         let mut w = world();
         ceiling(&mut w, 22);
         let shot = GrappleSpec {
             hookshot: true,
-            reel_speed: 16.0,
+            reel_in_speed: 16.0,
             ..GRAPPLE
         };
         let mut s = standing(5.5, 10.0);
@@ -1138,6 +1232,7 @@ mod tests {
                 vel: DVec3::ZERO,
                 rope: 10.0,
                 stuck: Some(BlockPos::new(5, 40, 5)),
+                reel: 0.0,
             }),
             ..Default::default()
         };

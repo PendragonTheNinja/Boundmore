@@ -16,19 +16,23 @@ Every value here was chosen as a sensible starting point, not measured from Boun
 | Player size | 0.6 wide, collides 1.9 tall, drawn 2.0, eyes at 1.75 | **Set by Nathan (2026-10-18):** two blocks tall; nobody fits under less than two blocks. Height sliders in Boundless are visual only |
 | Reach | 7 blocks (`ServerConfig::reach`) | How far away can you break a block? |
 
-## Grapples (`assets/items.toml`; swing feel in `MoveConfig`)
+## Grapples (`assets/items.toml`; rope feel in `bm-core/src/movement.rs`)
 
-Seeded from a 2017 player measurement of Boundless's grapples (research §2.2), which the same thread later called out of date. Ranges are in blocks, speeds in blocks per second.
+Matched to Boundless's final numbers (Nathan, 2026-10-19: Boundless first; `docs/research/boundless-tuning.md` 1.1 to 1.4, from boundlessinfo.com's item data, checked against in-game tooltips). Ranges in blocks, speeds in blocks per second.
 
-| Value | Now | Check in Boundless |
+| Value | Now | Source, or guess |
 |---|---|---|
-| Copper grapple | range 16, shot 55, reel 4 | Boundless copper: about 11 to 13 range, reel 2.9. Too generous for a first grapple? |
-| Iron grapple | range 26, shot 65, reel 7 | Boundless's long ones reached 26 to 36 |
-| Iron hookshot | range 20, shot 70, reel 16, reels itself | Boundless gold and diamond hookshots: 16 to 26 range, reel 28 to 34 |
-| Swing lean | 9 blocks/s² (`swing_accel`) | How much can WASD pump a swing? |
-| Fling fade | 0.4 of the speed per second (`fling_drag`) | How far does letting go at the bottom of a swing carry you? |
-| Shortest rope | 1 block (`ROPE_MIN`) | How close does reeling in pull you to the hook? |
-| Durability | copper 300, iron 700, hookshot 500 shots | |
+| Copper grapple | range 10, shot 45, reel in 5, reel out 15, durability 500 | Boundless copper, exact |
+| Iron grapple | range 20, shot 30, reel in 2, reel out 10, durability 1000 | Boundless iron ("long range"), exact |
+| Wear | one per shot and one per release by firing again; putting it away is free | Boundless, medium |
+| Hookshot | no base grapple; the ability waits for forging (a boon there, +20 reel in) | Boundless 1.0+ |
+| Speed cap | 40 for everything; terminal fall 40 (was 55) | Boundless dev, high |
+| Reel gathering | 20 blocks/s² up to the reel speed (`REEL_ACCEL`) | derived from one player's measurement, medium |
+| Swing lean | 9 blocks/s² (`swing_accel`) | guess: Boundless's rope constants are known but not what they mean |
+| Fling fade | 0.4 of the speed per second (`fling_drag`) | guess |
+| Shortest rope | 1 block (`ROPE_MIN`) | guess |
+
+Not built yet, from Boundless: energy per shot (copper 60, iron 80, of a 600 bar), grapple mastery (+5 range and +5 shot speed per rank, 5 ranks), forge boons (+3 range, +5 shot, +5 reel per level), no fall damage while attached.
 
 ## Portals (`ServerConfig`, `assets/planets.toml`; M8, ADR-0009)
 

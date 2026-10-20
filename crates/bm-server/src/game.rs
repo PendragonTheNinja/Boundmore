@@ -876,7 +876,7 @@ impl Game {
                 p.last_seq += 1;
                 p.last_input = input;
                 p.bank -= 1.0;
-                if events.fired {
+                if events.fired || events.released {
                     let before = p.inventory.clone();
                     let mut broke = None;
                     if let Some(s) = p.inventory.slots[slot].as_mut() {

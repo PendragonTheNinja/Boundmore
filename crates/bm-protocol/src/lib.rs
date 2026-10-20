@@ -534,6 +534,7 @@ mod tests {
                     vel: DVec3::splat(-50.0),
                     rope: 1e3,
                     stuck: Some(BlockPos::new(i32::MAX as i64, i32::MIN as i64, i32::MAX as i64)),
+                    reel: -40.0,
                 }),
             },
             others: vec![

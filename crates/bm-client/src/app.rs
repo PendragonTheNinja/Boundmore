@@ -1636,6 +1636,7 @@ impl App {
                             vel: DVec3::ZERO,
                             rope: 10.0,
                             stuck: Some(block),
+                            reel: 0.0,
                         }),
                     });
                     s.selected = 7;

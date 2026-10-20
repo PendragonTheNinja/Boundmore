@@ -367,7 +367,8 @@ mod tests {
         let g = GrappleSpec {
             range: 26.0,
             shot_speed: 65.0,
-            reel_speed: 7.0,
+            reel_in_speed: 10.0,
+            reel_out_speed: 10.0,
             hookshot: false,
         };
         let inputs: Vec<PlayerInput> = (1..=300u32)

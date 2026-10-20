@@ -495,7 +495,7 @@ impl Demo {
     }
 
     /// Level ground with a stone arch to swing from (its beam along
-    /// [`GRAPPLE_BEAM`]), and the three grapples in the hotbar's last
+    /// [`GRAPPLE_BEAM`]), and both grapples in the hotbar's last
     /// slots.
     pub fn show_grapple(&mut self) {
         let stone = BlockState::plain(self.blocks.id("stone").expect("builtin block"));
@@ -514,10 +514,7 @@ impl Demo {
         planet.edits.extend(put);
         let id = |n: &str| self.items.id(n).expect("builtin item");
         let before = self.inv.clone();
-        for (i, name) in ["copper_grapple", "iron_grapple", "iron_hookshot"]
-            .into_iter()
-            .enumerate()
-        {
+        for (i, name) in ["copper_grapple", "iron_grapple"].into_iter().enumerate() {
             self.inv.slots[7 + i] = Some(ItemStack::new(id(name), 1));
         }
         self.slots_since(&before);

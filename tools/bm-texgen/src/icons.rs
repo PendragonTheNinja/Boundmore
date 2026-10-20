@@ -1036,7 +1036,6 @@ pub fn paint_icon(name: &str) -> Option<Tex> {
         "precise_slope_chisel" => chisel(Metal::Iron, Tip::Slope, true),
         "copper_grapple" => grapple(Metal::Copper, false),
         "iron_grapple" => grapple(Metal::Iron, false),
-        "iron_hookshot" => grapple(Metal::Iron, true),
         "wayshard" => wayshard(),
         "portal_token" => portal_token(),
         _ => return None,

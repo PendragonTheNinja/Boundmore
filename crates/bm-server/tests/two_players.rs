@@ -1977,7 +1977,7 @@ async fn grapples_fire_stick_wear_and_need_a_grapple_in_hand() {
         "Alice",
         &[
             (0, "copper_grapple", 1, 0),
-            (1, "iron_hookshot", 1, 499),
+            (1, "iron_grapple", 1, 999),
             (2, "timber", 4, 0),
         ],
     );
@@ -2008,18 +2008,33 @@ async fn grapples_fire_stick_wear_and_need_a_grapple_in_hand() {
     assert!(hook.pos.y <= you.pos.y + 1e-9, "below the feet: {hook:?}");
     assert_eq!(stack(&alice, 0).map(|s| s.wear), Some(1));
 
-    // Timber in hand holds no rope: it lets go and fires nothing.
+    // Firing again lets go, and that wears it too, as in Boundless.
+    play(&mut alice, down(0, true), 1).await;
+    play(&mut alice, down(0, false), 10).await;
+    alice.settle().await;
+    let (_, _, you, _) = alice.latest_snapshot().await;
+    assert_eq!(you.hook, None);
+    assert_eq!(stack(&alice, 0).map(|s| s.wear), Some(2));
+
+    // Timber in hand holds no rope: it lets go for free and fires nothing.
+    play(&mut alice, down(0, true), 1).await;
+    play(&mut alice, down(0, false), 10).await;
     play(&mut alice, down(2, true), 1).await;
     play(&mut alice, down(2, false), 10).await;
     alice.settle().await;
     let (_, _, you, _) = alice.latest_snapshot().await;
     assert_eq!(you.hook, None);
     assert_eq!(stack(&alice, 2).map(|s| (s.count, s.wear)), Some((4, 0)));
+    assert_eq!(
+        stack(&alice, 0).map(|s| s.wear),
+        Some(3),
+        "putting it away costs nothing"
+    );
 
-    // The hookshot's last shot breaks it.
+    // The iron grapple's last shot breaks it.
     play(&mut alice, down(1, true), 1).await;
     play(&mut alice, down(1, false), 10).await;
-    alice.notice("Your Iron Hookshot broke").await;
+    alice.notice("Your Iron Grapple broke").await;
     alice.settle().await;
     assert_eq!(stack(&alice, 1), None);
     let (_, _, you, _) = alice.latest_snapshot().await;

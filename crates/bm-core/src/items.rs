@@ -61,7 +61,8 @@ pub enum ItemKind {
     Grapple {
         range: f32,
         shot_speed: f32,
-        reel_speed: f32,
+        reel_in: f32,
+        reel_out: f32,
         hookshot: bool,
         durability: u16,
     },
@@ -120,13 +121,15 @@ impl ItemDef {
             ItemKind::Grapple {
                 range,
                 shot_speed,
-                reel_speed,
+                reel_in,
+                reel_out,
                 hookshot,
                 ..
             } => Some(GrappleSpec {
                 range: range as f64,
                 shot_speed: shot_speed as f64,
-                reel_speed: reel_speed as f64,
+                reel_in_speed: reel_in as f64,
+                reel_out_speed: reel_out as f64,
                 hookshot,
             }),
             _ => None,
@@ -241,7 +244,8 @@ struct ItemEntry {
 struct GrappleEntry {
     range: f32,
     shot_speed: f32,
-    reel_speed: f32,
+    reel_in: f32,
+    reel_out: f32,
     #[serde(default)]
     hookshot: bool,
     durability: u16,
@@ -320,7 +324,8 @@ impl ItemRegistry {
                 (None, None, Some(g)) => ItemKind::Grapple {
                     range: g.range,
                     shot_speed: g.shot_speed,
-                    reel_speed: g.reel_speed,
+                    reel_in: g.reel_in,
+                    reel_out: g.reel_out,
                     hookshot: g.hookshot,
                     durability: g.durability,
                 },
@@ -366,14 +371,16 @@ impl ItemRegistry {
                 ItemKind::Grapple {
                     range,
                     shot_speed,
-                    reel_speed,
+                    reel_in,
+                    reel_out,
                     durability,
                     ..
                 } if d.stack != 1
                     || durability == 0
                     || !(range >= movement::ROPE_MIN as f32 && range <= 64.0)
                     || !(shot_speed > 0.0 && shot_speed <= 200.0)
-                    || !(reel_speed > 0.0 && reel_speed <= 100.0) =>
+                    || !(reel_in > 0.0 && reel_in <= 100.0)
+                    || !(reel_out > 0.0 && reel_out <= 100.0) =>
                 {
                     return Err(ItemError::BadTool(d.name.clone()));
                 }
@@ -522,18 +529,21 @@ mod tests {
     #[test]
     fn grapples_are_read_and_checked() {
         let (_, items) = setup();
-        let def = items.get(items.id("iron_hookshot").unwrap()).unwrap();
+        let def = items.get(items.id("copper_grapple").unwrap()).unwrap();
         let g = def.grapple().expect("a grapple");
-        assert!(g.hookshot && g.range > 0.0 && g.reel_speed > 0.0);
-        assert!(def.durability().is_some());
         assert_eq!(
-            items
-                .get(items.id("copper_grapple").unwrap())
-                .unwrap()
-                .grapple()
-                .map(|g| g.hookshot),
-            Some(false)
+            (g.range, g.shot_speed, g.reel_in_speed, g.reel_out_speed),
+            (10.0, 45.0, 5.0, 15.0)
         );
+        assert!(!g.hookshot, "no base grapple reels itself (tuning 1.1)");
+        assert!(def.durability().is_some());
+        let iron = items.get(items.id("iron_grapple").unwrap()).unwrap();
+        let g = iron.grapple().expect("a grapple");
+        assert_eq!(
+            (g.range, g.shot_speed, g.reel_in_speed, g.reel_out_speed),
+            (20.0, 30.0, 2.0, 10.0)
+        );
+        assert_eq!(iron.durability(), Some(1000));
         let b = BlockRegistry::builtin();
         let bad = |g: &str| {
             let toml = format!(
@@ -543,16 +553,16 @@ mod tests {
             matches!(ItemRegistry::build(&b, &toml), Err(ItemError::BadTool(_)))
         };
         assert!(!bad(
-            "{ range = 10.0, shot_speed = 50.0, reel_speed = 5.0, durability = 9 }"
+            "{ range = 10.0, shot_speed = 50.0, reel_in = 5.0, reel_out = 5.0, durability = 9 }"
         ));
         assert!(bad(
-            "{ range = 500.0, shot_speed = 50.0, reel_speed = 5.0, durability = 9 }"
+            "{ range = 500.0, shot_speed = 50.0, reel_in = 5.0, reel_out = 5.0, durability = 9 }"
         ));
         assert!(bad(
-            "{ range = 10.0, shot_speed = 0.0, reel_speed = 5.0, durability = 9 }"
+            "{ range = 10.0, shot_speed = 0.0, reel_in = 5.0, reel_out = 5.0, durability = 9 }"
         ));
         assert!(bad(
-            "{ range = 10.0, shot_speed = 50.0, reel_speed = 5.0, durability = 0 }"
+            "{ range = 10.0, shot_speed = 50.0, reel_in = 5.0, reel_out = 5.0, durability = 0 }"
         ));
     }
 
