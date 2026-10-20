@@ -10,7 +10,7 @@ Boundless's item names appear only to say which number belongs to which item; Bo
 | 2 | Tools and mining: tool stats per tier, block health by world tier, the damage formula, boons, skills, drops | compiled 2026-10-20 |
 | 3 | Weapons, combat, health, creatures: slingbows, bombs, damage formula, elements, creature stats and drops, meteors | compiled 2026-10-20 |
 | 4 | Materials, worlds, crafting: tiers, world types and sizes, ore and gem placement and yields, machines, fuel, recipe scaling, progression ladder | compiled 2026-10-20 |
-| 5 | Skills, attributes, forging | in progress |
+| 5 | Skills, attributes, levels, forging: the live (1.0 to Release 248) skill tree, level curve, attribute formulas, XP sources, the forge session model and every boon's values | compiled 2026-10-20 |
 
 Older notes: `boundless-mechanics.md` (how systems work, EA-era numbers) and `boundless-forum-feedback.md` (what players liked and disliked).
 
@@ -1284,3 +1284,358 @@ Atmosphere protection gates T4+ worlds; elemental protection comes from skills (
 - Coil power values (+100 basic, +300 advanced) come from WIKI descriptions only.
 - Day length in minutes.
 - Exoworld lifetime and tier range (T1-T6 ordinary exos plus T7 specials is my reading; not confirmed in data).
+
+---
+
+# 5. Skills, attributes, levels, progression and forging
+
+Research for Boundmore tuning. Paraphrased; numbers carry source, version/date and confidence (H/M/L).
+Live Boundless froze at Release 248 (Oct 2020) for skills; the big solo skill rework in Testing 249 (Dec 2020 to Apr 2021) **never reached the live universe** (forum 2022 to 2026: "the update that never came", https://forum.playboundless.com/t/14749 #59, 2026-02-27; https://forum.playboundless.com/t/62670, 2022-11). Treat the 1.0 to R248 tree as "Boundless as players knew it"; Testing 249 is the developers' intended direction.
+
+Source keys used below:
+- **R195** Release 195 notes (2018-07-27) https://forum.playboundless.com/t/14250
+- **T194** Testing 194 notes (2018-07-20) https://forum.playboundless.com/t/14150
+- **R197/R198/R199** https://forum.playboundless.com/t/14809 (2018-08-16), /t/16254 (2018-09-13), /t/17621 (2018-09-26)
+- **R209** Forge++ (2018-12-05) https://forum.playboundless.com/t/22871 ; dev proposal /t/22336 (2018-11-24)
+- **R218/R219** (2019-03/04) https://forum.playboundless.com/t/28046 , /t/28550
+- **T249** https://forum.playboundless.com/t/53886 and /t/53908 (2020-12 to 2021-04)
+- **WIKI-x** fandom wiki page x via MediaWiki API (frozen ~spring 2020)
+- **MAYU** boundless.mayumi.fi/forgeSimulator: `raw/forge.json` (game data dump: traits, costs, constants), `ingredientConfig.js` (every ingredient's vigour, stability, points), `ingredientScripts/*.js` (what each does), `main.js` (session model)
+- **PFF** pfiffel.com/bl: `forge/forge.json` (same dump as MAYU), `dmg/damageCalculator.js` (damage formula with skills), `blocks/dataBlockStats.js` (mine/build XP per block)
+- **BI** boundlessinfo.com: lazy chunk `47.<hash>.js` (forge traits with per-level values, includes T249 melee/shield traits), `assets/data/item-attributes.json` (per-item stats incl. Flexibility), `assets/data/compiled-recipes.json` (recipes, craft XP, skill gates)
+
+---
+
+## 5.1 Level curve and per-level rewards
+
+XP to next level, cumulative XP, skill points and cubits per level (WIKI-Level; matches R195 "4 at level 2, then 2 per level, 100 by 50"). Confidence H for skill points; M for cubits (wiki, no dev table).
+
+| Lvl | XP to reach | Cumul. XP | SP gained | Cumul. SP | Cubits | Cumul. cubits |
+|---|---|---|---|---|---|---|
+| 2 | 500 | 500 | 4 | 4 | 100 | 100 |
+| 3 | 600 | 1,100 | 2 | 6 | 100 | 200 |
+| 4 | 800 | 1,900 | 2 | 8 | 100 | 300 |
+| 5 | 1,200 | 3,100 | 2 | 10 | 100 | 400 |
+| 6 | 1,800 | 4,900 | 2 | 12 | 100 | 500 |
+| 7 | 2,500 | 7,400 | 2 | 14 | 100 | 600 |
+| 8 | 3,500 | 10,900 | 2 | 16 | 100 | 700 |
+| 9 | 4,500 | 15,400 | 2 | 18 | 100 | 800 |
+| 10 | 6,000 | 21,400 | 2 | 20 | 100 | 900 |
+| 11 | 7,500 | 28,900 | 2 | 22 | 105 | 1,005 |
+| 12 | 9,000 | 37,900 | 2 | 24 | 110 | 1,115 |
+| 13 | 11,000 | 48,900 | 2 | 26 | 115 | 1,230 |
+| 14 | 13,000 | 61,900 | 2 | 28 | 120 | 1,350 |
+| 15 | 15,000 | 76,900 | 2 | 30 | 125 | 1,475 |
+| 16 | 17,000 | 93,900 | 2 | 32 | 130 | 1,605 |
+| 17 | 20,000 | 113,900 | 2 | 34 | 135 | 1,740 |
+| 18 | 23,000 | 136,900 | 2 | 36 | 140 | 1,880 |
+| 19 | 26,000 | 162,900 | 2 | 38 | 145 | 2,025 |
+| 20 | 29,000 | 191,900 | 2 | 40 | 150 | 2,175 |
+| 21 | 32,000 | 223,900 | 2 | 42 | 155 | 2,330 |
+| 22 | 35,000 | 258,900 | 2 | 44 | 160 | 2,490 |
+| 23 | 38,000 | 296,900 | 2 | 46 | 165 | 2,655 |
+| 24 | 42,000 | 338,900 | 2 | 48 | 170 | 2,825 |
+| 25 | 46,000 | 384,900 | 2 | 50 | 175 | 3,000 |
+| 26 | 50,000 | 434,900 | 2 | 52 | 180 | 3,180 |
+| 27 | 54,000 | 488,900 | 2 | 54 | 185 | 3,365 |
+| 28 | 58,000 | 546,900 | 2 | 56 | 190 | 3,555 |
+| 29 | 63,000 | 609,900 | 2 | 58 | 195 | 3,750 |
+| 30 | 68,000 | 677,900 | 2 | 60 | 200 | 3,950 |
+| 31 | 73,000 | 750,900 | 2 | 62 | 205 | 4,155 |
+| 32 | 78,000 | 828,900 | 2 | 64 | 210 | 4,365 |
+| 33 | 83,000 | 911,900 | 2 | 66 | 215 | 4,580 |
+| 34 | 88,000 | 999,900 | 2 | 68 | 220 | 4,800 |
+| 35 | 94,000 | 1,093,900 | 2 | 70 | 225 | 5,025 |
+| 36 | 100,000 | 1,193,900 | 2 | 72 | 230 | 5,255 |
+| 37 | 106,000 | 1,299,900 | 2 | 74 | 235 | 5,490 |
+| 38 | 112,000 | 1,411,900 | 2 | 76 | 240 | 5,730 |
+| 39 | 118,000 | 1,529,900 | 2 | 78 | 245 | 5,975 |
+| 40 | 125,000 | 1,654,900 | 2 | 80 | 250 | 6,225 |
+| 41 | 132,000 | 1,786,900 | 2 | 82 | 255 | 6,480 |
+| 42 | 139,000 | 1,925,900 | 2 | 84 | 260 | 6,740 |
+| 43 | 146,000 | 2,071,900 | 2 | 86 | 265 | 7,005 |
+| 44 | 153,000 | 2,224,900 | 2 | 88 | 270 | 7,275 |
+| 45 | 160,000 | 2,384,900 | 2 | 90 | 275 | 7,550 |
+| 46 | 168,000 | 2,552,900 | 2 | 92 | 280 | 7,830 |
+| 47 | 176,000 | 2,728,900 | 2 | 94 | 285 | 8,115 |
+| 48 | 184,000 | 2,912,900 | 2 | 96 | 290 | 8,405 |
+| 49 | 192,000 | 3,104,900 | 2 | 98 | 295 | 8,700 |
+| 50 | 200,000 | 3,304,900 | 2 | 100 | 300 | 9,000 |
+| 51+ | 200,000 each | +200,000 | **4** (R199) | for extra skill pages only | 300 | +300 |
+
+Shape of the curve: increments grow in steps (+100/+200/+400/+600 early, then +1,500, +2,000, +3,000, +4,000, +5,000, +6,000, +7,000, +8,000 per level). Players still level past 50 forever; the display shows 50 and each 200k XP gives a level reward ("Level 49 what comes after", https://forum.playboundless.com/t/25417, 2019-02, M). Players report displayed-equivalent levels of 250 to 600+ (t/43592 2020, t/53908 #18 2020-12, M).
+
+Each level also gives: a Level Coffer collected in the Exchange (T194), and from R197 one **skill cleanse point** per level up to 50 (R197, H). Plots are no longer given per level since T194; cubits buy plots (T194, H).
+
+Post-50 rules over time:
+- R195 (2018-07): 2 SP per level after 50, stated plan "200 SP by 100, 300 by 150" (H).
+- R199 (2018-09-26): post-50 SP raised from 2 to 4 per level "so levelling a skill set takes about as long as levelling a new alt" (H).
+- Live economy (2021-04): level 50+ costs 200,000 XP and gives 300 cubits = 666 XP per cubit (Rydralain, https://forum.playboundless.com/t/55781 #8, M).
+- T249 (never live): 2 SP per level up to level 180; skill cap per page 359 then 367; points no longer shared between pages; XP per level keeps rising from 50 to 180; level ~190 costs 1,352,000 XP for 1,000 cubits; cubits grow by 5 per level to the cap (T249 and t/55781 #8, H for the notes, M for the 249.2 numbers).
+
+## 5.2 Skill pages, points, resets
+
+| Rule | Value | Source | Conf. |
+|---|---|---|---|
+| Skill points per page (cap) | 80 in T194, raised to 100 in T194.1 and live | T194 | H |
+| Skill pages per character | 3 at R195; players report 5 by 2020 | R195; t/49934 #? 2020-08 ("5 skill pages (currently) per character"), t/39311 2019-12 ("5 full skill pages") | H / M |
+| Extra pages | bought with cubits in the Exchange | T194 | H |
+| Points shared across pages? | Yes in live: one pool, each page spends from points earned (post-50 points exist to fill extra pages) | t/15096 2018-08, T249 ("no longer shared" is the change) | H |
+| Page switch cooldown | once per 15 min, or freely inside your home beacon | R195 | H |
+| Free respec | full resets free until level 20 | WIKI-Level; "When any characters get to Level 19 ... you lose the free respec" t/26902 2019-03 | M |
+| Weekly free reset | removed in R196; resets bought in the Exchange | R196 https://forum.playboundless.com/t/14494 | H |
+| Cleanse points | remove one assigned point each; 1 per level to 50 (R197), also buyable | R197, t/14146 | H |
+| Unlock levels | Attributes L1; Mastery L2; Crafting L4; Epic 1 L6; Endurance L8; Epic 2 L10; Exploration L12; Epic 3 L14 | WIKI-Skill | M |
+| Skill types | basic = 1 SP per rank, multi-rank; epic = 5 SP, one rank, some pairs mutually exclusive | R195 | H |
+
+## 5.3 Attributes (1.0 to R248)
+
+Every attribute starts at 10. Each point of an "X Bonus" skill adds 10 (max 8 points, attribute 90). **Attributes Bonus** adds 2 to every attribute per point (max 5 points, so +10 everywhere: the equivalent of a ninth point). Max attribute 100. (WIKI-Attribute; Pfiffel https://forum.playboundless.com/t/29895 #2 2019-05: "100 Vitality = 8 in Vitality Bonus + 5 in Attribute Bonus"; PFF damage calculator uses 0 to 9 "levels", H.)
+
+| Attribute | What it drives | Per point / formula | Source | Conf. |
+|---|---|---|---|---|
+| Vitality | Max health; forge Stability | Health = 600 + ((V − 10)/90)^1.5 × 3,400, rounded to 10 → 600, 730, 960, 1250, 1610, 2010, 2450, 2930, 3450 (8 pts), 4000 (V 100). Health Epic ×3 (max 12,000). Stability 900 + 100 per point (wiki: 900..1,700; 1,800 at V 100 implied by MAYU max 1,800) | Pfiffel t/29895 (from game data); WIKI-Vitality Bonus; MAYU | H (health), M (stability) |
+| Power | Damage to creatures and blocks; forge Vigour | 1.0 launch: +5% general damage per point (was 10% pre-launch). Damage multiplier = 1 + (0.05 × PowerLvl + brew) × (3 if Damage Epic else 1) + 0.05 × Mastery + 0.25 × ToolEpic, PowerLvl 0..9. Vigour: 0 at base, +200 per point to 1,800 | PFF damageCalculator.js; Logandi t/14749 #46 (2018-08-18, "launch universe" changes); WIKI-Power Bonus (vigour, its 10% damage column is pre-launch) | H (formula), M (vigour) |
+| Control | Interaction (build/break) range; stealth | Range 4 m + 1 m per point (12 m at 8, 13 m at 100?); stealth modifier +6% per point (48% at 8) | WIKI-Control Bonus | M |
+| Dexterity | Action speed; block placement speed | Action speed +2 per point (16 at 8); placement speed +10% per point (80% at 8) | WIKI-Dexterity Bonus | M |
+| Agility | Run, sprint speed; crit chance | Base run 3.0 m/s, sprint 5.0 m/s; +0.3 m/s run, +0.6 m/s sprint per point; crit +2% per point (wiki) or 20% at level 9 (PFF: (lvl/9) × 0.2, so ~2.2%) | WIKI-Agility Bonus; PFF damageCalculator.js; Prome3us t/22943 (5 → 5.6 m/s sprint with 5/5 Attribute Bonus, 2018-12) | H (speeds), M (crit) |
+| Intelligence | Healing potency; forge Effectiveness | Healing +10% per point (bomb healing = base × (1 + 0.1 × IntLvl + 1.0 if Healing Epic)); forge effectiveness input (see 5.7) | WIKI-Intelligence Bonus; PFF damageCalculator.js | H |
+| Luck | Extra drops from blocks, plants, creatures | No published per-point number; wiki table only shows attribute 10..90. Player: Luck 50 (3 pts + 5 Attribute Bonus) gives "double drops fairly often" on titanium | WIKI-Luck Bonus; PendragonTheNinja t/9648 2017-09 | L |
+| Zeal | Max energy; buff duration (+), debuff duration (−) | Base energy 600; no per-point table found. Player: max Zeal at L50 = 1,933 energy (T194 era) | WIKI-Citizen; schasm t/14150 #248 2018-07 | L |
+
+## 5.4 Skill tree, 1.0 to R248 (live)
+
+Ranks in parentheses. Effects are from wiki, dev notes and player data; where a number is missing the skill is listed with "no number found". Category gates from 5.2.
+
+### Attributes (each 8 ranks, 1 SP per rank) and Attributes Bonus (5 ranks)
+See 5.3.
+
+### Mastery (5 ranks each, 1 SP per rank; unlock L2)
+
+| Skill | Per rank | Source | Conf. |
+|---|---|---|---|
+| Hammer / Shovel / Axe Mastery | +5% damage (launch; wiki says 10%, pre-launch) and +2 action speed with that tool | PFF formula (0.05 × mastery); Logandi t/14749 #46; WIKI-Hammer Mastery | H (damage), M (speed) |
+| Slingbow Mastery | +5% slingbow damage, +2 slingbow action speed | WIKI-Slingbow Mastery; PFF | H |
+| Bomb Mastery | +5% bomb damage | PFF | M |
+| Grapple Mastery | +5 m/s grapple projectile speed (25 m/s at 5/5; players say also range), +5% fist damage | Buugi t/39949 2020-01 (tooltip "25m/s" at 5/5); deenw t/20390 2018-10; PFF (fist uses grapple mastery) | M |
+| Spanner Mastery | spanner effect; no number found | WIKI-Skill | L |
+| Chisel Mastery | listed pre-1.0 only; folded into Chisels Epic | WIKI-Mastery (outdated) | L |
+
+### Crafting (unlock L4)
+Each gives a "level"; recipes are gated by level (BI compiled-recipes.json, counts of gated recipes in brackets). Direct ranks: 2 or 3; higher levels come from epics.
+
+| Skill | Direct ranks | Levels reachable | Gated recipes per level (BI) |
+|---|---|---|---|
+| Tool Crafting (axes, hammers, shovels) | 2 | 3 with Gear Crafting Epic or Tool Crafting Epic; 4 with both | L1 8, L2 9, L3 19, L4 9 |
+| Weapon Crafting (slingbows, bombs, fists; T249 melee, shields) | 2 | same pattern with Weapon Crafting Epic | 11 / 13 / 24 / 11 |
+| Tech Crafting (grapples, chisels, spanners) | 2 | same pattern with Tech Crafting Epic | 6 / 9 / 18 / 3 |
+| Machine Crafting | 3 | 3 | 12 / 14 / 14 |
+| Decoration Crafting | 3 | 3 | 46 / 61 / 42 |
+| Forge Ingredient Crafting | 3 | 3 | 25 / 26 / 21 |
+| Augment Crafting | 3 | 3 | 9 / 9 / 9 |
+| Food Crafting | 3 | 5 = 3 + Consumable Crafting Epic + Food Crafting Epic | 30 / 19 / 33 / 28 / 35 |
+| Brew Crafting | 3 | 5 = 3 + Consumable + Brew Crafting Epic | 15 / 16 / 11 / 12 / 12 |
+| Farming | 3 | 5 with Farming Epic | 1 / 4 / 1 / 1 / 2 |
+
+Material gates for tools (WIKI-Tool Crafting, M): none = wood/stone; L1 base metals; L2 precious metals and titanium; L3 gems; L4 elemental/special. Gear Crafting Epic gives +1 to Tool, Weapon and Tech; it excludes Consumable Crafting Epic; Tool/Weapon/Tech Crafting Epics are mutually exclusive (WIKI-Gear Crafting Epic, M). VerucaKatt (t/68123, 2025) confirms food L5 = 3 + 5 + 5 SP.
+
+### Epic 1 (5 SP each; unlock L6)
+
+| Epic | Effect | Source | Conf. |
+|---|---|---|---|
+| Hammer Epic | +25% hammer damage (launch; 50% pre-launch) | PFF (0.25 tool epic); Logandi t/14749 #46 | H |
+| Shovel and Axe Epic | +25% shovel and axe damage; excludes Hammer Epic | PFF; GreenRoc t/40089 2020-01 (either/or) | M |
+| Slingbow Epic | +25% slingbow damage | PFF | H |
+| Bomb Epic | +25% bomb damage | PFF | M |
+| Rapid Fire Epic / Charging Epic | slingbows auto-fire when held / charge for more damage; either/or | R195; t/18966, t/19209 | M (no numbers) |
+| Health Epic / Stamina (Energy) Epic | ×3 max health / +4,000 max energy (T194 era); mutually exclusive | Pfiffel t/29895; schasm t/14150 #248; fidach t/28784 | H / M |
+| Light Source Epic | personal light that switches off in bright places | T194, R197 | H (no radius) |
+| Shadow Effect (Stealth) Epic / Threat Epic | +50% stealth modifier / +100% threat per action; mutually exclusive | WIKI pages; R196 (threat scaled by epic) | M |
+| Chisels Epic | unlocks precise chisels | WIKI-Chisels Epic | H |
+| Volume Crafting Epic | mass-craft size, queue length 30, −50% machine wear | WIKI-Volume Crafting Epic | M |
+
+### Endurance (unlock L8; basic ranks, 5 each)
+Kinetic Armour, Kinetic Resistance, Impulse Armour, Impulse Resistance, Falling Armour. Players widely report Falling Armour as nearly useless ("only 300 points of armour at all", Okkelinor t/16029 2018-09; t/41874 2020). Falling Resistance removed at launch (Logandi #46). No per-rank table found (L).
+
+### Epic 2 (unlock L10)
+
+| Epic | Effect | Source | Conf. |
+|---|---|---|---|
+| Double Jump Epic | mid-air second jump; reported unreliable | R195-era posts; Krollbar t/20894 | M |
+| Jump Distance (High Jump) Epic | higher jump; can cause small landing damage | t/49437, t/28136 | M (no number) |
+| Portal Epic | needed to open portals (not to fuel them) | WIKI-Portal Epic; t/40879, t/48843 | H |
+| Gathering Epic | dig up and replant surface resources (later also seams); drop bonus debated | R195; t/19209, t/37915 | M |
+| Durability Drain Epic | −30% tool wear | TheVicious85 t/69250 (2026, from memory) | L |
+| Efficient Crafting Epic | about −1/3 spark per craft and furnace heat | WIKI-Efficient Crafting Epic | M |
+| Health Regeneration Epic / Stamina (Energy) Regeneration Epic | +25 health per tick (players: "25 health regen") / +900 energy per second (T194), players later say 1,000; either/or | t/14250 #663 (2018-07); schasm t/14150 #248; Kirinvar t/27485 #87 | M |
+| Death Penalty Epic | halves the defeat XP debt | Combyte t/14841 2018-09 | M |
+| Tax Epic | shop/basket tax 10% → 7.5% (applies only while that page is active) | fidach t/24403 2019-01; t/30423 | H |
+| Forging Epic | +4 forge deck slots (base 6 → 10); was +2 before R209 | R209; KArios t/58621 2021-10 | H |
+| Farming Epic | more crop/seed yield; no number found (players guess 20%) | t/32775, t/31046 | L |
+| Consumable Crafting Epic / Gear Crafting Epic | +1 Food, Brew (and Consumable) levels / +1 Tool, Weapon, Tech; either/or | WIKI-Gear Crafting Epic | M |
+
+### Exploration (unlock L12)
+
+| Skill | Ranks | Effect | Source | Conf. |
+|---|---|---|---|---|
+| Volatile / Potent / Caustic Atmosphere Protection | 5 each | protection level equals points (+ food); a world is safe when protection ≥ its hazard. Hazard ranks 1, 3, 5, 7 by world tier (from R198) | R198 notes; rossstephens t/16261 #5, #10 (2018-09-13) | H |
+| Warp Distance | 3 | warp 6/14/26/50 blinksecs and portal 3/7/13/25 for 0..3 ranks (wiki; R195 notes say "changed" at launch, see section 3 of mechanics doc) | WIKI-Warp Distance; Logandi #46 | M |
+
+### Epic 3 (unlock L14)
+Damage Epic (triples the Power share of the damage multiplier; PFF formula and TheBirne t/14749 #49, H); Healing Epic (+100% healing, PFF, H); Protection Epic (armour; changed at launch, L); Rage Epic / Focus Epic / Rage-Focus combos (combat buffs, either/or, L); Revive Epic One/Two (revive others with more health/energy; reworked R198, L); Food, Brew, Tool, Weapon, Tech Crafting Epics (+1 crafting level, the last three mutually exclusive, M).
+
+### Testing 249 additions (never live)
+Sword Mastery (5), Shield Mastery (5), Sword Epic, Colour Spray Crafting skill, Goo and Tint Epic; most either/or links removed except combat DPS/tank/healer links (T249, H).
+
+## 5.5 XP sources and amounts
+
+| Source | Amount | Source | Conf. |
+|---|---|---|---|
+| Mining natural blocks | 2 XP (soil, rock, foliage, trunk) | PFF dataBlockStats.js | H |
+| Mining ore seams | copper/soft coal/fossil/tech-remnant 24; iron 40; silver/coal 64; gold 80; hard coal 104; titanium 136; gems 176; special (rift-like) 216 | PFF | H |
+| Gathering surface resources | 20 to 160 by tier (boulders 20 to 160, plants 22 to 160, best fungi 140) | PFF; R219 raised tier-3+ plants (e.g. 24 → 100, 32 → 160) | H |
+| Gleam | 8 mine, 8 build | PFF | H |
+| Building (placing) | 2 (soil) up to 44 (decorative special blocks); machines 16, advanced coils 32 | PFF | H |
+| Crafting | per recipe; median 15, max 500 | BI compiled-recipes.json | H |
+| Forging session | 5 / 10 / 20 / 50 / 75 / 100 XP by item value tier (≤200, 500, 1,000, 2,000, 5,000, 10,000), with 2/4/10/20/40/60 min, 90 to 2,880 spark | MAYU raw/forge.json "levels" (interpretation of fields is mine) | M |
+| Region discovery | n-th region gives 50 × n XP (50, 100, 150 ...); full 50-region world ≈ 63,750 XP | R218.1/R219 | H |
+| Creatures | scaled by your damage, tanking and healing share; revives give XP | R197 | H (no numbers) |
+| Objectives, feats | coffers with XP and coin; feats tiered 1 to 5 | WIKI-Feat; T194 | M |
+| XP only for blocks placed or chiselled inside beacons; bombs give no block XP; natural block mining XP cut ~15% | R198 | H |
+| Teaching food doubles XP (players) | ×2 | t/60112 2023 | L |
+| Defeat penalty | XP debt of 10% of XP needed for next level; 50% of new XP repays it until cleared; revive avoids it; Death Penalty Epic halves it | T194.1 | H |
+
+## 5.6 Feats (selected, WIKI-Feat, M)
+Five tiers each. Examples: Blocks placed 250 / 2,500 / 10,000 / 100,000 / 1,000,000; Blocks chiselled 50 / 500 / 5,000 / 10,000 / 100,000; Creatures defeated 100 / 1,000 / 10,000 / 100,000 / 500,000; Skill points spent 25 / 100 / 200 / 500 / 1,000; Meteorite cores 10 / 100 / 250 / 500 / 1,000. T194 made early tiers richer and late tiers poorer.
+
+---
+
+## 5.7 Forging (Centraforge)
+
+### Session model (step by step)
+1. Place gear (or a smart stack: every item gets the same result) in the Centraforge; build a deck of ingredients (6 slots, 10 with Forging Epic; up to 100 of each) (R195; t/58621).
+2. Session stats are snapshotted from the character who starts: **Effectiveness** (Intelligence, item Flexibility, forge Power from coils), **Stability** (Vitality), **Vigour** (Power). Max Stability and Vigour 1,800 each (MAYU main.js; R195, H).
+3. Each round, use one ingredient. It costs its Vigour and Stability (Stability cost × random 1.00 to 1.10). If Stability reaches 0 the gear and ingredients are destroyed; Vigour 0 just blocks Vigour-costing ingredients (R195; MAYU main.js, H).
+4. Compounds add points to three pools (boon, quirk, defect), each capped at 1,000. Boon points from compounds are multiplied by Effectiveness. Then each pool is rolled: draw r in 0..1; if r ≤ pool/1000 the roll "hits" and floor(r × 1000) points move from the pool into one randomly chosen trait of that type (MAYU main.js, H for simulator, M for game parity).
+5. Trait choice: every eligible trait has weight 1; each gum of a tag adds +10 (simulator constant `gumWeight`, M) to traits of that tag. An item holds at most 3 boons, 3 quirks, 3 defects; a trait already at max level is excluded; exclusive pairs (a boon and its defect) exclude each other (MAYU; Vansten t/26188 "up to 3 boons", H).
+6. Setting Resin ends the session; the item enters the forge's queue. Deconstruction Resin 1/2/3 abandons it, returns each used ingredient type with chance 25/50/75%, and (from R209) gives the item back unforged (MAYU ingredientConfig; R209, H).
+
+### Effectiveness
+- Observed range 35% to 200% with 24 advanced coils; hard cap 200% (Kurokaze/Tynker t/30053, 2019-05, H). Diamond hammer hits 200% with 18 coils, sapphire shovel peaks at 197% (M).
+- Pre-R209 cap was 100% (R209 removed it, H).
+- Exotic/special gear ≈ 42% (Vansten t/31987, 2019-07, M).
+- Game constants (MAYU/PFF forge.json, H that they exist; formula not published): momentumBase 0.2, momentumHigh 1, momentumMaxValue 2.25, power cap 1,000 → 14,500 (curve power 2), intelligence cap 30 → 135 (curve 1), flexibility proportion 0.5 → 5 (curve 2), flexibilityMaxValue 150.
+- Item Flexibility (BI item-attributes.json, post-R218 scale; lower is harder): wood 150, stone 120, copper/iron 110, silver 100, gold/titanium 90, diamond/emerald 80, ruby/sapphire 75, amethyst/topaz 70, special materials 10, totems 35, chisels 100, gold fist 90, iron fist 110 (H). Before R218 the scale was different (copper 50 → 60, gold 30 → 40 in R209).
+
+### Trait level thresholds (cumulative points on a trait)
+MAYU/PFF forge.json, H. Points are cumulative: level n is reached when the trait's points ≥ threshold n.
+
+| Trait group | Thresholds |
+|---|---|
+| Scalar boons and defects (10 levels) | 100, 150, 300, 600, 1,000, 1,500, 2,000, 3,000, 4,000, 5,000 |
+| AoE, multishot, heavy/light projectile, bleed, slow, weaken (5 levels) | 100, 300, 1,000, 2,000, 4,000 |
+| Glow, magnet, healing bomb, armour (3 levels) | 300, 1,000, 2,000 |
+| One-level special boons (transform chisel, regen bomb, hookshot, buff bombs, unchisel, size chisel, auto door, liquid break/solidify) | 1,000 (fist drop pull 500) |
+| Quirks (one level) | 600 |
+
+A trait's contribution to item rank: boon ×1, defect ×−0.5, quirk ×−0.3 (`*ValueMultiplier`, H that these exist).
+
+### Boons, per-level values (BI chunk 47, MAYU, mega-thread t/20169 R203; H)
+
+| Effect (common name) | Tag | Gear | L1 | per level | L10 / max |
+|---|---|---|---|---|---|
+| Energy use per action −2 (Energy Saver) | Ease | all | 2 | +2 | 20 |
+| Action speed +5 (Busy Bee) | Lightness | not grapple | 5 | +5 | 50 |
+| Crit chance +5% (Critically Lucky) | Ease | slingbow, tool, fist | 5% | +5% | 50% |
+| Crit effect +10% (Hard Hitter) | Effect | slingbow, tool, fist | 10% | +10% | 100% |
+| Damage: flat +50 per level and +10% every 2 levels (Devastating Damage) | Effect | slingbow, tool, bomb, fist | +50, +10% | | +500, +50% |
+| Durability +200 (Heavy Duty) | Longevity | not bomb | 200 | +200 | 2,000 |
+| Bomb knockback +2 | Effect | bomb | 2 | +2 | 20 |
+| Bomb radius +0.3 m (Bigger Boom) | Longevity | bomb | 0.3 | +0.3 | 3.0 m |
+| Projectile speed +5 m/s (Fly Fast) | Lightness | slingbow, grapple | 5 | +5 | 50 m/s |
+| Reel in and out +5 m/s (Reel Speedster) | Effect | grapple | 5 | +5 | 50 m/s |
+| Grapple length +3 m (Far Reaching) | Longevity | grapple | 3 | +3 | 30 m |
+| Slingbow/fist range +3 m (Long Range) | Longevity | slingbow, fist | 3 | +3 | 30 m |
+| Spanner repair per hit +100 and +10% every 2 levels | Effect | spanner | | | +1,000, +50% |
+| AoE (Effect Adjacent), 5 levels: L1 left/right (×0.4 dmg), L2 below (×0.6), L3 cross (×0.4), L4 all 8 around (×0.4), L5 random full-damage | Special | tool, spanner, fist | | | |
+| Multishot, 5 levels: +1..+5 projectiles, damage per shot ×0.5 at L1, ×0.4 at L2 to L5 | Special | slingbow | | | |
+| Heavy projectile: +10% damage per level, −10 m/s, more drop | Effect | slingbow | | | +50% |
+| Light projectile: +10/12/15/20/30 m/s, flatter arc | Lightness | slingbow | | | |
+| Bleed / Slow / Weaken debuff level 1..5 | Special | slingbow (T249 also melee) | | | |
+| Glow: light radius 6/9/12, intensity 1/1.8/2.4 | Glow | all | | | 3 levels |
+| Loot magnet: pickup range 2/4/6 m (R203) or 5/7/9 m (BI, later), auto-harvest kills | Special | tool, spanner, chisel, fist | | | 3 levels |
+| Healing bomb I/II/III: damage becomes healing; II also energy; III also clears debuffs | Special | bomb | | | 3 levels |
+| Hookshot: auto reel, +20 m/s reel in | Special | grapple | | | 1 level |
+| Transform chisel (cycle block type) | Effect | chisel | | | 1 |
+| Regen bomb (forces regeneration, not in beacons, not resources; +100% radius) | Special | bomb | | | 1 |
+| Armour (Hard as Nails): +20/50/100 kinetic and impulse armour, wears item when hit | Venerable | slingbow, fist | | | 3 |
+| Buff bombs: armour +30 and +5% resistance (both kinds) / speed +40% and +0.75 m/s / strength +25% | Venerable | bomb | | | 1 |
+| Unchisel, size (lattice) chisel, auto-closing door spanner (durability 10% of base), liquid breaker (hammer/shovel/axe), solidifier (totem), fist drop pull | Venerable | | | | 1 |
+| T249 only: melee max targets +1/2/3, swing radius +0.2 m per level to 2 m, shield arc +6° per level to 60°, damage reflect +1% per level to 10% | | melee, shield | | | |
+
+Every scalar boon has a matching defect with the same magnitudes reversed (energy, speed, crit chance, crit effect, damage, durability, knockback, radius, projectile speed, reel, length, range, repair) (H).
+
+### Quirks (one level, 600 points; values from R209, H)
+Night/Day: +100 and +10% damage in the right half of the day cycle, −100 and −10% in the other. High/Low health: ±10 action speed. Full/Hungry: ±10 energy per use. Icy ground: slippery footing, +40 falling armour. Sinking: +50% breath. Slow-mo: −25% walk/run, +50% sprint bonus. Random jump: also grants double jump. Random fire: +400 durability. Hunger drain: +30% max energy. Health drain: +30% max health. Also aggro range up, odd noises, bouncy feet; T249 adds four weather quirks and a block-protector quirk. Before R209 quirks only disabled the item's traits under a condition (rank −40 each).
+
+### Ingredients (MAYU ingredientConfig.js, H)
+Costs: Vigour / Stability. Points: boon / quirk / defect added per use (boon is before Effectiveness).
+
+| Ingredient | Vig | Stab | Boon | Quirk | Defect | Extra |
+|---|---|---|---|---|---|---|
+| Pure compound 1/2/3 | 0/50/100 | 100 | 100/200/400 | | | |
+| Imperfect compound 1/2/3 | 0/50/100 | 100 | 200/400/1,000 | | 80/160/400 | |
+| Unstable compound 1/2/3 | 0/50/100 | 100 | 200/400/1,000 | 100/200/500 | 50/100/200 | |
+| Draining compound 1/2 | 50/100 | 100 | 400/1,000 | 160/400 | | 3-round debuff: −20/−50 vigour per round |
+| Corrupted compound 1/2 | 50/100 | 100 | 400/1,000 | | | 3-round debuff: +80/+180 defect points per round |
+| Defect reduction 1/2 | 50/100 | 100 | −150/−400 | | −150/−400 | |
+| Unstable defect reduction 1/2 | 50/100 | 100 | −100/−400 | +50/+150 | −150/−250 | |
+| Quirk reduction 1/2 | 50/100 | 100 | −150/−400 | −150/−400 | | |
+| Imperfect quirk reduction 1/2 | 50/100 | 100 | −100/−250 | −150/−400 | +50/+150 | |
+| Gums (Ease, Lightness, Special, Effect, Longevity, Glow, Venerable) | 50 | 0 | | | | permanent: tag weight +10 each |
+| Trait reduction / expansion gum | 50 | 0 | | | | weight to traits already on / not on the item |
+| Protection paste 1/2 | 50/100 | 100 | | | | stability cost ×0.5 for 2/4 rounds |
+| Boon boost paste 1/2 | 50/100 | 100 | | | | boon points +50% for 2/4 rounds |
+| Defect / quirk guard paste 1/2 | 50/100 | 100 | | | | defect / quirk points −50% for 2/4 rounds |
+| Envigoration paste 1/2 | 0/100 | 100 | | | | +15/+50 vigour per round for 5 rounds |
+| Stabilisation paste 1/2 | 100/200 | 100 | | | | −35/−50 stability cost per round for 5 rounds |
+| Fate paste 1/2 | 50/100 | 100 | | | | 3/5 rounds: up to 2 rerolls of boon misses and of quirk/defect hits |
+| Fate reversal paste | 200 | 100 | | | | defect points become fate rounds (1 per 100) |
+| Gambling paste 1/2 | 50/100 | 100 | | | | 3 rounds: 40%/60% chance an ingredient costs no stability |
+| Vigour catalyst 1/2 | 100/200 | | | | | removes all buffs, +30/+50 vigour per remaining buff round |
+| Boon points catalyst 1/2 | 100/200 | | | | | converts fate rounds to +100/+200 boon points each |
+| Boon boost catalyst | 100 | | | | | converts fate rounds to boon boost rounds |
+| Defect reversal catalyst | 200 | | | | | moves 50% of defect pool to boon pool |
+| Boon removal solvent 1/2 | 100/200 | | | | | removes last boon, returns 50%/100% of its points to the pool, rerolls |
+| Defect / quirk removal solvent 1/2 | 100/200 | | | | | removes last defect/quirk, returns 100%/50% |
+| Transmute solvents (boon, quirk, defect) | 100 | | | | | moves last trait's points to a different trait |
+| Deconstruction resin 1/2/3 | 0/50/200 | | | | | abandon; 25/50/75% ingredient return |
+| Setting resin | 0 | | | | | finish |
+
+Stability costs for gums and catalysts are not in the config (simulator treats them as 0; L). Wiki ingredient list: https://boundless.fandom.com/wiki/Category:Forging (names only). All ingredients are crafted in the Extractor (R195, H).
+
+### Forging character and machine
+Recommended: 8 Vitality, 8 Power, 8 Intelligence, 5 Attributes Bonus, Forging Epic = 34 SP (Vansten t/26188; Tonezone t/29647, H). Centraforge is 4 blocks that must touch; crafted at a workbench with Machine Crafting 2 (WIKI-Centraforge, H). Up to 24 coils (t/30053, H).
+
+---
+
+## Conflicts
+
+1. **Damage per Power point**: wiki 10% vs launch 5% (Logandi #46 lists the launch change; PFF formula uses 5%). Use 5%. Same for mastery (10% → 5%) and tool epics (50% → 25%).
+2. **Agility crit**: wiki 2% per point vs PFF 20% at level 9 (2.22%). Small; PFF is from game data.
+3. **Agility run speed table**: wiki row 3 jumps 3.6 → 4.2 m/s (typo for 3.9); the stated rule (+0.3 per point) is consistent otherwise.
+4. **Power → Vigour**: wiki table 0/200/400/800/1,000... (800 at 3 is likely a typo for 600).
+5. **Boon level costs**: 2018 thread called them "point cost per level"; the game data and simulator treat them as cumulative thresholds. Use cumulative.
+6. **Loot magnet range**: 2/4/6 m (R203 thread) vs 5/7/9 m (BI, later data). Use BI as later.
+7. **Post-50 skill points**: 2 (R195) then 4 (R199); T249 would have changed to 2 up to 180.
+8. **Skill pages**: 3 at R195 vs 5 by 2020 (players). Exact change not found.
+9. **Testing 249** (solo trees, 367 cap) was never live; do not treat as Boundless as played.
+
+## Open questions
+
+- Exact Effectiveness formula from the momentum constants (Intelligence, Power from coils, Flexibility); coil power per coil for the Centraforge.
+- Per-rank numbers for: Luck drop chance, Zeal energy and buff duration, Kinetic/Impulse Armour and Resistance, Falling Armour, Protection Epic, Rage/Focus, Revive epics, Light Source radius, jump epics (height), Farming Epic, Gathering Epic drops, Health Regeneration Epic tick.
+- Cubit prices in the Exchange (plots, skill pages, resets, cleanse points, character slots).
+- Full XP table for creatures and for chiselling.
+- Base deck slots before R209 and the time each forge result takes in the queue (forge.json "levels" suggests 2 to 60 minutes by item value).
+- Mining XP bonus on higher tier worlds (players asked for it in 2018; no change found).
