@@ -3,8 +3,8 @@
 
 use crate::color::{Ramp, Rgba};
 use crate::noise::{Site, cell, hash, hash2, seed, unit, wrap_delta, wrap_i};
-use crate::stations;
 use crate::tex::{Ctx, Field, SIZE, SIZEF, Tex, c, paint, smoothstep};
+use crate::{flora, machines, stations};
 
 // ---------------------------------------------------------------- palettes
 
@@ -1652,7 +1652,14 @@ pub fn paint_named(name: &str, variant: u32) -> Option<Tex> {
         "warp_shrine_side" => stations::warp_shrine_side,
         "storage_chest_top" => stations::storage_chest_top,
         "storage_chest_side" => stations::storage_chest_side,
-        _ => return None,
+        "crafting_table_top" => machines::crafting_table_top,
+        "crafting_table_side" => machines::crafting_table_side,
+        "extractor_top" => machines::extractor_top,
+        "extractor_side" => machines::extractor_side,
+        "furnace_crucible_top" => machines::furnace_crucible_top,
+        "furnace_crucible_side" => machines::furnace_crucible_side,
+        "relic_seam" => machines::relic_seam,
+        other => flora::painter(other)?,
     };
     Some(f(ctx))
 }

@@ -24,15 +24,15 @@ pub const OUTLINE: Rgba = Rgba::hex(0x1a1222);
 
 const CLEAR: Rgba = Rgba::new(0.0, 0.0, 0.0, 0.0);
 
-fn cord_ramp() -> Ramp {
+pub(crate) fn cord_ramp() -> Ramp {
     Ramp::from_hex(&[0x4a2c22, 0x7a5232, 0xa8804e, 0xd0aa70, 0xeed49c])
 }
 
-fn vine_ramp() -> Ramp {
+pub(crate) fn vine_ramp() -> Ramp {
     Ramp::from_hex(&[0x123a2c, 0x1d5a3a, 0x2f7f3c, 0x4aaa3e, 0x86c940])
 }
 
-fn flint_ramp() -> Ramp {
+pub(crate) fn flint_ramp() -> Ramp {
     Ramp::from_hex(&[0x0e0c1c, 0x1a1830, 0x2a2848, 0x3c3c62, 0x55587e, 0x7c80a2, 0xb4b8d0])
 }
 
@@ -43,18 +43,18 @@ fn leather_ramp() -> Ramp {
 // ----------------------------------------------------------------- drawing
 
 /// An icon being drawn, layer by layer, back to front.
-struct Icon {
+pub(crate) struct Icon {
     tex: Tex,
 }
 
 impl Icon {
-    fn new() -> Self {
+    pub(crate) fn new() -> Self {
         Self {
             tex: Tex::filled(CLEAR),
         }
     }
 
-    fn opaque(&self, x: i32, y: i32) -> bool {
+    pub(crate) fn opaque(&self, x: i32, y: i32) -> bool {
         (0..SIZE as i32).contains(&x) && (0..SIZE as i32).contains(&y) && self.tex.get(x as usize, y as usize).a > 0.0
     }
 
@@ -62,7 +62,7 @@ impl Icon {
     /// Where it lies over earlier parts, they get a dark contact line along
     /// its edge: strong below and right of it (its shadow), softer above and
     /// left. `contact: false` joins faces of one solid without a line.
-    fn layer(&mut self, contact: bool, f: impl Fn(usize, usize) -> Option<Rgba>) {
+    pub(crate) fn layer(&mut self, contact: bool, f: impl Fn(usize, usize) -> Option<Rgba>) {
         let cover: Vec<Option<Rgba>> = (0..SIZE * SIZE).map(|i| f(i % SIZE, i / SIZE)).collect();
         let covered = |x: i32, y: i32| {
             (0..SIZE as i32).contains(&x)
@@ -96,7 +96,7 @@ impl Icon {
     }
 
     /// Outlines the sprite: every clear pixel beside an opaque one.
-    fn finish(self) -> Tex {
+    pub(crate) fn finish(self) -> Tex {
         let mut out = self.tex.clone();
         for y in 0..SIZE {
             for x in 0..SIZE {
@@ -117,9 +117,9 @@ impl Icon {
     }
 }
 
-type P = (f32, f32);
+pub(crate) type P = (f32, f32);
 
-fn inside_poly(poly: &[P], x: f32, y: f32) -> bool {
+pub(crate) fn inside_poly(poly: &[P], x: f32, y: f32) -> bool {
     let mut inside = false;
     let n = poly.len();
     for i in 0..n {
@@ -135,12 +135,12 @@ fn cross(o: P, a: P, b: P) -> f32 {
     (a.0 - o.0) * (b.1 - o.1) - (a.1 - o.1) * (b.0 - o.0)
 }
 
-fn in_triangle(a: P, b: P, c: P, p: P) -> bool {
+pub(crate) fn in_triangle(a: P, b: P, c: P, p: P) -> bool {
     let (d1, d2, d3) = (cross(a, b, p), cross(b, c, p), cross(c, a, p));
     !((d1 < 0.0 || d2 < 0.0 || d3 < 0.0) && (d1 > 0.0 || d2 > 0.0 || d3 > 0.0))
 }
 
-fn seg_dist(a: P, b: P, p: P) -> f32 {
+pub(crate) fn seg_dist(a: P, b: P, p: P) -> f32 {
     let (dx, dy) = (b.0 - a.0, b.1 - a.1);
     let len2 = dx * dx + dy * dy;
     let t = if len2 > 0.0 {
@@ -156,14 +156,14 @@ fn seg_dist(a: P, b: P, p: P) -> f32 {
 /// A faceted lump (coal, ore, a nugget): an irregular polygon cut into
 /// triangular facets that meet at an apex nudged towards the light, each
 /// facet shaded by how far it turns to the top left.
-struct Lump {
+pub(crate) struct Lump {
     poly: Vec<P>,
     apex: P,
     tilt: Vec<f32>,
 }
 
 impl Lump {
-    fn new(salt: u32, cx: f32, cy: f32, r: f32, sides: usize) -> Self {
+    pub(crate) fn new(salt: u32, cx: f32, cy: f32, r: f32, sides: usize) -> Self {
         let mut rng = Rng::new(salt);
         let start = rng.range(0.0, std::f32::consts::TAU);
         let poly = (0..sides)
@@ -196,7 +196,7 @@ impl Lump {
     }
 
     /// Which facet a point is in, if it is inside the lump.
-    fn facet(&self, p: P) -> Option<usize> {
+    pub(crate) fn facet(&self, p: P) -> Option<usize> {
         if !inside_poly(&self.poly, p.0, p.1) {
             return None;
         }
@@ -208,7 +208,7 @@ impl Lump {
 
     /// Draws the lump through `ramp`; `lo..hi` is the tone range from the
     /// facet in deepest shade to the one facing the light.
-    fn draw(&self, icon: &mut Icon, ramp: &Ramp, lo: f32, hi: f32, glint: bool) {
+    pub(crate) fn draw(&self, icon: &mut Icon, ramp: &Ramp, lo: f32, hi: f32, glint: bool) {
         let n = self.poly.len();
         let lights: Vec<f32> = (0..n).map(|i| self.facet_light(i)).collect();
         let best = (0..n).max_by(|&a, &b| lights[a].total_cmp(&lights[b])).unwrap();
@@ -999,7 +999,7 @@ fn grapple(metal: Metal, hookshot: bool) -> Tex {
 /// prism, three faces visible (the one towards the top left in the light,
 /// the far one in shade, a front face between them under a bright ridge),
 /// a faceted point at the far end and a short worn point at the foot.
-fn blade(icon: &mut Icon, foot: P, ang: f32, len: f32, half: f32, ramp: &Ramp) {
+pub(crate) fn blade(icon: &mut Icon, foot: P, ang: f32, len: f32, half: f32, ramp: &Ramp) {
     let (ax, ay) = (ang.cos(), ang.sin());
     // Which side of the axis faces the light: +1 when the -v side does.
     let lit = if ax - ay > 0.0 { 1.0 } else { -1.0 };
@@ -1186,6 +1186,6 @@ pub fn paint_icon(name: &str) -> Option<Tex> {
         "iron_grapple" => grapple(Metal::Iron, false),
         "wayshard" => wayshard(),
         "portal_token" => portal_token(),
-        _ => return None,
+        other => return crate::gathered::paint(other),
     })
 }

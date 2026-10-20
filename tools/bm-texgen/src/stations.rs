@@ -15,7 +15,7 @@ use crate::tex::{Ctx, Field, SIZE, Tex, c, smoothstep};
 
 // ---------------------------------------------------------------- palettes
 
-fn iron_ramp() -> Ramp {
+pub(crate) fn iron_ramp() -> Ramp {
     Ramp::from_hex(&[
         0x15141f, 0x26263a, 0x3b3d52, 0x55596e, 0x737a8e, 0x99a0b2, 0xc6ccd8, 0xeef0f4,
     ])
@@ -23,14 +23,14 @@ fn iron_ramp() -> Ramp {
 
 /// Furnace masonry: a neutral, slightly purple grey, warmer than the
 /// everyday stone so the furnace reads as built from fired, sooty blocks.
-fn furnace_ramp() -> Ramp {
+pub(crate) fn furnace_ramp() -> Ramp {
     Ramp::from_hex(&[
         0x1c1a26, 0x2b2934, 0x3d3a46, 0x514d58, 0x67626c, 0x7d7882, 0x979198, 0xb8b0b0,
     ])
 }
 
 /// Fire, from the dull red at the edge of the glow to the white-hot heart.
-fn fire_ramp() -> Ramp {
+pub(crate) fn fire_ramp() -> Ramp {
     Ramp::from_hex(&[
         0x4a1018, 0x7e1c18, 0xb8341a, 0xe4581c, 0xff8a26, 0xffb840, 0xffe27a, 0xfffbd8,
     ])
@@ -68,24 +68,24 @@ fn warp_ramp() -> Ramp {
     ])
 }
 
-const SOOT: Rgba = Rgba::hex(0x150d14);
+pub(crate) const SOOT: Rgba = Rgba::hex(0x150d14);
 
 // ----------------------------------------------------------------- helpers
 
 /// A pixel mask on the face.
 #[derive(Clone)]
-struct Mask(Vec<bool>);
+pub(crate) struct Mask(Vec<bool>);
 
 impl Mask {
-    fn new() -> Self {
+    pub(crate) fn new() -> Self {
         Self(vec![false; SIZE * SIZE])
     }
 
-    fn get(&self, x: i32, y: i32) -> bool {
+    pub(crate) fn get(&self, x: i32, y: i32) -> bool {
         (0..SIZE as i32).contains(&x) && (0..SIZE as i32).contains(&y) && self.0[y as usize * SIZE + x as usize]
     }
 
-    fn set(&mut self, x: usize, y: usize) {
+    pub(crate) fn set(&mut self, x: usize, y: usize) {
         self.0[y * SIZE + x] = true;
     }
 }
@@ -93,7 +93,16 @@ impl Mask {
 /// A bevelled rectangle `[x0, x1) x [y0, y1)`: lit top row and left column,
 /// shaded bottom row and right column, a bright top-left corner.
 #[allow(clippy::too_many_arguments)]
-fn plate(tex: &mut Tex, mask: &mut Mask, ramp: &Ramp, x0: usize, y0: usize, x1: usize, y1: usize, tone: f32) {
+pub(crate) fn plate(
+    tex: &mut Tex,
+    mask: &mut Mask,
+    ramp: &Ramp,
+    x0: usize,
+    y0: usize,
+    x1: usize,
+    y1: usize,
+    tone: f32,
+) {
     for y in y0..y1 {
         for x in x0..x1 {
             let mut t = tone;
@@ -114,7 +123,7 @@ fn plate(tex: &mut Tex, mask: &mut Mask, ramp: &Ramp, x0: usize, y0: usize, x1: 
 
 /// Darkens the pixels just below and right of `mask` (not wrapping): the
 /// shadow a raised object casts with light from the top left.
-fn cast_shadow(tex: &mut Tex, mask: &Mask, col: Rgba, k: f32) {
+pub(crate) fn cast_shadow(tex: &mut Tex, mask: &Mask, col: Rgba, k: f32) {
     for y in 0..SIZE {
         for x in 0..SIZE {
             let (ix, iy) = (x as i32, y as i32);
@@ -131,7 +140,7 @@ fn cast_shadow(tex: &mut Tex, mask: &Mask, col: Rgba, k: f32) {
 
 /// A carved line from `a` to `b`: a dark groove with a lit lip on its
 /// lower-right side (its far wall faces the light).
-fn gouge(tex: &mut Tex, a: (f32, f32), b: (f32, f32), dark: Rgba, lip: Rgba) {
+pub(crate) fn gouge(tex: &mut Tex, a: (f32, f32), b: (f32, f32), dark: Rgba, lip: Rgba) {
     let n = ((b.0 - a.0).abs().max((b.1 - a.1).abs()) * 2.0).ceil() as usize + 1;
     let mut cut = Mask::new();
     for i in 0..n {
@@ -155,7 +164,7 @@ fn gouge(tex: &mut Tex, a: (f32, f32), b: (f32, f32), dark: Rgba, lip: Rgba) {
 }
 
 /// Wood grain: long streaks along x (or along y when `vertical`).
-fn grain(salt: u32, x: usize, y: usize, vertical: bool) -> f32 {
+pub(crate) fn grain(salt: u32, x: usize, y: usize, vertical: bool) -> f32 {
     let g = if vertical {
         fbm(salt, 8, 2, 2, c(x), c(y))
     } else {
@@ -598,7 +607,7 @@ pub fn furnace_top(_ctx: Ctx) -> Tex {
 /// cap (rows 0..4) and the sill (rows 28..32), blocks of 6 to 10 pixels with
 /// staggered joints, each block rounded (lit top-left rim, shaded bottom
 /// right, softened corners) and set in dark mortar. Wraps horizontally.
-fn masonry(salt: u32, stone: &Ramp, x: usize, y: usize) -> Rgba {
+pub(crate) fn masonry(salt: u32, stone: &Ramp, x: usize, y: usize) -> Rgba {
     let row = (y - 4) / 6;
     let ly = (y - 4) % 6;
     let rsalt = hash2(salt, 100 + row as u32);
@@ -1232,7 +1241,7 @@ fn strap(
 }
 
 /// A rivet: one bright pixel with the strap's dark under it.
-fn rivet(tex: &mut Tex, iron: &Ramp, x: usize, y: usize) {
+pub(crate) fn rivet(tex: &mut Tex, iron: &Ramp, x: usize, y: usize) {
     tex.set(x, y, iron.at(7));
     if x + 1 < SIZE {
         tex.set(x + 1, y, iron.at(2));

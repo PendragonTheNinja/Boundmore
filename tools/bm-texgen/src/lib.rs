@@ -8,7 +8,10 @@
 
 pub mod canvas;
 pub mod color;
+pub mod flora;
+pub mod gathered;
 pub mod icons;
+pub mod machines;
 pub mod materials;
 pub mod noise;
 pub mod overlay;
