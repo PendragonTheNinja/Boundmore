@@ -10,7 +10,7 @@ Boundless's item names appear only to say which number belongs to which item; Bo
 | 2 | Tools and mining: tool stats per tier, block health by world tier, the damage formula, boons, skills, drops | compiled 2026-10-20 |
 | 3 | Weapons, combat, health, creatures: slingbows, bombs, damage formula, elements, creature stats and drops, meteors | compiled 2026-10-20 |
 | 4 | Materials, worlds, crafting: tiers, world types and sizes, ore and gem placement and yields, machines, fuel, recipe scaling, progression ladder | compiled 2026-10-20 |
-| 5 | Skills, attributes, levels, forging: the live (1.0 to Release 248) skill tree, level curve, attribute formulas, XP sources, the forge session model and every boon's values | compiled 2026-10-20 |
+| 5 | Skills, attributes, levels, forging: the live (1.0 to Release 248) skill tree, level curve, attribute formulas, XP sources, the forge session model, every boon, quirk and defect, forge ingredients | compiled 2026-10-20 |
 
 Older notes: `boundless-mechanics.md` (how systems work, EA-era numbers) and `boundless-forum-feedback.md` (what players liked and disliked).
 
@@ -1674,3 +1674,142 @@ Recommended: 8 Vitality, 8 Power, 8 Intelligence, 5 Attributes Bonus, Forging Ep
 - Full XP table for creatures and for chiselling.
 - Base deck slots before R209 and the time each forge result takes in the queue (forge.json "levels" suggests 2 to 60 minutes by item value).
 - Mining XP bonus on higher tier worlds (players asked for it in 2018; no change found).
+
+### 5.8 Community forge sheets (in `docs/research/sources/`, on `main`)
+
+Two spreadsheets Nathan added on 2026-10-20 (downloaded from Google Sheets as .xlsx): **AV's "Forge Trait List"** (compiled from the forum's Forge Trait Mega-thread, https://forum.playboundless.com/t/20169, and the Release 209 notes) and **"Boundless Forge Materials (1.1)"** (a forging shopping planner). Facts transcribed below; the trait list's flavour descriptions are Boundless's text and are left out. Medium-high confidence: the trait values agree with 5.7 and with the fan-site data. Where the two disagree on the area-of-effect order, this list (levels) and a13o's sheet (shapes, 2.5a) describe the same five shapes: level 1 three in a row at 40%, level 2 the block below too at 60%, level 3 a cross of five at 40%, level 4 all nine (3x3) at 40%, level 5 random neighbours at full damage.
+
+| Boon | Category | Effect per level | Applies to |
+|---|---|---|---|
+| Energy Saver | Ease | Levels 1-10, Stamina Drain -2 per level, Rank +10 per level | | Tools, Slingbows, Fists, Bombs, Grapples, Spanners, Chisels |
+| Busy Bee | Lightness | Levels 1-10, Action Speed +5 per level, Rank +10 per level | | Tools, Slingbows, Fists, Bombs, Grapples, Spanners, Chisels |
+| Critically Lucky | Ease | Levels 1-10, Critical Chance +5% per level, Rank +10 per level | | Tools, Slingbows, Fists |
+| Hard Hitter | Effect | Levels 1-10, Critical Effect +10% per level, Rank +10 per level | | Tools, Slingbows, Fists |
+| Devastating Damage | Effect | Levels 1-10, Damage +50 & +10% per level, Rank +10 per level | | Tools, Slingbows, Fists, Bombs |
+| Heavy-duty | Longevity | Levels 1-10, Durability +200 per level, Rank +10 per level | | Tools, Slingbows, Fists, Grapples, Spanners, Chisels |
+| Knockback | Effect | Levels 1-10, Knockback +2 per level, Rank +10 per level | | Bombs |
+| Bigger Boom | Longevity | Levels 1-10, Area of Effect +0.3 per level, Rank +10 per level | | Bombs |
+| Fly Fast | Lightness | Levels 1-10, Projectile Speed +5 per level, Rank +10 per level | | Slingbows, Grapples |
+| Reel Speedster | Effect | Levels 1-10, Reel In and Out Speed +5 per level, Rank +10 per level | | Grapples |
+| Far Reaching | Longevity | Levels 1-10, Max Length +3 per level, Rank +10 per level | | Grapples |
+| Long-Range | Longevity | Levels 1-10, Max Length +3 per level, Rank +10 per level | | Slingbows, Fists |
+| Wear and Tear | Effect | Levels 1-10, Wear Removed Per Hit +100 & +10% per level, Rank +10 per level | | Spanners |
+| Glow | Glow | Levels 1-3, Light Source Intensity +1 per level, Light Source Radius +6 per level, Rank +20 per level starting at 30 | | Tools, Slingbows, Fists, Bombs, Grapples, Spanners, Chisels |
+| Magnetic Collector | Special | Levels 1-3, Drop Auto Harvest True each level, Drop Attraction Range +2 per level, Rank +20 per level starting at 30 | | Tools, Fists, Spanners, Chisels |
+| Transformation | Effect | Level 1, On Hit Action Changes Block Type, Rank +50 | | Chisels |
+| Regenerator | Special | Level 1, On Hit Action Regenerates World, Area of Effect +100%?, Rank +50 | | Bombs |
+| Flanker's Force / Low Blow / Cross Purposes / All-rounder / Random Acts | Special | Levels 1-5, Rank +20 per level starting at 10, Damage Adjacent Blocks (1: Horizontal, Damage -60%; 2: Below, Damage -40%; 3: Cross, Damage -60%; 4: All, Damage -60%; 5: Random) | | Tools, Fists, Spanners |
+| Double-Shot / Triple-Shot / Quadruple-Shot / Quintuple-Shot / Sextuple-Shot | Special | Levels 1-5, Rank +20 per level starting at 10, Multi Shot Spread Angle 0.15, Multi Shot Count +1 per level, Offset & Damage (1: Offset ~1.57, Damage -50%; 2: Offset ~1.57, Damage -60%; 3: Offset ~0.5, Damage -60%; 4: Offset ~0.8, Damage -60%; 5: Offset ~0.9, Damage -60%) | | Slingbows |
+| Heavy-Weight Projectile | Effect | Levels 1-5, Projectile Speed -10, Projectile Fall Off +0.1 per level, Damage +10% per level, Rank +20 per level starting at 10 | | Slingbows |
+| Light Flight | Lightness | Levels 1-5, Projectile Fall Off -10% per level, Projectile Speed (1: +10; 2: +12; 3: +15; 4: +20; 5: +30), Rank +20 per level starting at 10 | | Slingbows |
+| Let 'em Bleed | Special | Levels 1-5, Status Effect Applied On Hit (Type: Damage Over Time From Item; Level, +1 per level), Rank +20 per level starting at 10 | | Slingbows |
+| Slow and Steady | Special | Levels 1-5, Status Effect Applied On Hit (Type: Focus Slow; Level: +1 per level), Rank +20 per level starting at 10 | | Slingbows |
+| Weakness | Special | Levels 1-5, Status Effect Applied On Hit (Type: Weak; Level: +1 per level), Rank +20 per level starting at 10 | | Slingbows |
+| Hot on Their Heals Boon I / II / III | Special | Levels 1-3, Damage Type Healing, Damage Applies to (2: Burst Stamina; 3: Status Effect Duration), Rank +20 per level starting at 30 | | Bombs |
+| Hookshot | Special | Level 1, Hookshot True, Reel In Speed +20, Rank +20 | | Grapples |
+
+| Quirk (one level, on an item while held) | Effect | Applies to |
+|---|---|---|
+| Carpe Noctem | Damage +100 & +10% at Night | Tools, Slingbows, Fists, Bombs, Grapples, Spanners, Chisels |
+| Carpe Diem | Damage +100 & +10% during the Day | Tools, Slingbows, Fists, Bombs, Grapples, Spanners, Chisels |
+| Best of Health | Action Speed +10 at High Health (55% and higher) | Tools, Slingbows, Fists, Bombs, Grapples, Spanners, Chisels |
+| In Poor Health | Action Speed +10 at Low Health (45% and lower) | Tools, Slingbows, Fists, Bombs, Grapples, Spanners, Chisels |
+| Fully-Filled | Stamina Drain -10 at Full Up (55% and higher) | Tools, Slingbows, Fists, Bombs, Grapples, Spanners, Chisels |
+| Ravenous | Stamina Drain -10 when Hunger is High (45% and lower) | Tools, Slingbows, Fists, Bombs, Grapples, Spanners, Chisels |
+| On Icy Ground | Status Effect Applied When Held (Type: Slippery Feet; Level: 1), Falling Armor +40 | Tools, Slingbows, Fists, Bombs, Grapples, Spanners, Chisels |
+| Bouncy Feet | Status Effect Applied When Held (Type: Bouncy Feet; Level: 1) | Tools, Slingbows, Fists, Bombs, Grapples, Spanners, Chisels |
+| That Sinking Feeling | Status Effect Applied When Held (Type: Sink In Water; Level: 1), Breath Underwater +50% | Tools, Slingbows, Fists, Bombs, Grapples, Spanners, Chisels |
+| Slow-Mo Quirk | Status Effect Applied When Held (Type: Slows You Down; Level: 1), Walk/Run Speed -25%, Sprint Bonus +50% | Tools, Slingbows, Fists, Bombs, Grapples, Spanners, Chisels |
+| One Jump Ahead | Status Effect Applied When Held (Type: Jump Randomly; Level: 1), Grants User Double Jump | Tools, Slingbows, Fists, Bombs, Grapples, Spanners, Chisels |
+| Wonky Trigger | Status Effect Applied When Held (Type: Fire Randomly; Level: 1), Durability +400 | Tools, Slingbows, Fists, Bombs, Grapples, Spanners, Chisels |
+| Aggravated Attacks | Status Effect Applied When Held (Type: Creature Aggro Range Increased; Level: 1) | Tools, Slingbows, Fists, Bombs, Grapples, Spanners, Chisels |
+| Nutritionally Challenged | Status Effect Applied When Held (Type: Drains Hunger; Level: 1), Max Energy +30% | Tools, Slingbows, Fists, Bombs, Grapples, Spanners, Chisels |
+| Bleeding Edge | Status Effect Applied When Held (Type: Drains Health; Level: 1), Max Health +30% | Tools, Slingbows, Fists, Bombs, Grapples, Spanners, Chisels |
+| Random Noises | Item Quirk Makes Odd Sound True, Status Effect Applied When Held (Type: Makes Odd Sound; Level: 1) | Tools, Slingbows, Fists, Bombs, Grapples, Spanners, Chisels |
+
+| Defect | Category | Effect per level | Applies to |
+|---|---|---|---|
+| Energy Expender | Ease | Levels 1-10, Stamina Drain +2 per level, Rank -10 per level | Tools, Slingbows, Fists, Bombs, Grapples, Spanners, Chisels |
+| Slow Coach | Lightness | Levels 1-10, Action Speed -5 per level, Rank -10 per level | Tools, Slingbows, Fists, Bombs, Grapples, Spanners, Chisels |
+| Critically Unlucky | Ease | Levels 1-10, Critical Chance -5% per level, Rank -10 per level | Tools, Slingbows, Fists |
+| Softer Strikes | Effect | Levels 1-10, Critical Effect -10% per level, Rank -10 per level | Tools, Slingbows, Fists |
+| Damage Decliner | Effect | Levels 1-10, Damage -50 & -10% per level, Rank -10 per level | Tools, Slingbows, Fists, Bombs |
+| Fragile Gear | Longevity | Levels 1-10, Durability -200 per level, Rank -10 per level | Tools, Slingbows, Fists, Grapples, Spanners, Chisels |
+| Knockback | Effect | Levels 1-10, Knockback -2 per level, Rank -10 per level | Bombs |
+| Lesser Boom | Longevity | Levels 1-10, Area of Effect -0.3 per level, Rank -10 per level | Bombs |
+| Sluggish Shot | Lightness | Levels 1-10, Projectile Speed -5 per level, Rank -10 per level | Slingbows, Grapples |
+| Reel Time | Effect | Levels 1-10, Reel In and Out Speed -5 per level, Rank -10 per level | Grapples |
+| Limited Reach | Longevity | Levels 1-10, Max Length -3 per level, Rank -10 per level | Grapples |
+| Short-Range | Longevity | Levels 1-10, Max Length -3 per level, Rank -10 per level | Slingbows, Fists |
+| Wear and Tear | Effect | Levels 1-10, Wear Removed Per Hit -100 & -10% per level, Rank -10 per level | Spanners |
+
+**Forge ingredients** ("Forge Materials" sheet: the base each is made from, its spark and power to craft, and and the "Base" column's count (likely how many bases one craft takes; medium); "-" where none). Market prices in that sheet are one player's coin estimates and are left out.
+
+| Ingredient | Made from | Spark | Power | Base |
+|---|---|---|---|---|
+| Special Gum | Gum Base | - | - | 1 |
+| Effect Gum | Gum Base | - | - | 1 |
+| Longevity Gum | Gum Base | - | - | 1 |
+| Ease Gum | Gum Base | - | - | 1 |
+| Lightness Gum | Gum Base | - | - | 1 |
+| Glow Gum | Gum Base | - | - | 1 |
+| Trait Reduction Gum | Gum Base | - | - | 2 |
+| Trait Expansion Gum | Gum Base | - | - | 2 |
+| Pure Boon I | Compound Base | - | - | 1 |
+| Pure Boon II | Compound Base | 200 | 500 | 2 |
+| Pure Boon III | Compound Base | 400 | 2000 | 4 |
+| Imperfect Boon I | Compound Base | - | - | 1 |
+| Imperfect Boon II | Compound Base | 200 | 500 | 2 |
+| Imperfect Boon III | Compound Base | 400 | 2000 | 4 |
+| Unstable Boon I | Compound Base | - | - | 1 |
+| Unstable Boon II | Compound Base | 200 | 500 | 2 |
+| Unstable Boon III | Compound Base | 400 | 2000 | 4 |
+| Draining Boon I | Compound Base | 200 | 1000 | 2 |
+| Draining Boon II | Compound Base | 400 | 2500 | 4 |
+| Corrupted Boon I | Compound Base | 200 | 1000 | 2 |
+| Corrupted Boon II | Compound Base | 400 | 2500 | 4 |
+| Defect Reduction I | Compound Base | 100 | 500 | 2 |
+| Defect Reduction II | Compound Base | 300 | 1500 | 4 |
+| Unstable Defect Reduction I | Compound Base | 100 | 500 | 2 |
+| Unstable Defect Reduction II | Compound Base | 300 | 1500 | 4 |
+| Quirk Reduction I | Compound Base | 100 | 500 | 2 |
+| Quirk Reduction II | Compound Base | 300 | 1500 | 4 |
+| Imperfect Quirk Reduction I | Compound Base | 100 | 500 | 2 |
+| Imperfect Quirk Reduction II | Compound Base | 300 | 1500 | 4 |
+| Protection Paste I | Paste Base | 200 | 600 | 2 |
+| Protection Paste II | Paste Base | 300 | 1800 | 4 |
+| Boon Paste I | Paste Base | 200 | 600 | 2 |
+| Boon Paste II | Paste Base | 300 | 1800 | 4 |
+| Defect Guard Paste I | Paste Base | 200 | 600 | 2 |
+| Defect Guard Paste II | Paste Base | 300 | 1800 | 4 |
+| Quirk Guard Paste I | Paste Base | 200 | 600 | 2 |
+| Quirk Guard Paste II | Paste Base | 300 | 1800 | 4 |
+| Invigoration Paste I | Paste Base | 200 | 600 | 2 |
+| Invigoration Paste II | Paste Base | 300 | 1800 | 4 |
+| Stabilisation Paste I | Paste Base | 200 | 600 | 2 |
+| Stabilisation Paste II | Paste Base | 300 | 1800 | 4 |
+| Fate Paste I | Paste Base | 200 | 600 | 1 |
+| Fate Paste II | Paste Base | 300 | 1800 | 2 |
+| Fate Reversal Paste | Paste Base | 200 | 1500 | 4 |
+| Gambling Paste I | Paste Base | 100 | 1000 | 2 |
+| Gambling Paste II | Paste Base | 200 | 2000 | 4 |
+| Defect Reversal Catalyst | Catalyst Base | 500 | 2500 | 4 |
+| Vigour Catalyst I | Catalyst Base | 200 | 1500 | 4 |
+| Vigour Catalyst II | Catalyst Base | 500 | 3000 | 4 |
+| Boon Boost Catalyst | Catalyst Base | 500 | 2500 | 3 |
+| Boon Points Catalyst I | Catalyst Base | 200 | 1500 | 2 |
+| Boon Points Catalyst II | Catalyst Base | 500 | 3000 | 4 |
+| Boon Removal Solvent I | Solvent Base | 200 | - | 2 |
+| Boon Removal Solvent II | Solvent Base | 400 | 1200 | 4 |
+| Defect Removal Solvent I | Solvent Base | 400 | 1200 | 3 |
+| Defect Removal Solvent II | Solvent Base | 600 | 2600 | 4 |
+| Quirk Removal Solvent I | Solvent Base | 400 | 1200 | 3 |
+| Quirk Removal Solvent II | Solvent Base | 600 | 2600 | 4 |
+| Boon Transmute Solvent | Solvent Base | 600 | 2600 | 4 |
+| Defect Transmute Solvent | Solvent Base | 200 | - | 2 |
+| Quirk Transmute Solvent | Solvent Base | 200 | - | 2 |
+| Setting Resin | Resin Base | - | - | 1 |
+| Deconstruction Resin I | Resin Base | - | - | 1 |
+| Deconstruction Resin II | Resin Base | 300 | 1000 | 2 |
+| Deconstruction Resin III | Resin Base | 500 | 3000 | 4 |
+
