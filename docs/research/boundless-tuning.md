@@ -1287,7 +1287,7 @@ Atmosphere protection gates T4+ worlds; elemental protection comes from skills (
 
 ---
 
-# 5. Skills, attributes, levels, progression and forging
+## 5. Skills, attributes, levels, progression and forging
 
 Research for Boundmore tuning. Paraphrased; numbers carry source, version/date and confidence (H/M/L).
 Live Boundless froze at Release 248 (Oct 2020) for skills; the big solo skill rework in Testing 249 (Dec 2020 to Apr 2021) **never reached the live universe** (forum 2022 to 2026: "the update that never came", https://forum.playboundless.com/t/14749 #59, 2026-02-27; https://forum.playboundless.com/t/62670, 2022-11). Treat the 1.0 to R248 tree as "Boundless as players knew it"; Testing 249 is the developers' intended direction.
