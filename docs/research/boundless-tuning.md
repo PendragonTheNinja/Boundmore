@@ -1075,7 +1075,7 @@ Secondary drops (chance per block, PF-DROP):
 | | saltpetre | | | 0.3% | 0.3% | 0.5% | 0.5% | 0.8% | 0.8% |
 | Sand | olivine | 0.2% | 0.2% | 0.3% | 0.3% | 0.3% | 0.3% | 0.5% | 0.5% |
 | Foliage (3 kinds) | berry (low / mid / high grade) | 10% (T1-3) | | | 6% mid | 3% mid + 3% high | 3% high | 3% | 3% |
-| | fibrous leaf (cloth) | | | | 1% | 1% | 1% | | |
+| | fibrous leaf (cloth): a rare bonus only; the main source is plants (4.4a) | | | | 1% | 1% | 1% | | |
 | | inky leaf | | | | | | 0.5% | 0.5% | 0.5% |
 | Trunk (3 kinds) | sap (glue) | 8% | 8% | 8% | 8% | 12% | 12% | 12% | 12% |
 | | bark (leather) | | | 3% | 3% | 3% | 4% | 4% | 4% |
@@ -1084,7 +1084,34 @@ Secondary drops (chance per block, PF-DROP):
 | Mould | pulsating orb | 3% |
 | Growth | shimmering orb | 2% |
 
-Flint matters: the stone furnace base, iron furnace base and titanium furnace base all need it, and it only drops on T1-4 (rock) or from gravel.
+Flint matters: the stone furnace base, iron furnace base and titanium furnace base all need it. Its main source is boulders (4.4a, about 1.3 per boulder on every tier); rock (T1-4) and gravel give it only as a rare bonus.
+
+### 4.4a Gathering objects: plants, boulders and fungi (PF-DROP `gathering: true`, high; checked 2026-10-20)
+
+Boundless scattered **models, not blocks**, over every world: plants and flowers, boulders, and fungi. They are broken by hand or any tool and drop materials; the gathering epic (skills) lets you dig them up and replant them. Nathan (2026-10-20): "the plants are really important". Many basic crafting materials came only, or mostly, from them. Expected drops per object (sum of the rolls; the same on every tier unless shown):
+
+| Object (Boundless name, for reference only) | Drops |
+|---|---|
+| Desert spike plant (Desert Sword, a yucca) | fibrous leaf 1.3, spicy bean 0.17, earthyam 1.3 |
+| Trumpet Root | spicy bean 1.3, sweet bean 0.15, bitter bean 0.02, waxy earthyam 1.3, spooky seed 0.15 (T1-2) / 0.55 (T3-5) / 0.825 (T6-7) |
+| Traveller's Perch | fleshy leaf 1.3, fibrous leaf 0.15, inky leaf 0.05, exotic earthyam 1.3 |
+| Rosetta Nox (a lotus) | inky leaf 1.3, petal 0.05, earthyam 1.3, spooky seed as above |
+| Spineback Plant (a cactus) | petal 1.4, exotic earthyam 1.3 |
+| Twisted Aloba (an aloe) | fleshy leaf 1.35, waxy earthyam 1.3 |
+| Stardrop Plant (a snowdrop) | bitter bean 1.2, petal 0.3, earthyam 1.3 |
+| Oortian's Staff (a fiddlehead) | sweet bean 1.3, fleshy leaf 0.12, earthyam 1.3, spooky seed as above |
+| Basic boulder | flint 1.3, opal 0.55 |
+| Beanstalk boulder | rock salt 1.3, olivine 1.35 |
+| Boulder tower | flint 1.3, sulphur 1.4, opal 0.2 |
+| Boulder ring | rock salt 1.3, cobalt 1.4 |
+| Boulder chip | flint 1.3, cobalt 1.3, opal 0.9 |
+| Tapered boulder | rock salt 1.3, saltpetre 1.4 |
+| Fungi (6 kinds, deeper and in caves) | lamellae (reactive, edible, glowing) 1.25 to 1.5, orbs (vital, pulsating, shadow, shimmering) 0.4 to 1.75 |
+
+- Health: plants, fungi and boulders 800 base and **ignore block armour** (2.2).
+- Mining XP: 20 to 160 by tier (5.5).
+- Where each one grows (biome and world type) is not in this file. Players: "home worlds' desert biome have a lot of yucca" (t/12559 #3, 2018). Open question.
+- Uses for Boundmore's plan: fibrous leaves → sackcloth (2 at the extractor) → copper and iron tools; flint → torches and furnaces; petals, beans, earthyams → food and colours later; lamellae and orbs → bonding agents and forging later.
 
 ### 4.5 Natural block families
 
@@ -1291,7 +1318,7 @@ Built from the recipe gates above (high for the gates, medium for the order play
 
 1. Hands and wood: timber → crafting table → wood tools. Stone tools from stones + sticks + leaves.
 2. Stone furnace (stones + flint; flint from gravel or rock on T1-4). Smelt copper and iron ore.
-3. Workbench (timber + 3 bars + 1 ancient tech remnant): copper and iron tools, iron furnace, extractor (cloth from fibrous leaf, which only drops on T4+ foliage, a known new-player wall: t/12447, t/12559, 2018).
+3. Workbench (timber + 3 bars + 1 ancient tech remnant): copper and iron tools, iron furnace, extractor (cloth from fibrous leaves, which come from desert plants on every tier, 4.4a). Corrected 2026-10-20 (Nathan caught it): an earlier version of this line said fibrous leaves drop only from tier 4+ foliage. That is only the rare 1% bonus on tree leaves. In early access (March 2018) leaves were a real wall (t/12447, t/12559: "2 hours looking for Yucca Plants"); the developers cut sackcloth from 5 leaves to 3 that week (olliepurkiss, t/12447 #6), and the late data has 2.
 4. Mixer: silver and gold alloys (silver T3+, gold T4+). Spark generator and links; refinery and compactor need alloys and a tech component and start using spark.
 5. Titanium (T4 Metal, T5+ everywhere, deep): titanium alloy tools and furnace.
 6. Gems (T5-6 by world type): compact → refine; the first power coils need a compact gem each; gem tools need 1500 power, so 5 advanced or 15 basic coils on a workbench.
