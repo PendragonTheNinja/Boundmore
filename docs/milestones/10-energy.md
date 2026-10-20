@@ -44,8 +44,17 @@ Hunger and food (they come with farming and cooking). Zeal and the energy skills
 
 ## Status
 
-- [ ] Spec (this file)
-- [ ] Core and data
-- [ ] Server
-- [ ] Client and HUD
-- [ ] Integrated, tested, Nathan's play-test
+*Built 2026-10-20 on branch `claude/amazing-pascal-lwttor`; awaiting merge and Nathan's play-test.*
+
+- [x] Spec (this file)
+- [x] Core and data:
+  - `bm-core/src/energy.rs`: `PlayerState::spent` and `rest` (integers), `try_spend`, refill in `movement::step`.
+  - Grapple shots spend in the step.
+  - Tool energy defaults to damage / 50; grapple and chisel energy are in `items.toml`.
+- [x] Server: swings spend after the cadence and rules checks (too tired is a quiet refusal that restarts the pause); chisel cuts spend before anything else is ruled; energy goes with you through portals; not saved (`SavedBody` unchanged, `SAVE_VERSION` unchanged).
+- [x] Client:
+  - `Predictor::spend` applies a swing's or cut's cost at its own input and replays the later ones; the spends are kept per input, so a correction re-applies them.
+  - The prediction check compares energy too.
+  - The energy bar sits over the hotbar (screenshot `docs/media/m10-energy.png`).
+- [x] Tests: the costs; 75 copper swings from full; 7 iron grapple shots; the pause and refill; prediction with late-known swings and no correction; end to end, a tired swing refused and the bar back to full after the pause. 371 tests in all. Upgrade check from `main` passes; protocol 14.
+- [ ] Nathan's play-test: does running dry feel like Boundless? Is the refill rate (300 a second, a guess) right?

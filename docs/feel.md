@@ -68,6 +68,15 @@ Matched to Boundless's final numbers (Nathan, 2026-10-20: "as close to Boundless
 
 Not built yet, from Boundless: energy per swing (damage / 50), skills (power, mastery, epics, dexterity, luck), forging (the only source of area of effect), mining XP.
 
+## Energy (`bm-core/src/energy.rs`, `assets/items.toml`; M10)
+
+| Value | Now | Source, or guess |
+|---|---|---|
+| Bar | 600 | Boundless base (Zeal raises it later) |
+| Costs | tools damage / 50 (hand stone 4, wood 6, stone and copper 8, iron 14); copper grapple 60, iron 80 a shot; chisels 10 a cut | Boundless, exact |
+| Pause before refill | 3.5 s after the last use; a tired use restarts it | players timed 3 to 4 s; the restart is Release 199 |
+| Refill | 300 a second (empty to full in 2 s) | **Guess.** How fast did an empty bar refill with no skills? |
+
 ## Light (`assets/blocks.toml`, M9)
 
 | Value | Now | Check |
