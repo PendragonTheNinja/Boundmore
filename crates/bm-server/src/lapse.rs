@@ -46,6 +46,10 @@ pub fn ash_for(
     if !def.breakable {
         return None;
     }
+    // A prop (a torch) is no block to crumble: it goes out.
+    if def.is_prop() {
+        return Some(BlockState::AIR);
+    }
     // A chiselled block crumbles in its shape: ash takes every family.
     Some(BlockState {
         shape: current.shape,
@@ -177,6 +181,14 @@ mod tests {
                 self.water,
             )
         }
+    }
+
+    #[test]
+    fn a_torch_goes_out_rather_than_turning_to_ash() {
+        let s = Setup::new();
+        let torch = BlockState::plain(s.id("torch_east"));
+        assert_eq!(s.turn(torch, BlockState::AIR, None), Some(BlockState::AIR));
+        assert_eq!(s.turn(BlockState::AIR, BlockState::AIR, None), None, "and stays out");
     }
 
     #[test]

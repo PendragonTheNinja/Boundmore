@@ -598,20 +598,6 @@ impl ItemRegistry {
     pub fn is_empty(&self) -> bool {
         self.defs.is_empty()
     }
-
-    /// Seconds to break a fresh `block` on a tier 1 world holding `tool`
-    /// (None for a bare hand), with no critical hits: swings to break times
-    /// seconds per swing, less the first swing (it lands at once).
-    ///
-    /// Transitional: the hold-to-break path uses it until swings (milestone 9)
-    /// replace it.
-    pub fn break_seconds(&self, block: &BlockDef, tool: Option<ItemId>) -> f32 {
-        let t = self.swing_tool(tool);
-        match crate::mining::hits_to_break(&t, block, 1) {
-            Some(hits) => ((hits - 1) as f64 * crate::mining::seconds_per_hit(t.action_speed)) as f32,
-            None => f32::INFINITY,
-        }
-    }
 }
 
 #[cfg(test)]
@@ -644,7 +630,7 @@ mod tests {
 
     #[test]
     fn tools_have_boundless_stats() {
-        let (b, i) = setup();
+        let (_, i) = setup();
         let copper = i.get(i.id("copper_hammer").unwrap()).unwrap().tool().unwrap();
         assert_eq!(
             (copper.damage, copper.action_speed, copper.durability),
@@ -665,11 +651,6 @@ mod tests {
         // Anything that is not a tool swings as a bare hand.
         assert_eq!(i.swing_tool(Some(i.id("stone").unwrap())), i.hand());
         assert_eq!(i.swing_tool(None), i.hand());
-        // The transitional hold time: copper on stone is 3 swings of 0.59 s,
-        // the first at once.
-        let stone = b.get(b.id("stone").unwrap());
-        let t = i.break_seconds(stone, Some(i.id("copper_hammer").unwrap()));
-        assert!((t - 1.18).abs() < 0.01, "{t}");
     }
 
     #[test]

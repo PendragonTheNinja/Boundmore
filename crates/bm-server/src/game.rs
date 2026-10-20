@@ -16,6 +16,7 @@ use crate::chat::{self, ChatLimit, Verdict};
 use crate::claims::ClaimError;
 use crate::config::ServerConfig;
 use crate::crafting::{self, CraftError, MAX_CRAFT_COUNT};
+use crate::damage::DamageMap;
 use crate::lapse::{self, Lapse};
 use crate::net::{Event, Outbox};
 use crate::planet::Planet;
@@ -24,13 +25,13 @@ use crate::reclaim::Reclaims;
 use crate::storage::move_stack;
 use crate::store::{PlayerData, Store, WriteBatch, load_slots, save_slots};
 
+mod mining;
 mod portal;
 use anyhow::{Context, Result};
-use bm_core::items::title_case;
 use bm_core::movement::{self, MoveConfig, PlayerInput, PlayerState};
 use bm_core::{
     BlockId, BlockPos, BlockState, CHUNK_SIZE, ChunkPos, Colour, ColourPalette, HOTBAR_SLOTS, Inventory, ItemId,
-    ItemRegistry, ItemStack, PlanetShape, PlotPos, RecipeBook, Shape, Station, TICK_DT, chisel,
+    ItemRegistry, ItemStack, Mount, PlanetShape, PlotPos, RecipeBook, Shape, Station, TICK_DT, chisel,
 };
 use bm_net::quinn::Connection;
 use bm_protocol::{
@@ -39,6 +40,7 @@ use bm_protocol::{
 };
 use crossbeam_channel::{Receiver, Sender, TryRecvError};
 use glam::DVec3;
+use mining::holds_props;
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet, VecDeque};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
@@ -71,16 +73,11 @@ const EDIT_BURST: f64 = 24.0;
 /// How far ahead of the simulated inputs an edit may be tagged (2 s).
 const MAX_EDIT_LEAD: u32 = 120;
 const MAX_QUEUED_EDITS: usize = 64;
-/// A break may arrive this much sooner than its break time (the block's
-/// hardness over the tool's speed), in seconds plus a fraction of that time,
-/// to absorb network jitter between the player's StartBreak and Break.
-const BREAK_SLACK_SECONDS: f64 = 0.12;
-const BREAK_SLACK_FRACTION: f64 = 0.2;
 /// The planet list goes out at most this often when player counts change.
 const UNIVERSE_EVERY: u64 = 60;
 /// How often open storage blocks are checked still to be in reach (4 Hz).
 const STORAGE_CHECK_EVERY: u64 = 15;
-/// After travel, edits and break holds tagged with an input up to this many
+/// After travel, edits and swings tagged with an input up to this many
 /// past the last one the server had are refused: the client sent them about
 /// the planet it left, before it heard of the travel.
 const TRAVEL_GUARD_INPUTS: u32 = 30;
@@ -99,21 +96,21 @@ enum Queued {
         pos: BlockPos,
         action: EditAction,
     },
-    StartBreak {
+    Swing {
+        seq: u32,
+        at: u32,
         pos: BlockPos,
         slot: u8,
     },
 }
 
-/// The block a player is holding break on.
-#[derive(Clone, Copy, Debug, PartialEq)]
-struct Mining {
-    pos: BlockPos,
-    /// Tick the hold began.
-    since: u64,
-    /// Hotbar slot held, and the item in it then (a tool, or anything).
-    slot: u8,
-    tool: Option<ItemId>,
+impl Queued {
+    /// The answer to a request refused before it was looked at.
+    fn seq_pos(&self) -> (u32, BlockPos) {
+        match *self {
+            Queued::Edit { seq, pos, .. } | Queued::Swing { seq, pos, .. } => (seq, pos),
+        }
+    }
 }
 
 struct Player {
@@ -134,8 +131,10 @@ struct Player {
     wanted: Vec<ChunkPos>,
     center: Option<ChunkPos>,
     edit_tokens: f64,
-    mining: Option<Mining>,
-    /// Edits and break holds waiting for the input they follow, in the order
+    /// The last accepted swing: the input it followed and the ticks its
+    /// tool needs before the next (`mining::swing_ticks`).
+    last_swing: Option<(u32, u32)>,
+    /// Edits and swings waiting for the input they follow, in the order
     /// sent (their `at` never decreases).
     edits: VecDeque<(u32, Queued)>,
     /// The station whose updates this player receives.
@@ -143,7 +142,7 @@ struct Player {
     /// The storage block this player has open (canonical).
     storage: Option<BlockPos>,
     chat: ChatLimit,
-    /// Edits and holds tagged with an input up to this one came from before
+    /// Edits and swings tagged with an input up to this one came from before
     /// the last travel (see `TRAVEL_GUARD_INPUTS`).
     travel_guard: Option<u32>,
     /// The portal whose window this player has open.
@@ -202,13 +201,6 @@ struct Accepted {
 }
 
 enum Effect {
-    Broke {
-        old: BlockId,
-        /// The item gathered, in the colour it takes from the block.
-        drop: Option<(ItemId, Colour)>,
-        /// The hotbar slot of a matching tool, which wears.
-        wear: Option<usize>,
-    },
     Placed {
         slot: usize,
     },
@@ -265,6 +257,10 @@ pub struct Game {
     portal_surface: BlockId,
     portal_token: ItemId,
     wayshard: ItemId,
+    /// Damaged blocks, by planet index (milestone 9; never saved).
+    damage: Vec<DamageMap>,
+    /// Bonus yields are rolled from this (splitmix64).
+    rng: u64,
 }
 
 /// One planet's load, as the report shows it.
@@ -380,6 +376,21 @@ fn send_slots(p: &Player, before: &Inventory) {
     }
 }
 
+/// One use off whatever wears in `slot` (a tool, a chisel): the notice to
+/// send if that used it up, and it is gone.
+fn wear_slot(items: &ItemRegistry, inv: &mut Inventory, slot: usize) -> Option<String> {
+    let s = inv.slots.get_mut(slot)?.as_mut()?;
+    let def = items.get(s.item)?;
+    let durability = def.durability()?;
+    s.wear += 1;
+    if s.wear >= durability {
+        let text = format!("Your {} broke", def.display);
+        inv.slots[slot] = None;
+        return Some(text);
+    }
+    None
+}
+
 /// Makes a stored inventory safe: impossible stacks and spent tools go.
 fn sanitize(inv: &mut Inventory, items: &ItemRegistry) {
     inv.sanitize(items);
@@ -429,6 +440,7 @@ impl Game {
         let portal_rules = cfg.portal_rules();
         let reclaims = Reclaims::load(store.reclaims()?, &items);
         let last_seen = claim_owners_last_seen(&store, &planets, planets[start].id);
+        let planet_count = planets.len();
         Ok(Self {
             cfg,
             planets,
@@ -463,6 +475,10 @@ impl Game {
             portal_surface,
             portal_token,
             wayshard,
+            damage: (0..planet_count).map(|_| DamageMap::default()).collect(),
+            rng: std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map_or(0x2545_f491, |d| d.as_nanos() as u64),
         })
     }
 
@@ -563,6 +579,9 @@ impl Game {
         self.step_portals();
         self.step_stations();
         self.step_lapses();
+        if self.tick % mining::HEAL_SWEEP_EVERY == 0 {
+            self.heal_blocks();
+        }
         if self.tick % STORAGE_CHECK_EVERY == 0 {
             self.check_open_storage();
             self.check_open_portals();
@@ -656,9 +675,7 @@ impl Game {
             }
             Event::Msg { id, msg } => match msg {
                 ClientMsg::Edit { seq, at, pos, action } => self.queue(id, at, Queued::Edit { seq, pos, action }),
-                ClientMsg::StartBreak { at, pos, slot } => self.queue(id, at, Queued::StartBreak { pos, slot }),
-                // Milestone 9: swings replace the hold (server agent).
-                ClientMsg::Swing { .. } => {}
+                ClientMsg::Swing { seq, at, pos, slot } => self.queue(id, at, Queued::Swing { seq, at, pos, slot }),
                 ClientMsg::MoveItems { from, to, count } => {
                     self.change_inventory(id, |inv, items| {
                         inv.move_items(items, from as usize, to as usize, count)
@@ -811,7 +828,7 @@ impl Game {
                 wanted: Vec::new(),
                 center: None,
                 edit_tokens: EDIT_BURST,
-                mining: None,
+                last_swing: None,
                 edits: VecDeque::new(),
                 watching: None,
                 storage: None,
@@ -951,23 +968,26 @@ impl Game {
         }
     }
 
-    /// Applies an edit or break hold right after the input it follows, in
-    /// the order the client sent them: a hold on the next block must never
+    /// Applies an edit or swing right after the input it follows, in the
+    /// order the client sent them: a swing at the next block must never
     /// overtake the break of the one before it.
     fn queue(&mut self, id: u32, at: u32, queued: Queued) {
         let Some(p) = self.players.get_mut(&id) else { return };
+        let (seq, pos) = queued.seq_pos();
         if p.travel_guard.is_some_and(|g| at <= g) {
             // Sent about the planet they left.
-            if let Queued::Edit { seq, pos, .. } = queued {
-                self.edit_refused(id, seq, pos, "edit from before travelling");
+            self.edit_refused(id, seq, pos, "edit from before travelling");
+            if matches!(queued, Queued::Swing { .. }) {
+                self.send_health(id, pos);
             }
         } else if at <= p.last_seq && p.edits.is_empty() {
             // Late (its input was already simulated, e.g. a lost input was
             // repeated): apply now.
             self.apply_queued(id, queued);
         } else if at > p.last_seq + MAX_EDIT_LEAD || p.edits.len() >= MAX_QUEUED_EDITS {
-            if let Queued::Edit { seq, pos, .. } = queued {
-                self.edit_refused(id, seq, pos, "edit too far ahead of movement");
+            self.edit_refused(id, seq, pos, "edit too far ahead of movement");
+            if matches!(queued, Queued::Swing { .. }) {
+                self.send_health(id, pos);
             }
         } else {
             p.edits.push_back((at, queued));
@@ -977,7 +997,7 @@ impl Game {
     fn apply_queued(&mut self, id: u32, queued: Queued) {
         match queued {
             Queued::Edit { seq, pos, action } => self.edit(id, seq, pos, action),
-            Queued::StartBreak { pos, slot } => self.start_break(id, pos, slot),
+            Queued::Swing { seq, at, pos, slot } => self.swing(id, seq, at, pos, slot),
         }
     }
 
@@ -1113,7 +1133,12 @@ impl Game {
                                     .state
                                     .hook
                                     .map(|h| RemotePlayer::pack_hook(shape.delta(o.state.pos, h.pos))),
-                                light: 0,
+                                light: o
+                                    .inventory
+                                    .get(o.last_input.slot as usize)
+                                    .filter(|_| (o.last_input.slot as usize) < HOTBAR_SLOTS)
+                                    .and_then(|s| self.items.get(s.item))
+                                    .map_or(0, |d| d.held_light),
                             },
                         ))
                     })
@@ -1165,27 +1190,6 @@ impl Game {
         self.players.get(&id).map(|p| p.planet)
     }
 
-    fn start_break(&mut self, id: u32, pos: BlockPos, slot: u8) {
-        let tick = self.tick;
-        let Some(p) = self.players.get_mut(&id) else { return };
-        let canon = self.planets[p.planet].world.shape.wrap_block(pos);
-        let tool = ((slot as usize) < HOTBAR_SLOTS)
-            .then(|| p.inventory.get(slot as usize).map(|s| s.item))
-            .flatten();
-        // Holding on, the hold continues; a new block or a different tool
-        // starts it again, so a fast tool cannot borrow a slow one's time.
-        if p.mining
-            .is_none_or(|m| m.pos != canon || m.slot != slot || m.tool != tool)
-        {
-            p.mining = Some(Mining {
-                pos: canon,
-                since: tick,
-                slot,
-                tool,
-            });
-        }
-    }
-
     /// Plots `account` may still claim on planet `pi`: the universe-wide
     /// allowance less what they hold on every other planet.
     fn allowance_on(&self, account: &str, pi: usize) -> u32 {
@@ -1222,33 +1226,8 @@ impl Game {
         });
         let before = p.inventory.clone();
         let mut broke = None;
-        let mut storage_gone = false;
         let mut claim_created = None;
-        let mut claim_removed = None;
-        let mut conduit_gone = false;
         match accepted.effect {
-            Effect::Broke { old, drop, wear } => {
-                storage_gone = planet.world.registry.get(old).storage > 0;
-                conduit_gone = old == self.portal_conduit;
-                if let Some((item, colour)) = drop {
-                    // Checked to fit.
-                    p.inventory.add_coloured(&self.items, item, colour, 1);
-                }
-                if let Some(slot) = wear
-                    && let Some(s) = p.inventory.slots[slot].as_mut()
-                {
-                    s.wear += 1;
-                    if let Some(def) = self.items.get(s.item)
-                        && def.tool().is_some_and(|t| s.wear >= t.durability)
-                    {
-                        broke = Some(format!("Your {} broke", def.display));
-                        p.inventory.slots[slot] = None;
-                    }
-                }
-                if old == self.claim_stone {
-                    claim_removed = planet.claims.remove_by_stone(canon);
-                }
-            }
             Effect::Placed { slot } => {
                 p.inventory.take_one(slot);
                 if new.id == self.claim_stone {
@@ -1265,36 +1244,15 @@ impl Game {
                 }
             }
             Effect::Chiselled { slot } => {
-                if let Some(s) = p.inventory.slots[slot].as_mut() {
-                    s.wear += 1;
-                    if let Some(def) = self.items.get(s.item)
-                        && def.durability().is_some_and(|d| s.wear >= d)
-                    {
-                        broke = Some(format!("Your {} broke", def.display));
-                        p.inventory.slots[slot] = None;
-                    }
-                }
+                broke = wear_slot(&self.items, &mut p.inventory, slot);
             }
         }
         send_slots(p, &before);
         if let Some(text) = broke {
             p.out.send(&ServerMsg::Notice { text });
         }
-        planet.world.set_state(pos, new);
         self.stats.edits += 1;
-        let chunk = canon.chunk();
-        for (oid, o) in &self.players {
-            if *oid != id && o.planet == pi && o.sent.contains(&chunk) {
-                o.out.send(&ServerMsg::BlockChanged { pos: canon, block: new });
-            }
-        }
-        if storage_gone {
-            self.close_storage_at(pi, canon);
-        }
-        // Checked to have an empty tank.
-        if conduit_gone && let Some(pid) = self.portals.at(self.planets[pi].id, canon) {
-            self.remove_portal(pid);
-        }
+        self.change_block(pi, canon, new, Some(id));
         if let Some(claim) = claim_created {
             if let Some(p) = self.players.get(&id) {
                 p.out.send(&ServerMsg::Notice {
@@ -1306,11 +1264,30 @@ impl Game {
             }
             self.broadcast_claim(pi, claim);
         }
-        if let Some(claim) = claim_removed {
-            for o in self.players.values().filter(|o| o.planet == pi) {
-                o.out.send(&ServerMsg::ClaimRemoved { id: claim });
+    }
+
+    /// Changes one block on planet `pi` for everyone: the world (marked
+    /// dirty, so it is saved), its damage (forgotten; watchers are told it
+    /// reset unless it is now air), `BlockChanged` to every player who has
+    /// the chunk except `by` (who changed it and was answered with an
+    /// `EditResult`), and any prop it held up, which falls into `by`'s pack.
+    /// Every block change of play goes through here.
+    pub(super) fn change_block(&mut self, pi: usize, canon: BlockPos, new: BlockState, by: Option<u32>) {
+        self.planets[pi].world.set_state(canon, new);
+        let reset = self.damage[pi].clear(canon, self.tick) && !new.id.is_air();
+        let chunk = canon.chunk();
+        for (oid, o) in &self.players {
+            if o.planet != pi || !o.sent.contains(&chunk) {
+                continue;
+            }
+            if Some(*oid) != by {
+                o.out.send(&ServerMsg::BlockChanged { pos: canon, block: new });
+            }
+            if reset {
+                o.out.send(&ServerMsg::BlockHealth { pos: canon, damage: 0 });
             }
         }
+        self.drop_unsupported_props(pi, canon, by);
     }
 
     fn edit_refused(&mut self, id: u32, seq: u32, pos: BlockPos, why: &str) {
@@ -1366,70 +1343,13 @@ impl Game {
         }
         let reg = &world.registry;
         match action {
-            EditAction::Break => {
-                let def = reg.get(current);
-                if current.is_air() || !def.breakable {
-                    return Err("cannot break that".into());
-                }
-                // The tool counts only if the slot still holds it.
-                let tool = p
-                    .mining
-                    .filter(|m| m.pos == canon && p.inventory.get(m.slot as usize).map(|s| s.item) == m.tool)
-                    .and_then(|m| m.tool);
-                let seconds = self.items.break_seconds(def, tool) as f64;
-                if seconds > 0.0 {
-                    let held = match p.mining {
-                        Some(m) if m.pos == canon => (self.tick - m.since) as f64 * TICK_DT,
-                        _ => return Err("break without holding".into()),
-                    };
-                    if held + BREAK_SLACK_SECONDS + seconds * BREAK_SLACK_FRACTION < seconds {
-                        return Err("broken too fast".into());
-                    }
-                }
-                if planet.stations.has_contents(canon) || planet.storage.has_contents(canon) {
-                    return Err(Refusal::Told(format!(
-                        "Empty the {} before breaking it",
-                        title_case(&def.name)
-                    )));
-                }
-                if let Some(pid) = self.portals.at(planet.id, canon)
-                    && self.portals.get(pid).is_some_and(|r| r.fuel > 0)
-                {
-                    return Err(Refusal::Told("Empty the portal's tank before breaking it".into()));
-                }
-                // A block that yields itself keeps its colour in the pack.
-                let colour = world.state(canon).map_or(Colour::NATURAL, |s| s.colour);
-                let drop = self.items.drop_of(current).map(|item| {
-                    let own = self.items.item_for_block(current) == Some(item);
-                    (item, if own && def.colourable { colour } else { Colour::NATURAL })
-                });
-                if let Some((item, colour)) = drop
-                    && !p.inventory.can_fit_coloured(&self.items, item, colour, 1)
-                {
-                    return Err(Refusal::Told("Your inventory is full".into()));
-                }
-                let wear = tool
-                    .and_then(|t| self.items.get(t))
-                    .and_then(|d| d.tool())
-                    .filter(|t| bm_core::mining::right_tool(t, def))
-                    .and(p.mining.map(|m| m.slot as usize));
-                p.mining = None;
-                Ok(Accepted {
-                    block: BlockState::AIR,
-                    effect: Effect::Broke {
-                        old: current,
-                        drop,
-                        wear,
-                    },
-                })
-            }
-            EditAction::Place { slot, .. } => {
+            EditAction::Place { slot, mount } => {
                 let slot = slot as usize;
                 if slot >= HOTBAR_SLOTS {
                     return Err("not a hotbar slot".into());
                 }
                 let stack = p.inventory.get(slot).ok_or("nothing placeable in that slot")?;
-                let block = self
+                let mut block = self
                     .items
                     .get(stack.item)
                     .and_then(|d| d.block())
@@ -1439,6 +1359,28 @@ impl Game {
                 }
                 if !(current.is_air() || current == world.water) {
                     return Err("space is occupied".into());
+                }
+                // A prop (a torch) goes on the face the player clicked, and
+                // needs that face to be solid; a mount on anything else is
+                // ignored.
+                if reg.get(block).is_prop() {
+                    let mount = mount.ok_or("a prop needs a face to go on")?;
+                    block = self
+                        .items
+                        .prop_block(reg, stack.item, mount)
+                        .ok_or("no variant for that face")?;
+                    let (dx, dy, dz) = mount.support();
+                    let support = canon.offset(dx, dy, dz);
+                    if !shape.contains_y(support.y) || !holds_props(world, support) {
+                        return Err(Refusal::Told(
+                            if mount == Mount::Floor {
+                                "A torch needs something solid to stand on"
+                            } else {
+                                "A torch needs something solid to hang on"
+                            }
+                            .into(),
+                        ));
+                    }
                 }
                 let supported = [(1, 0, 0), (-1, 0, 0), (0, 1, 0), (0, -1, 0), (0, 0, 1), (0, 0, -1)]
                     .iter()
@@ -1587,7 +1529,6 @@ impl Game {
         p.bank = 0.0;
         p.travel_guard = Some(newest.saturating_add(TRAVEL_GUARD_INPUTS));
         p.edits.clear();
-        p.mining = None;
         p.watching = None;
         if p.portal.take().is_some() {
             p.out.send(&ServerMsg::Portal(None));
@@ -2241,6 +2182,7 @@ impl Game {
                             water,
                         ) {
                             planet.world.set_state(p, ash);
+                            self.damage[pi].clear(p, self.tick);
                             changed.push((p, ash));
                         }
                     }
