@@ -667,7 +667,7 @@ impl ShapedVertex {
 
     /// The explicit texture coordinate, if the vertex has one.
     pub fn uv(self) -> Option<[u8; 2]> {
-        (self.z >> 21 & 1 == 1).then(|| [(self.z >> 22 & 63) as u8, (self.normal >> 24 & 63) as u8])
+        (self.z >> 21 & 1 == 1).then_some([(self.z >> 22 & 63) as u8, (self.normal >> 24 & 63) as u8])
     }
 
     /// Position in 1/[`SHAPED_UNITS`] of a block.

@@ -24,7 +24,7 @@
 use crate::{Padded, PaddedLight, ShapedVertex};
 use bm_core::{BlockFlags, CHUNK_SIZE, Light, Mount};
 
-const N: i32 = CHUNK_SIZE as i32;
+const N: i32 = CHUNK_SIZE;
 
 /// How far a wall torch leans out from its wall, in radians (about 24 deg).
 pub const WALL_TILT: f32 = 0.42;
@@ -87,10 +87,13 @@ fn parts(floor: bool) -> [Part; 2] {
     ]
 }
 
+/// One face of a box: corners, outward normal, texture rectangle, face index.
+type Quad = ([[f32; 3]; 4], [f32; 3], Rect, u8);
+
 /// The faces of a box as quads: four corners counter-clockwise seen from
 /// outside (bottom left, bottom right, top right, top left as the texture
 /// reads), the outward normal, the texture rectangle and the face index.
-fn box_quads(p: &Part) -> Vec<([[f32; 3]; 4], [f32; 3], Rect, u8)> {
+fn box_quads(p: &Part) -> Vec<Quad> {
     let ([x0, y0, z0], [x1, y1, z1]) = (p.min, p.max);
     let mut q = vec![
         // +X: seen from +x, right is -z.
