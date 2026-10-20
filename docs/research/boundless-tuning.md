@@ -459,7 +459,7 @@ Per single craft (bulk and mass crafts give 3 and 10 for more inputs and time). 
 | Material | Machine | Skill | Inputs | Time | Spark | Wear |
 |---|---|---|---|---|---|---|
 | Totem | handcrafted | – | none | instant | – | – |
-| Wood | crafting table | – | 2 timber, 1 stick, 1 foliage | instant | – | 1 |
+| Wood | crafting table | – | 4 timber, 4 sticks, 4 foliage (mayumi recipe data, decoded again 2026-10-20; an earlier reading said 2, 1, 1) | instant | – | 1 |
 | Stone | crafting table | – | 4 stones, 4 sticks, 4 foliage | 10 s | – | 1 |
 | Copper | workbench | tool crafting 1 | 3 copper bars, 4 sticks, 1 sackcloth, 1 glue | 60 s | – | 7 |
 | Iron | workbench | tool crafting 1 | 3 iron bars, 4 sticks, 1 sackcloth, 1 glue | 120 s | – | 11 |

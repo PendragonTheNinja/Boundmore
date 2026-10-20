@@ -186,15 +186,15 @@ inputs = [["trunk", 1]]
 
 [[recipe]]
 output = "wood_hammer"
-inputs = [["timber", 2], ["stick", 1], ["foliage", 1]]
+inputs = [["timber", 4], ["stick", 4], ["foliage", 4]]
 
 [[recipe]]
 output = "wood_shovel"
-inputs = [["timber", 2], ["stick", 1], ["foliage", 1]]
+inputs = [["timber", 4], ["stick", 4], ["foliage", 4]]
 
 [[recipe]]
 output = "wood_axe"
-inputs = [["timber", 2], ["stick", 1], ["foliage", 1]]
+inputs = [["timber", 4], ["stick", 4], ["foliage", 4]]
 
 [[recipe]]
 output = "torch"
