@@ -32,6 +32,8 @@ Matched to Boundless's final numbers (Nathan, 2026-10-19: Boundless first; `docs
 | Fling fade | 0.4 of the speed per second (`fling_drag`) | guess |
 | Shortest rope | 1 block (`ROPE_MIN`) | guess |
 
+**Nathan, 2026-10-20 (first play):** copper and iron grapples "feel really nice for their tier" and "the physics seem pretty sound". He is used to fully forged rift grapples (40 base range, up to about 120 with boons, mastery and guild buffs, tuning 1.3), which wait for exotic tiers and forging.
+
 Not built yet, from Boundless: energy per shot (copper 60, iron 80, of a 600 bar), grapple mastery (+5 range and +5 shot speed per rank, 5 ranks), forge boons (+3 range, +5 shot, +5 reel per level), no fall damage while attached.
 
 ## Portals (`ServerConfig`, `assets/planets.toml`; M8, ADR-0009)
@@ -44,7 +46,7 @@ Boundless burned shards every hour whether a portal was used or not (1 to 9 an h
 | Charge cooldown | 1 hour per player per portal (`portal_charge_cooldown`, seconds) | Back-and-forth trips should feel free |
 | Tank | 500 wayshards (`portal_tank_capacity`) | How often does an owner restock? |
 | Portal sizes | 1 to 6 wide, 2 to 6 tall | Boundless went up to 24 conduits for its longest links |
-| Wayshard rarity | vein size 6, threshold 0.64, below y 68 and 24 under the surface | How long to mine a stack of 100? |
+| Wayshard rarity | vein size 6, threshold 0.64, below y 68 and 24 under the surface: about 9 blocks per 32x32 column, heights 1 to 68 (median 30) under a surface near 147, about 30 times rarer than copper (measured 2026-10-20) | Nathan, 2026-10-20: could not find any in his first play. Too deep to reach without a light; proposal: raise to below y 100, a little richer |
 | Conduit recipe | 4 stone, 1 copper ingot, 1 wayshard for 2 | A 1 by 2 portal costs one wayshard |
 
 ## World (`bm-server/src/config.rs`, `bm-worldgen`)
