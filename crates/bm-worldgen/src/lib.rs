@@ -124,6 +124,13 @@ pub struct PlanetGenConfig {
     /// Each ore's veins come from its own noise, keyed by its place in this
     /// list, so add new ores at the end.
     pub ores: Vec<OreSpec>,
+    /// Gatherable objects (M11: plants, boulders and fungi, floor props),
+    /// tried in order at each candidate cell; the first that grows there
+    /// wins. Empty (planets made before M11, and the default) is none; the
+    /// server appends a kind's list to an older planet on opening, as it
+    /// does new ores, so only chunks nobody saved gain them.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub flora: Vec<FloraSpec>,
 
     /// Natural colours (ADR-0007): block name to palette colour names, the
     /// planet's main colour for that block first, then up to three regional
@@ -147,6 +154,10 @@ pub enum ConfigError {
     UnknownColour { block: String, colour: String },
     #[error("colours for `{0}`: {1} colours listed; a kind lists at least 1 per block, a planet 1 to 4")]
     ColourCount(String, usize),
+    #[error("flora `{0}`: a gatherable object must be a prop (not solid)")]
+    FloraSolid(String),
+    #[error("flora `{0}`: lists no ground (`on`) to grow on")]
+    FloraGround(String),
 }
 
 /// One ore in a planet's rock.
@@ -179,6 +190,62 @@ impl Default for OreSpec {
         }
     }
 }
+
+/// One gatherable object a planet grows: a floor prop (plant, boulder or
+/// fungus, `assets/blocks.toml`) standing in the air cell above a matching
+/// ground block. Where each grows is Boundmore's guess (Boundless's
+/// placement data is not published); every number here is a knob for
+/// `assets/planets.toml`.
+///
+/// Each candidate cell rolls a hash of the seed, the object's name and the
+/// cell, so placement is deterministic and an object's spots do not move
+/// when others are added to the list.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct FloraSpec {
+    pub block: String,
+    /// Ground blocks it grows on (the block right under it).
+    pub on: Vec<String>,
+    /// Chance per matching ground cell (0.002 is about one per 500).
+    pub density: f64,
+    /// On cave floors underground instead of on the surface.
+    pub cave: bool,
+    /// For cave flora: how far below the column's surface the cell it stands
+    /// in lies, inclusive. At least 1.
+    pub min_depth: i64,
+    pub max_depth: i64,
+    /// World heights the cell it stands in may be at, inclusive.
+    pub min_y: i64,
+    pub max_y: i64,
+    /// Only within [`NEAR_WATER`] columns of open water (shores).
+    pub near_water: bool,
+    /// Patches: when above 0, the size in blocks of a noise whose high
+    /// ground alone grows it (above `patch_threshold`). 0 grows it
+    /// everywhere its ground is.
+    pub patch: f64,
+    pub patch_threshold: f64,
+}
+
+impl Default for FloraSpec {
+    fn default() -> Self {
+        Self {
+            block: String::new(),
+            on: Vec::new(),
+            density: 0.002,
+            cave: false,
+            min_depth: 1,
+            max_depth: i64::MAX,
+            min_y: 1,
+            max_y: i64::MAX,
+            near_water: false,
+            patch: 0.0,
+            patch_threshold: 0.0,
+        }
+    }
+}
+
+/// How many columns away open water may be for flora that grows by it.
+pub const NEAR_WATER: i64 = 2;
 
 impl Default for PlanetGenConfig {
     fn default() -> Self {
@@ -224,6 +291,7 @@ impl Default for PlanetGenConfig {
                     min_depth: 0,
                 },
             ],
+            flora: Vec::new(),
             colours: BTreeMap::new(),
         }
     }
@@ -234,6 +302,7 @@ impl PlanetGenConfig {
     /// colour on a colourable block.
     pub fn check(&self, blocks: &BlockRegistry) -> Result<(), ConfigError> {
         Ids::resolve(self, blocks)?;
+        Flora::resolve(self, blocks, 1)?;
         BlockColours::resolve(&self.colours, blocks).map(|_| ())
     }
 }
@@ -272,6 +341,53 @@ struct Ore {
     min_y: i64,
     max_y: i64,
     min_depth: i64,
+}
+
+/// A [`FloraSpec`] resolved to ids, with its patch noise.
+struct Flora {
+    block: BlockId,
+    on: Vec<BlockId>,
+    density: f64,
+    cave: bool,
+    min_depth: i64,
+    max_depth: i64,
+    min_y: i64,
+    max_y: i64,
+    near_water: bool,
+    /// Hash key: the seed mixed with the object's name.
+    key: u64,
+    patch: Option<(Fbm, f64)>,
+}
+
+impl Flora {
+    fn resolve(cfg: &PlanetGenConfig, r: &BlockRegistry, width: i64) -> Result<Vec<Self>, ConfigError> {
+        cfg.flora
+            .iter()
+            .map(|f| {
+                let block = r.id(&f.block)?;
+                if r.get(block).solid {
+                    return Err(ConfigError::FloraSolid(f.block.clone()));
+                }
+                if f.on.is_empty() {
+                    return Err(ConfigError::FloraGround(f.block.clone()));
+                }
+                let key = cfg.seed ^ name_hash(&f.block) ^ 0xf104a;
+                Ok(Self {
+                    block,
+                    on: f.on.iter().map(|n| r.id(n)).collect::<Result<_, _>>()?,
+                    density: f.density,
+                    cave: f.cave,
+                    min_depth: f.min_depth.max(1),
+                    max_depth: f.max_depth,
+                    min_y: f.min_y,
+                    max_y: f.max_y,
+                    near_water: f.near_water,
+                    key,
+                    patch: (f.patch > 0.0).then(|| (Fbm::new(key, width, f.patch, 2, 0.5), f.patch_threshold)),
+                })
+            })
+            .collect()
+    }
 }
 
 struct Ids {
@@ -500,6 +616,7 @@ pub struct Generator {
     cfg: PlanetGenConfig,
     ids: Ids,
     ores: Vec<Ore>,
+    flora: Vec<Flora>,
     colours: BlockColours,
     region_a: Fbm,
     region_b: Fbm,
@@ -588,10 +705,12 @@ impl Generator {
                 min_depth: o.min_depth,
             })
             .collect();
+        let flora = Flora::resolve(&cfg, registry, w)?;
         Ok(Self {
             shape,
             ids,
             ores,
+            flora,
             colours,
             // Keys 1 to 8 are the terrain's and 9 up the ores'; these stay
             // clear of any ore list a kind could hold.
@@ -833,6 +952,7 @@ impl Generator {
         }
 
         self.place_trees(pos, &mut blocks, &height_at, &regions);
+        self.place_flora(origin, &mut blocks, &height_at);
         Chunk::from_dense_states(&blocks)
     }
 
@@ -993,6 +1113,80 @@ impl Generator {
         }
     }
 
+    /// Gatherable objects, after the trees so nothing grows inside a trunk.
+    /// A prop stands in an air cell (never water, ice or a solid) whose
+    /// ground, the block right under it, is in the same chunk: what grows in
+    /// a chunk then depends only on that chunk's own blocks, so a prop never
+    /// floats over ground a player dug out of a saved chunk below. (Cells at
+    /// the bottom of a chunk grow nothing; that costs a thirty-second of the
+    /// spots.) One prop per cell: the first in the list to grow there.
+    fn place_flora(&self, origin: BlockPos, blocks: &mut [BlockState], height_at: &impl Fn(i64, i64) -> i64) {
+        if self.flora.is_empty() {
+            return;
+        }
+        let cs = CHUNK_SIZE as i64;
+        let air = self.ids.air;
+        let surface = self.flora.iter().any(|f| !f.cave);
+        // The shallowest any cave flora grows.
+        let cave_depth = self.flora.iter().filter(|f| f.cave).map(|f| f.min_depth).min();
+        let index = |lx: i64, ly: i64, lz: i64| LocalPos::new(lx as u8, ly as u8, lz as u8).index();
+        for lz in 0..cs {
+            for lx in 0..cs {
+                let h = height_at(lx, lz);
+                let (wx, wz) = (origin.x + lx, origin.z + lz);
+                let grow = |ly: i64, cave: bool, blocks: &mut [BlockState]| {
+                    let cell = index(lx, ly, lz);
+                    if blocks[cell].id != air {
+                        return;
+                    }
+                    let ground = blocks[index(lx, ly - 1, lz)].id;
+                    let wy = origin.y + ly;
+                    let depth = h - wy;
+                    for f in &self.flora {
+                        if f.cave != cave
+                            || wy < f.min_y
+                            || wy > f.max_y
+                            || (cave && (depth < f.min_depth || depth > f.max_depth))
+                            || !f.on.contains(&ground)
+                            || hash01(f.key, wx, wy, wz) >= f.density
+                        {
+                            continue;
+                        }
+                        if let Some((noise, above)) = &f.patch
+                            && noise.sample2(wx as f64, wz as f64, self.width) <= *above
+                        {
+                            continue;
+                        }
+                        if f.near_water && !self.near_water(height_at, lx, lz) {
+                            continue;
+                        }
+                        blocks[cell] = BlockState::plain(f.block);
+                        return;
+                    }
+                };
+                if surface {
+                    let ly = h + 1 - origin.y;
+                    if (1..cs).contains(&ly) {
+                        grow(ly, false, blocks);
+                    }
+                }
+                if let Some(min_depth) = cave_depth {
+                    let top = (h - min_depth - origin.y).min(cs - 1);
+                    for ly in 1..=top {
+                        grow(ly, true, blocks);
+                    }
+                }
+            }
+        }
+    }
+
+    /// Whether a column within [`NEAR_WATER`] of chunk column `(lx, lz)`
+    /// holds open water (its surface lies under the water line).
+    fn near_water(&self, height_at: &impl Fn(i64, i64) -> i64, lx: i64, lz: i64) -> bool {
+        (-NEAR_WATER..=NEAR_WATER)
+            .any(|dz| (-NEAR_WATER..=NEAR_WATER).any(|dx| height_at(lx + dx, lz + dz) < self.water_level))
+    }
+
     /// A safe place to stand, and for the server's warp shrine: dry, nearly
     /// flat land near the planet's origin, not over a cave, with no tree
     /// close enough to reach over it. Returns the first air block above the
@@ -1085,9 +1279,20 @@ mod tests {
 
     /// A kind's settings as planets made before M8 saved them: the same, but
     /// without the wayshard ore appended to every kind's list.
-    fn before_wayshards(mut cfg: PlanetGenConfig) -> PlanetGenConfig {
+    fn before_wayshards(cfg: PlanetGenConfig) -> PlanetGenConfig {
+        let mut cfg = before_m11(cfg);
         assert_eq!(cfg.ores.last().map(|o| o.block.as_str()), Some("wayshard_vein"));
         cfg.ores.pop();
+        cfg
+    }
+
+    /// A kind's settings as planets made before M11 saved them: without the
+    /// relic seam at the end of the ores, and with no flora.
+    fn before_m11(mut cfg: PlanetGenConfig) -> PlanetGenConfig {
+        assert_eq!(cfg.ores.last().map(|o| o.block.as_str()), Some("relic_seam"));
+        assert!(!cfg.flora.is_empty());
+        cfg.ores.pop();
+        cfg.flora.clear();
         cfg
     }
 
@@ -1280,8 +1485,10 @@ mod tests {
         let rock = ["stone", "deep_stone", "sandstone"].map(id);
         let wayshard = id("wayshard_vein");
         for (name, pinned) in PINNED_M7 {
-            let with = kinds.get(name).unwrap().generation(42);
-            let without = before_wayshards(with.clone());
+            // As planets made between M8 and M11 have it, and before M8.
+            let full = kinds.get(name).unwrap().generation(42);
+            let with = before_m11(full.clone());
+            let without = before_wayshards(full);
             let shape = PlanetShape::new(64, 12);
             let old = Generator::new(shape, without, &blocks).unwrap();
             let new = Generator::new(shape, with, &blocks).unwrap();
@@ -1326,14 +1533,266 @@ mod tests {
     // borders got their wobble and the temperate greens were retuned; no
     // planet had been made by the earlier version 3 outside tests. The kinds
     // were re-pinned again for M8's wayshards (2026-10-19), with the old pins
-    // kept in `PINNED_M7` for planets made before.
+    // kept in `PINNED_M7` for planets made before, and for M11's relic seam
+    // and flora (2026-10-20), with the old pins kept in `PINNED_M8`. Both
+    // were changes to the kinds' data alone: the default settings (no flora)
+    // keep their pin, and a planet's saved settings still make its old
+    // terrain (`appending_m11_only_adds_relic_and_props`).
     const PINNED: [(&str, u64); 5] = [
         ("default", 0x6bc9_e59d_8877_7736),
+        ("temperate", 0xb7f4_90e8_ceaf_2736),
+        ("arid", 0x143e_1e07_0a9f_c1e7),
+        ("frozen", 0xdcae_5ff1_56e3_06b5),
+        ("lush", 0x25eb_0f8a_8283_a981),
+    ];
+
+    /// M11 appended the relic seam to every kind's ores and gave every kind
+    /// flora. Planets made before keep their saved settings and so their
+    /// terrain exactly (these are the pins from before M11); the server
+    /// appends the new entries on opening, which may only turn rock into
+    /// relic seam and air into a prop standing on its ground.
+    #[test]
+    fn appending_m11_only_adds_relic_and_props() {
+        let blocks = BlockRegistry::builtin();
+        let kinds = PlanetKinds::builtin(&blocks);
+        let rock = ["stone", "deep_stone", "sandstone"].map(id);
+        let relic = id("relic_seam");
+        for (name, pinned) in PINNED_M8 {
+            let with = kinds.get(name).unwrap().generation(42);
+            let props: Vec<BlockId> = with.flora.iter().map(|f| id(&f.block)).collect();
+            let shape = PlanetShape::new(64, 12);
+            let old = Generator::new(shape, before_m11(with.clone()), &blocks).unwrap();
+            let new = Generator::new(shape, with, &blocks).unwrap();
+            assert_eq!(fingerprint(&old), pinned, "{name} before M11");
+            let (mut relics, mut grown) = (0, 0);
+            for x in 0..10 {
+                for y in 1..8 {
+                    let pos = ChunkPos::new(x * 7, y, x * 13);
+                    let (a, b) = (old.generate(pos).to_dense_states(), new.generate(pos).to_dense_states());
+                    for (a, b) in a.iter().zip(&b) {
+                        if a == b {
+                            continue;
+                        }
+                        if b.id == relic {
+                            assert!(rock.contains(&a.id), "{name}: {a:?} became relic");
+                            relics += 1;
+                        } else {
+                            assert!(a.id.is_air() && props.contains(&b.id), "{name}: {a:?} became {b:?}");
+                            grown += 1;
+                        }
+                    }
+                }
+            }
+            assert!(relics > 0 && grown > 0, "{name}: {relics} relic, {grown} props");
+        }
+    }
+    const PINNED_M8: [(&str, u64); 4] = [
         ("temperate", 0x3608_579d_2236_4d0b),
         ("arid", 0x5876_767f_47f6_8745),
         ("frozen", 0x9a68_3b2f_8daa_0e57),
         ("lush", 0x3f72_0658_6120_3994),
     ];
+
+    /// A prop found in a sample: (block, its world position, the ground
+    /// under it).
+    type Prop = (BlockId, BlockPos, BlockId);
+
+    /// Every prop in a sample of chunks, and the cells a prop could stand
+    /// in, by (ground under it, whether in a cave): open cells (air, or a
+    /// prop) over a block in the same chunk, on the surface or under it.
+    fn scan(g: &Generator, chunks: impl Iterator<Item = ChunkPos>) -> (Vec<Prop>, BTreeMap<(BlockId, bool), usize>) {
+        let blocks = BlockRegistry::builtin();
+        let flora: Vec<BlockId> = g.flora.iter().map(|f| f.block).collect();
+        let cs = CHUNK_SIZE as usize;
+        let (mut props, mut spots) = (Vec::new(), BTreeMap::new());
+        for pos in chunks {
+            let c = g.generate(pos);
+            if c.uniform().is_some() {
+                continue;
+            }
+            let dense = c.to_dense();
+            let o = pos.origin();
+            let heights: Vec<i64> = (0..cs * cs)
+                .map(|i| g.surface_height(o.x + (i % cs) as i64, o.z + (i / cs) as i64))
+                .collect();
+            for (i, &b) in dense.iter().enumerate() {
+                let l = LocalPos::from_index(i);
+                let is_prop = flora.contains(&b);
+                if is_prop {
+                    assert!(l.y > 0, "a prop at the bottom of its chunk");
+                    assert!(!blocks.get(b).solid);
+                }
+                if l.y == 0 || !(b.is_air() || is_prop) {
+                    continue;
+                }
+                let (x, y, z) = (o.x + l.x as i64, o.y + l.y as i64, o.z + l.z as i64);
+                let h = heights[l.z as usize * cs + l.x as usize];
+                let ground = dense[LocalPos::new(l.x, l.y - 1, l.z).index()];
+                if is_prop {
+                    props.push((b, BlockPos::new(x, y, z), ground));
+                }
+                let cave = if y == h + 1 {
+                    false
+                } else if y < h {
+                    true
+                } else {
+                    continue;
+                };
+                *spots.entry((ground, cave)).or_default() += 1;
+            }
+        }
+        (props, spots)
+    }
+
+    fn sample_chunks() -> impl Iterator<Item = ChunkPos> {
+        (0..12).flat_map(|cz| (0..12).flat_map(move |cx| (1..9).map(move |cy| ChunkPos::new(cx * 5, cy, cz * 5))))
+    }
+
+    /// Each prop stands where some entry of its kind's list allows: on its
+    /// ground, on the surface or a cave floor at its depth, in its heights,
+    /// by water if it must be, in its patches. Every listed object grows
+    /// somewhere, and fungi only underground.
+    #[test]
+    fn flora_grows_only_where_its_rules_allow() {
+        let names = BlockRegistry::builtin();
+        for (name, _, g) in all_kinds() {
+            let (found, spots) = scan(&g, sample_chunks());
+            let mut counts: BTreeMap<String, usize> = BTreeMap::new();
+            for &(b, p, ground) in &found {
+                let h = g.surface_height(p.x, p.z);
+                let def = names.get(b);
+                *counts.entry(def.name.clone()).or_default() += 1;
+                let ok = g.flora.iter().any(|f| {
+                    let depth = h - p.y;
+                    f.block == b
+                        && f.on.contains(&ground)
+                        && (p.y >= f.min_y && p.y <= f.max_y)
+                        && if f.cave {
+                            depth >= f.min_depth && depth <= f.max_depth
+                        } else {
+                            p.y == h + 1
+                        }
+                        && (!f.near_water
+                            || (-NEAR_WATER..=NEAR_WATER).any(|dz| {
+                                (-NEAR_WATER..=NEAR_WATER)
+                                    .any(|dx| g.surface_height(p.x + dx, p.z + dz) < g.water_level)
+                            }))
+                        && f.patch
+                            .as_ref()
+                            .is_none_or(|(n, t)| n.sample2(p.x as f64, p.z as f64, g.width) > *t)
+                });
+                assert!(ok, "{name}: {} at {p:?} on {}", def.name, names.get(ground).name);
+                if def.model == bm_core::Model::Fungus {
+                    assert!(p.y < h, "{name}: {} above ground at {p:?}", def.name);
+                }
+            }
+            eprintln!("{name}: {counts:?}");
+            // Every object whose ground the sample offers often enough grew.
+            for f in &g.flora {
+                let n: usize =
+                    f.on.iter()
+                        .map(|b| spots.get(&(*b, f.cave)).copied().unwrap_or(0))
+                        .sum();
+                let expected = n as f64 * f.density;
+                let block = &names.get(f.block).name;
+                if expected >= 10.0 && f.patch.is_none() && !f.near_water {
+                    assert!(counts.get(block).copied().unwrap_or(0) > 0, "{name}: no {block} grew");
+                }
+            }
+            for f in &g.cfg.flora {
+                if ["spikeleaf", "boulder", "glowcap", "tarspot_cap"].contains(&f.block.as_str()) {
+                    assert!(counts.contains_key(&f.block), "{name}: no {} grew", f.block);
+                }
+            }
+        }
+    }
+
+    /// The starter world's fibrous leaves: spikeleaf grows on its beaches
+    /// and in dry patches of its turf, within reach of a new player.
+    #[test]
+    fn spikeleaf_grows_on_the_starter_worlds_sand_and_turf() {
+        let g = kind("temperate");
+        let spike = id("spikeleaf");
+        let on: std::collections::HashSet<BlockId> = scan(&g, sample_chunks())
+            .0
+            .into_iter()
+            .filter(|(b, ..)| *b == spike)
+            .map(|(.., ground)| ground)
+            .collect();
+        assert!(on.contains(&id("sand")) && on.contains(&id("turf")), "{on:?}");
+    }
+
+    /// The relic seam lies 20 or more above the floor and 3 or more under
+    /// the surface on every kind, about as common as copper.
+    #[test]
+    fn relic_seam_keeps_its_depths() {
+        let (relic, copper) = (id("relic_seam"), id("copper_vein"));
+        for (name, _, g) in all_kinds() {
+            let (mut relics, mut coppers) = (0, 0);
+            for cz in 0..8 {
+                for cx in 0..8 {
+                    for cy in 0..6 {
+                        let p = ChunkPos::new(cx * 3, cy, cz * 3);
+                        let c = g.generate(p);
+                        if !c.may_contain(relic) && !c.may_contain(copper) {
+                            continue;
+                        }
+                        for (i, b) in c.to_dense().into_iter().enumerate() {
+                            let l = LocalPos::from_index(i);
+                            let w = BlockPos::new(
+                                p.origin().x + l.x as i64,
+                                p.origin().y + l.y as i64,
+                                p.origin().z + l.z as i64,
+                            );
+                            if b == relic {
+                                assert!(w.y >= 20, "{name}: relic at {w:?}");
+                                assert!(w.y <= g.surface_height(w.x, w.z) - 3, "{name}: shallow relic at {w:?}");
+                                relics += 1;
+                            } else if b == copper {
+                                coppers += 1;
+                            }
+                        }
+                    }
+                }
+            }
+            eprintln!("{name}: relic {relics}, copper {coppers}");
+            assert!(
+                relics * 3 > coppers && relics < coppers * 3,
+                "{name}: relic {relics}, copper {coppers}"
+            );
+        }
+    }
+
+    #[test]
+    fn bad_flora_is_refused() {
+        let blocks = BlockRegistry::builtin();
+        let with = |block: &str, on: &[&str]| PlanetGenConfig {
+            flora: vec![FloraSpec {
+                block: block.into(),
+                on: on.iter().map(|s| s.to_string()).collect(),
+                ..Default::default()
+            }],
+            ..Default::default()
+        };
+        assert!(with("boulder", &["stone"]).check(&blocks).is_ok());
+        assert!(matches!(
+            with("stone", &["stone"]).check(&blocks),
+            Err(ConfigError::FloraSolid(_))
+        ));
+        assert!(matches!(
+            with("boulder", &[]).check(&blocks),
+            Err(ConfigError::FloraGround(_))
+        ));
+        assert!(matches!(
+            with("nope", &["stone"]).check(&blocks),
+            Err(ConfigError::Block(_))
+        ));
+        assert!(matches!(
+            with("boulder", &["nope"]).check(&blocks),
+            Err(ConfigError::Block(_))
+        ));
+        assert!(Generator::new(PlanetShape::new(8, 4), with("stone", &["stone"]), &blocks).is_err());
+    }
 
     #[test]
     fn interpolated_lookup_matches_bulk_generation() {
@@ -1598,10 +2057,14 @@ mod tests {
                 blocks.get(below).name
             );
             for dy in 0..3 {
-                assert_eq!(
-                    block_at(&g, s.offset(0, dy, 0)),
-                    BlockId::AIR,
-                    "{name}: {dy} above the ground"
+                // A plant or boulder may stand on the spot itself (the
+                // server's plaza clears it); nothing else.
+                let b = block_at(&g, s.offset(0, dy, 0));
+                let prop = dy == 0 && g.cfg.flora.iter().any(|f| blocks.id(&f.block).ok() == Some(b));
+                assert!(
+                    b == BlockId::AIR || prop,
+                    "{name}: {} {dy} above the ground",
+                    blocks.get(b).name
                 );
             }
             // Level ground around it for the shrine.

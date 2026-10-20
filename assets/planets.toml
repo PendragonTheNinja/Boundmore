@@ -37,12 +37,29 @@
 #            at the end.
 #       block, size (vein size, blocks), threshold (lower is richer),
 #       min_y, max_y (world heights, inclusive), min_depth (below the surface)
+#     flora  gatherable objects (M11): plants, boulders and fungi, props
+#            standing on the ground. None by default. Tried in order at each
+#            cell; the first that grows there wins, so add new ones at the
+#            end (an older planet gains the kind's flora appended to its own,
+#            in chunks nobody has saved). Where each grows is a guess
+#            (Boundless's placement data is not published): tune freely.
+#       block      the prop (a non-solid block in assets/blocks.toml)
+#       on         ground blocks it stands on (the block right under it)
+#       density    chance per matching ground cell (0.002: one in 500)
+#       cave       true: on cave floors, min_depth to max_depth blocks under
+#                  the surface (default 1 and no limit); false: the surface
+#       min_y, max_y         world heights of the cell it stands in
+#       near_water true: only within 2 columns of open water
+#       patch, patch_threshold   when patch (blocks) is above 0, it grows
+#                  only in patches that size where a noise exceeds the
+#                  threshold (0.15 covers about a fifth of the land)
 
 [[kind]]
 name = "temperate"
 tier = 1
-# Generation: every default but the ores: coal and copper as by default
-# (in that order, so they lie where they always did), then wayshards.
+# Generation: every default but the ores and flora: coal and copper as by
+# default (in that order, so they lie where they always did), then
+# wayshards and the relic seam.
 [kind.look]
 day_zenith = [0.08, 0.26, 0.78]
 day_horizon = [0.42, 0.62, 0.90]
@@ -75,6 +92,98 @@ size = 6.0
 threshold = 0.64
 max_y = 68
 min_depth = 24
+[[kind.generation.ores]]
+# Relic seam (Boundless's ancient tech remnant): every tier, 20 or more
+# above the floor, 3 or more under the surface (tuning 4.3). Its richness,
+# about copper's, is a guess.
+block = "relic_seam"
+size = 12.0
+threshold = 0.58
+min_y = 20
+min_depth = 3
+# Flora (all placement a guess): spikeleaf on the beaches and in dry
+# patches of turf so a new player finds fibrous leaves early, ferns and
+# roots on turf, lilies by the water, snowbells above the snow line,
+# boulders on rock and turf, fungi in caves.
+[[kind.generation.flora]]
+block = "spikeleaf"
+on = ["sand"]
+density = 0.02
+[[kind.generation.flora]]
+block = "spikeleaf"
+on = ["turf"]
+density = 0.006
+patch = 96.0
+patch_threshold = 0.15
+[[kind.generation.flora]]
+block = "nightlily"
+on = ["turf", "sand"]
+density = 0.03
+near_water = true
+[[kind.generation.flora]]
+block = "curlfern"
+on = ["turf"]
+density = 0.002
+[[kind.generation.flora]]
+block = "hornroot"
+on = ["turf"]
+density = 0.0012
+[[kind.generation.flora]]
+block = "frostbell"
+on = ["snow"]
+density = 0.002
+[[kind.generation.flora]]
+block = "boulder"
+on = ["stone", "turf"]
+density = 0.0008
+[[kind.generation.flora]]
+block = "chip_boulder"
+on = ["stone", "turf"]
+density = 0.0003
+[[kind.generation.flora]]
+block = "stacked_boulder"
+on = ["stone", "turf"]
+density = 0.0003
+[[kind.generation.flora]]
+block = "tarspot_cap"
+on = ["stone", "deep_stone", "sandstone", "soil"]
+density = 0.006
+cave = true
+min_depth = 4
+max_depth = 40
+[[kind.generation.flora]]
+block = "burst_cap"
+on = ["stone", "deep_stone", "sandstone", "soil"]
+density = 0.005
+cave = true
+min_depth = 4
+max_depth = 48
+[[kind.generation.flora]]
+block = "tongue_bracket"
+on = ["stone", "deep_stone", "sandstone", "soil"]
+density = 0.005
+cave = true
+min_depth = 10
+max_depth = 60
+[[kind.generation.flora]]
+block = "branch_coral"
+on = ["stone", "deep_stone", "sandstone", "soil"]
+density = 0.005
+cave = true
+min_depth = 20
+max_depth = 80
+[[kind.generation.flora]]
+block = "weeping_cap"
+on = ["stone", "deep_stone", "sandstone", "soil"]
+density = 0.005
+cave = true
+min_depth = 30
+[[kind.generation.flora]]
+block = "glowcap"
+on = ["stone", "deep_stone", "sandstone", "soil"]
+density = 0.006
+cave = true
+min_depth = 50
 
 [[kind]]
 name = "arid"
@@ -128,6 +237,81 @@ size = 6.0
 threshold = 0.64
 max_y = 68
 min_depth = 24
+[[kind.generation.ores]]
+# Relic seam (Boundless's ancient tech remnant): every tier, 20 or more
+# above the floor, 3 or more under the surface (tuning 4.3). Its richness,
+# about copper's, is a guess.
+block = "relic_seam"
+size = 12.0
+threshold = 0.58
+min_y = 20
+min_depth = 3
+# Flora (a guess): spikeleaf plentiful on the dunes, with cactus and
+# aloe (no turf here, so they take the sand); boulders on sand and rock.
+[[kind.generation.flora]]
+block = "spikeleaf"
+on = ["sand"]
+density = 0.006
+[[kind.generation.flora]]
+block = "ridge_cactus"
+on = ["sand"]
+density = 0.003
+[[kind.generation.flora]]
+block = "knot_aloe"
+on = ["sand"]
+density = 0.0015
+[[kind.generation.flora]]
+block = "boulder"
+on = ["sand", "sandstone", "stone"]
+density = 0.0006
+[[kind.generation.flora]]
+block = "tapered_boulder"
+on = ["sand", "sandstone", "stone"]
+density = 0.0005
+[[kind.generation.flora]]
+block = "stacked_boulder"
+on = ["sand", "sandstone", "stone"]
+density = 0.0003
+[[kind.generation.flora]]
+block = "tarspot_cap"
+on = ["stone", "deep_stone", "sandstone", "soil"]
+density = 0.006
+cave = true
+min_depth = 4
+max_depth = 40
+[[kind.generation.flora]]
+block = "burst_cap"
+on = ["stone", "deep_stone", "sandstone", "soil"]
+density = 0.005
+cave = true
+min_depth = 4
+max_depth = 48
+[[kind.generation.flora]]
+block = "tongue_bracket"
+on = ["stone", "deep_stone", "sandstone", "soil"]
+density = 0.005
+cave = true
+min_depth = 10
+max_depth = 60
+[[kind.generation.flora]]
+block = "branch_coral"
+on = ["stone", "deep_stone", "sandstone", "soil"]
+density = 0.005
+cave = true
+min_depth = 20
+max_depth = 80
+[[kind.generation.flora]]
+block = "weeping_cap"
+on = ["stone", "deep_stone", "sandstone", "soil"]
+density = 0.005
+cave = true
+min_depth = 30
+[[kind.generation.flora]]
+block = "glowcap"
+on = ["stone", "deep_stone", "sandstone", "soil"]
+density = 0.006
+cave = true
+min_depth = 50
 
 [[kind]]
 name = "frozen"
@@ -179,6 +363,72 @@ size = 6.0
 threshold = 0.64
 max_y = 68
 min_depth = 24
+[[kind.generation.ores]]
+# Relic seam (Boundless's ancient tech remnant): every tier, 20 or more
+# above the floor, 3 or more under the surface (tuning 4.3). Its richness,
+# about copper's, is a guess.
+block = "relic_seam"
+size = 12.0
+threshold = 0.58
+min_y = 20
+min_depth = 3
+# Flora (a guess): snowbells on the snow; boulders on snow and rock.
+[[kind.generation.flora]]
+block = "frostbell"
+on = ["snow"]
+density = 0.004
+[[kind.generation.flora]]
+block = "boulder"
+on = ["snow", "stone"]
+density = 0.0006
+[[kind.generation.flora]]
+block = "ring_boulder"
+on = ["snow", "stone"]
+density = 0.0005
+[[kind.generation.flora]]
+block = "stalk_boulder"
+on = ["snow", "stone"]
+density = 0.0003
+[[kind.generation.flora]]
+block = "tarspot_cap"
+on = ["stone", "deep_stone", "sandstone", "soil"]
+density = 0.006
+cave = true
+min_depth = 4
+max_depth = 40
+[[kind.generation.flora]]
+block = "burst_cap"
+on = ["stone", "deep_stone", "sandstone", "soil"]
+density = 0.005
+cave = true
+min_depth = 4
+max_depth = 48
+[[kind.generation.flora]]
+block = "tongue_bracket"
+on = ["stone", "deep_stone", "sandstone", "soil"]
+density = 0.005
+cave = true
+min_depth = 10
+max_depth = 60
+[[kind.generation.flora]]
+block = "branch_coral"
+on = ["stone", "deep_stone", "sandstone", "soil"]
+density = 0.005
+cave = true
+min_depth = 20
+max_depth = 80
+[[kind.generation.flora]]
+block = "weeping_cap"
+on = ["stone", "deep_stone", "sandstone", "soil"]
+density = 0.005
+cave = true
+min_depth = 30
+[[kind.generation.flora]]
+block = "glowcap"
+on = ["stone", "deep_stone", "sandstone", "soil"]
+density = 0.006
+cave = true
+min_depth = 50
 
 [[kind]]
 name = "lush"
@@ -230,3 +480,95 @@ size = 6.0
 threshold = 0.64
 max_y = 68
 min_depth = 24
+[[kind.generation.ores]]
+# Relic seam (Boundless's ancient tech remnant): every tier, 20 or more
+# above the floor, 3 or more under the surface (tuning 4.3). Its richness,
+# about copper's, is a guess.
+block = "relic_seam"
+size = 12.0
+threshold = 0.58
+min_y = 20
+min_depth = 3
+# Flora (a guess): the most plants, lilies by the water, spikeleaf on
+# the beaches, snowbells on the peaks, boulders on rock and turf.
+[[kind.generation.flora]]
+block = "spikeleaf"
+on = ["sand"]
+density = 0.015
+[[kind.generation.flora]]
+block = "nightlily"
+on = ["turf", "sand"]
+density = 0.04
+near_water = true
+[[kind.generation.flora]]
+block = "stiltfrond"
+on = ["turf"]
+density = 0.002
+[[kind.generation.flora]]
+block = "curlfern"
+on = ["turf"]
+density = 0.002
+[[kind.generation.flora]]
+block = "hornroot"
+on = ["turf"]
+density = 0.0015
+[[kind.generation.flora]]
+block = "knot_aloe"
+on = ["turf"]
+density = 0.001
+[[kind.generation.flora]]
+block = "frostbell"
+on = ["snow"]
+density = 0.002
+[[kind.generation.flora]]
+block = "boulder"
+on = ["stone", "turf"]
+density = 0.0008
+[[kind.generation.flora]]
+block = "stalk_boulder"
+on = ["stone", "turf"]
+density = 0.0004
+[[kind.generation.flora]]
+block = "stacked_boulder"
+on = ["stone", "turf"]
+density = 0.0003
+[[kind.generation.flora]]
+block = "tarspot_cap"
+on = ["stone", "deep_stone", "sandstone", "soil"]
+density = 0.006
+cave = true
+min_depth = 4
+max_depth = 40
+[[kind.generation.flora]]
+block = "burst_cap"
+on = ["stone", "deep_stone", "sandstone", "soil"]
+density = 0.005
+cave = true
+min_depth = 4
+max_depth = 48
+[[kind.generation.flora]]
+block = "tongue_bracket"
+on = ["stone", "deep_stone", "sandstone", "soil"]
+density = 0.005
+cave = true
+min_depth = 10
+max_depth = 60
+[[kind.generation.flora]]
+block = "branch_coral"
+on = ["stone", "deep_stone", "sandstone", "soil"]
+density = 0.005
+cave = true
+min_depth = 20
+max_depth = 80
+[[kind.generation.flora]]
+block = "weeping_cap"
+on = ["stone", "deep_stone", "sandstone", "soil"]
+density = 0.005
+cave = true
+min_depth = 30
+[[kind.generation.flora]]
+block = "glowcap"
+on = ["stone", "deep_stone", "sandstone", "soil"]
+density = 0.006
+cave = true
+min_depth = 50
