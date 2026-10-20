@@ -3,6 +3,7 @@
 //! windowing, sockets or the filesystem.
 
 pub mod block;
+pub mod chisel;
 pub mod chunk;
 pub mod colours;
 pub mod coords;
@@ -13,6 +14,7 @@ pub mod look;
 pub mod movement;
 pub mod planet;
 pub mod plots;
+pub mod portal;
 pub mod raycast;
 pub mod recipes;
 pub mod shape;
@@ -29,9 +31,12 @@ pub use inventory::{HOTBAR_SLOTS, INVENTORY_SLOTS, Inventory};
 pub use items::{ItemDef, ItemError, ItemId, ItemKind, ItemRegistry, ItemStack, ToolClass};
 pub use light::{BlockSource, ChunkLight, Light, LightMap, MAX_LIGHT};
 pub use look::{NO_TINT, PlanetLook};
-pub use movement::{MoveConfig, PhysicsWorld, PlayerInput, PlayerState, TICK_DT, TICK_HZ};
+pub use movement::{
+    GrappleSpec, Hook, MoveConfig, PhysicsWorld, PlayerInput, PlayerState, StepEvents, TICK_DT, TICK_HZ,
+};
 pub use planet::PlanetShape;
 pub use plots::{PLOT_SIZE, PlotPos};
+pub use portal::{FrameError, PortalAxis, PortalFrame, find_frame};
 pub use raycast::{RayHit, raycast, raycast_shaped};
 pub use recipes::{Recipe, RecipeBook, RecipeError};
 pub use shape::{ShapeFamily, edge_pairs, octant};

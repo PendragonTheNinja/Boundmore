@@ -6,8 +6,8 @@ use crate::claims::{Claims, outline};
 use crate::icons::icon_for;
 use crate::items::Items;
 use crate::menus::{
-    self, Arrival, CraftingView, Drag, Hud, ItemIcons, LiveStation, LoginForm, Menu, Notices, ShrineTab, StorageWindow,
-    TravelView, UiAction,
+    self, Arrival, CraftingView, Drag, Hud, ItemIcons, LiveStation, LoginForm, Menu, Notices, PortalWindow, ShrineTab,
+    StorageWindow, TravelView, UiAction,
 };
 use crate::net::{self, ConnectOptions, Link, NetEvent};
 use crate::predict::{Predictor, RemoteSample, Remotes};
@@ -22,7 +22,7 @@ use bm_core::{
     PlanetShape, PlotPos, RayHit, Shape, TICK_DT, raycast, raycast_shaped,
 };
 use bm_protocol::{
-    ClientDatagram, ClientMsg, EditAction, INPUT_REDUNDANCY, MIN_PASSWORD_LEN, PlanetInfo, PlanetSummary,
+    ClientDatagram, ClientMsg, EditAction, INPUT_REDUNDANCY, MIN_PASSWORD_LEN, PlanetInfo, PlanetSummary, PortalView,
     ServerDatagram, ServerMsg, StorageView, Travel,
 };
 use glam::{DVec3, Vec3};
@@ -53,6 +53,9 @@ const TARGET_LINE: [f32; 4] = [0.95, 0.95, 0.88, 1.0];
 /// Chisel previews: what a left click cuts, what a right click fills back.
 const CUT_LINE: [f32; 4] = [1.0, 0.82, 0.18, 1.0];
 const FILL_LINE: [f32; 4] = [0.45, 0.85, 1.0, 0.9];
+/// Grapple rope and hook (linear RGBA).
+const ROPE_LINE: [f32; 4] = [0.30, 0.20, 0.10, 1.0];
+const HOOK_COLOUR: [f32; 4] = [0.22, 0.22, 0.25, 1.0];
 const XRAY_ALPHA: f32 = 0.22;
 /// The travelling screen stays at least this long (seconds), so a quick
 /// arrival reads as a journey rather than a flicker, then fades out.
@@ -76,7 +79,8 @@ pub struct Options {
     /// `--demo-ui SCREEN`: run offline against `demo.rs`, opening SCREEN
     /// (`hud`, `inventory`, `crafting`, `station`, `claims`, `shrine`,
     /// `travel`, `travelling`, `sky`, `storage`, `chat`, `colours`,
-    /// `coloured-icons`, `reclaim` or `login`).
+    /// `coloured-icons`, `reclaim`, `shapes`, `chisel`, `grapple`, `portal`
+    /// or `login`).
     pub demo: Option<String>,
 }
 
@@ -124,12 +128,17 @@ struct Session {
     edit_seq: u32,
     place_cooldown: f64,
     target: Option<RayHit>,
+    /// What E acts on: as `target`, but portal surfaces (not solid) stop the
+    /// ray too. Never used for breaking or placing.
+    use_target: Option<RayHit>,
     /// With a chisel in hand: the aimed block and what each click would do.
     chisel: Option<(BlockPos, crate::chisel::Plan)>,
     /// The plot claim mode points at.
     claim_target: Option<PlotPos>,
     mining: Option<Mining>,
     warp_shrine: BlockId,
+    portal_conduit: BlockId,
+    portal_surface: BlockId,
     /// Kept to repaint item icons in a new planet's tints.
     textures: TextureSet,
     journey: Option<Journey>,
@@ -150,6 +159,12 @@ impl Session {
         let warp_shrine = registry
             .id("warp_shrine")
             .map_err(|e| format!("the server sent a block catalogue without a warp shrine: {e}"))?;
+        let portal = |name: &str| {
+            registry
+                .id(name)
+                .map_err(|e| format!("the server sent a block catalogue without portals: {e}"))
+        };
+        let (portal_conduit, portal_surface) = (portal("portal_conduit")?, portal("portal_surface")?);
         let shape = w.planet.shape;
         Ok(Self {
             account: w.account,
@@ -169,10 +184,13 @@ impl Session {
             edit_seq: 0,
             place_cooldown: 0.0,
             target: None,
+            use_target: None,
             chisel: None,
             claim_target: None,
             mining: None,
             warp_shrine,
+            portal_conduit,
+            portal_surface,
             textures,
             journey: None,
             reclaim: Vec::new(),
@@ -195,6 +213,7 @@ impl Session {
         self.welcome_tick = t.tick;
         self.welcome_local = local_ticks;
         self.target = None;
+        self.use_target = None;
         self.claim_target = None;
         self.mining = None;
         self.place_cooldown = 0.0;
@@ -209,6 +228,49 @@ impl Session {
             landed: None,
         });
         self.planet = t.planet;
+    }
+
+    /// Moved on this planet (`ServerMsg::Teleport`, through a portal): a
+    /// jump, not a correction. Chunks, claims, remote players and edits in
+    /// flight carry on; what we aimed at and were breaking does not.
+    fn teleport(&mut self, spawn: bm_core::PlayerState, tick: u64) {
+        self.me.jump(spawn, tick);
+        self.target = None;
+        self.use_target = None;
+        self.chisel = None;
+        self.mining = None;
+    }
+
+    /// Aims from `eye` along `dir`, within reach: `target` for breaking and
+    /// placing (solid blocks, cut ones by their kept octants, as the server
+    /// does), `use_target` for E, which open portal surfaces stop too.
+    fn aim(&mut self, eye: DVec3, dir: DVec3) {
+        let world = &self.world;
+        let surface = self.portal_surface;
+        let aim = |surfaces: bool| {
+            raycast_shaped(eye, dir, self.reach, |p| {
+                let st = world.state(p)?;
+                if surfaces && st.id == surface {
+                    return Some(Shape::FULL);
+                }
+                world.flags.solid(st.id).then(|| world.block_shape(p))
+            })
+        };
+        self.target = aim(false);
+        self.use_target = aim(true);
+    }
+
+    /// Whether a block is part of a portal (a conduit, or an open surface).
+    fn is_portal_block(&self, p: BlockPos) -> bool {
+        self.world
+            .block(p)
+            .is_some_and(|b| b == self.portal_conduit || b == self.portal_surface)
+    }
+
+    /// The portal block aimed at for E, if any.
+    fn aiming_at_portal(&self) -> Option<BlockPos> {
+        let hit = self.use_target?;
+        self.is_portal_block(hit.block).then_some(hit.block)
     }
 
     /// Applies a snapshot; one about another planet (sent before we
@@ -237,6 +299,7 @@ impl Session {
                         pos: DVec3::new(o.pos[0] as f64, o.pos[1] as f64, o.pos[2] as f64),
                         yaw: o.yaw,
                         pitch: o.pitch,
+                        hook: o.hook_offset(),
                     },
                 )
             }),
@@ -306,6 +369,8 @@ pub struct App {
     live_station: Option<LiveStation>,
     /// The open storage block's contents as the server last sent them.
     storage_view: Option<StorageView>,
+    /// The open portal window's portal as the server last sent it.
+    portal_view: Option<PortalView>,
     /// The warp shrine window's open tab.
     shrine_tab: ShrineTab,
     /// Storage blocks we closed whose `closed` answer has not come back yet:
@@ -317,6 +382,11 @@ pub struct App {
     status: String,
     keys: HashSet<KeyCode>,
     mouse: [bool; 2],
+    /// A left click not yet sent as a grapple shot (clicks between ticks
+    /// wait for the next one).
+    fire_pending: bool,
+    /// `--demo-ui`: where to put us once the block its hook holds exists.
+    demo_pose: Option<bm_core::PlayerState>,
     grabbed: bool,
     yaw: f64,
     pitch: f64,
@@ -357,6 +427,7 @@ impl App {
             drag: None,
             live_station: None,
             storage_view: None,
+            portal_view: None,
             shrine_tab: ShrineTab::Worlds,
             storage_closing: Vec::new(),
             chat: ChatBox::default(),
@@ -365,6 +436,8 @@ impl App {
             status: "logging in".into(),
             keys: HashSet::new(),
             mouse: [false; 2],
+            fire_pending: false,
+            demo_pose: None,
             grabbed: false,
             yaw: 0.0,
             pitch: 0.0,
@@ -469,6 +542,10 @@ impl App {
         if let Menu::Travel(_) = menu {
             self.shrine_tab = ShrineTab::Worlds;
         }
+        if let Menu::Portal(pos) = menu {
+            self.portal_view = None;
+            self.send(ClientMsg::OpenPortal { pos: Some(pos) });
+        }
         self.menu = Some(menu);
         self.keys.clear();
         self.mouse = [false; 2];
@@ -487,6 +564,10 @@ impl App {
             self.send(ClientMsg::OpenStorage { pos: None });
             self.storage_closing.push(pos);
             self.storage_view = None;
+        }
+        if let Some(Menu::Portal(_)) = self.menu {
+            self.send(ClientMsg::OpenPortal { pos: None });
+            self.portal_view = None;
         }
         let was_open = self.menu.take().is_some();
         self.drag = None;
@@ -552,6 +633,46 @@ impl App {
         // The server names storage by canonical position.
         let pos = s.world.shape.wrap_block(pos);
         self.open_menu(Menu::Storage(pos));
+    }
+
+    /// E on a portal block: open its window, unless it stands on someone
+    /// else's claim or is no portal yet (the server refuses both too; the
+    /// shape rule is told here at once).
+    fn open_portal(&mut self, pos: BlockPos) {
+        let now = self.now();
+        let Some(s) = &self.session else { return };
+        if let Some(c) = s.claims.at(PlotPos::of(pos, s.world.shape))
+            && c.owner != s.account
+        {
+            let text = format!("This land belongs to {}", c.owner);
+            self.notices.push(text, now);
+            return;
+        }
+        if let Err(bm_core::portal::FrameError::Shape) = bm_core::portal::find_frame(pos, |p| s.is_portal_block(p)) {
+            self.notices.push(bm_core::portal::SHAPE_RULE.into(), now);
+            return;
+        }
+        let pos = s.world.shape.wrap_block(pos);
+        self.open_menu(Menu::Portal(pos));
+    }
+
+    /// A `Portal` from the server: the open window's news, or (None) that
+    /// it closed on the server's side: the portal is gone, out of reach or
+    /// not ours. Nothing is asked of the server for that close.
+    fn portal_update(&mut self, view: Option<PortalView>) {
+        if !matches!(self.menu, Some(Menu::Portal(_))) {
+            return;
+        }
+        match view {
+            Some(v) => self.portal_view = Some(v),
+            None => {
+                self.portal_view = None;
+                self.menu = None;
+                if self.session.is_some() && !self.chat.open {
+                    self.set_grab(true);
+                }
+            }
+        }
     }
 
     /// A `Storage` from the server: shown if it is the one open, and closing
@@ -764,6 +885,22 @@ impl App {
         let m = match m {
             ServerMsg::Travel(t) => return self.travel(*t),
             ServerMsg::Storage(view) => return self.storage_update(view),
+            ServerMsg::Portal(view) => return self.portal_update(view),
+            ServerMsg::Teleport { spawn, tick } => {
+                if let Some(Menu::Portal(_)) = self.menu {
+                    self.close_menu(true);
+                }
+                if let Some(s) = &mut self.session {
+                    s.teleport(spawn, tick);
+                }
+                return;
+            }
+            // Refused as the portal window opened (not ours, no portal): the
+            // reason is the notice, and the window waiting for it goes.
+            ServerMsg::Notice { text } if matches!(self.menu, Some(Menu::Portal(_))) && self.portal_view.is_none() => {
+                self.close_menu(true);
+                ServerMsg::Notice { text }
+            }
             m => m,
         };
         let now = self.now();
@@ -800,7 +937,13 @@ impl App {
                     .filter(|i| s.items.registry.contains(i.item) && i.count > 0)
                     .collect();
             }
-            ServerMsg::Welcome(_) | ServerMsg::Refused { .. } | ServerMsg::Travel(_) | ServerMsg::Storage(_) => {}
+            ServerMsg::TokenNames { names } => s.items.set_token_names(names),
+            ServerMsg::Welcome(_)
+            | ServerMsg::Refused { .. }
+            | ServerMsg::Travel(_)
+            | ServerMsg::Storage(_)
+            | ServerMsg::Portal(_)
+            | ServerMsg::Teleport { .. } => {}
         }
     }
 
@@ -857,6 +1000,9 @@ impl App {
             sprint: k(KeyCode::ShiftLeft) || k(KeyCode::ControlLeft),
             yaw,
             pitch,
+            slot: self.session.as_ref().map_or(0, |s| s.selected as u8),
+            fire: false,
+            reel: k(KeyCode::KeyR) as i8 - k(KeyCode::KeyF) as i8,
         }
     }
 
@@ -881,6 +1027,17 @@ impl App {
         s.update_journey(now_s);
         // Nothing is broken or placed on the way between planets.
         let mouse = if s.travelling() { [false; 2] } else { mouse };
+        // A grapple in hand fires (and lets go) with the left button, inside
+        // the simulation, instead of breaking or placing.
+        let grapple = s
+            .items
+            .slot(s.selected)
+            .and_then(|h| s.items.def(&h))
+            .and_then(|d| d.grapple());
+        if grapple.is_none() || !playing || claim_mode || s.travelling() {
+            self.fire_pending = false;
+        }
+        let mouse = if grapple.is_some() { [false; 2] } else { mouse };
 
         // Fixed-rate simulation, decoupled from frame rate. Keeps ticking when
         // the window is hidden or a menu is open, so the server keeps
@@ -892,11 +1049,22 @@ impl App {
         if !s.world.has_chunks_around(s.me.state.pos) {
             self.accumulator = 0.0;
         }
+        if let Some(pose) = self.demo_pose.take_if(|p| {
+            p.hook
+                .and_then(|h| h.stuck)
+                .is_some_and(|b| s.world.block(b).is_some_and(|id| s.world.flags.solid(id)))
+        }) {
+            s.me.teleport(pose);
+        }
         let mut ticks = 0;
         while self.accumulator >= TICK_DT && ticks < MAX_TICKS_PER_FRAME {
             self.accumulator -= TICK_DT;
             ticks += 1;
-            let seq = s.me.tick(input, &s.movement, s.world.shape, &s.world);
+            let input = PlayerInput {
+                fire: std::mem::take(&mut self.fire_pending),
+                ..input
+            };
+            let seq = s.me.tick(input, grapple, &s.movement, s.world.shape, &s.world);
             link.send_datagram(ClientDatagram::Input {
                 latest: seq,
                 inputs: s.me.recent_inputs(INPUT_REDUNDANCY),
@@ -916,13 +1084,9 @@ impl App {
             fov_y: 1.0,
         }
         .forward();
+        s.aim(eye, dir);
         let world = &s.world;
         let solid = |p: BlockPos| world.block(p).is_some_and(|b| world.flags.solid(b));
-        // Cut blocks are aimed at by their kept octants, as the server does.
-        s.target = raycast_shaped(eye, dir, s.reach, |p| {
-            let st = world.state(p)?;
-            world.flags.solid(st.id).then(|| world.block_shape(p))
-        });
         s.claim_target = claim_mode.then(|| {
             let at = match raycast(eye, dir, CLAIM_AIM, solid) {
                 Some(hit) => hit.block,
@@ -962,7 +1126,7 @@ impl App {
                 s.place_cooldown = PLACE_REPEAT;
                 let state = s.world.state(hit.block).unwrap_or(BlockState::AIR);
                 let def = s.world.registry.get(state.id);
-                match crate::chisel::apply(def, state, family, octants, restore) {
+                match bm_core::chisel::apply(def, state, family, precise, octants, restore) {
                     Ok(new) => {
                         // Filling back over ourselves would be refused.
                         let filled = Shape::new(family, !octants).unwrap_or(Shape::FULL);
@@ -995,8 +1159,8 @@ impl App {
                             });
                         }
                     }
-                    Err(crate::chisel::Refused::Told(text)) => self.notices.push(text, now_s),
-                    Err(crate::chisel::Refused::Quiet) => {}
+                    Err(bm_core::chisel::Refused::Told(text)) => self.notices.push(text, now_s),
+                    Err(bm_core::chisel::Refused::Quiet(_)) => {}
                 }
             }
         }
@@ -1118,6 +1282,7 @@ impl App {
         let mut chat_actions = Vec::new();
         let chat = &mut self.chat;
         let storage_view = self.storage_view.as_ref();
+        let portal_view = self.portal_view.as_ref();
         let notices = self.notices.visible(now);
         let menu = self.menu;
         let login = &mut self.login;
@@ -1150,6 +1315,8 @@ impl App {
                 Some(("E", "travel"))
             } else if s.aiming_at_storage().is_some() {
                 Some(("E", "open"))
+            } else if s.aiming_at_portal().is_some() {
+                Some(("E", "portal"))
             } else {
                 None
             };
@@ -1222,6 +1389,16 @@ impl App {
                         &mut actions,
                     );
                 }
+                Some(Menu::Portal(pos)) => menus::portal(
+                    &ctx,
+                    &PortalWindow {
+                        items: &s.items,
+                        icons: &s.icons,
+                        pos,
+                        view: portal_view,
+                    },
+                    &mut actions,
+                ),
                 None => {}
             }
             chat_actions = chat.show(&ctx, CHAT_BOTTOM, now);
@@ -1343,11 +1520,10 @@ impl App {
             pitch,
             fov_y: 75f32.to_radians(),
         };
-        let boxes: Vec<BoxInstance> = s
-            .remotes
-            .sample(local, shape)
-            .into_iter()
-            .map(|(id, smp)| {
+        let remotes = s.remotes.sample(local, shape);
+        let mut boxes: Vec<BoxInstance> = remotes
+            .iter()
+            .map(|&(id, smp)| {
                 let pos = shape.nearest_lap(eye, smp.pos);
                 // Drawn two blocks tall, a touch above the collision box.
                 let half = Vec3::new(
@@ -1364,6 +1540,57 @@ impl App {
             })
             .collect();
         let (mut lines, xray) = self.claim_lines(eye);
+        // Grapple ropes: ours from just below and right of the eye (where a
+        // hand would be), everyone else's from their hands.
+        let mut ropes: Vec<(DVec3, DVec3)> = remotes
+            .iter()
+            .filter_map(|(_, smp)| {
+                let hands = shape.nearest_lap(eye, smp.pos) + DVec3::new(0.0, bm_core::movement::ROPE_HEIGHT, 0.0);
+                smp.hook
+                    .map(|h| (hands, hands + h - DVec3::new(0.0, bm_core::movement::ROPE_HEIGHT, 0.0)))
+            })
+            .collect();
+        if let Some(hook) = s.me.state.hook {
+            let to = shape.nearest_lap(eye, hook.pos);
+            // A flying hook is drawn between ticks, like the body.
+            let to = match s.me.previous.hook {
+                Some(was) if hook.stuck.is_none() => {
+                    let was = shape.nearest_lap(to, was.pos);
+                    was + (to - was) * alpha
+                }
+                _ => to,
+            };
+            let forward = camera.forward();
+            let right = forward.cross(DVec3::Y).normalize_or_zero();
+            ropes.push((eye + right * 0.3 - DVec3::Y * 0.35 + forward * 0.4, to));
+        }
+        // Lines are a pixel wide: a few strands side by side give the rope
+        // some body, thick near the eye and thin far off.
+        let strands = {
+            let forward = camera.forward();
+            let right = forward.cross(DVec3::Y).normalize_or_zero();
+            let up = right.cross(forward);
+            [DVec3::ZERO, right * 0.006, up * 0.006, (right + up) * 0.006]
+        };
+        for (from, to) in ropes {
+            for off in strands {
+                let (a, b) = ((from + off - eye).as_vec3(), (to + off - eye).as_vec3());
+                lines.push(LineVertex {
+                    pos: a.to_array(),
+                    color: ROPE_LINE,
+                });
+                lines.push(LineVertex {
+                    pos: b.to_array(),
+                    color: ROPE_LINE,
+                });
+            }
+            let b = (to - eye).as_vec3();
+            boxes.push(BoxInstance {
+                center: b.to_array(),
+                half_size: [0.09; 3],
+                color: HOOK_COLOUR,
+            });
+        }
         let highlight = if self.claim_mode || s.chisel.is_some() {
             None
         } else {
@@ -1518,12 +1745,62 @@ impl App {
                         pos: DVec3::from_array(crate::demo::SHAPES_VIEW),
                         vel: DVec3::ZERO,
                         on_ground: true,
+                        hook: None,
                     });
                     if in_hand {
                         s.selected = 6;
                     }
                 }
                 (self.yaw, self.pitch) = if in_hand { (0.075, -0.55) } else { (0.0, -0.62) };
+            }
+            // Hanging from a copper grapple hooked under a stone arch, part
+            // way through a swing towards it.
+            "grapple" => {
+                if let Some(Link::Demo(d)) = &mut self.link {
+                    d.show_grapple();
+                }
+                if let Some(s) = &mut self.session {
+                    let [x, y, z] = crate::demo::GRAPPLE_BEAM;
+                    let block = BlockPos::new(x + 5, y, z);
+                    let anchor = DVec3::new(x as f64 + 5.5, y as f64, z as f64 + 0.5);
+                    let pos = anchor + DVec3::new(0.0, -8.0 - bm_core::movement::ROPE_HEIGHT, 6.0);
+                    // Taken up once the arch has arrived: a hook in a block
+                    // that is not there yet lets go.
+                    self.demo_pose = Some(bm_core::PlayerState {
+                        pos,
+                        vel: DVec3::ZERO,
+                        on_ground: false,
+                        hook: Some(bm_core::Hook {
+                            pos: anchor,
+                            vel: DVec3::ZERO,
+                            rope: 10.0,
+                            stuck: Some(block),
+                            reel: 0.0,
+                        }),
+                    });
+                    s.selected = 7;
+                }
+                (self.yaw, self.pitch) = (0.1, 0.62);
+            }
+            // Two open portals ahead, the left one's window open, a token
+            // and wayshards in hand.
+            "portal" => {
+                if let Some(Link::Demo(d)) = &mut self.link {
+                    d.show_portals();
+                }
+                if let Some(s) = &mut self.session {
+                    s.selected = 8;
+                    // Back from the stations, so both portals show whole.
+                    s.me.teleport(bm_core::PlayerState {
+                        pos: DVec3::new(128.5, 44.0, 130.3),
+                        vel: DVec3::ZERO,
+                        on_ground: true,
+                        hook: None,
+                    });
+                }
+                (self.yaw, self.pitch) = (0.0, -0.02);
+                let [x, y, z] = crate::demo::PORTALS[0];
+                self.open_menu(Menu::Portal(BlockPos::new(x, y, z)));
             }
             // The shrine window on its Reclaim tab, with things waiting.
             "reclaim" => {
@@ -1718,7 +1995,7 @@ impl ApplicationHandler for App {
                         self.toggle(m);
                     }
                     KeyCode::KeyE => {
-                        if matches!(self.menu, Some(Menu::Travel(_) | Menu::Storage(_))) {
+                        if matches!(self.menu, Some(Menu::Travel(_) | Menu::Storage(_) | Menu::Portal(_))) {
                             self.close_menu(true);
                         } else if self.menu.is_none()
                             && !self.claim_mode
@@ -1729,6 +2006,8 @@ impl ApplicationHandler for App {
                                 self.open_menu(Menu::Travel(shrine));
                             } else if let Some(pos) = s.aiming_at_storage() {
                                 self.open_storage(pos);
+                            } else if let Some(pos) = s.aiming_at_portal() {
+                                self.open_portal(pos);
                             }
                         }
                     }
@@ -1765,7 +2044,12 @@ impl ApplicationHandler for App {
                     return;
                 }
                 match button {
-                    MouseButton::Left => self.mouse[0] = down,
+                    MouseButton::Left => {
+                        // Every press counts, however short: a grapple shot
+                        // must not be lost between two frames.
+                        self.fire_pending |= down && !self.mouse[0];
+                        self.mouse[0] = down;
+                    }
                     MouseButton::Right => self.mouse[1] = down,
                     _ => {}
                 }
@@ -1867,6 +2151,7 @@ mod tests {
                 pos: [120.0, 44.0, 120.0],
                 yaw: 0,
                 pitch: 0,
+                hook: None,
             }],
         }
     }
@@ -1899,7 +2184,7 @@ mod tests {
         let centre = BlockPos::new(128, 44, 128).chunk();
         s.world.schedule_meshing(centre, 64);
         for _ in 0..12 {
-            s.me.tick(PlayerInput::default(), &s.movement, s.world.shape, &s.world);
+            s.me.tick(PlayerInput::default(), None, &s.movement, s.world.shape, &s.world);
         }
         let seq = s.me.seq;
 
@@ -2012,6 +2297,113 @@ mod tests {
         a.open_menu(Menu::Storage(pos));
         a.storage_update(closed(BlockPos::new(9, 9, 9)));
         assert_eq!(a.menu, Some(Menu::Storage(pos)));
+    }
+
+    #[test]
+    fn portal_surfaces_are_aimed_at_for_e_only() {
+        let (mut s, mut demo, _) = session_on_the_demo();
+        demo.show_portals();
+        for e in demo.poll() {
+            if let NetEvent::Msg(ServerMsg::Chunk { pos, data }) = e {
+                s.world.insert_chunk(pos, Chunk::decode(&data).unwrap());
+            }
+        }
+        let [x, y, z] = crate::demo::PORTALS[0];
+        let upper = BlockPos::new(x, y + 1, z);
+        assert_eq!(s.world.block(upper), Some(s.portal_surface));
+        // Standing three blocks in front, looking straight at it.
+        s.aim(DVec3::new(x as f64 + 0.5, y as f64 + 1.5, z as f64 + 3.5), DVec3::NEG_Z);
+        assert_eq!(s.aiming_at_portal(), Some(upper));
+        assert_ne!(s.target.map(|h| h.block), Some(upper), "never broken or built against");
+        let frame = bm_core::portal::find_frame(upper, |p| s.is_portal_block(p)).unwrap();
+        assert_eq!(
+            (frame.width, frame.height, frame.corner),
+            (1, 2, BlockPos::new(x, y, z))
+        );
+        // The brick beside it is no portal.
+        s.aim(DVec3::new(x as f64 + 1.5, y as f64 + 1.5, z as f64 + 3.5), DVec3::NEG_Z);
+        assert_eq!(s.aiming_at_portal(), None);
+    }
+
+    /// An app logged in to the demo, with its portals built and the ground
+    /// around the spawn in.
+    fn app_on_the_portal_demo() -> App {
+        let mut a = app();
+        let mut demo = Demo::new("Tester");
+        demo.show_portals();
+        a.link = Some(Link::Demo(Box::new(demo)));
+        a.handle_net();
+        assert!(a.session.is_some());
+        a
+    }
+
+    fn portal_pos() -> BlockPos {
+        let [x, y, z] = crate::demo::PORTALS[0];
+        BlockPos::new(x, y, z)
+    }
+
+    #[test]
+    fn the_portal_window_follows_the_server() {
+        let mut a = app_on_the_portal_demo();
+        let s = a.session.as_ref().unwrap();
+        let token = s.items.registry.id("portal_token").unwrap();
+        let tip = s.items.tooltip(&ItemStack::tagged(token, 3));
+        assert_eq!(tip, "Portal Token\nLinks to: 1 by 2, Saffra, near 212, 96");
+        a.open_menu(Menu::Portal(portal_pos()));
+        assert!(a.portal_view.is_none(), "opening");
+        a.handle_net();
+        let v = a.portal_view.clone().expect("the view");
+        assert!(v.open && v.fuel == 37 && v.link.is_some());
+        // Add fuel: every wayshard carried goes in, stack by stack.
+        let s = a.session.as_ref().unwrap();
+        let carried = crate::portal::wayshards_carried(&s.items);
+        assert_eq!(carried, 100);
+        let b = crate::portal::buttons(&s.items, &v, portal_pos());
+        a.apply_actions(b.add_fuel.into_iter().map(UiAction::Send).collect());
+        a.handle_net();
+        assert_eq!(a.portal_view.as_ref().unwrap().fuel, 137);
+        assert_eq!(crate::portal::wayshards_carried(&a.session.as_ref().unwrap().items), 0);
+        // The server closes it: the window goes, asking nothing.
+        a.portal_update(None);
+        assert_eq!(a.menu, None);
+        // A refusal while opening is told and closes the waiting window.
+        a.open_menu(Menu::Portal(BlockPos::new(0, 44, 0)));
+        a.handle_net();
+        assert_eq!(a.menu, None);
+        assert!(
+            a.notices
+                .visible(a.now())
+                .iter()
+                .any(|(t, _)| t == bm_core::portal::SHAPE_RULE)
+        );
+        // E again closes it as any window.
+        a.open_menu(Menu::Portal(portal_pos()));
+        a.handle_net();
+        assert!(a.portal_view.is_some());
+        a.close_menu(true);
+        assert_eq!((a.menu, a.portal_view.clone()), (None, None));
+    }
+
+    #[test]
+    fn a_teleport_moves_us_and_closes_the_portal_window_only() {
+        let mut a = app_on_the_portal_demo();
+        a.open_menu(Menu::Portal(portal_pos()));
+        a.handle_net();
+        let chunks = a.session.as_ref().unwrap().world.chunk_count();
+        let to = PlayerState {
+            pos: DVec3::new(132.5, 44.0, 123.5),
+            ..Default::default()
+        };
+        a.handle_msg(ServerMsg::Teleport { spawn: to, tick: 500 });
+        assert_eq!(a.menu, None);
+        let s = a.session.as_ref().unwrap();
+        assert_eq!(s.me.state, to);
+        assert_eq!(s.world.chunk_count(), chunks, "chunks carry on");
+        assert!(s.journey.is_none(), "no travel screen on the same planet");
+        assert_eq!(s.me.corrections, 0);
+        // An older snapshot does not pull us back.
+        a.handle_snapshot(snapshot(0, 400, 0, 128.5));
+        assert_eq!(a.session.as_ref().unwrap().me.state, to);
     }
 
     #[test]

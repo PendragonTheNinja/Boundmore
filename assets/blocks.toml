@@ -401,3 +401,49 @@ placeable = true
 hardness = 0.4
 textures = { all = "ash" }
 material = "soil"
+
+# M8: portals (ADR-0009).
+
+[[block]]
+name = "wayshard_vein"
+colourable = false
+color = [118, 92, 168]
+solid = true
+opaque = true
+translucent = false
+breakable = true
+placeable = false
+hardness = 1.6
+textures = { all = "wayshard_vein" }
+material = "rock"
+light = 3
+drops = "wayshard"
+
+[[block]]
+name = "portal_conduit"
+colourable = false
+color = [92, 86, 120]
+solid = true
+opaque = true
+translucent = false
+breakable = true
+placeable = true
+hardness = 1.0
+textures = { all = "portal_conduit" }
+material = "rock"
+
+# An open portal's conduits become this (ADR-0009); never placed by hand.
+[[block]]
+name = "portal_surface"
+colourable = false
+color = [150, 120, 255]
+solid = false
+opaque = false
+translucent = true
+opacity = 0.7
+breakable = false
+placeable = false
+hardness = 0.0
+textures = { all = "portal_surface" }
+light = 11
+drops = ""

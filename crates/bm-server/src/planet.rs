@@ -18,7 +18,7 @@ use bm_core::{
     PlayerState, PlotPos, RecipeBook,
 };
 use bm_protocol::{PlanetInfo, PlanetSummary};
-use bm_worldgen::{GENERATOR_VERSION, Generator, PlanetKinds};
+use bm_worldgen::{GENERATOR_VERSION, Generator, OreSpec, PlanetGenConfig, PlanetKinds};
 use glam::DVec3;
 use std::collections::{BTreeSet, HashMap};
 use std::sync::Arc;
@@ -277,6 +277,14 @@ pub fn open(
             spec.name
         );
     }
+    if let Some(kind) = cat.kinds.get(&saved.kind) {
+        let kind_ores = kind.generation(saved.generation.seed).ores;
+        let added = extend_ores(&mut saved.generation, &kind_ores);
+        if !added.is_empty() {
+            store.put_planet(id, &saved)?;
+            tracing::info!("{}: {} added to its ores", saved.name, added.join(", "));
+        }
+    }
     saved
         .generation
         .check(cat.registry)
@@ -330,6 +338,22 @@ pub fn open(
         guard,
         players: 0,
     })
+}
+
+/// Appends the ores a planet's kind lists after the planet's own saved ores
+/// (ADR-0009: M8's wayshards), when the saved list is a strict prefix of the
+/// kind's. Ores are tried in order and the first match wins, so earlier ores
+/// stay exactly where they were; only rock no earlier ore claimed can become
+/// a new ore, and only in chunks never saved. Never reorders or removes: a
+/// list that is not a prefix is left alone. Returns the blocks appended.
+pub fn extend_ores(generation: &mut PlanetGenConfig, kind_ores: &[OreSpec]) -> Vec<String> {
+    let n = generation.ores.len();
+    if kind_ores.len() <= n || kind_ores[..n] != generation.ores[..] {
+        return Vec::new();
+    }
+    let new = &kind_ores[n..];
+    generation.ores.extend_from_slice(new);
+    new.iter().map(|o| o.block.clone()).collect()
 }
 
 /// Makes sure the planet's shrine stands, placing it (and cutting its plaza)
@@ -475,6 +499,55 @@ mod tests {
         let plots = guarded_plots(shape, s, 4);
         assert!(plots.contains(&PlotPos::of(BlockPos::new(253, 46, 3), shape)));
         assert!(plots.iter().all(|p| *p == p.wrap(shape)));
+    }
+
+    #[test]
+    fn new_ores_are_only_ever_appended() {
+        let registry = BlockRegistry::builtin();
+        let kinds = PlanetKinds::builtin(&registry);
+        let kind = kinds.get("arid").unwrap().generation(5);
+        assert_eq!(kind.ores.last().unwrap().block, "wayshard_vein");
+        // A planet made before wayshards gains them, once.
+        let mut old = kind.clone();
+        old.ores.pop();
+        assert_eq!(extend_ores(&mut old, &kind.ores), vec!["wayshard_vein".to_string()]);
+        assert_eq!(old, kind);
+        assert!(extend_ores(&mut old, &kind.ores).is_empty(), "already there");
+        // A list that is not a prefix (reordered, or an ore of its own) is left alone.
+        let mut odd = kind.clone();
+        odd.ores.truncate(1);
+        odd.ores[0].threshold += 0.01;
+        let before = odd.clone();
+        assert!(extend_ores(&mut odd, &kind.ores).is_empty());
+        assert_eq!(odd, before);
+        // A longer saved list is never cut.
+        let mut more = kind.clone();
+        more.ores.push(kind.ores[0].clone());
+        assert!(extend_ores(&mut more, &kind.ores).is_empty());
+        assert_eq!(more.ores.len(), kind.ores.len() + 1);
+    }
+
+    #[test]
+    fn an_old_planet_gains_wayshards_on_opening() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = Store::open(&dir.path().join("u.redb")).unwrap();
+        let registry = Arc::new(BlockRegistry::builtin());
+        let kinds = PlanetKinds::builtin(&registry);
+        let items = ItemRegistry::builtin(&registry);
+        let recipes = RecipeBook::builtin(&items);
+        let spec = PlanetSpec::new("Old", "temperate", 3, 16);
+        let mut saved = new_record(0, &spec, 12, &kinds).unwrap();
+        let full = saved.generation.ores.clone();
+        saved.generation.ores.pop();
+        store.put_planet(0, &saved).unwrap();
+        let cat = Catalogue {
+            registry: &registry,
+            items: &items,
+            recipes: &recipes,
+            kinds: &kinds,
+        };
+        open(&store, 0, &spec, 12, 4, &cat, Vec::new()).unwrap();
+        assert_eq!(store.planet(0).unwrap().unwrap().generation.ores, full, "saved");
     }
 
     #[test]

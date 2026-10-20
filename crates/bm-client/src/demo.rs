@@ -15,14 +15,15 @@
 //! travelling screen can be seen.
 
 use crate::net::NetEvent;
+use bm_core::portal::{PortalAxis, PortalFrame};
 use bm_core::{
     BlockId, BlockPos, BlockRegistry, BlockState, CHUNK_SIZE, Chunk, ChunkPos, Colour, ColourPalette, DayCycle,
     Inventory, ItemRegistry, ItemStack, LocalPos, MoveConfig, PlanetLook, PlanetShape, PlayerState, PlotPos,
     RecipeBook, Station,
 };
 use bm_protocol::{
-    Channel, ChatLine, ClaimView, ClientMsg, EditAction, JobView, MAX_CHAT_LEN, PlanetInfo, PlanetSummary, ServerMsg,
-    StationView, StorageView, Travel, Welcome,
+    Channel, ChatLine, ClaimView, ClientMsg, EditAction, JobView, MAX_CHAT_LEN, PlanetInfo, PlanetSummary,
+    PortalAction, PortalView, ServerMsg, StationView, StorageView, Travel, Welcome,
 };
 use glam::DVec3;
 use serde::Deserialize;
@@ -41,6 +42,8 @@ pub const CHEST: [i64; 3] = [126, 44, 126];
 pub const WALL: [i64; 3] = [120, 48, 114];
 /// Where `show_shapes` puts the player: on a pillar behind the rows.
 pub const SHAPES_VIEW: [f64; 3] = [128.5, 46.0, 130.5];
+/// The west end of the grapple demo's arch beam, which runs ten blocks east.
+pub const GRAPPLE_BEAM: [i64; 3] = [124, 56, 118];
 /// The demo's planets: name, kind, and the width shown for it in the sky and
 /// menu. (The demo's own patch is tiny; these are sizes real planets have.)
 const PLANETS: [(&str, &str, u32); 4] = [
@@ -49,6 +52,11 @@ const PLANETS: [(&str, &str, u32); 4] = [
     ("Rimeholt", "frozen", 2560),
     ("Verdance", "lush", 4096),
 ];
+/// The portal demo's two open portals (`show_portals`), 1 by 2, ahead of
+/// the spawn: each one's lower block.
+pub const PORTALS: [[i64; 3]; 2] = [[122, 44, 121], [135, 44, 121]];
+/// Wayshards a demo portal's tank holds.
+const PORTAL_CAPACITY: u32 = 500;
 /// How long a new planet's ground is held back after a warp, by default.
 const ARRIVAL_HOLD: f64 = 2.5;
 
@@ -71,6 +79,16 @@ struct DemoPlanet {
     edits: HashMap<BlockPos, BlockState>,
     /// No rolling ground: level everywhere (the colour wall's patch).
     flat: bool,
+}
+
+/// A portal as the demo keeps it: on which planet, its rectangle, its link
+/// (an index into `Demo::portals`) and its tank. Its tokens' tag is its
+/// index plus one.
+struct DemoPortal {
+    planet: usize,
+    frame: PortalFrame,
+    link: Option<usize>,
+    fuel: u32,
 }
 
 struct DemoStation {
@@ -100,6 +118,9 @@ pub struct Demo {
     open_chest: Option<BlockPos>,
     /// What waits in the reclaim, as a server keeps it per account.
     reclaim: Vec<ItemStack>,
+    /// Portals (`show_portals`), and the one whose window is open.
+    portals: Vec<DemoPortal>,
+    open_portal: Option<usize>,
     colours: ColourPalette,
     last: Instant,
     push_timer: f64,
@@ -228,6 +249,8 @@ impl Demo {
             chests,
             open_chest: None,
             reclaim: Vec::new(),
+            portals: Vec::new(),
+            open_portal: None,
             colours: ColourPalette::builtin(),
             last: Instant::now(),
             push_timer: 0.0,
@@ -252,6 +275,7 @@ impl Demo {
                 pos: DVec3::from_array(SPAWN),
                 vel: DVec3::ZERO,
                 on_ground: true,
+                hook: None,
             },
             tick: 0,
             view_radius: 4,
@@ -292,6 +316,7 @@ impl Demo {
                 pos: DVec3::from_array(SPAWN),
                 vel: DVec3::ZERO,
                 on_ground: true,
+                hook: None,
             },
             tick: 0,
             claims,
@@ -488,6 +513,263 @@ impl Demo {
         }
         let chunks = self.chunks_around_spawn();
         self.events.extend(chunks.into_iter().map(NetEvent::Msg));
+    }
+
+    /// Level ground with a stone arch to swing from (its beam along
+    /// [`GRAPPLE_BEAM`]), and both grapples in the hotbar's last
+    /// slots.
+    pub fn show_grapple(&mut self) {
+        let stone = BlockState::plain(self.blocks.id("stone").expect("builtin block"));
+        let [x0, y, z] = GRAPPLE_BEAM;
+        let mut put = Vec::new();
+        for x in x0..x0 + 11 {
+            put.push((BlockPos::new(x, y, z), stone));
+        }
+        for py in 44..y {
+            put.push((BlockPos::new(x0, py, z), stone));
+            put.push((BlockPos::new(x0 + 10, py, z), stone));
+        }
+        let planet = &mut self.planets[0];
+        planet.flat = true;
+        planet.edits.clear();
+        planet.edits.extend(put);
+        let id = |n: &str| self.items.id(n).expect("builtin item");
+        let before = self.inv.clone();
+        for (i, name) in ["copper_grapple", "iron_grapple"].into_iter().enumerate() {
+            self.inv.slots[7 + i] = Some(ItemStack::new(id(name), 1));
+        }
+        self.slots_since(&before);
+        let chunks = self.chunks_around_spawn();
+        self.events.extend(chunks.into_iter().map(NetEvent::Msg));
+    }
+
+    /// Two open portals ahead of the spawn, linked to each other, in a brick
+    /// surround (the surround is only a look: a portal is its own blocks),
+    /// two more elsewhere to link with, and a pack with tokens for them and
+    /// wayshards to fuel with.
+    pub fn show_portals(&mut self) {
+        let frame = |[x, y, z]: [i64; 3], width, height| PortalFrame {
+            corner: BlockPos::new(x, y, z),
+            axis: PortalAxis::X,
+            width,
+            height,
+        };
+        self.portals = vec![
+            DemoPortal {
+                planet: 0,
+                frame: frame(PORTALS[0], 1, 2),
+                link: Some(1),
+                fuel: 37,
+            },
+            DemoPortal {
+                planet: 0,
+                frame: frame(PORTALS[1], 1, 2),
+                link: Some(0),
+                fuel: 12,
+            },
+            DemoPortal {
+                planet: 1,
+                frame: frame([212, 51, 96], 1, 2),
+                link: None,
+                fuel: 0,
+            },
+            DemoPortal {
+                planet: 3,
+                frame: frame([812, 47, 140], 2, 3),
+                link: None,
+                fuel: 0,
+            },
+        ];
+        let brick = BlockState::plain(self.blocks.id("brick").expect("builtin block"));
+        for [x, y, z] in PORTALS {
+            for dy in -1..=2 {
+                for dx in [-1, 1] {
+                    self.planets[0].edits.insert(BlockPos::new(x + dx, y + dy, z), brick);
+                }
+            }
+            self.planets[0].edits.insert(BlockPos::new(x, y + 2, z), brick);
+        }
+        for i in 0..self.portals.len() {
+            self.refresh_portal(i, false);
+        }
+        let id = |n: &str| self.items.id(n).expect("builtin item");
+        let (token, shard) = (id("portal_token"), id("wayshard"));
+        let before = self.inv.clone();
+        self.inv.slots[8] = Some(ItemStack::tagged(token, 3));
+        self.inv.slots[9] = Some(ItemStack::new(shard, 60));
+        self.inv.slots[25] = Some(ItemStack::tagged(token, 4));
+        self.inv.slots[26] = Some(ItemStack::new(shard, 40));
+        self.slots_since(&before);
+        let names = (0..self.portals.len()).map(|i| self.token_name(i)).collect();
+        self.events.push_back(NetEvent::Msg(ServerMsg::TokenNames { names }));
+        let chunks = self.chunks_around_spawn();
+        self.events.extend(chunks.into_iter().map(NetEvent::Msg));
+    }
+
+    /// "Verdance, near 812, 140".
+    fn portal_place(&self, i: usize) -> String {
+        let p = &self.portals[i];
+        let c = p.frame.corner;
+        format!("{}, near {}, {}", self.planets[p.planet].info.name, c.x, c.z)
+    }
+
+    /// A token's tag and name: "2 by 3, Verdance, near 812, 140".
+    fn token_name(&self, i: usize) -> (u32, String) {
+        let f = self.portals[i].frame;
+        let size = crate::portal::size_text(f.width, f.height);
+        (i as u32 + 1, format!("{size}, {}", self.portal_place(i)))
+    }
+
+    fn trip_cost(&self, i: usize) -> u32 {
+        let p = &self.portals[i];
+        match p.link {
+            Some(l) if self.portals[l].planet != p.planet => 2,
+            _ => 1,
+        }
+    }
+
+    fn portal_is_open(&self, i: usize) -> bool {
+        self.portals[i].link.is_some() && self.portals[i].fuel >= self.trip_cost(i)
+    }
+
+    /// Shows a portal on this planet as surfaces when open, conduits when
+    /// not, telling the client of each block that changed if `tell`.
+    fn refresh_portal(&mut self, i: usize, tell: bool) {
+        let p = &self.portals[i];
+        if p.planet != self.here {
+            return;
+        }
+        let name = if self.portal_is_open(i) {
+            "portal_surface"
+        } else {
+            "portal_conduit"
+        };
+        let block = BlockState::plain(self.blocks.id(name).expect("builtin block"));
+        let blocks: Vec<BlockPos> = p.frame.blocks().collect();
+        for pos in blocks {
+            if self.planets[self.here].edits.insert(pos, block) != Some(block) && tell {
+                self.events
+                    .push_back(NetEvent::Msg(ServerMsg::BlockChanged { pos, block }));
+            }
+        }
+    }
+
+    fn portal_at(&self, pos: BlockPos) -> Option<usize> {
+        let pos = shape().wrap_block(pos);
+        self.portals
+            .iter()
+            .position(|p| p.planet == self.here && p.frame.contains(pos))
+    }
+
+    fn push_portal(&mut self) {
+        let Some(i) = self.open_portal else { return };
+        let p = &self.portals[i];
+        let view = PortalView {
+            corner: p.frame.corner,
+            width: p.frame.width,
+            height: p.frame.height,
+            link: p.link.map(|l| self.portal_place(l)),
+            open: self.portal_is_open(i),
+            fuel: p.fuel,
+            capacity: PORTAL_CAPACITY,
+            trip_cost: self.trip_cost(i),
+            cooldown_hours: 1.0,
+        };
+        self.events.push_back(NetEvent::Msg(ServerMsg::Portal(Some(view))));
+    }
+
+    fn open_portal(&mut self, pos: Option<BlockPos>) {
+        self.open_portal = None;
+        let Some(pos) = pos else { return };
+        match self.portal_at(pos) {
+            Some(i) => {
+                self.open_portal = Some(i);
+                self.push_portal();
+            }
+            None => self.notice(bm_core::portal::SHAPE_RULE),
+        }
+    }
+
+    /// The window's buttons, answered as the server would (ADR-0009).
+    fn portal_action(&mut self, pos: BlockPos, action: PortalAction) {
+        let Some(i) = self.portal_at(pos).filter(|i| self.open_portal == Some(*i)) else {
+            return;
+        };
+        let shard = self.items.id("wayshard").expect("builtin item");
+        let mut changed = vec![i];
+        match action {
+            PortalAction::MakeToken => {
+                let token = self.items.id("portal_token").expect("builtin item");
+                match self.inv.slots.iter().position(Option::is_none) {
+                    Some(slot) => {
+                        self.inv.slots[slot] = Some(ItemStack::tagged(token, i as u32 + 1));
+                        let names = vec![self.token_name(i)];
+                        self.events.push_back(NetEvent::Msg(ServerMsg::TokenNames { names }));
+                    }
+                    None => self.notice("Your inventory is full"),
+                }
+            }
+            PortalAction::Link { slot } => {
+                let stack = self.inv.get(slot as usize);
+                let to = stack
+                    .filter(|s| {
+                        self.items
+                            .get(s.item)
+                            .is_some_and(|d| matches!(d.kind, bm_core::ItemKind::PortalToken))
+                    })
+                    .and_then(|s| (s.tag as usize).checked_sub(1))
+                    .filter(|t| *t < self.portals.len());
+                let (f, size) = (self.portals[i].frame, |f: PortalFrame| (f.width, f.height));
+                match to {
+                    None => self.notice("That token's portal is gone"),
+                    Some(t) if t == i => self.notice("That token was made at this portal"),
+                    Some(t) if size(self.portals[t].frame) != size(f) => {
+                        self.notice("That token is for a portal of another size")
+                    }
+                    Some(t) => {
+                        self.inv.slots[slot as usize] = None;
+                        for end in [i, t] {
+                            if let Some(old) = self.portals[end].link.take() {
+                                self.portals[old].link = None;
+                                changed.push(old);
+                            }
+                        }
+                        self.portals[i].link = Some(t);
+                        self.portals[t].link = Some(i);
+                        changed.push(t);
+                    }
+                }
+            }
+            PortalAction::Unlink => {
+                if let Some(other) = self.portals[i].link.take() {
+                    self.portals[other].link = None;
+                    changed.push(other);
+                }
+            }
+            PortalAction::AddFuel { slot, count } => {
+                if let Some(s) = self.inv.get(slot as usize).filter(|s| s.item == shard) {
+                    let room = PORTAL_CAPACITY - self.portals[i].fuel;
+                    let n = (count as u32).min(s.count as u32).min(room) as u16;
+                    if n > 0 {
+                        let left = s.count - n;
+                        self.inv.slots[slot as usize] = (left > 0).then_some(ItemStack { count: left, ..s });
+                        self.portals[i].fuel += n as u32;
+                    }
+                }
+            }
+            PortalAction::TakeFuel { count } => {
+                let n = (count as u32).min(self.portals[i].fuel) as u16;
+                let rest = self.inv.add(&self.items, shard, n);
+                self.portals[i].fuel -= (n - rest) as u32;
+                if rest > 0 {
+                    self.notice("Your inventory is full");
+                }
+            }
+        }
+        for p in changed {
+            self.refresh_portal(p, true);
+        }
+        self.push_portal();
     }
 
     /// Fills the reclaim, as a lapsed claim would, and tells the client.
@@ -715,6 +997,7 @@ impl Demo {
             ClientMsg::Edit { seq, pos, action, .. } => self.edit(seq, pos, action),
             ClientMsg::Warp { planet, .. } => {
                 self.open_chest = None;
+                self.open_portal = None;
                 self.warp(planet);
             }
             ClientMsg::OpenStorage { pos } => self.open_storage(pos),
@@ -738,6 +1021,8 @@ impl Demo {
                     .push_back(NetEvent::Msg(ServerMsg::Chat { lines: vec![line] }));
             }
             ClientMsg::CollectReclaim { .. } => self.collect_reclaim(),
+            ClientMsg::OpenPortal { pos } => self.open_portal(pos),
+            ClientMsg::Portal { pos, action } => self.portal_action(pos, action),
             ClientMsg::StartBreak { .. } | ClientMsg::Hello { .. } => {}
         }
         self.slots_since(&before);
@@ -899,28 +1184,22 @@ impl Demo {
                     .get(slot as usize)
                     .and_then(|s| self.items.get(s.item))
                     .and_then(|d| d.chisel());
-                let fits = |precise: bool| {
-                    if precise {
-                        octants.count_ones() == 1
-                    } else {
-                        bm_core::edge_pairs().any(|m| m == octants)
-                    }
-                };
                 match chisel {
-                    Some((family, precise, _)) if fits(precise) => {
-                        match crate::chisel::apply(self.blocks.get(old), old_state, family, octants, restore) {
+                    Some((family, precise, _)) => {
+                        match bm_core::chisel::apply(self.blocks.get(old), old_state, family, precise, octants, restore)
+                        {
                             Ok(shape) => {
                                 self.wear_chisel(slot as usize);
                                 (BlockState { shape, ..old_state }, true)
                             }
-                            Err(crate::chisel::Refused::Told(t)) => {
+                            Err(bm_core::chisel::Refused::Told(t)) => {
                                 self.notice(&t);
                                 (old_state, false)
                             }
-                            Err(crate::chisel::Refused::Quiet) => (old_state, false),
+                            Err(bm_core::chisel::Refused::Quiet(_)) => (old_state, false),
                         }
                     }
-                    _ => (old_state, false),
+                    None => (old_state, false),
                 }
             }
         };
@@ -1271,5 +1550,81 @@ mod tests {
         assert_eq!(lines[0].from, "Tester");
         assert!(lines[0].text.starts_with("hix"));
         assert_eq!(lines[0].text.chars().count(), MAX_CHAT_LEN);
+    }
+
+    fn portal_views(ev: &[NetEvent]) -> Vec<PortalView> {
+        ev.iter()
+            .filter_map(|e| match e {
+                NetEvent::Msg(ServerMsg::Portal(Some(v))) => Some(v.clone()),
+                _ => None,
+            })
+            .collect()
+    }
+
+    fn notices(ev: &[NetEvent]) -> Vec<String> {
+        ev.iter()
+            .filter_map(|e| match e {
+                NetEvent::Msg(ServerMsg::Notice { text }) => Some(text.clone()),
+                _ => None,
+            })
+            .collect()
+    }
+
+    #[test]
+    fn the_demo_portals_link_fuel_and_open_by_the_rules() {
+        let mut d = Demo::new("Tester");
+        d.show_portals();
+        d.poll();
+        let [x, y, z] = PORTALS[0];
+        let pos = BlockPos::new(x, y + 1, z);
+        let act = |action| ClientMsg::Portal { pos, action };
+        d.send(ClientMsg::OpenPortal { pos: Some(pos) });
+        let v = portal_views(&d.poll()).pop().unwrap();
+        assert_eq!((v.width, v.height, v.fuel, v.open), (1, 2, 37, true));
+        assert_eq!(v.link.as_deref(), Some("Hearthmoor, near 135, 121"));
+        // Take it all out: it goes dormant, its blocks turn to conduits.
+        d.send(act(PortalAction::TakeFuel { count: 500 }));
+        let ev = d.poll();
+        let v = portal_views(&ev).pop().unwrap();
+        assert_eq!((v.fuel, v.open), (0, false));
+        let conduit = d.blocks.id("portal_conduit").unwrap();
+        assert!(
+            ev.iter()
+                .any(|e| matches!(e, NetEvent::Msg(ServerMsg::BlockChanged { block, .. })
+            if block.id == conduit))
+        );
+        // Fuel from a stack reopens it.
+        d.send(act(PortalAction::AddFuel { slot: 9, count: 5 }));
+        let v = portal_views(&d.poll()).pop().unwrap();
+        assert_eq!((v.fuel, v.open), (5, true));
+        // The 37 taken out joined the 60 in slot 9; 5 of those went back.
+        assert_eq!(d.inv.get(9).unwrap().count, 92);
+        // A token of another size, or of this portal, is refused and kept.
+        d.send(act(PortalAction::Link { slot: 25 }));
+        assert_eq!(notices(&d.poll()), vec!["That token is for a portal of another size"]);
+        d.send(act(PortalAction::MakeToken));
+        let ev = d.poll();
+        assert!(
+            ev.iter()
+                .any(|e| matches!(e, NetEvent::Msg(ServerMsg::TokenNames { names })
+            if names == &vec![(1, "1 by 2, Hearthmoor, near 122, 121".to_string())]))
+        );
+        let own = d.inv.slots.iter().position(|s| s.is_some_and(|s| s.tag == 1)).unwrap();
+        d.send(act(PortalAction::Link { slot: own as u8 }));
+        assert_eq!(notices(&d.poll()), vec!["That token was made at this portal"]);
+        assert!(d.inv.get(own).is_some());
+        // The token for Saffra links there, at two a trip; the old partner
+        // is left unlinked and goes dormant.
+        d.send(act(PortalAction::Link { slot: 8 }));
+        let v = portal_views(&d.poll()).pop().unwrap();
+        assert_eq!(v.link.as_deref(), Some("Saffra, near 212, 96"));
+        assert_eq!((v.trip_cost, v.open), (2, true));
+        assert!(d.inv.get(8).is_none(), "the token is used up");
+        assert_eq!(d.portals[1].link, None);
+        // Unlink closes it.
+        d.send(act(PortalAction::Unlink));
+        let v = portal_views(&d.poll()).pop().unwrap();
+        assert_eq!((v.link, v.open), (None, false));
+        assert_eq!(d.portals[2].link, None);
     }
 }

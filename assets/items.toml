@@ -10,6 +10,11 @@
 #   chisel    { family = square | slope | bevel | round, precise, durability }
 #             cuts blocks into shapes (ADR-0008); precise cuts one eighth of
 #             a block at a time, otherwise an edge's two
+#   grapple   { range, shot_speed, reel_in, reel_out, hookshot, durability }
+#             fires a hook that sticks where it strikes; range is how far
+#             it flies and the longest rope (blocks), shot_speed how fast it
+#             flies, reel_in and reel_out the rope's top speeds (blocks per
+#             second); a hookshot reels in by itself
 #   icon      texture in assets/textures/items/ (default: the name)
 
 [[item]]
@@ -101,3 +106,29 @@ chisel = { family = "square", precise = true, durability = 600 }
 name = "precise_slope_chisel"
 stack = 1
 chisel = { family = "slope", precise = true, durability = 600 }
+
+# Grapples: Boundless's final numbers (docs/research/boundless-tuning.md
+# 1.1). Its silver, gold, titanium, gem and exotic grapples wait for those
+# materials. No base grapple reels itself: in Boundless that is a forge boon.
+
+[[item]]
+name = "copper_grapple"
+stack = 1
+grapple = { range = 10.0, shot_speed = 45.0, reel_in = 5.0, reel_out = 15.0, durability = 500 }
+
+[[item]]
+name = "iron_grapple"
+stack = 1
+grapple = { range = 20.0, shot_speed = 30.0, reel_in = 2.0, reel_out = 10.0, durability = 1000 }
+
+# Portals (ADR-0009).
+
+[[item]]
+name = "wayshard"
+
+# Made at a portal, used up linking another of the same size; its tag is the
+# portal it was made at.
+[[item]]
+name = "portal_token"
+stack = 1
+portal_token = true

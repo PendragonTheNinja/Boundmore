@@ -19,15 +19,18 @@ use crate::crafting::{self, CraftError, MAX_CRAFT_COUNT};
 use crate::lapse::{self, Lapse};
 use crate::net::{Event, Outbox};
 use crate::planet::Planet;
+use crate::portals::{PortalRules, Portals};
 use crate::reclaim::Reclaims;
 use crate::storage::move_stack;
 use crate::store::{PlayerData, Store, WriteBatch, load_slots, save_slots};
+
+mod portal;
 use anyhow::{Context, Result};
 use bm_core::items::title_case;
 use bm_core::movement::{self, MoveConfig, PlayerInput, PlayerState};
 use bm_core::{
-    BlockId, BlockPos, BlockState, CHUNK_SIZE, Chiselling, ChunkPos, Colour, ColourPalette, HOTBAR_SLOTS, Inventory,
-    ItemId, ItemRegistry, ItemStack, PlanetShape, PlotPos, RecipeBook, Shape, Station, TICK_DT, edge_pairs,
+    BlockId, BlockPos, BlockState, CHUNK_SIZE, ChunkPos, Colour, ColourPalette, HOTBAR_SLOTS, Inventory, ItemId,
+    ItemRegistry, ItemStack, PlanetShape, PlotPos, RecipeBook, Shape, Station, TICK_DT, chisel,
 };
 use bm_net::quinn::Connection;
 use bm_protocol::{
@@ -41,6 +44,8 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
+/// The nearest players each player is told about (several snapshot datagrams).
+const MAX_SEEN_PLAYERS: usize = 160;
 /// Snapshots go out every this many ticks (20 Hz).
 const SNAPSHOT_EVERY: u64 = 3;
 const SAVE_EVERY: u64 = 60 * 5;
@@ -141,6 +146,15 @@ struct Player {
     /// Edits and holds tagged with an input up to this one came from before
     /// the last travel (see `TRAVEL_GUARD_INPUTS`).
     travel_guard: Option<u32>,
+    /// The portal whose window this player has open.
+    portal: Option<u32>,
+    /// Set on coming out of a portal (or being refused at one): no portal
+    /// takes them until they have stepped off every surface.
+    portal_guard: bool,
+    /// A portal trip waiting for the far side's chunks.
+    trip: Option<portal::Trip>,
+    /// Portal tokens whose names this player has been sent.
+    told_tokens: HashSet<u32>,
 }
 
 /// A player who left, held in memory until the save holding their last state
@@ -163,6 +177,15 @@ enum Refusal {
 impl From<&'static str> for Refusal {
     fn from(why: &'static str) -> Self {
         Refusal::Quiet(why)
+    }
+}
+
+impl From<chisel::Refused> for Refusal {
+    fn from(r: chisel::Refused) -> Self {
+        match r {
+            chisel::Refused::Quiet(why) => Refusal::Quiet(why),
+            chisel::Refused::Told(t) => Refusal::Told(t),
+        }
     }
 }
 
@@ -235,6 +258,13 @@ pub struct Game {
     unpin_after_save: Vec<(usize, ChunkPos)>,
     /// What lapsed claims gave back, per account.
     reclaims: Reclaims,
+    /// Every portal in the universe (ADR-0009).
+    portals: Portals,
+    portal_rules: PortalRules,
+    portal_conduit: BlockId,
+    portal_surface: BlockId,
+    portal_token: ItemId,
+    wayshard: ItemId,
 }
 
 /// One planet's load, as the report shows it.
@@ -388,6 +418,15 @@ impl Game {
         let claim_stone = registry.id("claim_stone")?;
         let warp_shrine = registry.id("warp_shrine")?;
         let ash = registry.id("ash")?;
+        let portal_conduit = registry.id("portal_conduit")?;
+        let portal_surface = registry.id("portal_surface")?;
+        let portal_token = items.id("portal_token")?;
+        let wayshard = items.id("wayshard")?;
+        let (saved_portals, next_portal) = store.portals()?;
+        let portals = Portals::load(saved_portals, next_portal, |id| {
+            planets.get(id as usize).map(|p| p.world.shape)
+        });
+        let portal_rules = cfg.portal_rules();
         let reclaims = Reclaims::load(store.reclaims()?, &items);
         let last_seen = claim_owners_last_seen(&store, &planets, planets[start].id);
         Ok(Self {
@@ -418,6 +457,12 @@ impl Game {
             lapses_checked: false,
             unpin_after_save: Vec::new(),
             reclaims,
+            portals,
+            portal_rules,
+            portal_conduit,
+            portal_surface,
+            portal_token,
+            wayshard,
         })
     }
 
@@ -512,11 +557,15 @@ impl Game {
         for p in &mut self.planets {
             p.world.receive_loaded(self.tick, p.players > 0);
         }
+        // Before streaming: a chunk is never sent with a portal's old look.
+        self.sync_portals();
         self.simulate();
+        self.step_portals();
         self.step_stations();
         self.step_lapses();
         if self.tick % STORAGE_CHECK_EVERY == 0 {
             self.check_open_storage();
+            self.check_open_portals();
         }
         let ids: Vec<u32> = self.players.keys().copied().collect();
         for id in &ids {
@@ -626,6 +675,8 @@ impl Game {
                 ClientMsg::StorageMove { pos, from, to, count } => self.storage_move(id, pos, from, to, count),
                 ClientMsg::Chat { channel, text } => self.chat(id, channel, text),
                 ClientMsg::CollectReclaim { shrine } => self.collect_reclaim(id, shrine),
+                ClientMsg::OpenPortal { pos } => self.open_portal(id, pos),
+                ClientMsg::Portal { pos, action } => self.portal_action(id, pos, action),
                 ClientMsg::Hello { .. } => {}
             },
         }
@@ -657,7 +708,7 @@ impl Game {
             None => match self.store.player(&account) {
                 Ok(Some(data)) => (
                     data.planet as usize,
-                    data.state,
+                    data.state.map(PlayerState::from),
                     Inventory {
                         slots: load_slots(&self.items, &data.inventory, &name),
                     },
@@ -763,21 +814,30 @@ impl Game {
                 storage: None,
                 chat: ChatLimit::new(self.tick),
                 travel_guard: None,
+                portal: None,
+                portal_guard: false,
+                trip: None,
+                told_tokens: HashSet::new(),
             },
         );
+        self.tell_tokens(id);
         self.server_line(planet, arrived);
     }
 
     fn leave(&mut self, id: u32) {
         let Some(p) = self.players.remove(&id) else { return };
         tracing::info!("{} (#{id}) left", p.name);
+        if let Some(trip) = &p.trip {
+            self.unpin_trip(trip);
+        }
         self.last_seen.insert(p.account.clone(), unix_now());
         let planet = p.planet;
         self.departed.insert(
             p.account,
             Departed {
                 planet,
-                state: p.state,
+                // A player who leaves lets go of their grapple.
+                state: PlayerState { hook: None, ..p.state },
                 inventory: p.inventory,
                 written: None,
             },
@@ -829,15 +889,61 @@ impl Game {
                     p.pending.pop_first().expect("present").1
                 } else {
                     // The next input was lost beyond what redundancy covers:
-                    // repeat the last one. The client sees our answer in the
-                    // snapshot and corrects its prediction.
-                    p.last_input
+                    // repeat the last one, but never its shot (a repeated
+                    // shot would let go of the hook it just fired). The
+                    // client sees our answer in the snapshot and corrects
+                    // its prediction.
+                    PlayerInput {
+                        fire: false,
+                        ..p.last_input
+                    }
                 };
+                // The grapple in the hand the input names, from our own copy
+                // of the inventory: the client's word is only which slot.
+                let slot = input.slot as usize;
+                let grapple = p
+                    .inventory
+                    .slots
+                    .get(slot)
+                    .filter(|_| slot < HOTBAR_SLOTS)
+                    .copied()
+                    .flatten()
+                    .and_then(|s| self.items.get(s.item))
+                    .and_then(|d| d.grapple());
                 let world = &self.planets[p.planet].world;
-                movement::step(&mut p.state, &input, &self.movement, world.shape, world);
+                // Held at a portal while its far side loads.
+                let held = p.trip.as_ref().map(|t| t.held);
+                let events = movement::step(
+                    &mut p.state,
+                    &input,
+                    &self.movement,
+                    grapple.as_ref(),
+                    world.shape,
+                    world,
+                );
+                if let Some(h) = held {
+                    p.state = h;
+                }
                 p.last_seq += 1;
                 p.last_input = input;
                 p.bank -= 1.0;
+                if events.fired || events.released {
+                    let before = p.inventory.clone();
+                    let mut broke = None;
+                    if let Some(s) = p.inventory.slots[slot].as_mut() {
+                        s.wear += 1;
+                        if let Some(def) = self.items.get(s.item)
+                            && def.durability().is_some_and(|d| s.wear >= d)
+                        {
+                            broke = Some(format!("Your {} broke", def.display));
+                            p.inventory.slots[slot] = None;
+                        }
+                    }
+                    send_slots(p, &before);
+                    if let Some(text) = broke {
+                        p.out.send(&ServerMsg::Notice { text });
+                    }
+                }
             }
         }
     }
@@ -1000,12 +1106,16 @@ impl Game {
                                 pos: [o.state.pos.x as f32, o.state.pos.y as f32, o.state.pos.z as f32],
                                 yaw: o.last_input.yaw,
                                 pitch: o.last_input.pitch,
+                                hook: o
+                                    .state
+                                    .hook
+                                    .map(|h| RemotePlayer::pack_hook(shape.delta(o.state.pos, h.pos))),
                             },
                         ))
                     })
                     .collect();
                 near.sort_by(|a, b| a.0.total_cmp(&b.0));
-                near.truncate(PLAYERS_PER_SNAPSHOT * 4);
+                near.truncate(MAX_SEEN_PLAYERS);
                 let others: Vec<RemotePlayer> = near.into_iter().map(|(_, r)| r).collect();
                 let mut parts = others.chunks(PLAYERS_PER_SNAPSHOT).peekable();
                 if parts.peek().is_none() {
@@ -1111,9 +1221,11 @@ impl Game {
         let mut storage_gone = false;
         let mut claim_created = None;
         let mut claim_removed = None;
+        let mut conduit_gone = false;
         match accepted.effect {
             Effect::Broke { old, drop, wear } => {
                 storage_gone = planet.world.registry.get(old).storage > 0;
+                conduit_gone = old == self.portal_conduit;
                 if let Some((item, colour)) = drop {
                     // Checked to fit.
                     p.inventory.add_coloured(&self.items, item, colour, 1);
@@ -1174,6 +1286,10 @@ impl Game {
         }
         if storage_gone {
             self.close_storage_at(pi, canon);
+        }
+        // Checked to have an empty tank.
+        if conduit_gone && let Some(pid) = self.portals.at(self.planets[pi].id, canon) {
+            self.remove_portal(pid);
         }
         if let Some(claim) = claim_created {
             if let Some(p) = self.players.get(&id) {
@@ -1272,6 +1388,11 @@ impl Game {
                         title_case(&def.name)
                     )));
                 }
+                if let Some(pid) = self.portals.at(planet.id, canon)
+                    && self.portals.get(pid).is_some_and(|r| r.fuel > 0)
+                {
+                    return Err(Refusal::Told("Empty the portal's tank before breaking it".into()));
+                }
                 // A block that yields itself keeps its colour in the pack.
                 let colour = world.state(canon).map_or(Colour::NATURAL, |s| s.colour);
                 let drop = self.items.drop_of(current).map(|item| {
@@ -1328,6 +1449,21 @@ impl Game {
                 if block == self.claim_stone {
                     planet.claims.can_create(&p.account, canon, allowance)?;
                 }
+                if block == self.portal_conduit {
+                    if !planet.claims.at_block(canon).is_some_and(|c| c.owner == p.account) {
+                        return Err(Refusal::Told("Portal conduits go only on your own claim".into()));
+                    }
+                    // Records and blocks must never disagree on a shape.
+                    let touches = [(1, 0, 0), (-1, 0, 0), (0, 1, 0), (0, -1, 0), (0, 0, 1), (0, 0, -1)]
+                        .iter()
+                        .any(|&(dx, dy, dz)| {
+                            let n = canon.offset(dx, dy, dz);
+                            shape.contains_y(n.y) && self.portals.at(planet.id, shape.wrap_block(n)).is_some()
+                        });
+                    if touches {
+                        return Err(Refusal::Told("That would change the shape of a portal".into()));
+                    }
+                }
                 if reg.get(block).solid {
                     let m = self.movement;
                     let centre = DVec3::new(canon.x as f64 + 0.5, canon.y as f64 + 0.5, canon.z as f64 + 0.5);
@@ -1363,40 +1499,9 @@ impl Game {
                     .and_then(|s| self.items.get(s.item))
                     .and_then(|d| d.chisel())
                     .ok_or("not a chisel")?;
-                let def = reg.get(current);
-                if current.is_air() || !def.solid {
-                    return Err("nothing to chisel".into());
-                }
-                if !def.chisel.allows(family) {
-                    return Err(Refusal::Told(match def.chisel {
-                        Chiselling::Slope => "Natural ground takes only slope chisels".into(),
-                        _ => format!("{} cannot be chiselled", title_case(&def.name)),
-                    }));
-                }
-                // Precise chisels move one octant, ordinary ones an edge's two.
-                let fits = if precise {
-                    octants.count_ones() == 1
-                } else {
-                    edge_pairs().any(|m| m == octants)
-                };
-                if !fits {
-                    return Err("not a cut this chisel makes".into());
-                }
                 let state = world.state(canon).ok_or("chunk not resident")?;
-                let cut = if state.shape.is_valid() {
-                    state.shape
-                } else {
-                    Shape::FULL
-                };
-                if cut.family().is_some_and(|f| f != family) {
-                    return Err(Refusal::Told(
-                        "This block is already cut by another kind of chisel".into(),
-                    ));
-                }
-                let new = if restore {
-                    if octants & !cut.removed() != 0 {
-                        return Err("nothing cut there to fill".into());
-                    }
+                let new = chisel::apply(reg.get(current), state, family, precise, octants, restore)?;
+                if restore {
                     // Filling back must not close over a player: the octants
                     // put back are the solid boxes of `Shape(!octants)`.
                     let m = self.movement;
@@ -1411,14 +1516,7 @@ impl Game {
                     if blocked {
                         return Err("a player is in the way".into());
                     }
-                    cut.restored(octants)
-                } else {
-                    if octants & cut.removed() != 0 {
-                        return Err("already cut there".into());
-                    }
-                    cut.chiselled(family, octants)
-                        .ok_or_else(|| Refusal::Told("That would cut the whole block away".into()))?
-                };
+                }
                 Ok(Accepted {
                     block: BlockState { shape: new, ..state },
                     effect: Effect::Chiselled { slot },
@@ -1454,15 +1552,16 @@ impl Game {
             let text = format!("You are already on {}", from.name);
             return self.notice(id, &text);
         }
-        self.travel(id, to);
+        self.travel(id, to, None);
     }
 
-    /// Moves a player to planet `to`, standing beside its shrine. The client
+    /// Moves a player to planet `to`, standing at `arrival` (a portal's far
+    /// side) or, by default, beside its shrine. The client
     /// drops everything of the old planet on `Travel`, so nothing of it is
     /// forgotten one by one; everything after `Travel` on the stream belongs
     /// to the new planet.
-    fn travel(&mut self, id: u32, to: usize) {
-        let arrival = self.planets[to].arrival();
+    fn travel(&mut self, id: u32, to: usize, arrival: Option<PlayerState>) {
+        let arrival = arrival.unwrap_or_else(|| self.planets[to].arrival());
         let Some(p) = self.players.get_mut(&id) else { return };
         let from = p.planet;
         p.planet = to;
@@ -1486,6 +1585,9 @@ impl Game {
         p.edits.clear();
         p.mining = None;
         p.watching = None;
+        if p.portal.take().is_some() {
+            p.out.send(&ServerMsg::Portal(None));
+        }
         // Closed before `Travel`: after it, everything is the new planet's.
         if let Some(pos) = p.storage.take() {
             p.out.send(&closed_storage(pos));
@@ -1824,6 +1926,7 @@ impl Game {
                 let Some(p) = self.players.get_mut(&id) else { return };
                 p.storage = Some(canon);
                 p.out.send(&ServerMsg::Storage(view));
+                self.tell_tokens(id);
             }
             Err(r) => {
                 let shape = self.planets[pi].world.shape;
@@ -1871,6 +1974,15 @@ impl Game {
         if slots != stored {
             self.planets[pi].storage.set(canon, slots);
             self.push_storage(pi, canon, size);
+            let viewers: Vec<u32> = self
+                .players
+                .iter()
+                .filter(|(_, p)| p.planet == pi && p.storage == Some(canon))
+                .map(|(id, _)| *id)
+                .collect();
+            for v in viewers {
+                self.tell_tokens(v);
+            }
         }
     }
 
@@ -1966,6 +2078,7 @@ impl Game {
         p.out.send(&ServerMsg::Reclaim {
             items: self.reclaims.items(&p.account).to_vec(),
         });
+        self.tell_tokens(id);
         if !had {
             self.notice(id, "Nothing waits for you in reclaim");
         } else if !moved {
@@ -2063,6 +2176,29 @@ impl Game {
     /// Turns the next plot of lapse `i` to ash, and finishes the lapse when
     /// none are left.
     fn lapse_plot(&mut self, i: usize) {
+        // Portals on the plot go first: unlinked, surfaces back to conduits
+        // (which turn to ash below), their fuel to the owner's reclaim.
+        let job = &self.lapses[i];
+        let (pi, claim, owner) = (job.planet, job.claim, job.owner.clone());
+        if let Some(&plot) = job.plots.front()
+            && self.planets[pi]
+                .claims
+                .get(claim)
+                .is_some_and(|c| c.plots.contains(&plot))
+            && job.reference.is_some()
+        {
+            let fuel = self.lapse_portals(pi, plot);
+            if fuel > 0 {
+                let max = self.items.get(self.wayshard).map_or(1, |d| d.stack) as u32;
+                let stacks =
+                    (0..fuel.div_ceil(max)).map(|k| ItemStack::new(self.wayshard, (fuel - k * max).min(max) as u16));
+                self.reclaims.add(&owner, stacks);
+                self.push_reclaim(&owner);
+                let job = &mut self.lapses[i];
+                job.begun = true;
+                job.reclaimed = true;
+            }
+        }
         let job = &mut self.lapses[i];
         let Some(plot) = job.plots.pop_front() else {
             return self.finish_lapse(i);
@@ -2214,7 +2350,7 @@ impl Game {
         let planets = &self.planets;
         let data = |planet: usize, state: PlayerState, inv: &Inventory| PlayerData {
             planet: planets[planet].id,
-            state: Some(state),
+            state: Some(state.into()),
             inventory: save_slots(items, inv),
             last_seen: now,
         };
@@ -2260,6 +2396,7 @@ impl Game {
                     .map(|(pos, s)| (id, pos, s)),
             );
         }
+        let (portals, next_portal) = self.portals.take_dirty();
         // Their ash is in this batch now, with what was reclaimed from them.
         for (pi, c) in self.unpin_after_save.drain(..) {
             self.planets[pi].world.unpin(c);
@@ -2271,6 +2408,8 @@ impl Game {
             claims,
             storage,
             reclaim: self.reclaims.take_dirty(&self.items),
+            portals,
+            next_portal,
             clock: Some(self.tick),
             done,
         };

@@ -149,3 +149,24 @@ output = "precise_slope_chisel"
 inputs = [["iron_ingot", 2], ["slope_chisel", 1]]
 station = "workbench"
 seconds = 6.0
+
+# Grapples: three bars as in Boundless (tuning 1.2); its cloth, glue and
+# salvaged parts wait for those materials, timber stands in.
+[[recipe]]
+output = "copper_grapple"
+inputs = [["copper_ingot", 3], ["timber", 2]]
+station = "workbench"
+seconds = 5.0
+
+[[recipe]]
+output = "iron_grapple"
+inputs = [["iron_ingot", 3], ["timber", 2]]
+station = "workbench"
+seconds = 6.0
+
+[[recipe]]
+output = "portal_conduit"
+count = 2
+inputs = [["stone", 4], ["copper_ingot", 1], ["wayshard", 1]]
+station = "workbench"
+seconds = 4.0

@@ -6,6 +6,7 @@
 //! items are data the server sends to clients in the handshake.
 
 use crate::block::{BlockDef, BlockId, BlockRegistry, Colour, Material};
+use crate::movement::{self, GrappleSpec};
 use crate::shape::ShapeFamily;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -55,6 +56,19 @@ pub enum ItemKind {
         precise: bool,
         durability: u16,
     },
+    /// Fires a hook that sticks where it strikes, to swing from and climb
+    /// (`movement::step`). One use per shot.
+    Grapple {
+        range: f32,
+        shot_speed: f32,
+        reel_in: f32,
+        reel_out: f32,
+        hookshot: bool,
+        durability: u16,
+    },
+    /// Links two portals of the same size (ADR-0009): made at one, used up
+    /// at the other. The stack's `tag` is the portal it was made at.
+    PortalToken,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -100,10 +114,34 @@ impl ItemDef {
         }
     }
 
+    /// What a grapple does. The same on server and client: both widen the
+    /// same `f32`s from the catalogue.
+    pub fn grapple(&self) -> Option<GrappleSpec> {
+        match self.kind {
+            ItemKind::Grapple {
+                range,
+                shot_speed,
+                reel_in,
+                reel_out,
+                hookshot,
+                ..
+            } => Some(GrappleSpec {
+                range: range as f64,
+                shot_speed: shot_speed as f64,
+                reel_in_speed: reel_in as f64,
+                reel_out_speed: reel_out as f64,
+                hookshot,
+            }),
+            _ => None,
+        }
+    }
+
     /// Uses before it breaks, for anything that wears.
     pub fn durability(&self) -> Option<u16> {
         match self.kind {
-            ItemKind::Tool { durability, .. } | ItemKind::Chisel { durability, .. } => Some(durability),
+            ItemKind::Tool { durability, .. }
+            | ItemKind::Chisel { durability, .. }
+            | ItemKind::Grapple { durability, .. } => Some(durability),
             _ => None,
         }
     }
@@ -111,7 +149,9 @@ impl ItemDef {
 
 /// Some number of one item in one slot. `wear` is durability spent (tools).
 /// `colour` is part of the item's identity: stacks of different colours never
-/// merge, and a placed block takes its stack's colour (ADR-0007).
+/// merge, and a placed block takes its stack's colour (ADR-0007). `tag` is
+/// what one stack is bound to (a portal token's portal, ADR-0009), 0 for
+/// nothing; stacks with different tags never merge either.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ItemStack {
     pub item: ItemId,
@@ -119,6 +159,8 @@ pub struct ItemStack {
     pub wear: u16,
     #[serde(default)]
     pub colour: Colour,
+    #[serde(default)]
+    pub tag: u32,
 }
 
 impl ItemStack {
@@ -132,13 +174,26 @@ impl ItemStack {
             count,
             wear: 0,
             colour,
+            tag: 0,
         }
     }
 
-    /// Whether `other` can be added onto this stack (same item and colour,
-    /// neither worn).
+    /// A single item bound to `tag` (a portal token's portal).
+    pub fn tagged(item: ItemId, tag: u32) -> Self {
+        Self {
+            tag,
+            ..Self::new(item, 1)
+        }
+    }
+
+    /// Whether `other` can be added onto this stack (same item, colour and
+    /// tag, neither worn).
     pub fn stacks_with(&self, other: &ItemStack) -> bool {
-        self.item == other.item && self.colour == other.colour && self.wear == 0 && other.wear == 0
+        self.item == other.item
+            && self.colour == other.colour
+            && self.tag == other.tag
+            && self.wear == 0
+            && other.wear == 0
     }
 }
 
@@ -178,7 +233,22 @@ struct ItemEntry {
     tool: Option<ToolEntry>,
     #[serde(default)]
     chisel: Option<ChiselEntry>,
+    #[serde(default)]
+    grapple: Option<GrappleEntry>,
+    #[serde(default)]
+    portal_token: bool,
     icon: Option<String>,
+}
+
+#[derive(Deserialize)]
+struct GrappleEntry {
+    range: f32,
+    shot_speed: f32,
+    reel_in: f32,
+    reel_out: f32,
+    #[serde(default)]
+    hookshot: bool,
+    durability: u16,
 }
 
 #[derive(Deserialize)]
@@ -240,19 +310,28 @@ impl ItemRegistry {
             }
         }
         for e in file.item {
-            let kind = match (e.tool, e.chisel) {
-                (Some(_), Some(_)) => return Err(ItemError::BadTool(e.name)),
-                (Some(t), None) => ItemKind::Tool {
+            let kind = match (e.tool, e.chisel, e.grapple) {
+                (Some(t), None, None) => ItemKind::Tool {
                     class: t.class,
                     speed: t.speed,
                     durability: t.durability,
                 },
-                (None, Some(c)) => ItemKind::Chisel {
+                (None, Some(c), None) => ItemKind::Chisel {
                     family: c.family,
                     precise: c.precise,
                     durability: c.durability,
                 },
-                (None, None) => ItemKind::Material,
+                (None, None, Some(g)) => ItemKind::Grapple {
+                    range: g.range,
+                    shot_speed: g.shot_speed,
+                    reel_in: g.reel_in,
+                    reel_out: g.reel_out,
+                    hookshot: g.hookshot,
+                    durability: g.durability,
+                },
+                (None, None, None) if e.portal_token => ItemKind::PortalToken,
+                (None, None, None) => ItemKind::Material,
+                _ => return Err(ItemError::BadTool(e.name)),
             };
             defs.push(ItemDef {
                 display: e.display.unwrap_or_else(|| title_case(&e.name)),
@@ -289,6 +368,23 @@ impl ItemRegistry {
                 ItemKind::Chisel { durability, .. } if d.stack != 1 || durability == 0 => {
                     return Err(ItemError::BadTool(d.name.clone()));
                 }
+                ItemKind::Grapple {
+                    range,
+                    shot_speed,
+                    reel_in,
+                    reel_out,
+                    durability,
+                    ..
+                } if d.stack != 1
+                    || durability == 0
+                    || !(range >= movement::ROPE_MIN as f32 && range <= 64.0)
+                    || !(shot_speed > 0.0 && shot_speed <= 200.0)
+                    || !(reel_in > 0.0 && reel_in <= 100.0)
+                    || !(reel_out > 0.0 && reel_out <= 100.0) =>
+                {
+                    return Err(ItemError::BadTool(d.name.clone()));
+                }
+                ItemKind::PortalToken if d.stack != 1 => return Err(ItemError::BadTool(d.name.clone())),
                 ItemKind::Block(b) if !blocks.contains(b) => return Err(ItemError::BadBlock(d.name.clone(), b.0)),
                 _ => {}
             }
@@ -428,6 +524,46 @@ mod tests {
         ));
         // The builtin blocks name drops that only the builtin items define.
         assert!(matches!(ItemRegistry::build(&b, ""), Err(ItemError::UnknownDrop(..))));
+    }
+
+    #[test]
+    fn grapples_are_read_and_checked() {
+        let (_, items) = setup();
+        let def = items.get(items.id("copper_grapple").unwrap()).unwrap();
+        let g = def.grapple().expect("a grapple");
+        assert_eq!(
+            (g.range, g.shot_speed, g.reel_in_speed, g.reel_out_speed),
+            (10.0, 45.0, 5.0, 15.0)
+        );
+        assert!(!g.hookshot, "no base grapple reels itself (tuning 1.1)");
+        assert!(def.durability().is_some());
+        let iron = items.get(items.id("iron_grapple").unwrap()).unwrap();
+        let g = iron.grapple().expect("a grapple");
+        assert_eq!(
+            (g.range, g.shot_speed, g.reel_in_speed, g.reel_out_speed),
+            (20.0, 30.0, 2.0, 10.0)
+        );
+        assert_eq!(iron.durability(), Some(1000));
+        let b = BlockRegistry::builtin();
+        let bad = |g: &str| {
+            let toml = format!(
+                "{}\n[[item]]\nname = \"g\"\nstack = 1\ngrapple = {g}\n",
+                include_str!("../../../assets/items.toml")
+            );
+            matches!(ItemRegistry::build(&b, &toml), Err(ItemError::BadTool(_)))
+        };
+        assert!(!bad(
+            "{ range = 10.0, shot_speed = 50.0, reel_in = 5.0, reel_out = 5.0, durability = 9 }"
+        ));
+        assert!(bad(
+            "{ range = 500.0, shot_speed = 50.0, reel_in = 5.0, reel_out = 5.0, durability = 9 }"
+        ));
+        assert!(bad(
+            "{ range = 10.0, shot_speed = 0.0, reel_in = 5.0, reel_out = 5.0, durability = 9 }"
+        ));
+        assert!(bad(
+            "{ range = 10.0, shot_speed = 50.0, reel_in = 5.0, reel_out = 5.0, durability = 0 }"
+        ));
     }
 
     #[test]

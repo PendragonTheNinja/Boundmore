@@ -19,12 +19,14 @@
 //! catalogue, and adding one block shifts every item after it.
 
 use anyhow::{Context, Result, bail};
+use bm_core::portal::PortalAxis;
 use bm_core::{
     BlockPos, CHUNK_FORMAT_VERSION, ChunkPos, Colour, DayCycle, Inventory, ItemRegistry, ItemStack, PlanetShape,
     PlayerState, PlotPos, Station,
 };
 use bm_worldgen::{GENERATOR_VERSION, PlanetGenConfig, PlanetGenConfigV1, PlanetKinds};
 use crossbeam_channel::{Receiver, Sender};
+use glam::DVec3;
 use redb::{Database, ReadableDatabase, ReadableTable, TableDefinition, WriteTransaction};
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
@@ -53,6 +55,10 @@ const STORAGE: TableDefinition<&[u8], &[u8]> = TableDefinition::new("planet_stor
 /// account's lapsed claims. Added in M6 without a version bump, as `STORAGE`
 /// was: a new table changes nothing already saved.
 const RECLAIM: TableDefinition<&str, &[u8]> = TableDefinition::new("reclaim");
+/// Portal number (unique in the universe, never reused) -> [`SavedPortal`].
+/// Added in M8 without a version bump, as `STORAGE` was; the next portal
+/// number is kept in `META` under "next_portal".
+const PORTALS: TableDefinition<u32, &[u8]> = TableDefinition::new("portals");
 
 /// Save version 1 and 2 tables, read only to upgrade, then deleted.
 const V1_PLAYERS: TableDefinition<&str, &[u8]> = TableDefinition::new("players");
@@ -162,7 +168,10 @@ impl std::fmt::Debug for AccountRecord {
 
 /// One stack as saved: by item name. A coloured stack saves its colour id
 /// after a `#` (`stone#17`); a plain name is natural colour, which is how
-/// every stack saved before colours existed reads (ADR-0007).
+/// every stack saved before colours existed reads (ADR-0007). A tagged stack
+/// (a portal token, ADR-0009) saves its tag after an `@`, always last
+/// (`portal_token@17`, `name#3@17` with both); no `@` is tag 0, so every
+/// older save reads unchanged.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SavedStack {
     pub item: String,
@@ -173,12 +182,15 @@ pub struct SavedStack {
 impl SavedStack {
     pub fn new(items: &ItemRegistry, s: &ItemStack) -> Option<Self> {
         let name = &items.get(s.item)?.name;
+        let mut item = name.clone();
+        if s.colour != Colour::NATURAL {
+            item.push_str(&format!("#{}", s.colour.0));
+        }
+        if s.tag != 0 {
+            item.push_str(&format!("@{}", s.tag));
+        }
         Some(Self {
-            item: if s.colour == Colour::NATURAL {
-                name.clone()
-            } else {
-                format!("{name}#{}", s.colour.0)
-            },
+            item,
             count: s.count,
             wear: s.wear,
         })
@@ -186,9 +198,13 @@ impl SavedStack {
 
     /// The stack in this catalogue, if the item still exists.
     pub fn resolve(&self, items: &ItemRegistry) -> Option<ItemStack> {
-        let (name, colour) = match self.item.split_once('#') {
+        let (rest, tag) = match self.item.rsplit_once('@') {
+            Some((rest, t)) => (rest, t.parse().ok()?),
+            None => (self.item.as_str(), 0),
+        };
+        let (name, colour) = match rest.split_once('#') {
             Some((name, c)) => (name, Colour(c.parse().ok()?)),
-            None => (self.item.as_str(), Colour::NATURAL),
+            None => (rest, Colour::NATURAL),
         };
         let id = items.id(name).ok()?;
         Some(ItemStack {
@@ -196,6 +212,7 @@ impl SavedStack {
             count: self.count,
             wear: self.wear,
             colour,
+            tag,
         })
     }
 }
@@ -226,13 +243,45 @@ pub fn load_slots(items: &ItemRegistry, slots: &[Option<SavedStack>], what: &str
         .collect()
 }
 
+/// A player's body as saved: where they are and how they are moving. This
+/// is the layout `PlayerState` had before grapples (postcard is positional),
+/// kept apart from it so a hook in flight is never saved and new movement
+/// state never changes the save format.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Serialize, Deserialize)]
+pub struct SavedBody {
+    pub pos: DVec3,
+    pub vel: DVec3,
+    pub on_ground: bool,
+}
+
+impl From<PlayerState> for SavedBody {
+    fn from(s: PlayerState) -> Self {
+        Self {
+            pos: s.pos,
+            vel: s.vel,
+            on_ground: s.on_ground,
+        }
+    }
+}
+
+impl From<SavedBody> for PlayerState {
+    fn from(b: SavedBody) -> Self {
+        Self {
+            pos: b.pos,
+            vel: b.vel,
+            on_ground: b.on_ground,
+            hook: None,
+        }
+    }
+}
+
 /// Everything saved about one account's character.
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 pub struct PlayerData {
     /// The planet they are on (its id).
     pub planet: u16,
     /// Where on it. None: never placed there (starts at its shrine).
-    pub state: Option<PlayerState>,
+    pub state: Option<SavedBody>,
     pub inventory: Vec<Option<SavedStack>>,
     /// Unix seconds when the player was last connected; 0 if never recorded
     /// (the server then counts from when it first sees the 0). Their claims
@@ -279,6 +328,21 @@ pub struct SavedClaim {
     pub plots: Vec<PlotPos>,
 }
 
+/// A portal as saved (ADR-0009): where its rectangle is, whose it is, what
+/// it links to and what its tank holds.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct SavedPortal {
+    pub planet: u16,
+    pub corner: BlockPos,
+    pub axis: PortalAxis,
+    pub width: u8,
+    pub height: u8,
+    /// Lowercased account name.
+    pub owner: String,
+    pub link: Option<u32>,
+    pub fuel: u32,
+}
+
 /// The layouts save version 2 wrote, kept only to read them for the upgrade.
 mod v2 {
     use super::*;
@@ -296,7 +360,7 @@ mod v2 {
 
     #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
     pub struct PlayerData {
-        pub state: Option<PlayerState>,
+        pub state: Option<SavedBody>,
         pub inventory: Vec<Option<SavedStack>>,
         pub last_seen: u64,
     }
@@ -450,6 +514,7 @@ impl Store {
         tx.open_table(CLAIMS)?;
         tx.open_table(STORAGE)?;
         tx.open_table(RECLAIM)?;
+        tx.open_table(PORTALS)?;
         tx.commit()?;
         Ok(Self { db: Arc::new(db) })
     }
@@ -728,6 +793,29 @@ impl Store {
         Ok((out, next))
     }
 
+    /// Every portal in the universe, and the next free portal number (above
+    /// every stored key, even a corrupt one, and never below the saved next
+    /// number, so a number is never used twice).
+    pub fn portals(&self) -> Result<(Vec<(u32, SavedPortal)>, u32)> {
+        let tx = self.db.begin_read()?;
+        let mut next = match tx.open_table(META)?.get("next_portal")? {
+            Some(v) => postcard::from_bytes(v.value()).context("next portal number is corrupt")?,
+            None => 1,
+        };
+        let t = tx.open_table(PORTALS)?;
+        let mut out = Vec::new();
+        for row in t.iter()? {
+            let (k, v) = row?;
+            let id = k.value();
+            next = next.max(id.saturating_add(1));
+            match postcard::from_bytes(v.value()) {
+                Ok(p) => out.push((id, p)),
+                Err(e) => tracing::error!("saved portal {id} is corrupt ({e}); skipped"),
+            }
+        }
+        Ok((out, next))
+    }
+
     /// The universe clock in ticks (0 for a new universe).
     pub fn clock(&self) -> Result<u64> {
         let tx = self.db.begin_read()?;
@@ -783,6 +871,17 @@ impl Store {
                     None => reclaim.remove(key.as_str())?,
                 };
             }
+            let mut portals = tx.open_table(PORTALS)?;
+            for (id, p) in &batch.portals {
+                match p {
+                    Some(p) => portals.insert(*id, postcard::to_stdvec(p)?.as_slice())?,
+                    None => portals.remove(*id)?,
+                };
+            }
+            if let Some(next) = batch.next_portal {
+                tx.open_table(META)?
+                    .insert("next_portal", postcard::to_stdvec(&next)?.as_slice())?;
+            }
         }
         tx.commit()?;
         Ok(())
@@ -825,7 +924,7 @@ fn upgrade_1_to_2(tx: &WriteTransaction) -> Result<()> {
         let old = tx.open_table(V1_PLAYERS)?;
         for row in old.iter()? {
             let (k, v) = row?;
-            match postcard::from_bytes::<PlayerState>(v.value()) {
+            match postcard::from_bytes::<SavedBody>(v.value()) {
                 Ok(state) => moved.push((k.value().to_lowercase(), state)),
                 Err(e) => tracing::warn!("version 1 player `{}` is corrupt ({e}); not carried over", k.value()),
             }
@@ -996,6 +1095,10 @@ pub struct WriteBatch {
     pub storage: Vec<(u16, BlockPos, Option<SavedSlots>)>,
     /// Reclaims by lowercased account name; None deletes (it was emptied).
     pub reclaim: Vec<(String, Option<SavedReclaim>)>,
+    /// Portals by number; None deletes (it was broken or lapsed).
+    pub portals: Vec<(u32, Option<SavedPortal>)>,
+    /// The next portal number, when it changed.
+    pub next_portal: Option<u32>,
     /// The universe clock, so days and station jobs continue across restarts.
     pub clock: Option<u64>,
     /// Each is signalled once the batch is durable (shutdown waits on one;
@@ -1012,6 +1115,8 @@ impl WriteBatch {
             && self.claims.is_empty()
             && self.storage.is_empty()
             && self.reclaim.is_empty()
+            && self.portals.is_empty()
+            && self.next_portal.is_none()
     }
 }
 
@@ -1051,7 +1156,7 @@ pub mod legacy {
     /// One player of a version 2 save.
     pub struct V2Player<'a> {
         pub key: &'a str,
-        pub state: Option<PlayerState>,
+        pub state: Option<SavedBody>,
         pub inventory: Vec<Option<SavedStack>>,
     }
 
@@ -1134,14 +1239,13 @@ pub mod legacy {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use glam::DVec3;
 
     fn kinds() -> PlanetKinds {
         PlanetKinds::builtin(&bm_core::BlockRegistry::builtin())
     }
 
-    fn at(x: f64) -> PlayerState {
-        PlayerState {
+    fn at(x: f64) -> SavedBody {
+        SavedBody {
             pos: DVec3::new(x, 2.0, 3.0),
             ..Default::default()
         }
@@ -1187,6 +1291,16 @@ mod tests {
             plots: vec![PlotPos::new(0, 0, 0)],
         };
         let spot = BlockPos::new(-5, 40, 1 << 40);
+        let portal = SavedPortal {
+            planet: 2,
+            corner: spot,
+            axis: PortalAxis::Z,
+            width: 2,
+            height: 3,
+            owner: "pendragon".into(),
+            link: Some(4),
+            fuel: 499,
+        };
         {
             let s = Store::open(&path).unwrap();
             assert_eq!(s.universe(&kinds()).unwrap(), None);
@@ -1215,6 +1329,8 @@ mod tests {
                         notices: vec!["gone".into()],
                     }),
                 )],
+                portals: vec![(9, Some(portal.clone()))],
+                next_portal: Some(12),
                 clock: Some(777),
                 done: Vec::new(),
             })
@@ -1258,8 +1374,11 @@ mod tests {
             )]
         );
 
+        assert_eq!(s.portals().unwrap(), (vec![(9, portal)], 12));
+
         // Deletions.
         s.write(&WriteBatch {
+            portals: vec![(9, None)],
             stations: vec![(2, spot, None)],
             claims: vec![(4, None)],
             storage: vec![(2, spot, None)],
@@ -1271,6 +1390,7 @@ mod tests {
         assert!(s.stations(2).unwrap().is_empty());
         assert!(s.storage(2).unwrap().is_empty());
         assert_eq!(s.claims().unwrap(), (vec![], 1));
+        assert_eq!(s.portals().unwrap(), (vec![], 12), "a number is never used again");
     }
 
     #[test]
@@ -1389,7 +1509,7 @@ mod tests {
 
     /// Writes a planet exactly as save version 1 did: its meta, a chunk, and
     /// the old players table.
-    fn write_v1_planet(path: &Path, players: &[(&str, PlayerState)]) {
+    fn write_v1_planet(path: &Path, players: &[(&str, SavedBody)]) {
         let db = Database::create(path).unwrap();
         let tx = db.begin_write().unwrap();
         {
@@ -1525,6 +1645,29 @@ mod tests {
         assert_eq!(saved[3].as_ref().unwrap().item, "stone_hammer");
         assert_eq!(saved[5].as_ref().unwrap().item, "stone#77");
         assert_eq!(load_slots(&items, &saved, "test"), inv.slots);
+        // Tokens carry their portal after an `@`, after any colour.
+        let token = items.id("portal_token").unwrap();
+        let mut inv = Inventory::default();
+        inv.slots[0] = Some(ItemStack::tagged(token, 17));
+        inv.slots[1] = Some(ItemStack {
+            colour: Colour(4),
+            ..ItemStack::tagged(token, u32::MAX)
+        });
+        inv.slots[2] = Some(ItemStack::new(token, 1));
+        let saved = save_slots(&items, &inv);
+        let names: Vec<_> = saved
+            .iter()
+            .take(3)
+            .map(|s| s.as_ref().unwrap().item.as_str())
+            .collect();
+        assert_eq!(names, ["portal_token@17", "portal_token#4@4294967295", "portal_token"]);
+        assert_eq!(load_slots(&items, &saved, "test"), inv.slots);
+        let bad = vec![Some(SavedStack {
+            item: "portal_token@x".into(),
+            count: 1,
+            wear: 0,
+        })];
+        assert_eq!(load_slots(&items, &bad, "test"), vec![None], "a bad tag is no item");
         let gone = vec![Some(SavedStack {
             item: "unobtainium".into(),
             count: 1,

@@ -753,6 +753,264 @@ fn ingot(ramp: Ramp) -> Tex {
     icon.finish()
 }
 
+// ----------------------------------------------------------------- grapples
+
+/// A grapple: a three-clawed hook on a short shaft, pointing to the top
+/// right like every tool, its rope running back to a coil (or, on a
+/// hookshot, to a winch drum that reels it in).
+fn grapple(metal: Metal, hookshot: bool) -> Tex {
+    let salt = metal.salt(if hookshot { "hookshot" } else { "grapple" });
+    let f = Frame { ox: 4.5, oy: 27.5 };
+    let ramp = metal.ramp();
+    let cord = cord_ramp();
+    let mut icon = Icon::new();
+    // The rope from the coil or drum up to the shaft's eye.
+    icon.layer(false, |x, y| {
+        let (u, v) = f.uv(x, y);
+        let wave = (u * 0.9).sin() * 0.5;
+        if !(5.0..=13.0).contains(&u) || (v - wave).abs() > 0.75 {
+            return None;
+        }
+        let turn = ((u * FRAC_1_SQRT_2 * 2.0).round() as i32) % 2 == 0;
+        Some(cord.pick(if turn { 0.7 } else { 0.45 }, x, y))
+    });
+    if hookshot {
+        // The winch: a drum wound with rope between two metal cheeks, set
+        // square across the shaft line.
+        icon.layer(true, |x, y| {
+            let (u, v) = f.uv(x, y);
+            if rounded_box(u, v, 4.5, 0.0, 3.6, 5.4, 1.0) > 0.0 {
+                return None;
+            }
+            let side = -v / 5.4;
+            if (u - 4.5).abs() > 2.2 {
+                let t = 0.5 + side * 0.3 + metal.facet(salt, u, v);
+                return Some(ramp.pick(if u < 4.5 { t + 0.15 } else { t - 0.1 }, x, y));
+            }
+            let turn = ((v * FRAC_1_SQRT_2 * 2.0).round() as i32) % 2 == 0;
+            Some(cord.pick(0.5 + side * 0.25 + if turn { 0.12 } else { -0.15 }, x, y))
+        });
+        // The crank's knob.
+        icon.layer(true, |x, y| {
+            let (u, v) = f.uv(x, y);
+            if (u - 1.0).hypot(v - 4.6) > 1.3 {
+                return None;
+            }
+            Some(plank_ramp().pick(0.6 - (v - 4.6) * 0.2, x, y))
+        });
+    } else {
+        // A coil of rope: a ring wound in light and dark turns.
+        let (cx, cy, r0, r1) = (9.5f32, 22.0f32, 3.2f32, 7.2f32);
+        icon.layer(true, |x, y| {
+            let (dx, dy) = (c(x) - cx, (c(y) - cy) * 1.15);
+            let r = dx.hypot(dy);
+            if r < r0 || r > r1 {
+                return None;
+            }
+            let ring = ((r - r0) / (r1 - r0) * 3.0).floor() as i32;
+            let turn = (dy.atan2(dx) * 4.0).floor() as i32 + ring;
+            // Lit on the outer top left, shaded towards the hole.
+            let lit = -(dx + dy) / r * 0.18;
+            let t = 0.5 + lit + if turn % 2 == 0 { 0.12 } else { -0.12 } - if ring == 0 { 0.15 } else { 0.0 };
+            Some(cord.pick(t, x, y))
+        });
+    }
+    // The shaft, with an eye where the rope ties on.
+    let (s0, head) = (12.0f32, 23.5f32);
+    icon.layer(true, |x, y| {
+        let (u, v) = f.uv(x, y);
+        let eye = (u - s0).hypot(v) < 1.9;
+        if !eye && !((s0..=head + 4.0).contains(&u) && v.abs() <= 1.0) {
+            return None;
+        }
+        if eye && (u - s0).hypot(v) < 0.8 {
+            return Some(OUTLINE);
+        }
+        // The point beyond the claws narrows to a tip.
+        if u > head && v.abs() > 1.0 - (u - head) / 4.0 {
+            return None;
+        }
+        let t = 0.55 - v * 0.25 + metal.facet(salt, u, v);
+        Some(ramp.pick(if u > head + 2.5 { 0.92 } else { t }, x, y))
+    });
+    // Two claws arching out from the head and back towards the rope, like
+    // an umbrella's ribs, their points lit.
+    for side in [-1.0f32, 1.0] {
+        icon.layer(true, |x, y| {
+            let (u, v) = f.uv(x, y);
+            let (cu, r) = (head - 4.2, 4.6);
+            let d = (u - cu).hypot(v);
+            if (d - r).abs() > 1.0 || u < cu - 0.8 || v * side < 0.4 {
+                return None;
+            }
+            let tip = u < cu + 1.1;
+            let t = 0.55 - v * 0.08 - (d - r) * 0.2;
+            Some(ramp.pick(if tip { 0.92 } else { t }, x, y))
+        });
+    }
+    icon.finish()
+}
+
+// ----------------------------------------------------------------- portals
+
+/// A crystal blade from its foot at (x, y) at angle `ang` (screen
+/// radians, 0 = right, y down), `len` long and `half` wide: a long hexagonal
+/// prism, three faces visible (the one towards the top left in the light,
+/// the far one in shade, a front face between them under a bright ridge),
+/// a faceted point at the far end and a short worn point at the foot.
+fn blade(icon: &mut Icon, foot: P, ang: f32, len: f32, half: f32, ramp: &Ramp) {
+    let (ax, ay) = (ang.cos(), ang.sin());
+    // Which side of the axis faces the light: +1 when the -v side does.
+    let lit = if ax - ay > 0.0 { 1.0 } else { -1.0 };
+    let (tip, heel) = (half * 2.0, half * 0.9);
+    icon.layer(true, |x, y| {
+        let (dx, dy) = (c(x) - foot.0, c(y) - foot.1);
+        let u = dx * ax + dy * ay;
+        let v = (-dx * ay + dy * ax) * lit;
+        if u < 0.0 || u > len {
+            return None;
+        }
+        let w = half * ((len - u) / tip).min(1.0).min(u / heel + 0.25);
+        if v.abs() > w {
+            return None;
+        }
+        let third = w / 3.0;
+        let mut t = if v < -third {
+            0.74
+        } else if v > third {
+            0.28
+        } else {
+            0.5
+        };
+        // Brighter towards the point, as if lit from inside.
+        t += u / len * 0.16;
+        if (v + third).abs() < 0.5 {
+            t += 0.16;
+        }
+        // The point's facets: the lit ones flare.
+        if u > len - tip && v < third {
+            t += 0.14;
+        }
+        if u < heel {
+            t -= 0.14;
+        }
+        Some(ramp.pick(t, x, y))
+    });
+}
+
+/// Wayshard: a long violet-blue crystal blade pointing to the top right,
+/// a shorter one grown against its foot standing more upright, and a white
+/// glint near the long one's point. Slim and pointed, where copper and iron
+/// ore are rounded lumps of rock.
+fn wayshard() -> Tex {
+    let ramp = crate::materials::wayshard_ramp();
+    let mut icon = Icon::new();
+    let up = -std::f32::consts::FRAC_PI_4;
+    blade(&mut icon, (8.0, 27.0), up - 0.55, 16.0, 3.2, &ramp);
+    blade(&mut icon, (6.0, 27.5), up, 29.0, 4.4, &ramp);
+    blade(&mut icon, (10.0, 28.5), up + 0.62, 13.0, 2.6, &ramp);
+    icon.layer(false, |x, y| {
+        let (dx, dy) = (c(x) - 22.5, c(y) - 10.5);
+        (dx.abs() + dy.abs() < 1.1).then(|| ramp.lightest())
+    });
+    icon.finish()
+}
+
+/// Portal token: a stone tag like a key's bow, framed in copper, a wayshard
+/// set in its middle, hung from a copper ring at the top and cut with a
+/// key's bit of teeth along its foot, so it reads as a key to a place.
+fn portal_token() -> Tex {
+    let salt = seed("portal_token");
+    let stone = crate::materials::conduit_stone_ramp();
+    let copper = copper_ramp();
+    let shard = crate::materials::wayshard_ramp();
+    let mut icon = Icon::new();
+    // The ring at the top, behind the tag.
+    icon.layer(true, |x, y| {
+        let (dx, dy) = (c(x) - 16.0, c(y) - 6.0);
+        let r = dx.hypot(dy);
+        if !(2.0..=4.4).contains(&r) {
+            return None;
+        }
+        Some(copper.pick(0.55 - (dx + dy) / r * 0.28, x, y))
+    });
+    // The tag: a shield-like slab with chamfered top corners and teeth at
+    // the foot.
+    let (x0, x1, y0, y1) = (6.0f32, 26.0f32, 8.0f32, 27.0f32);
+    let tooth = |x: f32| -> f32 {
+        // Foot line: three teeth of different depths.
+        match ((x - x0) / 4.0).floor() as i32 {
+            0 => y1 + 2.0,
+            1 => y1,
+            2 => y1 + 3.0,
+            3 => y1 + 1.0,
+            _ => y1 + 2.5,
+        }
+    };
+    let inside = move |px: f32, py: f32| {
+        px >= x0
+            && px <= x1
+            && py >= y0
+            && py <= tooth(px)
+            && (px - x0) + (py - y0) >= 3.0
+            && (x1 - px) + (py - y0) >= 3.0
+    };
+    icon.layer(true, |x, y| {
+        let (px, py) = (c(x), c(y));
+        if !inside(px, py) {
+            return None;
+        }
+        // The copper frame: 2 pixels in from every edge.
+        let near = |dx: f32, dy: f32| !inside(px + dx, py + dy);
+        let rim = near(-2.0, 0.0) || near(2.0, 0.0) || near(0.0, -2.0) || near(0.0, 2.0);
+        let lead = near(-1.0, 0.0) || near(0.0, -1.0) || near(-1.0, -1.0);
+        let trail = near(1.0, 0.0) || near(0.0, 1.0) || near(1.0, 1.0);
+        if rim {
+            let t = if lead {
+                0.82
+            } else if trail {
+                0.28
+            } else {
+                0.56
+            };
+            return Some(copper.pick(t, x, y));
+        }
+        // Stone face, a little mottled, shaded under the frame's top lip.
+        let mut t = 0.5 + (unit(hash2(salt, (x / 3 + y / 3 * 11) as u32)) - 0.5) * 0.12;
+        if near(-3.0, 0.0) || near(0.0, -3.0) {
+            t -= 0.18;
+        }
+        if near(3.0, 0.0) || near(0.0, 3.0) {
+            t += 0.1;
+        }
+        Some(stone.pick(t, x, y))
+    });
+    // The wayshard, cut on its point, in a copper bezel.
+    let (gx, gy) = (16.0f32, 17.0f32);
+    icon.layer(true, |x, y| {
+        let (dx, dy) = (c(x) - gx, c(y) - gy);
+        let d = dx.abs() + dy.abs() * 0.8;
+        if d > 6.2 {
+            return None;
+        }
+        if d > 4.6 {
+            let facing = -(dx + dy) / (dx.abs() + dy.abs()).max(0.1);
+            return Some(copper.pick(0.55 + facing * 0.3, x, y));
+        }
+        let t = match (dx < 0.0, dy < 0.0) {
+            (true, true) => 0.74,
+            (false, true) => 0.56,
+            (true, false) => 0.44,
+            (false, false) => 0.26,
+        };
+        if (dx + 1.5).abs() < 0.6 && (dy + 1.5).abs() < 0.6 {
+            return Some(shard.lightest());
+        }
+        Some(shard.pick(if d < 1.2 { 0.86 } else { t }, x, y))
+    });
+    icon.finish()
+}
+
 /// Paints the icon called `name`, or `None` if no painter knows it.
 pub fn paint_icon(name: &str) -> Option<Tex> {
     Some(match name {
@@ -776,6 +1034,10 @@ pub fn paint_icon(name: &str) -> Option<Tex> {
         "round_chisel" => chisel(Metal::Iron, Tip::Round, false),
         "precise_square_chisel" => chisel(Metal::Iron, Tip::Square, true),
         "precise_slope_chisel" => chisel(Metal::Iron, Tip::Slope, true),
+        "copper_grapple" => grapple(Metal::Copper, false),
+        "iron_grapple" => grapple(Metal::Iron, false),
+        "wayshard" => wayshard(),
+        "portal_token" => portal_token(),
         _ => return None,
     })
 }

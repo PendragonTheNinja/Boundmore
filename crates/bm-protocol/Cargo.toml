@@ -9,9 +9,7 @@ publish.workspace = true
 
 [dependencies]
 bm-core.workspace = true
+glam.workspace = true
 postcard.workspace = true
 serde.workspace = true
 thiserror.workspace = true
-
-[dev-dependencies]
-glam.workspace = true
