@@ -7,7 +7,10 @@
 
 use crate::icons::{ICON_SIZE, IconSource};
 use crate::items::Items;
-use bm_core::{BlockPos, BlockRegistry, Colour, HOTBAR_SLOTS, INVENTORY_SLOTS, ItemId, ItemStack, Station};
+use bm_core::block::Assembly;
+use bm_core::{
+    BlockDef, BlockPos, BlockRegistry, Colour, HOTBAR_SLOTS, INVENTORY_SLOTS, ItemId, ItemStack, PlanetShape, Station,
+};
 use bm_protocol::{ClientMsg, PlanetSummary, PortalView, SlotRef, StationView};
 use egui::{
     Align, Align2, Color32, CornerRadius, FontId, Id, Layout, Rect, Sense, Stroke, StrokeKind, Ui, Vec2, pos2, vec2,
@@ -1028,8 +1031,11 @@ pub fn storage(ctx: &egui::Context, v: &StorageWindow, drag: &mut Option<Drag>, 
 pub struct CraftingView<'a> {
     pub items: &'a Items,
     pub icons: &'a ItemIcons,
-    /// The station looked at, its kind and display name.
+    /// The station looked at: the block that was opened, its kind and
+    /// display name.
     pub station: Option<(BlockPos, Station, String)>,
+    /// The server's last word on it: for a machine of several blocks, its
+    /// `pos` is the machine's own and may not be the block opened.
     pub live: Option<&'a LiveStation>,
     pub now: f64,
 }
@@ -1042,37 +1048,64 @@ pub fn station_name(blocks: &BlockRegistry, station: Station) -> String {
         .unwrap_or_else(|| format!("{station:?}"))
 }
 
+/// The crafting station a block opens: its own, or for a furnace's
+/// crucible the furnace it stands on (milestone 11).
+pub fn station_of(def: &BlockDef) -> Option<Station> {
+    def.station
+        .or((def.assembly == Some(Assembly::FurnaceCrucible)).then_some(Station::Furnace))
+}
+
+/// Whether a `Station` answer belongs to the machine opened at `opened`:
+/// the same block, or the first block of its group (a four-block machine
+/// spans at most three steps; a furnace's base is one below its crucible).
+/// Measured with the planet's wrap, so a machine across the seam matches.
+pub fn same_machine(shape: PlanetShape, opened: BlockPos, view: BlockPos) -> bool {
+    let centre = |p: BlockPos| glam::DVec3::new(p.x as f64, p.y as f64, p.z as f64);
+    let d = shape.delta(centre(opened), centre(view));
+    d.x.abs() + d.y.abs() + d.z.abs() <= 3.5
+}
+
+/// What a fuel drag carries: a pack slot's fuel, or the furnace's own.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum FuelDrag {
+    Pack(u8),
+    Furnace,
+}
+
 pub fn crafting(ctx: &egui::Context, v: &CraftingView, actions: &mut Vec<UiAction>) {
     let title = match &v.station {
         Some((_, _, name)) => name.clone(),
         None => "Crafting".to_string(),
     };
     let kind = v.station.as_ref().map(|s| s.1).unwrap_or(Station::Hand);
+    let idle = v.live.and_then(|l| l.view.idle.as_deref());
     let mut open = true;
     window(&title).open(&mut open).show(ctx, |ui| {
         ui.horizontal_top(|ui| {
             ui.vertical(|ui| {
                 ui.set_width(470.0);
-                if kind == Station::Hand {
-                    ui.label(egui::RichText::new("Made in your hands, at once.").color(MUTED).small());
-                } else {
-                    ui.label(
-                        egui::RichText::new("Queued here; it keeps working while you are away.")
-                            .color(MUTED)
-                            .small(),
-                    );
+                let hint = match kind {
+                    Station::Hand => "Made in your hands, at once. A crafting table makes more.",
+                    Station::CraftingTable => {
+                        "Hand recipes are made at once. The rest queue here and keep working while you are away."
+                    }
+                    _ => "Queued here; it keeps working while you are away.",
+                };
+                ui.label(egui::RichText::new(hint).color(MUTED).small());
+                if let Some(why) = idle {
+                    idle_banner(ui, why);
                 }
                 egui::ScrollArea::vertical().max_height(430.0).show(ui, |ui| {
-                    for (index, recipe) in v.items.recipes.at(kind) {
-                        recipe_row(ui, v, index, recipe, actions);
+                    for (index, recipe) in v.items.recipes_for(kind) {
+                        recipe_row(ui, v, index, recipe, idle.is_some(), actions);
                     }
                 });
             });
             if let Some((pos, _, _)) = v.station {
                 ui.separator();
                 ui.vertical(|ui| {
-                    ui.set_width(250.0);
-                    station_panel(ui, v, pos, actions);
+                    ui.set_width(270.0);
+                    station_panel(ui, v, kind, pos, actions);
                 });
             }
         });
@@ -1080,10 +1113,37 @@ pub fn crafting(ctx: &egui::Context, v: &CraftingView, actions: &mut Vec<UiActio
     if !open {
         actions.push(UiAction::CloseMenu);
     }
+    paint_fuel_drag(ctx, v);
 }
 
-fn recipe_row(ui: &mut Ui, v: &CraftingView, index: u16, recipe: &bm_core::Recipe, actions: &mut Vec<UiAction>) {
+/// Why the machine does not work, in a red-edged box.
+fn idle_banner(ui: &mut Ui, why: &str) {
+    egui::Frame::new()
+        .fill(Color32::from_rgba_unmultiplied(80, 26, 24, 170))
+        .stroke(Stroke::new(1.5, Color32::from_rgb(150, 70, 60)))
+        .corner_radius(CornerRadius::same(8))
+        .inner_margin(egui::Margin::same(8))
+        .show(ui, |ui| {
+            ui.set_width(ui.available_width());
+            ui.label(egui::RichText::new(why).color(TEXT).strong());
+            ui.label(egui::RichText::new("It makes nothing until then.").color(MUTED).small());
+        });
+    ui.add_space(4.0);
+}
+
+fn recipe_row(
+    ui: &mut Ui,
+    v: &CraftingView,
+    index: u16,
+    recipe: &bm_core::Recipe,
+    idle: bool,
+    actions: &mut Vec<UiAction>,
+) {
     let max = v.items.craft_max(recipe);
+    // Hand recipes are made in the hands, at a table too; the rest queue at
+    // the machine, which must be working.
+    let in_hand = recipe.station == Station::Hand;
+    let blocked = idle && !in_hand;
     egui::Frame::new()
         .fill(Color32::from_white_alpha(7))
         .corner_radius(CornerRadius::same(10))
@@ -1094,7 +1154,14 @@ fn recipe_row(ui: &mut Ui, v: &CraftingView, index: u16, recipe: &bm_core::Recip
                 let out = ItemStack::new(recipe.output, recipe.output_count);
                 let (rect, resp) = ui.allocate_exact_size(Vec2::splat(46.0), Sense::hover());
                 paint_slot_back(ui.painter(), rect, Stroke::new(1.0, SLOT_RIM));
-                paint_stack(ui.painter(), rect, &out, v.items, v.icons, 1.0);
+                paint_stack(
+                    ui.painter(),
+                    rect,
+                    &out,
+                    v.items,
+                    v.icons,
+                    if blocked { 0.45 } else { 1.0 },
+                );
                 resp.on_hover_text(v.items.tooltip(&ItemStack { count: 1, ..out }));
                 ui.vertical(|ui| {
                     let name = v
@@ -1108,13 +1175,19 @@ fn recipe_row(ui: &mut Ui, v: &CraftingView, index: u16, recipe: &bm_core::Recip
                         title = format!("{title} x{}", recipe.output_count);
                     }
                     ui.horizontal(|ui| {
-                        ui.label(egui::RichText::new(title).strong());
-                        if recipe.seconds > 0.0 {
-                            ui.label(
-                                egui::RichText::new(format!("{} s each", recipe.seconds))
-                                    .color(MUTED)
-                                    .small(),
-                            );
+                        let colour = if blocked { MUTED } else { TEXT };
+                        ui.label(egui::RichText::new(title).strong().color(colour));
+                        let mut notes = Vec::new();
+                        if in_hand && v.station.is_some() {
+                            notes.push("in your hands".to_string());
+                        } else if recipe.seconds > 0.0 {
+                            notes.push(format!("{} s", recipe.seconds));
+                        }
+                        if recipe.heat > 0 {
+                            notes.push(format!("heat {}", recipe.heat));
+                        }
+                        if !notes.is_empty() {
+                            ui.label(egui::RichText::new(notes.join(", ")).color(MUTED).small());
                         }
                     });
                     ui.horizontal_wrapped(|ui| {
@@ -1133,12 +1206,10 @@ fn recipe_row(ui: &mut Ui, v: &CraftingView, index: u16, recipe: &bm_core::Recip
                     });
                 });
                 ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                    let station = v.station.as_ref().map(|s| s.0);
+                    let station = if in_hand { None } else { v.station.as_ref().map(|s| s.0) };
                     let mut craft = |ui: &mut Ui, label: String, count: u16| {
-                        if ui
-                            .add_enabled(count > 0 && max >= count, egui::Button::new(label))
-                            .clicked()
-                        {
+                        let ok = !blocked && count > 0 && max >= count;
+                        if ui.add_enabled(ok, egui::Button::new(label)).clicked() {
                             actions.push(UiAction::Send(ClientMsg::Craft {
                                 recipe: index,
                                 count,
@@ -1154,8 +1225,14 @@ fn recipe_row(ui: &mut Ui, v: &CraftingView, index: u16, recipe: &bm_core::Recip
         });
 }
 
-fn station_panel(ui: &mut Ui, v: &CraftingView, pos: BlockPos, actions: &mut Vec<UiAction>) {
-    let live = v.live.filter(|l| l.view.pos == pos);
+fn station_panel(ui: &mut Ui, v: &CraftingView, kind: Station, opened: BlockPos, actions: &mut Vec<UiAction>) {
+    let live = v.live;
+    // The machine's own position once the server has said it.
+    let pos = live.map(|l| l.view.pos).unwrap_or(opened);
+    if kind == Station::Furnace {
+        fuel_panel(ui, v, pos, live.map(|l| &l.view), actions);
+        ui.add_space(12.0);
+    }
     heading(ui, "Queue");
     match live {
         None => {
@@ -1189,9 +1266,24 @@ fn station_panel(ui: &mut Ui, v: &CraftingView, pos: BlockPos, actions: &mut Vec
                     );
                 });
                 if i == 0 {
-                    // Run on between updates, which come a few times a second.
-                    let p = (job.progress + ((v.now - l.received) / r.seconds.max(0.1) as f64) as f32).min(1.0);
+                    // Run on between updates, which come a few times a
+                    // second; a machine that does not work stands still,
+                    // as does a furnace waiting for heat.
+                    let waiting = l.view.idle.is_some() || job.progress == 0.0 && r.heat as u32 > l.view.heat;
+                    let run = if waiting {
+                        0.0
+                    } else {
+                        ((v.now - l.received) / r.seconds.max(0.1) as f64) as f32
+                    };
+                    let p = (job.progress + run).min(1.0);
                     ui.add(egui::ProgressBar::new(p).desired_height(10.0).fill(GOLD_DIM));
+                    if kind == Station::Furnace && waiting && l.view.idle.is_none() {
+                        ui.label(
+                            egui::RichText::new(format!("Waiting for heat: needs {}", r.heat))
+                                .color(SHORT)
+                                .small(),
+                        );
+                    }
                 }
             }
         }
@@ -1222,6 +1314,155 @@ fn station_panel(ui: &mut Ui, v: &CraftingView, pos: BlockPos, actions: &mut Vec
     {
         actions.push(UiAction::Send(ClientMsg::CollectStation { pos }));
     }
+}
+
+/// A furnace's fuel slot and banked heat, and the fuel in the pack to feed
+/// it with: click a pack stack to put it all in (right click: one), click
+/// the fuel slot to take it back out, or drag either way.
+fn fuel_panel(ui: &mut Ui, v: &CraftingView, pos: BlockPos, view: Option<&StationView>, actions: &mut Vec<UiAction>) {
+    heading(ui, "Fuel");
+    let fuel = view.and_then(|w| w.fuel);
+    ui.horizontal(|ui| {
+        let (rect, resp) = ui.allocate_exact_size(Vec2::splat(SLOT), Sense::click_and_drag());
+        let incoming = resp
+            .dnd_hover_payload::<FuelDrag>()
+            .is_some_and(|p| matches!(*p, FuelDrag::Pack(_)));
+        let rim = if incoming {
+            Stroke::new(2.5, GOLD)
+        } else {
+            Stroke::new(1.5, GOLD_DIM)
+        };
+        paint_slot_back(ui.painter(), rect, rim);
+        let dragging_out = egui::DragAndDrop::payload::<FuelDrag>(ui.ctx()).is_some_and(|p| *p == FuelDrag::Furnace);
+        match fuel {
+            Some(stack) => {
+                paint_stack(
+                    ui.painter(),
+                    rect,
+                    &stack,
+                    v.items,
+                    v.icons,
+                    if dragging_out { 0.35 } else { 1.0 },
+                );
+                resp.dnd_set_drag_payload(FuelDrag::Furnace);
+                if resp.clicked()
+                    && let Some(msg) = v.items.fuel_out(pos, &stack)
+                {
+                    actions.push(UiAction::Send(msg));
+                }
+                resp.clone()
+                    .on_hover_text(format!("{}\nClick to take it out.", v.items.tooltip(&stack)));
+            }
+            None => {
+                ui.painter().text(
+                    rect.center(),
+                    Align2::CENTER_CENTER,
+                    "Empty",
+                    FontId::proportional(11.0),
+                    MUTED,
+                );
+            }
+        }
+        if let Some(p) = resp.dnd_release_payload::<FuelDrag>()
+            && let FuelDrag::Pack(slot) = *p
+            && let Some(msg) = v.items.fuel_in(pos, slot, false)
+        {
+            actions.push(UiAction::Send(msg));
+        }
+        ui.vertical(|ui| {
+            let heat = view.map(|w| w.heat).unwrap_or(0);
+            ui.label(egui::RichText::new(format!("Heat {heat}")).color(GOLD).strong());
+            let burns = fuel.map(|s| v.items.fuel(s.item) as u32 * s.count as u32).unwrap_or(0);
+            ui.label(
+                egui::RichText::new(format!("{burns} more in the fuel slot"))
+                    .color(MUTED)
+                    .small(),
+            );
+            ui.label(
+                egui::RichText::new("Fuel burns only when a recipe needs heat.")
+                    .color(MUTED)
+                    .small(),
+            );
+        });
+    });
+    ui.add_space(4.0);
+    let slots = v.items.fuel_slots();
+    let frame = egui::Frame::new()
+        .fill(Color32::from_white_alpha(5))
+        .corner_radius(CornerRadius::same(8))
+        .inner_margin(egui::Margin::same(6));
+    let (_, dropped) = ui.dnd_drop_zone::<FuelDrag, _>(frame, |ui| {
+        ui.set_width(ui.available_width());
+        ui.label(egui::RichText::new("Fuel in your pack").color(MUTED).small());
+        if slots.is_empty() {
+            ui.label(
+                egui::RichText::new("Nothing here burns. Coal, trunks, timber and sticks do.")
+                    .color(MUTED)
+                    .small(),
+            );
+            return;
+        }
+        ui.horizontal_wrapped(|ui| {
+            ui.spacing_mut().item_spacing = vec2(GAP, GAP);
+            for slot in slots {
+                let Some(stack) = v.items.inventory.get(slot as usize) else {
+                    continue;
+                };
+                let (rect, resp) = ui.allocate_exact_size(Vec2::splat(SLOT - 10.0), Sense::click_and_drag());
+                paint_slot_back(ui.painter(), rect, Stroke::new(1.0, SLOT_RIM));
+                let dragging =
+                    egui::DragAndDrop::payload::<FuelDrag>(ui.ctx()).is_some_and(|p| *p == FuelDrag::Pack(slot));
+                paint_stack(
+                    ui.painter(),
+                    rect,
+                    &stack,
+                    v.items,
+                    v.icons,
+                    if dragging { 0.35 } else { 1.0 },
+                );
+                resp.dnd_set_drag_payload(FuelDrag::Pack(slot));
+                let one = resp.secondary_clicked();
+                if (resp.clicked() || one)
+                    && let Some(msg) = v.items.fuel_in(pos, slot, one)
+                {
+                    actions.push(UiAction::Send(msg));
+                }
+                resp.on_hover_text(format!(
+                    "{}\nClick to put it all in, right click for one.",
+                    v.items.tooltip(&stack)
+                ));
+            }
+        });
+    });
+    if let Some(p) = dropped
+        && *p == FuelDrag::Furnace
+        && let Some(stack) = fuel
+        && let Some(msg) = v.items.fuel_out(pos, &stack)
+    {
+        actions.push(UiAction::Send(msg));
+    }
+}
+
+/// The fuel being dragged, under the pointer.
+fn paint_fuel_drag(ctx: &egui::Context, v: &CraftingView) {
+    let Some(p) = egui::DragAndDrop::payload::<FuelDrag>(ctx) else {
+        return;
+    };
+    let stack = match *p {
+        FuelDrag::Pack(slot) => v.items.inventory.get(slot as usize),
+        FuelDrag::Furnace => v.live.and_then(|l| l.view.fuel),
+    };
+    let (Some(stack), Some(at)) = (stack, ctx.input(|i| i.pointer.latest_pos())) else {
+        return;
+    };
+    egui::Area::new(Id::unique("fuel drag"))
+        .order(egui::Order::Tooltip)
+        .fixed_pos(at - Vec2::splat(SLOT / 2.0))
+        .interactable(false)
+        .show(ctx, |ui| {
+            let (rect, _) = ui.allocate_exact_size(Vec2::splat(SLOT), Sense::hover());
+            paint_stack(ui.painter(), rect, &stack, v.items, v.icons, 1.0);
+        });
 }
 
 // ---- portals ----
@@ -1680,6 +1921,34 @@ mod tests {
         let b = BlockRegistry::builtin();
         assert_eq!(station_name(&b, Station::Workbench), "Workbench");
         assert_eq!(station_name(&b, Station::Furnace), "Furnace");
+        assert_eq!(station_name(&b, Station::CraftingTable), "Crafting Table");
+        assert_eq!(station_name(&b, Station::Extractor), "Extractor");
+    }
+
+    #[test]
+    fn a_crucible_opens_its_furnace_and_stones_open_nothing() {
+        let b = BlockRegistry::builtin();
+        let of = |n: &str| station_of(b.get(b.id(n).unwrap()));
+        assert_eq!(of("furnace_crucible"), Some(Station::Furnace));
+        assert_eq!(of("furnace"), Some(Station::Furnace));
+        assert_eq!(of("crafting_table"), Some(Station::CraftingTable));
+        assert_eq!(of("extractor"), Some(Station::Extractor));
+        assert_eq!(of("stone"), None);
+    }
+
+    #[test]
+    fn an_answer_for_any_block_of_the_machine_is_taken() {
+        let shape = PlanetShape::new(8, 4);
+        let w = shape.width_blocks();
+        let p = |x, y, z| BlockPos::new(x, y, z);
+        assert!(same_machine(shape, p(10, 5, 10), p(10, 5, 10)));
+        // A furnace opened by its crucible answers with its base.
+        assert!(same_machine(shape, p(10, 6, 10), p(10, 5, 10)));
+        // The far end of a line of four.
+        assert!(same_machine(shape, p(13, 5, 10), p(10, 5, 10)));
+        assert!(!same_machine(shape, p(15, 5, 10), p(10, 5, 10)));
+        // Across the seam, the wrap counts.
+        assert!(same_machine(shape, p(0, 5, 10), p(w - 2, 5, 10)));
     }
 
     #[test]

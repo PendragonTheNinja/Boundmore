@@ -7,8 +7,8 @@
 //! server would refuse, using the same `Inventory` rules it runs.
 
 use bm_core::{
-    BlockRegistry, Colour, ColourPalette, INVENTORY_SLOTS, Inventory, ItemDef, ItemError, ItemKind, ItemRegistry,
-    ItemStack, Recipe, RecipeBook, ShapeFamily, ToolClass,
+    BlockPos, BlockRegistry, Colour, ColourPalette, INVENTORY_SLOTS, Inventory, ItemDef, ItemError, ItemId, ItemKind,
+    ItemRegistry, ItemStack, Recipe, RecipeBook, ShapeFamily, Station, ToolClass,
 };
 use bm_protocol::ClientMsg;
 use std::collections::HashMap;
@@ -206,6 +206,61 @@ impl Items {
             .map(|(item, n)| (self.inventory.count(*item) / (*n).max(1) as u32).min(u16::MAX as u32) as u16)
             .min()
             .unwrap_or(0)
+    }
+
+    /// The recipes a crafting screen offers, with their indices: in the
+    /// hands only hand recipes; a crafting table its own and the hand ones
+    /// (milestone 11, as in Boundless); any other machine only its own.
+    pub fn recipes_for(&self, station: Station) -> Vec<(u16, &Recipe)> {
+        let mut out: Vec<(u16, &Recipe)> = self.recipes.at(station).collect();
+        if station == Station::CraftingTable {
+            out.extend(self.recipes.at(Station::Hand));
+        }
+        out
+    }
+
+    /// Heat the item gives burnt in a furnace (0: not fuel).
+    pub fn fuel(&self, item: ItemId) -> u16 {
+        self.registry.get(item).map(|d| d.fuel).unwrap_or(0)
+    }
+
+    /// The pack slots holding fuel, in slot order.
+    pub fn fuel_slots(&self) -> Vec<u8> {
+        (0..INVENTORY_SLOTS)
+            .filter(|&i| self.inventory.get(i).is_some_and(|s| self.fuel(s.item) > 0))
+            .map(|i| i as u8)
+            .collect()
+    }
+
+    /// The message putting fuel from pack `slot` into the furnace at `pos`
+    /// (the whole stack, or one), or None when the slot holds no fuel.
+    pub fn fuel_in(&self, pos: BlockPos, slot: u8, one: bool) -> Option<ClientMsg> {
+        let s = self.inventory.get(slot as usize)?;
+        (self.fuel(s.item) > 0).then_some(ClientMsg::StationFuel {
+            pos,
+            slot,
+            count: if one { 1 } else { s.count },
+            into: true,
+        })
+    }
+
+    /// The message taking a furnace's fuel back out: into a stack of the
+    /// same item with room, else the first empty slot; None when the pack
+    /// has no room for any.
+    pub fn fuel_out(&self, pos: BlockPos, fuel: &ItemStack) -> Option<ClientMsg> {
+        let max = self.registry.get(fuel.item).map(|d| d.stack).unwrap_or(1);
+        let slots = &self.inventory.slots;
+        let merge = (0..INVENTORY_SLOTS).find(|&i| {
+            slots[i].is_some_and(|s| s.item == fuel.item && s.colour == fuel.colour && s.wear == 0 && s.count < max)
+        });
+        let slot = merge.or_else(|| (0..INVENTORY_SLOTS).find(|&i| slots[i].is_none()))?;
+        let room = slots[slot].map(|s| max - s.count).unwrap_or(max);
+        Some(ClientMsg::StationFuel {
+            pos,
+            slot: slot as u8,
+            count: fuel.count.min(room),
+            into: false,
+        })
     }
 }
 
@@ -441,6 +496,75 @@ mod tests {
         i.inventory.slots[1] = stack(&i, "stick", 9);
         i.inventory.slots[2] = stack(&i, "foliage", 20);
         assert_eq!(i.craft_max(&r), 2); // 4 stones, 4 sticks, 4 foliage each
+    }
+
+    #[test]
+    fn hands_offer_hand_recipes_and_a_table_offers_both() {
+        let i = items();
+        let stations = |s: Station| -> std::collections::BTreeSet<Station> {
+            i.recipes_for(s).iter().map(|(_, r)| r.station).collect()
+        };
+        assert_eq!(stations(Station::Hand), [Station::Hand].into());
+        assert_eq!(
+            stations(Station::CraftingTable),
+            [Station::Hand, Station::CraftingTable].into()
+        );
+        assert_eq!(stations(Station::Furnace), [Station::Furnace].into());
+        assert_eq!(stations(Station::Extractor), [Station::Extractor].into());
+        // Indices stay those of the book, so a craft names the right one.
+        for (index, r) in i.recipes_for(Station::CraftingTable) {
+            assert_eq!(i.recipes.get(index), Some(r));
+        }
+        let name = |(_, r): &(u16, &Recipe)| i.registry.get(r.output).unwrap().name.clone();
+        let hand: Vec<String> = i.recipes_for(Station::Hand).iter().map(name).collect();
+        assert!(hand.contains(&"crafting_table".to_string()));
+        assert!(!hand.contains(&"stones".to_string()), "stones need a table");
+    }
+
+    #[test]
+    fn fuel_goes_in_from_the_pack_and_comes_back_out_where_it_fits() {
+        let mut i = items();
+        let pos = BlockPos::new(4, 5, 6);
+        i.inventory.slots[2] = stack(&i, "coal", 9);
+        i.inventory.slots[3] = stack(&i, "stone", 9);
+        i.inventory.slots[5] = stack(&i, "stick", 4);
+        assert_eq!(i.fuel_slots(), vec![2, 5], "coal and sticks burn, stone does not");
+        assert_eq!(
+            i.fuel_in(pos, 2, false),
+            Some(ClientMsg::StationFuel {
+                pos,
+                slot: 2,
+                count: 9,
+                into: true
+            })
+        );
+        assert_eq!(
+            i.fuel_in(pos, 5, true),
+            Some(ClientMsg::StationFuel {
+                pos,
+                slot: 5,
+                count: 1,
+                into: true
+            })
+        );
+        assert_eq!(i.fuel_in(pos, 3, false), None);
+        assert_eq!(i.fuel_in(pos, 7, false), None);
+        // Out: onto the coal stack there, else into the first empty slot.
+        let coal = stack(&i, "coal", 30).unwrap();
+        let out = |i: &Items| match i.fuel_out(pos, &coal) {
+            Some(ClientMsg::StationFuel { slot, count, into, .. }) => {
+                assert!(!into);
+                Some((slot, count))
+            }
+            _ => None,
+        };
+        assert_eq!(out(&i), Some((2, 30)));
+        i.inventory.slots[2] = stack(&i, "coal", 100);
+        assert_eq!(out(&i), Some((0, 30)));
+        for s in 0..INVENTORY_SLOTS {
+            i.inventory.slots[s] = stack(&i, "stone", 1);
+        }
+        assert_eq!(out(&i), None, "a full pack takes nothing");
     }
 
     #[test]

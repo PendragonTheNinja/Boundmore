@@ -101,6 +101,42 @@ struct DemoStation {
     station: Station,
     jobs: Vec<JobView>,
     output: Vec<ItemStack>,
+    /// Why it does not work (too few blocks, no crucible), as a server says.
+    idle: Option<String>,
+    /// A furnace's fuel slot and banked heat, and whether the craft under
+    /// way has had its heat.
+    fuel: Option<ItemStack>,
+    heat: u32,
+    paid: bool,
+}
+
+impl DemoStation {
+    fn new(station: Station) -> Self {
+        Self {
+            station,
+            jobs: Vec::new(),
+            output: Vec::new(),
+            idle: None,
+            fuel: None,
+            heat: 0,
+            paid: false,
+        }
+    }
+}
+
+/// The demo's machines on the first planet: a crafting table, a workbench
+/// of four blocks in a T, a furnace (base and crucible) burning coal, and an
+/// extractor one block short. Each lists its blocks, its first block first.
+pub const TABLE: [i64; 3] = [130, 44, 128];
+pub const WORKBENCH: [[i64; 3]; 4] = [[128, 44, 125], [127, 44, 126], [128, 44, 126], [129, 44, 126]];
+pub const FURNACE: [[i64; 3]; 2] = [[131, 44, 126], [131, 45, 126]];
+pub const EXTRACTOR: [[i64; 3]; 3] = [[133, 44, 124], [134, 44, 124], [135, 44, 124]];
+/// Where `show_flora` puts the player: on a stone post looking north over
+/// rows of plants and boulders to a cave mouth with fungi in it.
+pub const FLORA_VIEW: [f64; 3] = [128.5, 46.0, 130.5];
+
+fn bp([x, y, z]: [i64; 3]) -> BlockPos {
+    BlockPos::new(x, y, z)
 }
 
 pub struct Demo {
@@ -117,6 +153,9 @@ pub struct Demo {
     release: Option<Instant>,
     hold: Option<Duration>,
     stations: HashMap<BlockPos, DemoStation>,
+    /// Every block of a machine, to the machine's own position (its first
+    /// block), as the server groups them.
+    machine_of: HashMap<BlockPos, BlockPos>,
     watched: Option<BlockPos>,
     claims: Vec<ClaimView>,
     /// Storage blocks' contents by position (first planet only).
@@ -152,7 +191,7 @@ impl Demo {
         let book = RecipeBook::builtin(&items);
         let id = |n: &str| items.id(n).expect("builtin item");
         let mut inv = Inventory::default();
-        let sample: [(&str, u16, u16); 17] = [
+        let sample: [(&str, u16, u16); 23] = [
             ("stone_hammer", 1, 38),
             ("stone", 64, 0),
             ("soil", 37, 0),
@@ -170,6 +209,12 @@ impl Demo {
             ("copper_ingot", 2, 0),
             ("stone_shovel", 1, 0),
             ("furnace", 1, 0),
+            ("stones", 24, 0),
+            ("stick", 12, 0),
+            ("foliage", 16, 0),
+            ("flint", 3, 0),
+            ("sap", 4, 0),
+            ("crafting_table", 1, 0),
         ];
         for (i, (name, count, wear)) in sample.into_iter().enumerate() {
             // The first ten fill the hotbar; the rest leave a gap or two.
@@ -181,24 +226,49 @@ impl Demo {
         }
         let planets = demo_planets(&blocks);
         let mut stations = HashMap::new();
-        stations.insert(
-            BlockPos::new(128, 44, 126),
+        let mut machine_of = HashMap::new();
+        let mut machine = |blocks: &[[i64; 3]], st: DemoStation| {
+            for b in blocks {
+                machine_of.insert(bp(*b), bp(blocks[0]));
+            }
+            stations.insert(bp(blocks[0]), st);
+        };
+        machine(&[TABLE], DemoStation::new(Station::CraftingTable));
+        machine(
+            &WORKBENCH,
             DemoStation {
-                station: Station::Workbench,
                 jobs: vec![JobView {
-                    recipe: recipe_index(&book, &items, "stone_axe"),
-                    remaining: 3,
+                    recipe: recipe_index(&book, &items, "copper_axe"),
+                    remaining: 2,
                     progress: 0.35,
                 }],
-                output: vec![ItemStack::new(id("stone_shovel"), 1), ItemStack::new(id("furnace"), 1)],
+                output: vec![
+                    ItemStack::new(id("copper_shovel"), 1),
+                    ItemStack::new(id("extractor"), 4),
+                ],
+                ..DemoStation::new(Station::Workbench)
             },
         );
-        stations.insert(
-            BlockPos::new(130, 44, 126),
+        machine(
+            &FURNACE,
             DemoStation {
-                station: Station::Furnace,
-                jobs: vec![],
-                output: vec![],
+                jobs: vec![JobView {
+                    recipe: recipe_index(&book, &items, "copper_ingot"),
+                    remaining: 3,
+                    progress: 0.4,
+                }],
+                output: vec![ItemStack::new(id("copper_ingot"), 2)],
+                fuel: Some(ItemStack::new(id("coal"), 6)),
+                heat: 60,
+                paid: true,
+                ..DemoStation::new(Station::Furnace)
+            },
+        );
+        machine(
+            &EXTRACTOR,
+            DemoStation {
+                idle: Some("An extractor needs 4 blocks touching".into()),
+                ..DemoStation::new(Station::Extractor)
             },
         );
         let mine = |x0: i32, x1: i32, z0: i32, z1: i32| {
@@ -259,6 +329,7 @@ impl Demo {
             release: None,
             hold: Some(Duration::from_secs_f64(ARRIVAL_HOLD)),
             stations,
+            machine_of,
             watched: None,
             claims,
             chests,
@@ -962,7 +1033,12 @@ impl Demo {
     }
 
     fn push_station(&mut self) {
-        if let Some(pos) = self.watched
+        self.push_view(self.watched);
+    }
+
+    /// Sends the machine at `pos` as it is now.
+    fn push_view(&mut self, pos: Option<BlockPos>) {
+        if let Some(pos) = pos
             && let Some(s) = self.stations.get(&pos)
         {
             let view = StationView {
@@ -970,9 +1046,9 @@ impl Demo {
                 station: s.station,
                 jobs: s.jobs.clone(),
                 output: s.output.clone(),
-                idle: None,
-                fuel: None,
-                heat: 0,
+                idle: s.idle.clone(),
+                fuel: s.fuel,
+                heat: s.heat,
             };
             self.events.push_back(NetEvent::Msg(ServerMsg::Station(view)));
         }
@@ -981,11 +1057,34 @@ impl Demo {
     fn run_stations(&mut self, dt: f64) {
         let mut changed = false;
         for s in self.stations.values_mut() {
+            if s.idle.is_some() {
+                continue;
+            }
             let Some(job) = s.jobs.first_mut() else { continue };
             let Some(r) = self.book.get(job.recipe) else { continue };
+            // A furnace craft starts once it has its heat, burning fuel for
+            // it one item at a time.
+            if r.heat > 0 && !s.paid {
+                while s.heat < r.heat as u32
+                    && let Some(f) = s.fuel.as_mut()
+                {
+                    s.heat += self.items.get(f.item).map(|d| d.fuel as u32).unwrap_or(0);
+                    f.count -= 1;
+                    if f.count == 0 {
+                        s.fuel = None;
+                    }
+                    changed = true;
+                }
+                if s.heat < r.heat as u32 {
+                    continue;
+                }
+                s.heat -= r.heat as u32;
+                s.paid = true;
+            }
             job.progress += (dt / r.seconds.max(0.1) as f64) as f32;
             changed = true;
             if job.progress >= 1.0 {
+                s.paid = false;
                 job.progress = 0.0;
                 job.remaining -= 1;
                 let (out, n) = (r.output, r.output_count);
@@ -1016,10 +1115,12 @@ impl Demo {
             }
             ClientMsg::Craft { recipe, count, station } => self.craft(recipe, count, station),
             ClientMsg::WatchStation { pos } => {
-                self.watched = pos;
+                self.watched = pos.map(|p| self.machine(p));
                 self.push_station();
             }
+            ClientMsg::StationFuel { pos, slot, count, into } => self.station_fuel(pos, slot, count, into),
             ClientMsg::CollectStation { pos } => {
+                let pos = self.machine(pos);
                 if let Some(s) = self.stations.get_mut(&pos) {
                     let mut left = Vec::new();
                     for o in s.output.drain(..) {
@@ -1157,10 +1258,26 @@ impl Demo {
         self.events.push_back(NetEvent::Msg(ServerMsg::Chat { lines }));
     }
 
+    /// The machine a block belongs to (its own position if none).
+    fn machine(&self, pos: BlockPos) -> BlockPos {
+        self.machine_of.get(&pos).copied().unwrap_or(pos)
+    }
+
     fn craft(&mut self, recipe: u16, count: u16, station: Option<BlockPos>) {
         let Some(r) = self.book.get(recipe).cloned() else {
             return;
         };
+        let at = station.map(|p| self.machine(p));
+        if r.station != Station::Hand {
+            let Some(s) = at.and_then(|p| self.stations.get(&p)) else {
+                self.notice("That is made at a machine");
+                return;
+            };
+            if let Some(why) = s.idle.clone() {
+                self.notice(&why);
+                return;
+            }
+        }
         let mut made = 0;
         for _ in 0..count {
             let mut trial = self.inv.clone();
@@ -1179,7 +1296,7 @@ impl Demo {
             return;
         }
         if r.station != Station::Hand
-            && let Some(s) = station.and_then(|p| self.stations.get_mut(&p))
+            && let Some(s) = at.and_then(|p| self.stations.get_mut(&p))
         {
             s.jobs.push(JobView {
                 recipe,
@@ -1188,6 +1305,147 @@ impl Demo {
             });
             self.push_station();
         }
+    }
+
+    /// Moves fuel between inventory `slot` and a furnace, as the server's
+    /// `StationFuel` does: only fuel goes in, merging with what is there.
+    fn station_fuel(&mut self, pos: BlockPos, slot: u8, count: u16, into: bool) {
+        let m = self.machine(pos);
+        let slot = slot as usize;
+        let items = &self.items;
+        let Some(st) = self.stations.get_mut(&m).filter(|s| s.station == Station::Furnace) else {
+            return;
+        };
+        if slot >= self.inv.slots.len() || count == 0 {
+            return;
+        }
+        let limit = |item| items.get(item).map(|d| d.stack).unwrap_or(1);
+        if into {
+            let Some(from) = self.inv.slots[slot] else { return };
+            if items.get(from.item).is_none_or(|d| d.fuel == 0) || st.fuel.is_some_and(|f| f.item != from.item) {
+                return;
+            }
+            let held = st.fuel.map(|f| f.count).unwrap_or(0);
+            let n = count.min(from.count).min(limit(from.item).saturating_sub(held));
+            if n == 0 {
+                return;
+            }
+            st.fuel = Some(ItemStack::new(from.item, held + n));
+            self.inv.slots[slot] = (from.count > n).then_some(ItemStack {
+                count: from.count - n,
+                ..from
+            });
+        } else {
+            let Some(f) = st.fuel else { return };
+            let have = self.inv.slots[slot];
+            if have.is_some_and(|h| h.item != f.item || h.colour != f.colour) {
+                return;
+            }
+            let held = have.map(|h| h.count).unwrap_or(0);
+            let n = count.min(f.count).min(limit(f.item).saturating_sub(held));
+            if n == 0 {
+                return;
+            }
+            self.inv.slots[slot] = Some(ItemStack::new(f.item, held + n));
+            st.fuel = (f.count > n).then_some(ItemStack::new(f.item, f.count - n));
+        }
+        // As the server answers: the machine, watched or not.
+        self.push_view(Some(m));
+    }
+
+    /// Turns the first planet into a showroom of gathering objects, for a
+    /// daylight screenshot: rows of every plant on its ground (spikeleaf
+    /// and ridge cactus on sand, frostbell on snow, nightlily by water), rows
+    /// of every boulder, and a stone cave mouth with every fungus inside.
+    pub fn show_flora(&mut self) {
+        let b = |n: &str| BlockState::plain(self.blocks.id(n).expect("builtin block"));
+        let (stone, sand, snow, water, turf) = (b("stone"), b("sand"), b("snow"), b("water"), b("turf"));
+        let mut put: Vec<(BlockPos, BlockState)> = Vec::new();
+        let g = GROUND;
+        // Two rows of four plants, two columns of each, the near row on
+        // its own grounds.
+        let plants = [
+            ("spikeleaf", Some(sand), 124, 126),
+            ("ridge_cactus", Some(sand), 126, 126),
+            ("nightlily", None, 128, 126),
+            ("frostbell", Some(snow), 130, 126),
+            ("hornroot", None, 124, 124),
+            ("stiltfrond", None, 126, 124),
+            ("knot_aloe", None, 128, 124),
+            ("curlfern", None, 130, 124),
+        ];
+        for (name, ground, x0, z0) in plants {
+            for (dx, dz) in [(0, 0), (1, 0), (0, 1), (1, 1)] {
+                let (x, z) = (x0 + dx, z0 + dz);
+                if let Some(gr) = ground {
+                    put.push((BlockPos::new(x, g, z), gr));
+                }
+                put.push((BlockPos::new(x, g + 1, z), b(name)));
+            }
+            if name == "nightlily" {
+                for dx in 0..2 {
+                    put.push((BlockPos::new(x0 + dx, g, z0 + 2), water));
+                }
+            }
+        }
+        let boulders = [
+            "boulder",
+            "stalk_boulder",
+            "stacked_boulder",
+            "ring_boulder",
+            "chip_boulder",
+            "tapered_boulder",
+        ];
+        for (k, name) in boulders.iter().enumerate() {
+            let x = 125 + k as i64;
+            for z in [121, 122] {
+                put.push((BlockPos::new(x, g, z), stone));
+                put.push((BlockPos::new(x, g + 1, z), b(name)));
+            }
+        }
+        // The cave: a stone hill with a mouth facing the rows, its floor
+        // stone, its roof two layers thick under turf.
+        for x in 121..=135 {
+            for z in 113..=120 {
+                let inside = (123..=133).contains(&x) && (116..=119).contains(&z);
+                let mouth = (124..=132).contains(&x) && z == 120;
+                for y in g..=g + 5 {
+                    let block = if y == g {
+                        stone
+                    } else if (inside || mouth) && y <= g + 3 {
+                        BlockState::AIR
+                    } else if y == g + 5 {
+                        turf
+                    } else {
+                        stone
+                    };
+                    put.push((BlockPos::new(x, y, z), block));
+                }
+            }
+        }
+        let fungi = [
+            "tarspot_cap",
+            "tongue_bracket",
+            "branch_coral",
+            "burst_cap",
+            "weeping_cap",
+            "glowcap",
+        ];
+        for (k, name) in fungi.iter().enumerate() {
+            for z in 117..=119 {
+                put.push((BlockPos::new(125 + k as i64, g + 1, z), b(name)));
+            }
+        }
+        // The post the player stands on.
+        for y in g + 1..=g + 2 {
+            put.push((BlockPos::new(128, y, 130), stone));
+        }
+        let planet = &mut self.planets[0];
+        planet.flat = true;
+        planet.edits.clear();
+        planet.edits.extend(put);
+        let chunks = self.chunks_around_spawn();
+        self.events.extend(chunks.into_iter().map(NetEvent::Msg));
     }
 
     /// One use of the tool or chisel in `slot`; it breaks at its durability.
@@ -1438,8 +1696,17 @@ fn demo_planets(blocks: &BlockRegistry) -> Vec<DemoPlanet> {
             };
             put(SHRINE[0], SHRINE[1], SHRINE[2], b("warp_shrine"));
             if i == 0 {
-                put(128, 44, 126, b("workbench"));
-                put(130, 44, 126, b("furnace"));
+                let [x, y, z] = TABLE;
+                put(x, y, z, b("crafting_table"));
+                for [x, y, z] in WORKBENCH {
+                    put(x, y, z, b("workbench"));
+                }
+                let [[bx, by, bz], [cx, cy, cz]] = FURNACE;
+                put(bx, by, bz, b("furnace"));
+                put(cx, cy, cz, b("furnace_crucible"));
+                for [x, y, z] in EXTRACTOR {
+                    put(x, y, z, b("extractor"));
+                }
                 put(126, 44, 131, b("claim_stone"));
                 put(124, 44, 125, b("glow_crystal"));
                 put(CHEST[0], CHEST[1], CHEST[2], b("storage_chest"));
@@ -1649,6 +1916,114 @@ mod tests {
         let changes = slots.expect("slots sent");
         assert_eq!(changes.len(), 2);
         assert_eq!(changes.iter().find(|c| c.0 == 30).unwrap().1.unwrap().count, 10);
+    }
+
+    fn station_views(ev: &[NetEvent]) -> Vec<StationView> {
+        ev.iter()
+            .filter_map(|e| match e {
+                NetEvent::Msg(ServerMsg::Station(v)) => Some(v.clone()),
+                _ => None,
+            })
+            .collect()
+    }
+
+    #[test]
+    fn the_demo_machines_answer_for_any_block_with_their_own_position() {
+        let mut d = Demo::new("Tester");
+        d.poll();
+        // The workbench's middle block opens the machine at its first block.
+        d.send(ClientMsg::WatchStation {
+            pos: Some(bp(WORKBENCH[2])),
+        });
+        let v = station_views(&d.poll()).pop().expect("a station view");
+        assert_eq!(
+            (v.pos, v.station, v.idle.clone()),
+            (bp(WORKBENCH[0]), Station::Workbench, None)
+        );
+        // The crucible opens the furnace at its base, with its fuel.
+        d.send(ClientMsg::WatchStation {
+            pos: Some(bp(FURNACE[1])),
+        });
+        let v = station_views(&d.poll()).pop().unwrap();
+        assert_eq!((v.pos, v.station), (bp(FURNACE[0]), Station::Furnace));
+        assert_eq!(v.fuel.map(|f| f.count), Some(6));
+        // Three extractor blocks say why they do nothing and refuse a craft.
+        d.send(ClientMsg::WatchStation {
+            pos: Some(bp(EXTRACTOR[2])),
+        });
+        let v = station_views(&d.poll()).pop().unwrap();
+        assert_eq!(v.idle.as_deref(), Some("An extractor needs 4 blocks touching"));
+        let sackcloth = recipe_index(&d.book, &d.items, "sackcloth");
+        let before = d.inv.clone();
+        d.send(ClientMsg::Craft {
+            recipe: sackcloth,
+            count: 1,
+            station: Some(bp(EXTRACTOR[1])),
+        });
+        assert_eq!(d.inv, before);
+    }
+
+    #[test]
+    fn the_demo_furnace_takes_fuel_in_and_gives_it_back() {
+        let mut d = Demo::new("Tester");
+        d.poll();
+        let coal = d.items.id("coal").unwrap();
+        let slot = (0..d.inv.slots.len())
+            .find(|&i| d.inv.slots[i].is_some_and(|s| s.item == coal))
+            .unwrap();
+        let held = d.inv.slots[slot].unwrap().count;
+        let pos = bp(FURNACE[1]);
+        d.send(ClientMsg::StationFuel {
+            pos,
+            slot: slot as u8,
+            count: 4,
+            into: true,
+        });
+        let v = station_views(&d.poll()).pop().expect("the furnace answers");
+        assert_eq!(v.fuel.map(|f| f.count), Some(6 + 4));
+        assert_eq!(d.inv.slots[slot].unwrap().count, held - 4);
+        // Stone is no fuel.
+        let stone = (0..d.inv.slots.len())
+            .find(|&i| d.inv.slots[i].is_some_and(|s| s.item == d.items.id("stone").unwrap()))
+            .unwrap();
+        d.send(ClientMsg::StationFuel {
+            pos,
+            slot: stone as u8,
+            count: 5,
+            into: true,
+        });
+        assert!(station_views(&d.poll()).is_empty());
+        // All of it back out, onto the coal stack.
+        d.send(ClientMsg::StationFuel {
+            pos,
+            slot: slot as u8,
+            count: 10,
+            into: false,
+        });
+        let v = station_views(&d.poll()).pop().unwrap();
+        assert_eq!(v.fuel, None);
+        assert_eq!(d.inv.slots[slot].unwrap().count, held + 6);
+    }
+
+    #[test]
+    fn the_flora_showroom_holds_every_gathering_object() {
+        let mut d = Demo::new("Tester");
+        d.poll();
+        d.show_flora();
+        let placed: std::collections::HashSet<BlockId> = d.planets[0].edits.values().map(|s| s.id).collect();
+        for (id, def) in d.blocks.iter() {
+            if def.health == bm_core::Health::Plant {
+                assert!(placed.contains(&id), "{} is missing", def.name);
+            }
+        }
+        // Each stands on something solid.
+        let flags = d.blocks.flags();
+        for (pos, s) in d.planets[0].edits.clone() {
+            if flags.mount(s.id).is_some() {
+                let below = d.ground(pos.offset(0, -1, 0));
+                assert!(flags.solid(below.id), "{pos:?} floats");
+            }
+        }
     }
 
     #[test]

@@ -86,7 +86,8 @@ pub struct Options {
     /// (`hud`, `inventory`, `crafting`, `station`, `claims`, `shrine`,
     /// `travel`, `travelling`, `sky`, `storage`, `chat`, `colours`,
     /// `coloured-icons`, `reclaim`, `shapes`, `chisel`, `grapple`, `portal`,
-    /// `mining` or `login`).
+    /// `mining`, `torches`, `table`, `furnace`, `extractor`, `flora` or
+    /// `login`).
     pub demo: Option<String>,
 }
 
@@ -751,7 +752,7 @@ impl App {
         let station = self.session.as_ref().and_then(|s| {
             let hit = s.target?;
             let block = s.world.block(hit.block)?;
-            s.world.registry.get(block).station.map(|_| hit.block)
+            menus::station_of(s.world.registry.get(block)).map(|_| hit.block)
         });
         Menu::Crafting(station)
     }
@@ -1089,7 +1090,11 @@ impl App {
             ServerMsg::PlayerLeft { id } => s.remotes.left(id),
             ServerMsg::Slots { changes } => s.items.apply_slots(&changes),
             ServerMsg::Station(view) => {
-                if self.menu == Some(Menu::Crafting(Some(view.pos))) {
+                // Any block of a machine opens it; the answer names the
+                // machine's own first block (milestone 11).
+                if let Some(Menu::Crafting(Some(opened))) = self.menu
+                    && menus::same_machine(s.world.shape, opened, view.pos)
+                {
                     self.live_station = Some(LiveStation { view, received: now });
                 }
             }
@@ -1482,7 +1487,7 @@ impl App {
                 Some(Menu::Crafting(station)) => {
                     let station = station.and_then(|pos| {
                         let block = s.world.block(pos)?;
-                        let kind = s.world.registry.get(block).station?;
+                        let kind = menus::station_of(s.world.registry.get(block))?;
                         Some((pos, kind, menus::station_name(&s.world.registry, kind)))
                     });
                     menus::crafting(
@@ -1837,9 +1842,38 @@ impl App {
             "inventory" => self.open_menu(Menu::Inventory),
             "crafting" => self.open_menu(Menu::Crafting(None)),
             "station" => {
-                // Face the demo workbench, two blocks ahead and below the eye.
+                // Face the demo workbench (four blocks in a T), two blocks
+                // ahead and below the eye, opened by its middle block.
                 self.pitch = -0.5;
                 self.open_menu(Menu::Crafting(Some(BlockPos::new(128, 44, 126))));
+            }
+            // The crafting table beside the spawn, the furnace (opened by
+            // its crucible) burning coal, or the extractor a block short.
+            "table" | "furnace" | "extractor" => {
+                let (at, yaw, pitch) = match screen.as_str() {
+                    "table" => (crate::demo::TABLE, std::f64::consts::FRAC_PI_2, -0.7),
+                    "furnace" => (crate::demo::FURNACE[1], 0.98, -0.2),
+                    _ => (crate::demo::EXTRACTOR[1], 0.98, -0.15),
+                };
+                (self.yaw, self.pitch) = (yaw, pitch);
+                self.open_menu(Menu::Crafting(Some(BlockPos::new(at[0], at[1], at[2]))));
+            }
+            // Every gathering object in daylight: plants, boulders, and
+            // fungi in a cave mouth, seen from a post.
+            "flora" => {
+                if let Some(Link::Demo(d)) = &mut self.link {
+                    d.show_flora();
+                }
+                if let Some(s) = &mut self.session {
+                    s.me.teleport(bm_core::PlayerState {
+                        pos: DVec3::from_array(crate::demo::FLORA_VIEW),
+                        vel: DVec3::ZERO,
+                        on_ground: true,
+                        hook: None,
+                        ..Default::default()
+                    });
+                }
+                (self.yaw, self.pitch) = (0.0, -0.45);
             }
             "claims" => {
                 self.yaw = 0.7;

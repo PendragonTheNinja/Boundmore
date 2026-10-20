@@ -28,10 +28,11 @@
 //!   drawn from both sides and showing the whole texture: a picture of the
 //!   plant on a clear background (alpha below one half is cut out by the
 //!   shader), its foot on the bottom row;
-//! - **boulder**: one or two low rock lumps (boxes with their tops bevelled
-//!   in), about 0.7 wide and 0.45 tall; tops take the texture's top left
-//!   quarter (columns 0..16 of rows 0..16), sides its lower half (rows
-//!   16..32);
+//! - **boulder**: one or two low rocks (irregular six-sided lumps, bulging
+//!   at the waist and drawn in at the top), about 0.7 wide and 0.45 tall;
+//!   tops take the texture's top left quarter (columns 0..16 of rows 0..16,
+//!   the footprint seen from above), sides its lower half (rows 16..32, the
+//!   foot on the bottom row, running once round the rock);
 //! - **fungus**: a mushroom (a stem and a wider cap) with up to two small
 //!   ones at its foot; the cap's top takes columns 0..16 of rows 0..16, its
 //!   rim columns 16..32 of rows 0..8, the gills underneath columns 16..32 of
@@ -399,34 +400,93 @@ fn plant(out: &mut Vec<PropTri>, r: &mut Rng) {
     }
 }
 
-/// A boulder: a low bevelled lump and, often, a smaller one beside it.
-fn boulder(out: &mut Vec<PropTri>, r: &mut Rng) {
-    let rects = [BOULDER_SIDE, BOULDER_TOP, BOULDER_TOP];
-    let half = [r.range(0.27, 0.34), r.range(0.22, 0.29)];
-    let bevel = r.range(0.06, 0.1);
-    Lump {
-        centre: [0.5 + r.range(-0.03, 0.03), 0.5 + r.range(-0.03, 0.03)],
-        turn: r.range(0.0, std::f32::consts::FRAC_PI_2),
-        y: [0.0, r.range(0.34, 0.46)],
-        half,
-        top: [half[0] - bevel, half[1] - bevel],
-        rects,
-        caps: (true, false),
+/// Pushes one triangle with explicit texture coordinates, wound to face
+/// along `outward`.
+fn tri(out: &mut Vec<PropTri>, pos: [[f32; 3]; 3], uv: [[u8; 2]; 3], outward: [f32; 3], tex_face: u8) {
+    let mut pos = pos;
+    let mut uv = uv;
+    let mut n = unit(cross(sub(pos[1], pos[0]), sub(pos[2], pos[0])));
+    if dot(n, outward) < 0.0 {
+        pos.swap(1, 2);
+        uv.swap(1, 2);
+        n = [-n[0], -n[1], -n[2]];
     }
-    .push(out);
+    out.push(PropTri {
+        pos,
+        normal: n,
+        uv,
+        tex_face,
+        flame: false,
+    });
+}
+
+/// A rock: an irregular six-sided lump in two tiers, bulging a little at
+/// its waist and drawn in to a smaller top, so it reads as a stone rather
+/// than a box. `half` is its half size along its own axes, `turn` its turn.
+fn rock(out: &mut Vec<PropTri>, r: &mut Rng, centre: [f32; 2], half: [f32; 2], height: f32) {
+    const SIDES: usize = 6;
+    let turn = r.range(0.0, std::f32::consts::TAU);
+    let radii: [f32; SIDES] = std::array::from_fn(|_| r.range(0.85, 1.0));
+    let waist = r.range(0.45, 0.6);
+    let top_scale = r.range(0.5, 0.68);
+    // Rings: the foot, the waist (bulging), the top (drawn in).
+    let rings = [(0.0, 1.0), (height * waist, 1.04), (height, top_scale)];
+    let (s, c) = turn.sin_cos();
+    let at = |i: usize, (y, k): (f32, f32)| {
+        let a = i as f32 / SIDES as f32 * std::f32::consts::TAU;
+        let (lx, lz) = (a.cos() * half[0] * radii[i] * k, a.sin() * half[1] * radii[i] * k);
+        [centre[0] + lx * c - lz * s, y, centre[1] + lx * s + lz * c]
+    };
+    let [u0, v0, u1, v1] = BOULDER_SIDE;
+    let v_waist = v1 - ((v1 - v0) as f32 * waist) as u8;
+    let mid = [centre[0], height * 0.5, centre[1]];
+    for i in 0..SIDES {
+        let j = (i + 1) % SIDES;
+        let (ua, ub) = (
+            u0 + ((u1 - u0) as usize * i / SIDES) as u8,
+            u0 + ((u1 - u0) as usize * (i + 1) / SIDES) as u8,
+        );
+        for (tier, (va, vb)) in [(v1, v_waist), (v_waist, v0)].into_iter().enumerate() {
+            let corners = [
+                at(i, rings[tier]),
+                at(j, rings[tier]),
+                at(j, rings[tier + 1]),
+                at(i, rings[tier + 1]),
+            ];
+            let face: [f32; 3] = std::array::from_fn(|a| corners.iter().map(|p| p[a]).sum::<f32>() / 4.0);
+            quad(out, corners, [ua, vb, ub, va], sub(face, mid), 0);
+        }
+    }
+    // The top: a fan from its middle, its texture the footprint seen from
+    // above.
+    let [t0, s0, t1, s1] = BOULDER_TOP;
+    let span = half[0].max(half[1]) * 2.0;
+    let uv = |p: [f32; 3]| {
+        let fu = ((p[0] - centre[0]) / span + 0.5).clamp(0.0, 1.0);
+        let fv = ((p[2] - centre[1]) / span + 0.5).clamp(0.0, 1.0);
+        [
+            t0 + ((t1 - t0) as f32 * fu).round() as u8,
+            s0 + ((s1 - s0) as f32 * fv).round() as u8,
+        ]
+    };
+    let apex = [centre[0], height, centre[1]];
+    for i in 0..SIDES {
+        let (a, b) = (at(i, rings[2]), at((i + 1) % SIDES, rings[2]));
+        tri(out, [apex, a, b], [uv(apex), uv(a), uv(b)], [0.0, 1.0, 0.0], 2);
+    }
+}
+
+/// A boulder: a low rock and, often, a smaller one beside it.
+fn boulder(out: &mut Vec<PropTri>, r: &mut Rng) {
+    let half = [r.range(0.37, 0.42), r.range(0.31, 0.37)];
+    let height = r.range(0.34, 0.46);
+    let centre = [0.5 + r.range(-0.03, 0.03), 0.5 + r.range(-0.03, 0.03)];
+    rock(out, r, centre, half, height);
     if r.next() < 0.65 {
         let a = r.range(0.0, std::f32::consts::TAU);
-        let half = [r.range(0.1, 0.15), r.range(0.09, 0.14)];
-        Lump {
-            centre: [0.5 + a.cos() * 0.25, 0.5 + a.sin() * 0.25],
-            turn: r.range(0.0, std::f32::consts::FRAC_PI_2),
-            y: [0.0, r.range(0.14, 0.24)],
-            half,
-            top: [half[0] - 0.04, half[1] - 0.04],
-            rects,
-            caps: (true, false),
-        }
-        .push(out);
+        let half = [r.range(0.11, 0.16), r.range(0.1, 0.15)];
+        let height = r.range(0.14, 0.24);
+        rock(out, r, [0.5 + a.cos() * 0.27, 0.5 + a.sin() * 0.27], half, height);
     }
 }
 
@@ -791,8 +851,9 @@ mod tests {
                 match model {
                     // Two crossed quads, both sides.
                     Model::Plant => assert_eq!(n, 2 * 2 * 2),
-                    // One or two lumps of four sides and a top.
-                    Model::Boulder => assert!(n == 10 || n == 20, "{n}"),
+                    // One or two rocks of six sides in two tiers and a
+                    // six-triangle top.
+                    Model::Boulder => assert!(n == 30 || n == 60, "{n}"),
                     // One to three mushrooms: a stem's four sides, a cap's
                     // four sides, top and gills.
                     _ => assert!([20, 40, 60].contains(&n), "{n}"),
