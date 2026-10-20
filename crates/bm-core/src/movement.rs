@@ -66,8 +66,11 @@ pub struct MoveConfig {
 impl Default for MoveConfig {
     fn default() -> Self {
         Self {
-            walk_speed: 4.6,
-            sprint_speed: 7.6,
+            // An untrained Boundless character: run 3.0, sprint 5.0 m/s
+            // (tuning 1.6; Nathan, 2026-10-20). Agility will add 0.3 and 0.6
+            // a point when skills exist.
+            walk_speed: 3.0,
+            sprint_speed: 5.0,
             swim_speed: 3.2,
             // Clears a 1.4-block ledge: v = sqrt(2 g h) with g = 26, h = 1.45.
             jump_velocity: 8.7,
@@ -683,7 +686,7 @@ mod tests {
             w.shaped.insert(BlockPos::new(x, 10, 5), slab());
         }
         let mut s = standing(5.5, 10.0);
-        run(&mut s, east(), 120, &w);
+        run(&mut s, east(), 200, &w);
         assert!(s.pos.x > 12.0, "stopped at the slab: {:?}", s.pos);
         assert!((s.pos.y - 10.5).abs() < 1e-9 && s.on_ground, "{:?}", s.pos);
     }
@@ -707,7 +710,7 @@ mod tests {
             }
         }
         let mut s = standing(5.5, 10.0);
-        run(&mut s, east(), 300, &w);
+        run(&mut s, east(), 500, &w);
         assert!(s.pos.x > 22.0 && (s.pos.y - 16.0).abs() < 1e-9, "{:?}", s.pos);
     }
 
@@ -738,7 +741,7 @@ mod tests {
                 w.shaped.insert(BlockPos::new(x, roof, 5), top);
             }
             let mut s = standing(5.5, 10.0);
-            run(&mut s, east(), 120, &w);
+            run(&mut s, east(), 200, &w);
             s.pos.x
         };
         assert!(pass(12) > 12.0);
@@ -902,7 +905,7 @@ mod tests {
                     yaw,
                     ..Default::default()
                 },
-                120,
+                200,
                 &w,
             );
             s.pos.x

@@ -12,6 +12,9 @@ use bm_core::movement::look_dir;
 use bm_core::{BlockId, BlockPos, BlockState, Colour, HOTBAR_SLOTS, ItemId, ItemRegistry, Mount, Shape};
 use bm_protocol::ServerMsg;
 
+/// Said when a swing is made with no tool in hand.
+pub(crate) const NEED_A_TOOL: &str = "You need a tool to break blocks. A hand stone needs nothing to craft";
+
 /// Damaged blocks are swept for healing this often (once a second); reads
 /// treat a healed block as whole in between.
 pub(super) const HEAL_SWEEP_EVERY: u64 = 60;
@@ -156,10 +159,12 @@ impl Game {
         if let Err(r) = self.may_damage(id, pi, canon) {
             return self.swing_refused(id, seq, pos, r);
         }
-        // The swing is accepted: the tool is what our copy of the slot holds.
+        // The tool is what our copy of the slot holds. A bare hand breaks
+        // nothing (Nathan, 2026-10-20: as in Boundless).
         let item = p.inventory.get(slot as usize).map(|s| s.item);
-        let tool = self.items.swing_tool(item);
-        let is_tool = item.and_then(|i| self.items.get(i)).is_some_and(|d| d.tool().is_some());
+        let Some(tool) = self.items.swing_tool(item) else {
+            return self.swing_refused(id, seq, pos, Refusal::Told(NEED_A_TOOL.into()));
+        };
         let look = look_dir(p.last_input.yaw, p.last_input.pitch);
         let p = self.players.get_mut(&id).expect("present");
         p.last_swing = Some((at, swing_ticks(tool.action_speed)));
@@ -212,14 +217,12 @@ impl Game {
             self.notice(id, "Your inventory is full");
         }
         // One durability per swing, whatever it hit.
-        if is_tool {
-            let p = self.players.get_mut(&id).expect("present");
-            let before = p.inventory.clone();
-            let broke = wear_slot(&self.items, &mut p.inventory, slot as usize);
-            send_slots(p, &before);
-            if let Some(text) = broke {
-                p.out.send(&ServerMsg::Notice { text });
-            }
+        let p = self.players.get_mut(&id).expect("present");
+        let before = p.inventory.clone();
+        let broke = wear_slot(&self.items, &mut p.inventory, slot as usize);
+        send_slots(p, &before);
+        if let Some(text) = broke {
+            p.out.send(&ServerMsg::Notice { text });
         }
     }
 

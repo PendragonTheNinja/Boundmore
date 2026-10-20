@@ -80,7 +80,7 @@ pub fn swing_ticks(speed: f32) -> u32 {
 }
 
 /// Whether `tool` is the right kind for `def` (a tool with no class, the
-/// hand stone and the bare hand, suits everything).
+/// hand stone, suits everything).
 pub fn right_tool(tool: &ToolStats, def: &BlockDef) -> bool {
     tool.class.is_none_or(|c| c.suits(def.material))
 }
@@ -325,7 +325,7 @@ mod tests {
         let i = ItemRegistry::builtin(&b);
         let torch = b.get(b.id("torch").unwrap());
         assert_eq!(hits_to_break(&tool(&i, "iron_hammer"), torch, 7), Some(2));
-        assert_eq!(hits_to_break(&i.hand(), torch, 1), Some(2));
+        assert_eq!(hits_to_break(&tool(&i, "hand_stone"), torch, 1), Some(2));
     }
 
     #[test]

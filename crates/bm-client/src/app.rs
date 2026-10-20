@@ -38,6 +38,10 @@ use winit::event_loop::{ActiveEventLoop, ControlFlow};
 use winit::keyboard::{KeyCode, PhysicalKey};
 use winit::window::{CursorGrabMode, Fullscreen, Window, WindowId};
 
+/// Said when the break button is pressed with no tool in hand (the server
+/// says the same if a swing reaches it).
+const NEED_A_TOOL: &str = "You need a tool to break blocks. A hand stone needs nothing to craft";
+
 const MOUSE_SENSITIVITY: f64 = 0.0022;
 /// Seconds between repeated places while the button is held.
 const PLACE_REPEAT: f64 = 0.22;
@@ -135,6 +139,8 @@ struct Session {
     claim_target: Option<PlotPos>,
     /// When our next swing may land (milestone 9, `crate::mining`).
     swinger: Swinger,
+    /// Told "you need a tool" for the current press of the break button.
+    told_no_tool: bool,
     /// Damage blocks have taken, ours predicted and the server's word.
     damage: DamageMap,
     warp_shrine: BlockId,
@@ -191,6 +197,7 @@ impl Session {
             chisel: None,
             claim_target: None,
             swinger: Swinger::default(),
+            told_no_tool: false,
             damage: DamageMap::default(),
             warp_shrine,
             portal_conduit,
@@ -298,7 +305,8 @@ impl Session {
             return None;
         }
         let item = self.items.slot(slot).map(|h| h.item);
-        let tool = self.items.registry.swing_tool(item);
+        // A bare hand breaks nothing (Nathan, 2026-10-20: as in Boundless).
+        let tool = self.items.registry.swing_tool(item)?;
         self.swinger.swung(at, swing_ticks(tool.action_speed));
         self.edit_seq += 1;
         let seq = self.edit_seq;
@@ -899,7 +907,6 @@ impl App {
         };
         let items = match Items::new(
             w.items.clone(),
-            w.hand,
             w.recipes.clone(),
             w.inventory.clone(),
             w.colours.clone(),
@@ -1309,11 +1316,18 @@ impl App {
             }
         }
         let mouse = if chisel.is_some() { [false; 2] } else { mouse };
-        // Swinging: holding break swings the selected item (a non-tool is
-        // the bare hand) at once, then every `swing_ticks` of the item that
-        // made the last swing. The server rules each swing on the same input
+        // Swinging: holding break swings the selected tool at once, then
+        // every `swing_ticks` of the tool that made the last swing (a bare
+        // hand, or a non-tool, breaks nothing: say so once per press). The server rules each swing on the same input
         // timeline (ADR-0004); `Session::swing` predicts what it will do.
         s.damage.heal(s.me.seq);
+        let has_tool = s.items.registry.swing_tool(held.map(|h| h.item)).is_some();
+        if !mouse[0] {
+            s.told_no_tool = false;
+        } else if !has_tool && s.target.is_some() && !s.told_no_tool {
+            s.told_no_tool = true;
+            self.notices.push(NEED_A_TOOL.into(), now_s);
+        }
         if mouse[0]
             && let Some(hit) = s.target
             && let Some(at) = s.swinger.next(first_seq, s.me.seq)
@@ -2252,7 +2266,6 @@ mod tests {
         let registry = BlockRegistry::from_defs(w.blocks.clone()).unwrap();
         let items = Items::new(
             w.items.clone(),
-            w.hand,
             w.recipes.clone(),
             w.inventory.clone(),
             w.colours.clone(),

@@ -8,7 +8,7 @@
 
 use bm_core::{
     BlockRegistry, Colour, ColourPalette, INVENTORY_SLOTS, Inventory, ItemDef, ItemError, ItemKind, ItemRegistry,
-    ItemStack, Recipe, RecipeBook, ShapeFamily, ToolClass, ToolStats,
+    ItemStack, Recipe, RecipeBook, ShapeFamily, ToolClass,
 };
 use bm_protocol::ClientMsg;
 use std::collections::HashMap;
@@ -32,13 +32,12 @@ pub fn half(count: u16) -> u16 {
 impl Items {
     pub fn new(
         defs: Vec<ItemDef>,
-        hand: ToolStats,
         recipes: Vec<Recipe>,
         mut inventory: Inventory,
         colours: ColourPalette,
         blocks: &BlockRegistry,
     ) -> Result<Self, ItemError> {
-        let registry = ItemRegistry::from_defs(defs, hand, blocks)?;
+        let registry = ItemRegistry::from_defs(defs, blocks)?;
         // Index safety for everything below: exactly 40 slots, all valid.
         inventory.sanitize(&registry);
         let recipes = recipes
@@ -279,7 +278,6 @@ mod tests {
         let book = RecipeBook::builtin(&reg);
         Items::new(
             reg.defs().to_vec(),
-            reg.hand(),
             book.recipes,
             Inventory::default(),
             ColourPalette::builtin(),
@@ -313,15 +311,7 @@ mod tests {
         let blocks = BlockRegistry::builtin();
         let reg = ItemRegistry::builtin(&blocks);
         let inv = Inventory { slots: vec![None; 3] };
-        let i = Items::new(
-            reg.defs().to_vec(),
-            reg.hand(),
-            vec![],
-            inv,
-            ColourPalette::builtin(),
-            &blocks,
-        )
-        .unwrap();
+        let i = Items::new(reg.defs().to_vec(), vec![], inv, ColourPalette::builtin(), &blocks).unwrap();
         assert_eq!(i.inventory.slots.len(), INVENTORY_SLOTS);
     }
 

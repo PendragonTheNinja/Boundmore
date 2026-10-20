@@ -5,7 +5,7 @@ data_dir = "data"
 height_chunks = 12
 view_radius = 10
 max_players = 200
-reach = 7.0
+reach = 4.0
 plot_allowance = 64
 # Days without a visit before a claim lapses to ash (its stored items go to
 # the owner's reclaim). `claim_keep_seconds` overrides it, for testing.

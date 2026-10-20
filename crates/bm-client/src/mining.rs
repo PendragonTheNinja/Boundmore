@@ -240,7 +240,7 @@ mod tests {
     }
 
     fn tool(i: &ItemRegistry, name: &str) -> ToolStats {
-        i.swing_tool(Some(i.id(name).unwrap()))
+        i.swing_tool(Some(i.id(name).unwrap())).unwrap()
     }
 
     #[test]

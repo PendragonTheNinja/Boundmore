@@ -732,7 +732,7 @@ impl Game {
                         slots: load_slots(&self.items, &data.inventory, &name),
                     },
                 ),
-                Ok(None) => (self.start, None, Inventory::default()),
+                Ok(None) => (self.start, None, self.starting_inventory()),
                 Err(e) => {
                     // Never start them afresh: the empty inventory would be
                     // saved over the real one.
@@ -765,7 +765,6 @@ impl Game {
             universe: self.universe(),
             blocks: pl.world.registry.defs().to_vec(),
             items: self.items.defs().to_vec(),
-            hand: self.items.hand(),
             colours: self.colours.clone(),
             recipes: self.recipes.recipes.clone(),
             inventory: inventory.clone(),
@@ -1168,6 +1167,16 @@ impl Game {
                 others,
             },
         );
+    }
+
+    /// A new player's pack: the hand stone, Boundless's starter tool, in the
+    /// last hotbar slot (a bare hand breaks nothing).
+    fn starting_inventory(&self) -> Inventory {
+        let mut inv = Inventory::default();
+        if let Ok(stone) = self.items.id("hand_stone") {
+            inv.slots[HOTBAR_SLOTS - 1] = Some(ItemStack::new(stone, 1));
+        }
+        inv
     }
 
     fn notice(&self, id: u32, text: &str) {

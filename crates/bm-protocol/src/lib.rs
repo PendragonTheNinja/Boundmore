@@ -17,7 +17,7 @@
 
 use bm_core::{
     BlockDef, BlockPos, BlockState, ChunkPos, ColourPalette, DayCycle, Inventory, ItemDef, ItemStack, Mount,
-    MoveConfig, PlanetLook, PlanetShape, PlayerInput, PlayerState, PlotPos, Recipe, Station, ToolStats,
+    MoveConfig, PlanetLook, PlanetShape, PlayerInput, PlayerState, PlotPos, Recipe, Station,
 };
 use glam::DVec3;
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
@@ -197,8 +197,6 @@ pub struct Welcome {
     pub blocks: Vec<BlockDef>,
     /// The item catalogue (`ItemRegistry::from_defs` on the client).
     pub items: Vec<ItemDef>,
-    /// What a bare hand does to blocks.
-    pub hand: ToolStats,
     /// The colour palette (ADR-0007): ids 1 to 255, 0 is natural.
     pub colours: ColourPalette,
     pub recipes: Vec<Recipe>,
@@ -626,7 +624,6 @@ mod tests {
                 .collect(),
             blocks: blocks.defs().to_vec(),
             items: items.defs().to_vec(),
-            hand: items.hand(),
             colours: ColourPalette::builtin(),
             recipes: recipes.recipes.clone(),
             inventory: Inventory::default(),
@@ -634,7 +631,7 @@ mod tests {
             spawn: PlayerState::default(),
             tick: 0,
             view_radius: 10,
-            reach: 7.0,
+            reach: 4.0,
             claims: vec![ClaimView {
                 id: 1,
                 owner: "x".into(),

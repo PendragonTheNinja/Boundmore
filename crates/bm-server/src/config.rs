@@ -118,7 +118,9 @@ impl Default for ServerConfig {
             height_chunks: 12,
             view_radius: 10,
             max_players: 200,
-            reach: 7.0,
+            // An untrained Boundless character's reach, 4 m (Control adds 1
+            // a point once skills exist; Nathan, 2026-10-20).
+            reach: 4.0,
             plot_allowance: 64,
             claim_keep_days: 183,
             claim_keep_seconds: None,
@@ -279,6 +281,12 @@ mod tests {
             toml::from_str("[[planets]]\nname = \"A\"\nkind = \"arid\"\nseed = 1\nwidth_chunks = 32\n").unwrap();
         assert_eq!(cfg.planets, vec![PlanetSpec::new("A", "arid", 1, 32)]);
         cfg.validate().unwrap();
+    }
+
+    #[test]
+    fn reach_is_an_untrained_boundless_characters() {
+        // 4 m; Control adds 1 a point once skills exist (Nathan, 2026-10-20).
+        assert_eq!(ServerConfig::default().reach, 4.0);
     }
 
     #[test]

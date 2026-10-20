@@ -18,7 +18,8 @@ use std::time::Duration;
 use tokio::sync::mpsc;
 
 const PASSWORD: &str = "correct horse";
-/// Hand is an empty hotbar slot in every test.
+/// The hand stone's slot: every player starts with one there (a bare hand
+/// breaks nothing), and `seed` puts one there unless told otherwise.
 const HAND: u8 = 9;
 
 struct TestClient {
@@ -77,7 +78,7 @@ async fn hello(
         other => panic!("expected welcome, got {other:?}"),
     };
     let blocks = BlockRegistry::from_defs(welcome.blocks.clone()).unwrap();
-    let items = ItemRegistry::from_defs(welcome.items.clone(), welcome.hand, &blocks).unwrap();
+    let items = ItemRegistry::from_defs(welcome.items.clone(), &blocks).unwrap();
     let (mtx, msgs) = mpsc::unbounded_channel();
     tokio::spawn(async move {
         // Keep the endpoint alive as long as the stream is read.
@@ -288,7 +289,10 @@ impl TestClient {
     /// Ticks the item in hotbar `slot` needs between swings.
     fn swing_ticks(&self, slot: u8) -> u32 {
         let item = self.inv.get(slot as usize).map(|s| s.item);
-        bm_core::mining::swing_ticks(self.items.swing_tool(item).action_speed)
+        // No tool: the swing is refused anyway; any cadence will do.
+        self.items
+            .swing_tool(item)
+            .map_or(1, |t| bm_core::mining::swing_ticks(t.action_speed))
     }
 
     /// One swing at `pos` with hotbar `slot`, following the last input sent,
@@ -432,6 +436,10 @@ fn config(dir: &Path) -> ServerConfig {
         height_chunks: 12,
         view_radius: 3,
         shrine_guard: 0,
+        // The game's reach is Boundless's untrained 4 (Nathan, 2026-10-20);
+        // these layouts were built for 7 and the reach rule has its own
+        // checks, so the test worlds keep 7.
+        reach: 7.0,
         ..Default::default()
     }
 }
@@ -463,6 +471,11 @@ fn seed(dir: &Path, name: &str, stacks: &[(usize, &str, u16, u16)]) {
     let store = Store::open(&planet_file(dir)).unwrap();
     let account = bm_server::accounts::register(&store, name, PASSWORD).unwrap();
     let mut inventory = vec![None; bm_core::INVENTORY_SLOTS];
+    inventory[HAND as usize] = Some(SavedStack {
+        item: "hand_stone".into(),
+        count: 1,
+        wear: 0,
+    });
     for &(slot, item, count, wear) in stacks {
         inventory[slot] = Some(SavedStack {
             item: item.into(),
@@ -484,6 +497,15 @@ fn seed(dir: &Path, name: &str, stacks: &[(usize, &str, u16, u16)]) {
             ..Default::default()
         })
         .unwrap();
+}
+
+/// A new player's pack: the hand stone in its slot and nothing else (a bare
+/// hand breaks nothing).
+fn only_the_hand_stone(c: &TestClient) -> bool {
+    c.welcome.inventory.slots.iter().enumerate().all(|(i, s)| match s {
+        Some(s) => i == HAND as usize && s.item == c.item("hand_stone"),
+        None => i != HAND as usize,
+    })
 }
 
 fn stack(c: &TestClient, slot: usize) -> Option<ItemStack> {
@@ -515,14 +537,24 @@ async fn two_players_share_one_world() {
     // with the block's true damage.
     assert_eq!(
         alice.swing(90, feet, HAND).await,
-        Swung::Damaged(100),
-        "a bare hand deals 100"
+        Swung::Damaged(200),
+        "the hand stone deals 200"
     );
     assert_eq!(
         alice.swing(91, feet, HAND).await,
-        Swung::Refused(ground, 100),
+        Swung::Refused(ground, 200),
         "a swing sooner than the cadence"
     );
+    // A bare hand breaks nothing (Nathan, 2026-10-20: as in Boundless).
+    alice.ready();
+    assert_eq!(
+        alice.swing(92, feet, 2).await,
+        Swung::Refused(ground, 200),
+        "an empty slot is a bare hand"
+    );
+    alice
+        .notice("You need a tool to break blocks. A hand stone needs nothing to craft")
+        .await;
     // Rules: bedrock cannot be broken; far blocks cannot be reached.
     alice.ready();
     let floor = BlockPos::new(feet.x, 0, feet.z);
@@ -707,7 +739,15 @@ async fn edits_positions_and_inventories_survive_a_restart() {
         moved_to
     );
     assert_eq!(
-        alice.inv.slots.iter().flatten().map(|s| s.count).sum::<u16>(),
+        alice
+            .inv
+            .slots
+            .iter()
+            .enumerate()
+            .filter(|&(i, _)| i != HAND as usize)
+            .filter_map(|(_, s)| s.as_ref())
+            .map(|s| s.count)
+            .sum::<u16>(),
         1,
         "kept what she dug"
     );
@@ -732,7 +772,11 @@ async fn full_inventories_refuse_breaks_and_tools_hit_harder_and_wear_out() {
             (3, "stone_hammer", 1, 597),
         ],
     );
-    let full: Vec<(usize, &str, u16, u16)> = (0..40).map(|i| (i, "copper_ingot", 100, 0)).collect();
+    // Every slot but the hand stone's full.
+    let full: Vec<(usize, &str, u16, u16)> = (0..40)
+        .filter(|&i| i != HAND as usize)
+        .map(|i| (i, "copper_ingot", 100, 0))
+        .collect();
     seed(dir.path(), "Bob", &full);
     let server = bm_server::start(config(dir.path())).unwrap();
 
@@ -756,17 +800,18 @@ async fn full_inventories_refuse_breaks_and_tools_hit_harder_and_wear_out() {
     alice.wait_for_chunk(feet.chunk()).await;
     let stone = alice.block("stone");
     assert!(alice.edit(10, feet, EditAction::Place { slot: 1, mount: None }).await.0);
-    // A bare hand deals 100 to stone, the stone hammer 400 (tuning 2.1):
-    // one swing by hand and three with the hammer break its 1200.
-    assert_eq!(alice.swing(11, feet, HAND).await, Swung::Damaged(100));
+    // The hand stone deals 200 to stone, the stone hammer 400 (tuning
+    // 2.1): one swing with the hand stone and three with the hammer break
+    // its 1200.
+    assert_eq!(alice.swing(11, feet, HAND).await, Swung::Damaged(200));
     alice.ready();
     assert_eq!(
         alice.swing(12, feet, 0).await,
-        Swung::Damaged(500),
+        Swung::Damaged(600),
         "the hammer hits harder"
     );
     alice.ready();
-    assert_eq!(alice.swing(13, feet, 0).await, Swung::Damaged(900));
+    assert_eq!(alice.swing(13, feet, 0).await, Swung::Damaged(1000));
     alice.ready();
     assert_eq!(alice.swing(14, feet, 0).await, Swung::Broke);
     alice.settle().await;
@@ -1042,7 +1087,10 @@ async fn a_version_1_planet_opens_and_keeps_its_players() {
         "the version 1 position is hers: {:?}",
         alice.welcome.spawn.pos
     );
-    assert!(alice.welcome.inventory.slots.iter().all(Option::is_none));
+    assert!(
+        alice.welcome.inventory.slots.iter().all(Option::is_none),
+        "her saved (empty) pack, not a new player's"
+    );
     assert_eq!(alice.welcome.planet.name, "Testworld");
     drop(alice);
     server.stop();
@@ -1132,7 +1180,8 @@ async fn digging_block_after_block_keeps_every_break() {
     let tier = carol.planet.tier;
     let hits = |c: &TestClient, p: BlockPos| {
         let def = &c.welcome.blocks[c.chunks[&p.chunk()].get(p.local()).0 as usize];
-        bm_core::mining::hits_to_break(&c.items.hand(), def, tier).unwrap()
+        let stone = c.items.swing_tool(Some(c.item("hand_stone"))).unwrap();
+        bm_core::mining::hits_to_break(&stone, def, tier).unwrap()
     };
     let (n1, n2) = (hits(&carol, first), hits(&carol, second));
     assert!(n1 > 1 && n2 > 1, "the ground takes several swings");
@@ -1518,7 +1567,14 @@ async fn chests_on_a_claim_open_only_for_its_owner() {
     })
     .await;
     bob.settle().await;
-    assert!(bob.inv.slots.iter().all(Option::is_none), "nothing taken");
+    assert!(
+        bob.inv
+            .slots
+            .iter()
+            .enumerate()
+            .all(|(i, s)| i == HAND as usize || s.is_none()),
+        "nothing taken"
+    );
 
     alice.send(ClientMsg::OpenStorage { pos: Some(feet) }).await;
     assert!(!alice.storage(|v| v.pos == feet).await.closed, "the owner opens it");
@@ -1564,7 +1620,10 @@ async fn chat_reaches_whoever_the_channel_says() {
     let mut bob = TestClient::login(&server, "Bob").await;
     assert_eq!(dave.welcome.planet.id, 1);
     assert!((far.spawn.pos - alice.spawn.pos).length() > 100.0);
-    assert!(alice.welcome.inventory.slots.iter().all(Option::is_none));
+    assert!(
+        only_the_hand_stone(&alice),
+        "a new player starts with the hand stone alone"
+    );
 
     // Arrivals are announced on the planet, by the server.
     let line = alice.heard(|l| l.text == "Bob arrived on Testworld").await;

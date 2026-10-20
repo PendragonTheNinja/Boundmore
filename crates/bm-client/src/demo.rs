@@ -286,7 +286,6 @@ impl Demo {
             universe: self.universe(),
             blocks: self.blocks.defs().to_vec(),
             items: self.items.defs().to_vec(),
-            hand: self.items.hand(),
             colours: self.colours.clone(),
             recipes: self.book.recipes.clone(),
             inventory: self.inv.clone(),
@@ -299,7 +298,7 @@ impl Demo {
             },
             tick: 0,
             view_radius: 4,
-            reach: 7.0,
+            reach: 4.0,
             claims: self.claims.clone(),
             plot_allowance: 64,
         };
@@ -1224,7 +1223,13 @@ impl Demo {
             return;
         }
         let item = self.inv.get(slot as usize).map(|s| s.item);
-        let tool = self.items.swing_tool(item);
+        // A bare hand breaks nothing (Nathan, 2026-10-20).
+        let Some(tool) = self.items.swing_tool(item) else {
+            let damage = health_of(self, hit);
+            self.events
+                .push_back(NetEvent::Msg(ServerMsg::BlockHealth { pos: hit, damage }));
+            return;
+        };
         self.last_swing = Some((at, swing_ticks(tool.action_speed)));
         let tier = self.planets[self.here].info.tier;
         let area = tool.aoe.map_or(1.0, bm_core::Aoe::multiplier);

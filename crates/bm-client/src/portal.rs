@@ -196,7 +196,6 @@ mod tests {
         let book = RecipeBook::builtin(&reg);
         Items::new(
             reg.defs().to_vec(),
-            reg.hand(),
             book.recipes,
             Inventory::default(),
             ColourPalette::builtin(),

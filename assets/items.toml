@@ -22,13 +22,8 @@
 #             second); a hookshot reels in by itself
 #   icon      texture in assets/textures/items/ (default: the name)
 #
-# [hand] is what a bare hand (or anything that is not a tool) does to blocks.
-# Boundless's bare hand is not documented: a guess, half the hand stone's
-# damage (docs/feel.md).
-
-[hand]
-damage = 100
-action_speed = 20.0
+# A bare hand cannot break blocks (Nathan, 2026-10-20: as in Boundless);
+# new players start with a hand stone.
 
 [[item]]
 name = "coal"

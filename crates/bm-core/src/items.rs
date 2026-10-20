@@ -68,12 +68,13 @@ impl Aoe {
     }
 }
 
-/// What a tool (or the bare hand) does to blocks [tuning 2.1]. Every swing
+/// What a tool does to blocks [tuning 2.1]. A bare hand breaks nothing
+/// (Nathan, 2026-10-20: as in Boundless). Every swing
 /// costs one durability.
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
 pub struct ToolStats {
     /// Hammer, shovel or axe: full damage on what it suits, a quarter on the
-    /// rest. None suits everything (the hand stone, the bare hand).
+    /// rest. None suits everything (the hand stone).
     pub class: Option<ToolClass>,
     /// Damage per swing, before armour.
     pub damage: u32,
@@ -83,7 +84,7 @@ pub struct ToolStats {
     pub crit_chance: f32,
     /// A critical hit deals `1 + crit_effect` times the damage.
     pub crit_effect: f32,
-    /// Swings before it breaks (unused for the hand).
+    /// Swings before it breaks.
     pub durability: u16,
     /// The shape one swing hits; None: one block.
     pub aoe: Option<Aoe>,
@@ -266,8 +267,6 @@ pub enum ItemError {
     ZeroStack(String),
     #[error("tool `{0}` must stack to 1, with damage, action speed and durability above 0 and a crit chance in 0..1")]
     BadTool(String),
-    #[error("the bare hand's stats are not valid")]
-    BadHand,
     #[error("block `{0}` drops `{1}`, which is not an item")]
     UnknownDrop(String, String),
     #[error("no item named `{0}`")]
@@ -280,7 +279,6 @@ pub enum ItemError {
 
 #[derive(Deserialize)]
 struct ItemFile {
-    hand: ToolEntry,
     #[serde(default)]
     item: Vec<ItemEntry>,
 }
@@ -382,7 +380,6 @@ pub struct ItemRegistry {
     drops: Vec<Option<ItemId>>,
     /// Extra yields by block id: (item, expected count per tier).
     bonus: Vec<Vec<(ItemId, [f32; 8])>>,
-    hand: ToolStats,
 }
 
 impl ItemRegistry {
@@ -431,7 +428,7 @@ impl ItemRegistry {
                 held_light: 0,
             });
         }
-        let reg = Self::from_defs(defs, file.hand.stats(), blocks)?;
+        let reg = Self::from_defs(defs, blocks)?;
         Ok(reg)
     }
 
@@ -442,12 +439,9 @@ impl ItemRegistry {
 
     /// Builds and validates a registry from definitions (the server's own, or
     /// the copy a client receives in the handshake).
-    pub fn from_defs(defs: Vec<ItemDef>, hand: ToolStats, blocks: &BlockRegistry) -> Result<Self, ItemError> {
+    pub fn from_defs(defs: Vec<ItemDef>, blocks: &BlockRegistry) -> Result<Self, ItemError> {
         if defs.len() >= u16::MAX as usize {
             return Err(ItemError::TooMany);
-        }
-        if !hand.valid() {
-            return Err(ItemError::BadHand);
         }
         let mut by_name = HashMap::new();
         for (i, d) in defs.iter().enumerate() {
@@ -504,21 +498,13 @@ impl ItemRegistry {
             by_name,
             drops,
             bonus,
-            hand,
         })
     }
 
-    /// What a bare hand does to blocks.
-    pub fn hand(&self) -> ToolStats {
-        self.hand
-    }
-
-    /// The stats a swing uses holding `item` (None, or anything not a tool:
-    /// the bare hand).
-    pub fn swing_tool(&self, item: Option<ItemId>) -> ToolStats {
-        item.and_then(|i| self.get(i))
-            .and_then(|d| d.tool())
-            .unwrap_or(self.hand)
+    /// The stats a swing uses holding `item`; None for a bare hand or
+    /// anything not a tool, which cannot break blocks.
+    pub fn swing_tool(&self, item: Option<ItemId>) -> Option<ToolStats> {
+        item.and_then(|i| self.get(i)).and_then(|d| d.tool())
     }
 
     /// Extra yields of `block`: (item, expected count on each tier 1 to 8).
@@ -626,7 +612,7 @@ mod tests {
         assert_eq!(i.get(stone_item).unwrap().display, "Stone");
     }
 
-    const HAND: &str = "[hand]\ndamage = 100\naction_speed = 20.0\n";
+    const HAND: &str = "";
 
     #[test]
     fn tools_have_boundless_stats() {
@@ -648,9 +634,9 @@ mod tests {
                 .class
                 .is_none()
         );
-        // Anything that is not a tool swings as a bare hand.
-        assert_eq!(i.swing_tool(Some(i.id("stone").unwrap())), i.hand());
-        assert_eq!(i.swing_tool(None), i.hand());
+        // A bare hand, or anything that is not a tool, cannot swing.
+        assert_eq!(i.swing_tool(Some(i.id("stone").unwrap())), None);
+        assert_eq!(i.swing_tool(None), None);
     }
 
     #[test]
@@ -705,10 +691,6 @@ mod tests {
                 )
             ),
             Err(ItemError::BadTool(_))
-        ));
-        assert!(matches!(
-            ItemRegistry::build(&b, "[hand]\ndamage = 0\naction_speed = 20.0\n"),
-            Err(ItemError::BadHand)
         ));
         // The builtin blocks name drops that only the builtin items define.
         assert!(matches!(ItemRegistry::build(&b, HAND), Err(ItemError::UnknownDrop(..))));
