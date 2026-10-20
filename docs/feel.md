@@ -46,7 +46,7 @@ Boundless burned shards every hour whether a portal was used or not (1 to 9 an h
 | Charge cooldown | 1 hour per player per portal (`portal_charge_cooldown`, seconds) | Back-and-forth trips should feel free |
 | Tank | 500 wayshards (`portal_tank_capacity`) | How often does an owner restock? |
 | Portal sizes | 1 to 6 wide, 2 to 6 tall | Boundless went up to 24 conduits for its longest links |
-| Wayshard rarity | vein size 6, threshold 0.64, below y 68 and 24 under the surface: about 9 blocks per 32x32 column, heights 1 to 68 (median 30) under a surface near 147, about 30 times rarer than copper (measured 2026-10-20) | Nathan, 2026-10-20: could not find any in his first play. Too deep to reach without a light; proposal: raise to below y 100, a little richer |
+| Wayshard rarity | vein size 6, threshold 0.64, below y 68 and 24 under the surface: about 9 blocks per 32x32 column, heights 1 to 68 (median 30) under a surface near 147, about 30 times rarer than copper (measured 2026-10-20) | Nathan, 2026-10-20: found none in his first play, but keep them where they are (he will dig for them) |
 | Conduit recipe | 4 stone, 1 copper ingot, 1 wayshard for 2 | A 1 by 2 portal costs one wayshard |
 
 ## World (`bm-server/src/config.rs`, `bm-worldgen`)
