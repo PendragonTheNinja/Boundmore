@@ -13,11 +13,13 @@ struct Globals {
     sun_color: vec4<f32>,
     // x: fog start, y: fog end, z: time in seconds, w: star visibility
     params: vec4<f32>,
-    // x, y: framebuffer size in pixels; z: planets in the sky
+    // x, y: framebuffer size in pixels; z: planets in the sky; w: point lights
     screen: vec4<f32>,
     // The night sky's frame to the world's (stars and planets turn with it)
     sky_rotation: mat4x4<f32>,
     planets: array<SkyPlanet, 16>,
+    // Held torches: xyz camera-relative position, w light level (0..15).
+    point_lights: array<vec4<f32>, 16>,
 };
 
 struct SkyPlanet {

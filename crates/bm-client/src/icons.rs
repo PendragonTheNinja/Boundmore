@@ -3,7 +3,7 @@
 //!
 //! A block item is drawn as a small isometric cube from its own face
 //! textures (the look the M2 hotbar had), lit from the top left as the art
-//! direction asks. Any other item uses `assets/textures/items/<icon>.png` if
+//! direction asks. A prop (a torch) and any other item uses `assets/textures/items/<icon>.png` if
 //! there is one, and otherwise a coloured tile with its initials, so a
 //! missing picture is obvious but never blank.
 //!
@@ -44,6 +44,7 @@ pub fn icon_for(
 ) -> IconSource {
     if let ItemKind::Block(b) = def.kind
         && blocks.contains(b)
+        && !blocks.get(b).is_prop()
     {
         let faces = set.faces.get(b.0 as usize).copied().unwrap_or([NO_TEXTURE; 4]);
         let tint = tints.get(b.0 as usize).copied().unwrap_or(NO_TINT);

@@ -39,6 +39,9 @@ struct VsOut {
     @location(7) @interpolate(flat) colour: u32,
     // Surface normal: the face's for cubes, smooth across a rounded cut.
     @location(8) normal: vec3<f32>,
+    // A prop's own texture coordinate (xy, 0..1 across the face) when z is 1;
+    // otherwise the face's coordinate comes from the position.
+    @location(9) uv: vec3<f32>,
 };
 
 // A cut block's vertex (bm-mesh `ShapedVertex`): positions in 1/256 block,
@@ -82,6 +85,7 @@ fn vs_main(in: VsIn) -> VsOut {
     out.light = vec2<f32>(f32((in.b >> 16u) & 15u), f32((in.b >> 20u) & 15u)) / 15.0;
     out.colour = in.b >> 24u;
     out.normal = NORMALS[out.face];
+    out.uv = vec3<f32>(0.0);
     return out;
 }
 
@@ -100,6 +104,10 @@ fn vs_shaped(in: ShapedIn) -> VsOut {
     out.light = vec2<f32>(f32((in.b >> 16u) & 15u), f32((in.b >> 20u) & 15u)) / 15.0;
     out.colour = in.b >> 24u;
     out.normal = unpack4x8snorm(in.n).xyz;
+    // Props (bm-mesh `ShapedVertex::with_uv`): u in z bits 22..27, v in the
+    // normal's top byte, in pixels of the 32 x 32 face.
+    let has_uv = f32((in.z >> 21u) & 1u);
+    out.uv = vec3<f32>(f32((in.z >> 22u) & 63u) / 32.0, f32((in.n >> 24u) & 63u) / 32.0, has_uv);
     return out;
 }
 
@@ -236,7 +244,8 @@ fn untinted_albedo(in: VsOut) -> vec4<f32> {
     let variant = min(u32(hash3(block) * f32(variants)), variants - 1u);
     let layer = select(0u, (entry & 0xffffu) + variant, textured);
     // Sampled unconditionally: derivatives need uniform control flow.
-    let t = textureSample(block_tex, block_samp, face_uv(in.local, in.face), layer);
+    let uv = select(face_uv(in.local, in.face), in.uv.xy, in.uv.z > 0.5);
+    let t = textureSample(block_tex, block_samp, uv, layer);
     if (textured) {
         return t;
     }
@@ -255,13 +264,31 @@ const AMBIENT: f32 = 0.012;
 // Block light is warm, like lamplight on stone.
 const BLOCK_TINT: vec3<f32> = vec3<f32>(1.0, 0.88, 0.70);
 
+// Block light from the held torches (`Renderer::set_point_lights`), 0..1:
+// each falls off one level per block, as block light spreads, measured to
+// the point half a block out from the surface (where a face samples its
+// block light). No occlusion: a held torch lights through walls within its
+// reach, a fair trade for never re-meshing a light that moves every frame.
+fn point_light(rel: vec3<f32>, n: vec3<f32>) -> f32 {
+    let p = rel + n * 0.5;
+    let count = min(u32(g.screen.w), 16u);
+    var best = 0.0;
+    for (var i = 0u; i < count; i++) {
+        let l = g.point_lights[i];
+        best = max(best, l.w - length(p - l.xyz));
+    }
+    return clamp(best, 0.0, 15.0) / 15.0;
+}
+
 fn shade(in: VsOut, base: vec3<f32>) -> vec3<f32> {
     let n = normalize(in.normal);
     // Sky and block light arrive as separate channels so night dims only the
     // sky (a uniform, never a re-mesh). Direct sun warms faces turned to it,
     // but only where the sky reaches.
     let sky = light_curve(in.light.x);
-    let block = light_curve(in.light.y);
+    // Meshed block light and the held lights: the brighter wins, as two
+    // torches do in the light map.
+    let block = light_curve(max(in.light.y, point_light(in.rel, n)));
     let sun = max(dot(n, g.sun_dir.xyz), 0.0) * g.sun_dir.w;
     let sky_light = sky * g.sun_color.w * (0.82 + 0.18 * sun);
     let light = max(vec3<f32>(sky_light), BLOCK_TINT * block) + AMBIENT;

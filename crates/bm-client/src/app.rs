@@ -26,7 +26,7 @@ use bm_protocol::{
     ServerDatagram, ServerMsg, StorageView, Travel,
 };
 use glam::{DVec3, Vec3};
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Instant;
@@ -119,6 +119,9 @@ struct Session {
     world: ClientWorld,
     me: Predictor,
     remotes: Remotes,
+    /// Each remote player's held light (`RemotePlayer::light`), from the
+    /// latest snapshot.
+    remote_lights: HashMap<u32, u8>,
     items: Items,
     icons: ItemIcons,
     claims: Claims,
@@ -177,6 +180,7 @@ impl Session {
             world: ClientWorld::new(shape, registry),
             me: Predictor::new(w.spawn),
             remotes: Remotes::default(),
+            remote_lights: HashMap::new(),
             items,
             icons,
             plot_allowance: w.plot_allowance,
@@ -209,6 +213,7 @@ impl Session {
         self.world = ClientWorld::new(shape, registry);
         self.claims = Claims::new(shape, t.claims);
         self.remotes = Remotes::default();
+        self.remote_lights.clear();
         self.me.teleport(t.spawn);
         self.welcome_tick = t.tick;
         self.welcome_local = local_ticks;
@@ -288,6 +293,7 @@ impl Session {
         }
         let shape = self.world.shape;
         self.me.reconcile(tick, ack, you, &self.movement, shape, &self.world);
+        self.remote_lights = others.iter().map(|o| (o.id, o.light)).collect();
         self.remotes.record(
             tick,
             local,
@@ -334,6 +340,27 @@ impl Session {
         self.remotes
             .server_tick(local)
             .unwrap_or(self.welcome_tick as f64 + (local - self.welcome_local))
+    }
+
+    /// Held torches as point lights (`Renderer::set_point_lights`): ours at
+    /// the hand (where the rope starts), everyone else's at their hands.
+    fn held_lights(&self, remotes: &[(u32, RemoteSample)], camera: &Camera) -> Vec<(DVec3, u8)> {
+        let mine = self
+            .items
+            .slot(self.selected)
+            .and_then(|h| self.items.def(&h))
+            .map_or(0, |d| d.held_light);
+        let forward = camera.forward();
+        let right = forward.cross(DVec3::Y).normalize_or_zero();
+        let hand = camera.eye + right * 0.3 - DVec3::Y * 0.35 + forward * 0.4;
+        let others = remotes.iter().filter_map(|(id, smp)| {
+            let light = self.remote_lights.get(id).copied().unwrap_or(0);
+            (light > 0).then(|| (smp.pos + DVec3::new(0.0, bm_core::movement::ROPE_HEIGHT, 0.0), light))
+        });
+        std::iter::once((hand, mine))
+            .filter(|l| l.1 > 0)
+            .chain(others)
+            .collect()
     }
 
     /// The storage block aimed at (within reach, as aiming is), if any.
@@ -1597,6 +1624,9 @@ impl App {
                 color: HOOK_COLOUR,
             });
         }
+        if let Some(r) = &mut self.renderer {
+            r.set_point_lights(&s.held_lights(&remotes, &camera));
+        }
         let highlight = if self.claim_mode || s.chisel.is_some() {
             None
         } else {
@@ -1758,6 +1788,17 @@ impl App {
                     }
                 }
                 (self.yaw, self.pitch) = if in_hand { (0.075, -0.55) } else { (0.0, -0.62) };
+            }
+            // A dark stone hall lit by a standing torch and two wall
+            // torches at its far end, a torch in hand (slot 0 holds none).
+            "torches" => {
+                if let Some(Link::Demo(d)) = &mut self.link {
+                    d.show_torches();
+                }
+                if let Some(s) = &mut self.session {
+                    s.selected = 9;
+                }
+                (self.yaw, self.pitch) = (0.12, -0.12);
             }
             // Hanging from a copper grapple hooked under a stone arch, part
             // way through a swing towards it.

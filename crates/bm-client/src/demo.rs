@@ -44,6 +44,9 @@ pub const WALL: [i64; 3] = [120, 48, 114];
 pub const SHAPES_VIEW: [f64; 3] = [128.5, 46.0, 130.5];
 /// The west end of the grapple demo's arch beam, which runs ten blocks east.
 pub const GRAPPLE_BEAM: [i64; 3] = [124, 56, 118];
+/// The torch demo's hall (`show_torches`), inside: west and east x, north
+/// and south z, and its highest open layer. The spawn is at its south end.
+pub const TORCH_HALL: (i64, i64, i64, i64, i64) = (125, 132, 116, 129, 47);
 /// The demo's planets: name, kind, and the width shown for it in the sky and
 /// menu. (The demo's own patch is tiny; these are sizes real planets have.)
 const PLANETS: [(&str, &str, u32); 4] = [
@@ -539,6 +542,37 @@ impl Demo {
         for (i, name) in ["copper_grapple", "iron_grapple"].into_iter().enumerate() {
             self.inv.slots[7 + i] = Some(ItemStack::new(id(name), 1));
         }
+        self.slots_since(&before);
+        let chunks = self.chunks_around_spawn();
+        self.events.extend(chunks.into_iter().map(NetEvent::Msg));
+    }
+
+    /// A sealed stone hall around the spawn, dark but for its torches: one
+    /// standing on the floor and two on the walls at the far (north) end,
+    /// none near the spawn, and torches in the hotbar's last slot.
+    pub fn show_torches(&mut self) {
+        let b = |n: &str| BlockState::plain(self.blocks.id(n).expect("builtin block"));
+        let stone = b("stone");
+        let (x0, x1, z0, z1, top) = TORCH_HALL;
+        let mut put = Vec::new();
+        for x in x0 - 1..=x1 + 1 {
+            for z in z0 - 1..=z1 + 1 {
+                for y in GROUND..=top + 1 {
+                    let inside = (x0..=x1).contains(&x) && (z0..=z1).contains(&z) && y > GROUND && y <= top;
+                    put.push((BlockPos::new(x, y, z), if inside { BlockState::AIR } else { stone }));
+                }
+            }
+        }
+        let y = GROUND + 1;
+        put.push((BlockPos::new(x0 + 2, y, z0 + 2), b("torch")));
+        put.push((BlockPos::new(x0 + 4, y + 1, z0), b("torch_north")));
+        put.push((BlockPos::new(x1, y + 1, z0 + 5), b("torch_east")));
+        let planet = &mut self.planets[0];
+        planet.flat = true;
+        planet.edits.clear();
+        planet.edits.extend(put);
+        let before = self.inv.clone();
+        self.inv.slots[9] = Some(ItemStack::new(self.items.id("torch").expect("builtin item"), 12));
         self.slots_since(&before);
         let chunks = self.chunks_around_spawn();
         self.events.extend(chunks.into_iter().map(NetEvent::Msg));
