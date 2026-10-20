@@ -1168,7 +1168,7 @@ impl Demo {
 
     /// One swing, by the server's rules (`bm_core::mining`): the cadence on
     /// the input timeline, damage by tier with armour and the right tool,
-    /// a critical roll per swing, healing after `HEAL_TICKS` alone, breaks
+    /// a critical roll per block, healing after `HEAL_TICKS` alone, breaks
     /// answered with `EditResult`, damage with `BlockHealth`. The demo has
     /// no look direction (it gets no inputs): an area tool's shape faces
     /// east. Unlike the server it checks no reach.
@@ -1191,7 +1191,6 @@ impl Demo {
         let tool = self.items.swing_tool(item);
         self.last_swing = Some((at, swing_ticks(tool.action_speed)));
         let tier = self.planets[self.here].info.tier;
-        let crit = is_crit(tool.crit_chance, 1, at, hit);
         let area = tool.aoe.map_or(1.0, bm_core::Aoe::multiplier);
         let mut done = Vec::new();
         for p in aoe_blocks(tool.aoe, hit, DVec3::X, 1, at) {
@@ -1208,6 +1207,7 @@ impl Demo {
             if state.id.is_air() || !def.breakable {
                 continue;
             }
+            let crit = is_crit(tool.crit_chance, 1, at, p);
             let dealt = swing_damage(&tool, def, tier, crit, area);
             if dealt == 0 {
                 continue;
@@ -1219,7 +1219,7 @@ impl Demo {
                     .push_back(NetEvent::Msg(ServerMsg::BlockHealth { pos: p, damage: total }));
                 continue;
             }
-            self.break_block(seq, p, state);
+            self.break_block(seq, p, state, at);
         }
         if item.is_some_and(|i| self.items.get(i).is_some_and(|d| d.tool().is_some())) {
             self.wear(slot as usize);
@@ -1229,7 +1229,7 @@ impl Demo {
     /// Breaks `state` at `pos` for our swing `seq`: its drop goes into the
     /// inventory, refused if there is no room or it is a chest with things
     /// in it.
-    fn break_block(&mut self, seq: u32, pos: BlockPos, state: BlockState) {
+    fn break_block(&mut self, seq: u32, pos: BlockPos, state: BlockState, at: u32) {
         let old = state.id;
         let full_chest = self.here == 0 && self.chests.get(&pos).is_some_and(|c| c.iter().any(Option::is_some));
         if full_chest {
@@ -1245,8 +1245,14 @@ impl Demo {
         if let Some((item, colour)) = drop
             && self.inv.add_all_coloured(&self.items, item, colour, 1).is_none()
         {
+            // As the server: one point short of breaking, and the truth.
             self.notice("Your inventory is full");
-            return self.answer_edit(seq, pos, state, false);
+            self.answer_edit(seq, pos, state, false);
+            let damage = bm_core::mining::block_health(self.blocks.get(old), self.planets[self.here].info.tier) - 1;
+            self.damage.insert(pos, (damage, at));
+            self.events
+                .push_back(NetEvent::Msg(ServerMsg::BlockHealth { pos, damage }));
+            return;
         }
         self.answer_edit(seq, pos, BlockState::AIR, true);
     }
@@ -1563,6 +1569,19 @@ mod tests {
         // Over open air there is nothing to stand on.
         let (_, ok) = place(&mut d, BlockPos::new(128, 46, 128), bm_core::Mount::Floor).unwrap();
         assert!(!ok);
+        // A full pack leaves a block one point short, and says so.
+        let glass = d.items.id("glass").unwrap();
+        for slot in d.inv.slots.iter_mut().skip(1) {
+            *slot = Some(ItemStack::new(glass, 64));
+        }
+        let rock = BlockPos::new(130, 39, 128);
+        let ev = swing_until_answered(&mut d, rock, 0);
+        assert!(
+            ev.iter()
+                .any(|e| matches!(e, NetEvent::Msg(ServerMsg::EditResult { accepted: false, .. })))
+        );
+        assert_eq!(healths(&ev), [(rock, 1199)]);
+        assert_eq!(d.ground(rock).id, d.blocks.id("stone").unwrap());
     }
 
     #[test]

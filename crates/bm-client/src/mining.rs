@@ -9,8 +9,8 @@
 //! - it hits `mining::aoe_blocks(tool.aoe, hit, look at that input, player,
 //!   at)`, each wrapped to its canonical position, skipping air and blocks
 //!   that cannot be broken;
-//! - one critical roll per swing, `mining::is_crit(chance, player, at, hit)`
-//!   with the hit block's canonical position, applies to every block;
+//! - a critical roll for each block, `mining::is_crit(chance, player, at,
+//!   pos)` with that block's canonical position;
 //! - each block takes `mining::swing_damage(tool, def, tier, crit, area)`,
 //!   `area` the shape's multiplier when the tool has one (1 otherwise), and
 //!   breaks when its damage reaches `mining::block_health(def, tier)`.
@@ -82,7 +82,6 @@ pub struct SwingInput<'a> {
 /// skipped, as an unloaded block is).
 pub fn predict_swing(s: &SwingInput, map: &DamageMap, block_at: impl Fn(BlockPos) -> Option<BlockId>) -> Vec<BlockHit> {
     let hit = s.shape.wrap_block(s.hit);
-    let crit = is_crit(s.tool.crit_chance, s.player, s.at, hit);
     let area = s.tool.aoe.map_or(1.0, Aoe::multiplier);
     let mut out: Vec<BlockHit> = Vec::new();
     for p in aoe_blocks(s.tool.aoe, hit, s.look, s.player, s.at) {
@@ -98,6 +97,7 @@ pub fn predict_swing(s: &SwingInput, map: &DamageMap, block_at: impl Fn(BlockPos
         if block.is_air() || !def.breakable {
             continue;
         }
+        let crit = is_crit(s.tool.crit_chance, s.player, s.at, pos);
         let damage = swing_damage(s.tool, def, s.tier, crit, area);
         let breaks = damage > 0 && map.damage(pos) + damage >= block_health(def, s.tier);
         out.push(BlockHit {

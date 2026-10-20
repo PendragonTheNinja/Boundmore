@@ -317,9 +317,17 @@ impl Session {
                 .registry
                 .drop_of(h.block)
                 .is_none_or(|d| self.items.inventory.can_fit(&self.items.registry, d, 1));
-            let h = BlockHit {
-                breaks: h.breaks && fits,
-                ..h
+            // A full pack leaves it one point short, as the server does.
+            let h = match h.breaks && !fits {
+                true => {
+                    let health = bm_core::mining::block_health(self.world.registry.get(h.block), self.planet.tier);
+                    BlockHit {
+                        breaks: false,
+                        damage: (health - 1).saturating_sub(self.damage.damage(h.pos)),
+                        ..h
+                    }
+                }
+                false => h,
             };
             self.damage.hit(seq, at, &h);
             if h.breaks {
@@ -345,7 +353,9 @@ impl Session {
     }
 
     /// `ServerMsg::EditResult`: settles our edit (a placed block, a cut, a
-    /// broken one); the block starts again at full health.
+    /// broken one). Accepted, the block starts again at full health;
+    /// refused, the server's word on its damage follows (`BlockHealth`), so
+    /// our guesses about it go.
     fn edit_result(&mut self, seq: u32, pos: BlockPos, block: BlockState) {
         self.world.apply_edit_result(seq, pos, block);
         self.damage.clear(self.world.shape.wrap_block(pos));
@@ -2344,6 +2354,7 @@ mod tests {
             match e {
                 NetEvent::Msg(ServerMsg::BlockHealth { pos, damage }) => s.block_health(pos, damage),
                 NetEvent::Msg(ServerMsg::EditResult { seq, pos, block, .. }) => s.edit_result(seq, pos, block),
+                NetEvent::Msg(ServerMsg::Notice { .. }) => {}
                 NetEvent::Msg(ServerMsg::BlockChanged { pos, block }) => s.block_changed(pos, block),
                 NetEvent::Msg(ServerMsg::Slots { changes }) => s.items.apply_slots(&changes),
                 _ => {}
