@@ -91,14 +91,20 @@ pub fn families() -> Result<Vec<Family>, String> {
         .collect()
 }
 
-/// The icon every non-block item in the built-in catalogue shows, in
-/// catalogue order, without repeats (`icon` in `assets/items.toml`, else the
-/// item's name).
+/// Whether an item shows a painted icon rather than its block as a cube:
+/// every item that is not a block, and props (a torch is no cube).
+pub fn has_icon(def: &bm_core::ItemDef, blocks: &bm_core::BlockRegistry) -> bool {
+    def.block().is_none_or(|b| blocks.get(b).is_prop())
+}
+
+/// The icon every item with one ([`has_icon`]) in the built-in catalogue
+/// shows, in catalogue order, without repeats (`icon` in `assets/items.toml`,
+/// else the item's name).
 pub fn icon_names() -> Vec<String> {
     let blocks = bm_core::BlockRegistry::builtin();
     let items = bm_core::ItemRegistry::builtin(&blocks);
     let mut names: Vec<String> = Vec::new();
-    for def in items.defs().iter().filter(|d| d.block().is_none()) {
+    for def in items.defs().iter().filter(|d| has_icon(d, &blocks)) {
         let name = def.icon.clone().unwrap_or_else(|| def.name.clone());
         if !names.contains(&name) {
             names.push(name);
@@ -154,10 +160,11 @@ mod tests {
         for name in VARIED {
             assert_eq!(find(&fams, name).faces.len(), 1 + VARIANTS as usize, "{name} variants");
         }
-        // Every item that is not a block gets an icon.
+        // Every item that is not a block, and every prop, gets an icon.
         let icons = item_icons().expect("every icon has a painter");
         let items = bm_core::ItemRegistry::builtin(&registry);
-        for def in items.defs().iter().filter(|d| d.block().is_none()) {
+        assert!(icons.iter().any(|(n, _)| n == "torch"), "the torch has an icon");
+        for def in items.defs().iter().filter(|d| has_icon(d, &registry)) {
             let want = def.icon.as_deref().unwrap_or(&def.name);
             assert!(
                 icons.iter().any(|(n, _)| n == want),

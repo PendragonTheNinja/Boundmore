@@ -1147,6 +1147,79 @@ pub fn glow_crystal(_ctx: Ctx) -> Tex {
     tex
 }
 
+// ------------------------------------------------------------------ torch
+
+/// The flame: deep red at its roots through orange and gold to a pale core.
+pub(crate) fn flame_ramp() -> Ramp {
+    Ramp::from_hex(&[
+        0x7a1c1a, 0xb0321a, 0xd85420, 0xf07c28, 0xfaa63a, 0xffcc5a, 0xffe896, 0xfffbe0,
+    ])
+}
+
+/// The torch: a picture of a torch (a wooden stick, charred and glowing at
+/// its top, under a flame) on soot, laid out so the prop model's texture
+/// coordinates (bm-mesh `props`) land on its parts: the stick's sides on
+/// columns 14..18 of rows 14..32, the flame's sides on columns 13..19 of rows
+/// 6..12. A hand-made replacement keeps those places.
+pub fn torch(_ctx: Ctx) -> Tex {
+    let salt = seed("torch");
+    let wood = plank_ramp();
+    let fire = flame_ramp();
+    let soot = Ramp::from_hex(&[0x140c16, 0x1e1420, 0x2a1a24, 0x3a2228]);
+    let ember = Rgba::hex(0xff8a2a);
+    Tex::from_fn(|x, y| {
+        let (fx, fy) = (c(x), c(y));
+        // The flame's own box: fully painted, brightest in the middle and
+        // towards the top, deep at the roots.
+        if (13..19).contains(&x) && (6..12).contains(&y) {
+            let across = 1.0 - ((fx - 16.0).abs() / 3.0);
+            let up = (12.0 - fy) / 6.0;
+            let flicker = (unit(hash2(salt, (x * 7 + y / 2) as u32)) - 0.5) * 0.1;
+            return fire.pick(0.28 + across * 0.42 + up * 0.32 + flicker, x, y);
+        }
+        // The stick.
+        if (14..18).contains(&x) && y >= 12 {
+            let side = match x {
+                14 => 0.2,
+                15 => 0.08,
+                16 => -0.04,
+                _ => -0.2,
+            };
+            if y < 18 {
+                // Charred where the flame sits, embers in the char.
+                let glow = unit(hash2(salt ^ 0x5a5a, (x * 32 + y) as u32));
+                if glow > 0.62 {
+                    return ember.mix(fire.at(6), (glow - 0.62) * 1.5);
+                }
+                return soot.pick(0.55 + side, x, y);
+            }
+            if y < 20 {
+                // Scorched wood just below.
+                return wood.pick(0.18 + side, x, y).mix(soot.at(1), 0.35);
+            }
+            // Grain in short clumps down the stick, a knot near the foot.
+            let clump = unit(hash2(salt, (y / 3) as u32 * 4 + x as u32 / 2)) - 0.5;
+            let mut t = 0.52 + side + clump * 0.14;
+            if (24..26).contains(&y) && x == 16 {
+                t -= 0.22;
+            }
+            return wood.pick(t, x, y);
+        }
+        // Flame tongues licking above and beside the box, fading into soot.
+        let dx = (fx - 16.0).abs();
+        let reach = 5.0 + 1.6 * (fx * 0.9 + salt as f32 * 1e-9).sin();
+        let tongue = 12.0 - fy;
+        if (0.0..reach + 2.0).contains(&tongue) && dx < 4.2 - tongue * 0.38 {
+            let t = 0.15 + (1.0 - dx / 4.2) * 0.5 + (1.0 - tongue / (reach + 2.0)) * 0.2;
+            return fire.pick(t, x, y);
+        }
+        // Soot, warmed by the glow near the flame.
+        let d = ((fx - 16.0).powi(2) + (fy - 10.0).powi(2)).sqrt();
+        let warm = (1.0 - d / 14.0).max(0.0);
+        soot.pick(0.1 + warm * 0.9, x, y)
+    })
+}
+
 // ------------------------------------------------------------------ glass
 
 /// Glass: almost clear pane with a pale frame lit on the top and left, and
@@ -1562,6 +1635,7 @@ pub fn paint_named(name: &str, variant: u32) -> Option<Tex> {
         "sandstone_side" => sandstone_side,
         "ice" => ice,
         "glow_crystal" => glow_crystal,
+        "torch" => torch,
         "timber" => timber,
         "brick" => brick,
         "glass" => glass,

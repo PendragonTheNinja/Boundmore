@@ -12,7 +12,9 @@
 use std::f32::consts::FRAC_1_SQRT_2;
 
 use crate::color::{Ramp, Rgba};
-use crate::materials::{coal_ramp, copper_ramp, native_iron_ramp, plank_ramp, rust_ramp, steel_ramp, stone_ramp};
+use crate::materials::{
+    coal_ramp, copper_ramp, end_grain_ramp, flame_ramp, native_iron_ramp, plank_ramp, rust_ramp, steel_ramp, stone_ramp,
+};
 use crate::noise::{Rng, hash2, seed, unit};
 use crate::tex::{SIZE, Tex, c};
 
@@ -24,6 +26,14 @@ const CLEAR: Rgba = Rgba::new(0.0, 0.0, 0.0, 0.0);
 
 fn cord_ramp() -> Ramp {
     Ramp::from_hex(&[0x4a2c22, 0x7a5232, 0xa8804e, 0xd0aa70, 0xeed49c])
+}
+
+fn vine_ramp() -> Ramp {
+    Ramp::from_hex(&[0x123a2c, 0x1d5a3a, 0x2f7f3c, 0x4aaa3e, 0x86c940])
+}
+
+fn flint_ramp() -> Ramp {
+    Ramp::from_hex(&[0x0e0c1c, 0x1a1830, 0x2a2848, 0x3c3c62, 0x55587e, 0x7c80a2, 0xb4b8d0])
 }
 
 fn leather_ramp() -> Ramp {
@@ -274,8 +284,9 @@ fn handle(icon: &mut Icon, f: Frame, u0: f32, u1: f32, salt: u32) {
 
 /// Cord lashed round a stone head and its handle: a band across the handle
 /// at `uc`, wound in alternating light and dark turns.
-fn lashing(icon: &mut Icon, f: Frame, uc: f32, half_u: f32, half_v: f32) {
-    let cord = cord_ramp();
+fn lashing(icon: &mut Icon, f: Frame, metal: Metal, uc: f32, half_u: f32, half_v: f32) {
+    // Wood tools are bound with green withies (foliage in their recipe).
+    let cord = if metal == Metal::Wood { vine_ramp() } else { cord_ramp() };
     icon.layer(true, |x, y| {
         let (u, v) = f.uv(x, y);
         if (u - uc).abs() > half_u || v.abs() > half_v {
@@ -289,14 +300,21 @@ fn lashing(icon: &mut Icon, f: Frame, uc: f32, half_u: f32, half_v: f32) {
 
 #[derive(Clone, Copy, PartialEq)]
 enum Metal {
+    Wood,
     Stone,
     Copper,
     Iron,
 }
 
 impl Metal {
+    /// Cast metal: smooth, with a sheen and a glint.
+    fn cast(self) -> bool {
+        matches!(self, Metal::Copper | Metal::Iron)
+    }
+
     fn ramp(self) -> Ramp {
         match self {
+            Metal::Wood => end_grain_ramp(),
             Metal::Stone => stone_ramp(),
             Metal::Copper => copper_ramp(),
             Metal::Iron => steel_ramp(),
@@ -306,6 +324,7 @@ impl Metal {
     /// The seed of this metal's version of `tool`.
     fn salt(self, tool: &str) -> u32 {
         let metal = match self {
+            Metal::Wood => "wood",
             Metal::Stone => "stone",
             Metal::Copper => "copper",
             Metal::Iron => "iron",
@@ -320,6 +339,16 @@ impl Metal {
                 let (i, j) = ((u / 2.6).floor() as i32, ((v + u * 0.4) / 2.6).floor() as i32);
                 (unit(hash2(salt, (i * 31 + j) as u32)) - 0.5) * 0.2
             }
+            // Carved wood: grain running along the head, in short streaks.
+            Metal::Wood => {
+                let streak = (unit(hash2(salt, ((v * 0.8).floor() as i32 + 40) as u32)) - 0.5) * 0.18;
+                let knot = if (u * 0.5).floor() as i32 % 5 == 2 && v.abs() < 1.0 {
+                    -0.12
+                } else {
+                    0.0
+                };
+                streak + knot
+            }
             Metal::Copper | Metal::Iron => 0.0,
         }
     }
@@ -332,7 +361,7 @@ fn hammer(metal: Metal) -> Tex {
     let mut icon = Icon::new();
     handle(&mut icon, f, 0.0, 24.0, salt);
     let (uc, hu, hv) = (21.0, 3.6, 7.8);
-    let round = if metal == Metal::Stone { 2.2 } else { 1.0 };
+    let round = if !metal.cast() { 2.2 } else { 1.0 };
     icon.layer(true, |x, y| {
         let (u, v) = f.uv(x, y);
         if rounded_box(u, v, uc, 0.0, hu, hv, round) > 0.0 {
@@ -353,7 +382,7 @@ fn hammer(metal: Metal) -> Tex {
         if u < uc - hu + 1.0 {
             t -= 0.2;
         }
-        if metal != Metal::Stone {
+        if metal.cast() {
             // A long sheen on the cast metal and a glint at its lit end.
             if (u - (uc + 1.2)).abs() < 0.6 && v < hv - 2.0 {
                 t += 0.2;
@@ -368,8 +397,8 @@ fn hammer(metal: Metal) -> Tex {
         }
         Some(ramp.pick(t, x, y))
     });
-    if metal == Metal::Stone {
-        lashing(&mut icon, f, uc - 0.3, 4.3, 1.9);
+    if !metal.cast() {
+        lashing(&mut icon, f, metal, uc - 0.3, 4.3, 1.9);
     }
     icon.finish()
 }
@@ -400,8 +429,8 @@ fn axe(metal: Metal) -> Tex {
             t += ((-v - 2.5) / 7.5).clamp(0.0, 1.0) * 0.12;
             if v - edge < 1.5 {
                 // The honed edge.
-                t = if metal == Metal::Stone { 0.8 } else { 0.92 };
-                if metal == Metal::Stone && ((u * 1.2).floor() as i32) % 2 == 0 {
+                t = if !metal.cast() { 0.8 } else { 0.92 };
+                if !metal.cast() && ((u * 1.2).floor() as i32) % 2 == 0 {
                     t -= 0.12;
                 }
             }
@@ -415,13 +444,13 @@ fn axe(metal: Metal) -> Tex {
         if eye && v > 2.2 {
             t -= 0.22;
         }
-        if metal != Metal::Stone && (du - 1.0).abs() < 0.6 && v < -3.5 && v - edge > 2.2 {
+        if metal.cast() && (du - 1.0).abs() < 0.6 && v < -3.5 && v - edge > 2.2 {
             t += 0.2;
         }
         Some(ramp.pick(t, x, y))
     });
-    if metal == Metal::Stone {
-        lashing(&mut icon, f, uc, 3.4, 1.9);
+    if !metal.cast() {
+        lashing(&mut icon, f, metal, uc, 3.4, 1.9);
     } else {
         // The wedged end of the handle in the eye.
         icon.layer(false, |x, y| {
@@ -481,13 +510,13 @@ fn shovel(metal: Metal) -> Tex {
         if u > b1 - 2.5 {
             t += 0.12;
         }
-        if metal != Metal::Stone && (v + 2.2).abs() < 0.5 && u > b0 + 1.5 && u < b1 - 3.0 {
+        if metal.cast() && (v + 2.2).abs() < 0.5 && u > b0 + 1.5 && u < b1 - 3.0 {
             t += 0.22;
         }
         Some(ramp.pick(t, x, y))
     });
     match metal {
-        Metal::Stone => lashing(&mut icon, f, b0 - 0.6, 2.2, 1.9),
+        Metal::Stone | Metal::Wood => lashing(&mut icon, f, metal, b0 - 0.6, 2.2, 1.9),
         Metal::Copper | Metal::Iron => {
             // A riveted collar round the top of the handle.
             icon.layer(true, |x, y| {
@@ -579,17 +608,17 @@ fn chisel(metal: Metal, tip: Tip, precise: bool) -> Tex {
             // The gouge's hollow, in shade on its far wall.
             t -= if v > 0.0 { 0.12 } else { 0.0 } + 0.16;
         }
-        if metal != Metal::Stone && (v + 0.9).abs() < 0.5 && u > b0 + 2.0 && u < e - 3.0 {
+        if metal.cast() && (v + 0.9).abs() < 0.5 && u > b0 + 2.0 && u < e - 3.0 {
             t += 0.2;
         }
         // The honed edge at the tip.
         if e - u < 1.5 {
-            t = if metal == Metal::Stone { 0.82 } else { 0.95 };
+            t = if !metal.cast() { 0.82 } else { 0.95 };
         }
         Some(ramp.pick(t, x, y))
     });
-    if metal == Metal::Stone {
-        lashing(&mut icon, f, b0 + 0.2, 2.6, 2.2);
+    if !metal.cast() {
+        lashing(&mut icon, f, metal, b0 + 0.2, 2.6, 2.2);
     } else {
         // The ferrule, wider than the handle.
         icon.layer(true, |x, y| {
@@ -623,6 +652,118 @@ fn chisel(metal: Metal, tip: Tip, precise: bool) -> Tex {
             Some(gem.pick(t, x, y))
         });
     }
+    icon.finish()
+}
+
+// ----------------------------------------------------------------- torches
+
+/// A plain stick along the tool diagonal, bark lit on its top-left side,
+/// with a cut end at the top showing pale wood.
+fn stick() -> Tex {
+    let salt = seed("stick");
+    let f = Frame { ox: 4.5, oy: 27.5 };
+    let wood = plank_ramp();
+    let r = HANDLE + 0.9;
+    let mut icon = Icon::new();
+    // A twig stub partway up, so it reads as a stick, not a handle.
+    icon.layer(true, |x, y| {
+        let (u, v) = f.uv(x, y);
+        let along = u - 12.0;
+        (along > 0.0 && along < 5.0 && (v + along * 0.9 + 1.2).abs() < 1.0).then(|| wood.pick(0.62 - v * 0.04, x, y))
+    });
+    icon.layer(true, |x, y| {
+        let (u, v) = f.uv(x, y);
+        let along = u.clamp(0.0, 27.0);
+        if (u - along).hypot(v) > r {
+            return None;
+        }
+        if u > 26.0 {
+            // The cut end, pale wood.
+            return Some(end_grain_ramp().pick(0.75 - v * 0.08, x, y));
+        }
+        let side = -v / r;
+        let clump = unit(hash2(salt, (u * 0.5).floor() as i32 as u32)) - 0.5;
+        Some(wood.pick(0.5 + side * 0.32 + clump * 0.14, x, y))
+    });
+    icon.finish()
+}
+
+/// A knapped flint: a dark blue-black nodule with a pale chalky rind on one
+/// side and a glassy glint where it was struck.
+fn flint() -> Tex {
+    let salt = seed("flint");
+    let mut icon = Icon::new();
+    Lump::new(salt, 16.0, 17.0, 11.0, 7).draw(&mut icon, &flint_ramp(), 0.1, 0.95, true);
+    // The rind, on the lower right.
+    let rind = Ramp::from_hex(&[0x8a8296, 0xb4aab4, 0xd8d0cc, 0xf0eae0]);
+    let lump = Lump::new(salt, 16.0, 17.0, 11.0, 7);
+    icon.layer(false, |x, y| {
+        let p = (c(x), c(y));
+        lump.facet(p)?;
+        let edge = (p.0 - 16.0) * 0.55 + (p.1 - 17.0) * 0.8;
+        (edge > 6.0).then(|| rind.pick(0.35 + (edge - 6.0) * 0.08, x, y))
+    });
+    icon.finish()
+}
+
+/// The hand stone: a fist-sized cobble with one knapped edge, the tool a
+/// player makes from nothing.
+fn hand_stone() -> Tex {
+    let salt = seed("hand_stone");
+    let mut icon = Icon::new();
+    Lump::new(salt, 15.5, 17.5, 12.0, 7).draw(&mut icon, &stone_ramp(), 0.14, 0.86, false);
+    // The worked edge along the top right, pale where flakes came off.
+    let ramp = stone_ramp();
+    let lump = Lump::new(salt, 15.5, 17.5, 12.0, 7);
+    icon.layer(false, |x, y| {
+        let p = (c(x), c(y));
+        lump.facet(p)?;
+        let edge = (p.0 - 15.5) * 0.7 - (p.1 - 17.5) * 0.7;
+        if edge < 5.5 {
+            return None;
+        }
+        let scallop = ((p.0 + p.1) * 0.7).sin() * 0.12;
+        Some(ramp.pick(0.72 + scallop + (edge - 5.5) * 0.04, x, y))
+    });
+    icon.finish()
+}
+
+/// The torch: a stick standing a little tilted, its top charred, under a
+/// flame of red, orange and gold with a pale heart.
+fn torch() -> Tex {
+    let salt = seed("torch_icon");
+    let f = Frame { ox: 9.5, oy: 27.5 };
+    let wood = plank_ramp();
+    let fire = flame_ramp();
+    let soot = Ramp::from_hex(&[0x1e1420, 0x2a1a24, 0x3a2228, 0x4e2e2a]);
+    let mut icon = Icon::new();
+    icon.layer(true, |x, y| {
+        let (u, v) = f.uv(x, y);
+        let along = u.clamp(0.0, 17.0);
+        if (u - along).hypot(v) > HANDLE + 0.4 {
+            return None;
+        }
+        let side = -v / HANDLE;
+        if u > 13.5 {
+            return Some(soot.pick(0.5 + side * 0.3, x, y));
+        }
+        let clump = unit(hash2(salt, (u * 0.5).floor() as i32 as u32)) - 0.5;
+        Some(wood.pick(0.5 + side * 0.3 + clump * 0.14, x, y))
+    });
+    // The flame: a teardrop pointing up, centred on the stick's top.
+    let (tx, ty) = (21.5f32, 12.0f32);
+    icon.layer(true, |x, y| {
+        let (dx, dy) = (c(x) - tx, c(y) - ty);
+        // Round below, drawn up into a tip; a lick to one side.
+        let r = if dy > 0.0 { 5.2 } else { 5.2 * (1.0 + dy / 9.5).max(0.0) };
+        let lean = dx + dy * 0.18;
+        if lean.hypot(dy.max(0.0) * 1.1) > r || dy < -9.5 {
+            return None;
+        }
+        let heat = 1.0 - lean.hypot(dy - 1.5) / 5.5;
+        let wave = (unit(hash2(salt, (y / 2) as u32)) - 0.5) * 0.08;
+        Some(fire.pick(0.12 + heat.max(0.0) * 0.95 + wave, x, y))
+    });
     icon.finish()
 }
 
@@ -1019,6 +1160,13 @@ pub fn paint_icon(name: &str) -> Option<Tex> {
         "copper_ingot" => ingot(copper_ramp()),
         "iron_ore" => iron_ore(),
         "iron_ingot" => ingot(steel_ramp()),
+        "wood_hammer" => hammer(Metal::Wood),
+        "wood_shovel" => shovel(Metal::Wood),
+        "wood_axe" => axe(Metal::Wood),
+        "hand_stone" => hand_stone(),
+        "stick" => stick(),
+        "flint" => flint(),
+        "torch" => torch(),
         "stone_hammer" => hammer(Metal::Stone),
         "stone_shovel" => shovel(Metal::Stone),
         "stone_axe" => axe(Metal::Stone),
