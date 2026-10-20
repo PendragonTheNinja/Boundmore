@@ -165,6 +165,8 @@ pub struct GrappleSpec {
     /// Reels in by itself once stuck (a hookshot): pulls, swings poorly. In
     /// Boundless a forge boon, not a kind of grapple.
     pub hookshot: bool,
+    /// Energy a shot costs (`energy`).
+    pub energy: u16,
 }
 
 /// A fired grapple hook. It flies straight (no gravity, as in the game this
@@ -204,6 +206,12 @@ pub struct PlayerState {
     /// The grapple hook, while one is out. Never saved: a player who leaves
     /// lets go.
     pub hook: Option<Hook>,
+    /// Energy used, out of `energy::MAX_ENERGY` (0: rested). Never saved:
+    /// a player arrives rested.
+    pub spent: u16,
+    /// Ticks until the bar starts refilling (`energy::PAUSE_TICKS` after
+    /// each use).
+    pub rest: u16,
 }
 
 /// What happened in a tick that the caller acts on.
@@ -291,6 +299,9 @@ pub fn step(
 ) -> StepEvents {
     let dt = TICK_DT;
     let mut events = StepEvents::default();
+    // Whether the grapple was used this tick (energy: a use restarts the
+    // pause; a tick without one rests).
+    let mut used = false;
     match grapple {
         // Nothing in hand holds the rope: putting the grapple away lets go.
         None => s.hook = None,
@@ -300,16 +311,23 @@ pub fn step(
             events.released = true;
         }
         Some(g) if input.fire => {
-            s.hook = Some(Hook {
-                pos: s.eye(cfg),
-                vel: look_dir(input.yaw, input.pitch) * g.shot_speed,
-                rope: 0.0,
-                stuck: None,
-                reel: 0.0,
-            });
-            events.fired = true;
+            used = true;
+            // Too tired to fire: nothing happens but the pause starts again.
+            if s.try_spend(g.energy) {
+                s.hook = Some(Hook {
+                    pos: s.eye(cfg),
+                    vel: look_dir(input.yaw, input.pitch) * g.shot_speed,
+                    rope: 0.0,
+                    stuck: None,
+                    reel: 0.0,
+                });
+                events.fired = true;
+            }
         }
         Some(_) => {}
+    }
+    if !used {
+        s.recover();
     }
     if let (Some(g), Some(h)) = (grapple, s.hook) {
         s.hook = hook_tick(h, g, s.hands(), input.reel, planet, world);
@@ -1052,6 +1070,8 @@ mod tests {
         reel_in_speed: 10.0,
         reel_out_speed: 10.0,
         hookshot: false,
+        // Free, so these tests are about the rope; energy has its own.
+        energy: 0,
     };
 
     /// A flat ceiling of blocks at `y` over the area around the player.
@@ -1082,6 +1102,27 @@ mod tests {
 
     fn fire(input: PlayerInput) -> PlayerInput {
         PlayerInput { fire: true, ..input }
+    }
+
+    #[test]
+    fn grapple_shots_cost_energy_and_a_tired_shot_restarts_the_pause() {
+        // An iron grapple (80 a shot, tuning 1.1) fires 7 times from a full
+        // bar of 600; letting go costs nothing.
+        let w = world();
+        let iron = GrappleSpec { energy: 80, ..GRAPPLE };
+        let mut s = standing(5.5, 10.0);
+        let mut shots = 0;
+        for _ in 0..40 {
+            // Fire, then fire again to let go.
+            shots += hold(&mut s, fire(up()), 1, Some(&iron), &w);
+            hold(&mut s, fire(up()), 1, Some(&iron), &w);
+        }
+        assert_eq!(shots, 7);
+        assert_eq!(s.energy(), 600 - 7 * 80);
+        assert_eq!(s.rest, crate::energy::PAUSE_TICKS, "the last try restarted the pause");
+        // Rested long enough, it fires again.
+        hold(&mut s, up(), (crate::energy::PAUSE_TICKS + 60) as u32, Some(&iron), &w);
+        assert_eq!(hold(&mut s, fire(up()), 1, Some(&iron), &w), 1);
     }
 
     #[test]

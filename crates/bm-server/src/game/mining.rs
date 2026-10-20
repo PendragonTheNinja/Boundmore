@@ -168,6 +168,11 @@ impl Game {
         let look = look_dir(p.last_input.yaw, p.last_input.pitch);
         let p = self.players.get_mut(&id).expect("present");
         p.last_swing = Some((at, swing_ticks(tool.action_speed)));
+        // Energy (milestone 10): too tired, the swing does nothing but start
+        // the pause again (the client predicts the same, `try_spend`).
+        if !p.state.try_spend(tool.energy) {
+            return self.swing_refused(id, seq, pos, Refusal::Quiet("too tired"));
+        }
         let tier = self.planets[pi].tier;
         let area = tool.aoe.map_or(1.0, |a| a.multiplier());
         let mut full = false;

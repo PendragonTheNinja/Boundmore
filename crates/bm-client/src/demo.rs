@@ -295,6 +295,7 @@ impl Demo {
                 vel: DVec3::ZERO,
                 on_ground: true,
                 hook: None,
+                ..Default::default()
             },
             tick: 0,
             view_radius: 4,
@@ -336,6 +337,7 @@ impl Demo {
                 vel: DVec3::ZERO,
                 on_ground: true,
                 hook: None,
+                ..Default::default()
             },
             tick: 0,
             claims,

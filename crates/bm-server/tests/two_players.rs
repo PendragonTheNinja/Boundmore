@@ -3031,3 +3031,58 @@ async fn torches_stand_and_hang_on_solid_blocks_and_fall_with_them() {
     }
     server.stop();
 }
+
+/// Milestone 10: every swing costs energy; with too little left the swing is
+/// refused (it does nothing but restart the pause), and the bar refills
+/// after the pause.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn swings_cost_energy_and_a_tired_swing_is_refused() {
+    let dir = tempfile::tempdir().unwrap();
+    // A tool no recipe makes: 300 energy a swing, so a full bar of 600 holds
+    // two swings.
+    let items = dir.path().join("test-items.toml");
+    std::fs::write(
+        &items,
+        format!(
+            "{}\n[[item]]\nname = \"heavy_test_hammer\"\nstack = 1\ntool = {{ damage = 100, action_speed = 150.0, durability = 700, energy = 300 }}\n",
+            include_str!("../../../assets/items.toml")
+        ),
+    )
+    .unwrap();
+    seed(dir.path(), "Alice", &[(0, "heavy_test_hammer", 1, 0)]);
+    let server = bm_server::start(ServerConfig {
+        items: Some(items),
+        ..config(dir.path())
+    })
+    .unwrap();
+    let mut alice = TestClient::login(&server, "Alice").await;
+    let feet = alice.feet();
+    alice.wait_for_chunk(feet.chunk()).await;
+    let ground = alice.chunks[&feet.chunk()].get(feet.local());
+
+    assert_eq!(alice.swing(1, feet, 0).await, Swung::Damaged(100));
+    alice.ready();
+    assert_eq!(alice.swing(2, feet, 0).await, Swung::Damaged(200));
+    alice.ready();
+    assert_eq!(
+        alice.swing(3, feet, 0).await,
+        Swung::Refused(ground, 200),
+        "too tired: nothing happens"
+    );
+    let (_, _, state, _) = alice.latest_snapshot().await;
+    assert_eq!(state.energy(), 0);
+
+    // The pause (3.5 s) and the refill (2 s), at the real input rate.
+    for _ in 0..12 {
+        alice.send_inputs(30, PlayerInput::default());
+        tokio::time::sleep(Duration::from_millis(500)).await;
+    }
+    let (_, _, state, _) = alice.latest_snapshot().await;
+    assert_eq!(state.energy(), bm_core::energy::MAX_ENERGY, "rested");
+    alice.ready();
+    assert!(
+        !matches!(alice.swing(4, feet, 0).await, Swung::Refused(..)),
+        "rested, it swings again"
+    );
+    server.stop();
+}

@@ -23,7 +23,7 @@ use glam::DVec3;
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
 
 /// Bump on any change to a message below. Client and server must match.
-pub const PROTOCOL_VERSION: u32 = 13;
+pub const PROTOCOL_VERSION: u32 = 14;
 
 /// QUIC application protocol name; also refuses non-Boundmore peers early.
 pub const ALPN: &[u8] = b"boundmore/1";
@@ -545,6 +545,8 @@ mod tests {
                 pos: DVec3::new(1e6, 1e3, 1e6),
                 vel: DVec3::splat(-50.0),
                 on_ground: true,
+                spent: u16::MAX,
+                rest: u16::MAX,
                 hook: Some(bm_core::Hook {
                     pos: DVec3::new(1e6, 1e3, 1e6),
                     vel: DVec3::splat(-50.0),

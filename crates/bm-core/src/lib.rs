@@ -7,6 +7,7 @@ pub mod chisel;
 pub mod chunk;
 pub mod colours;
 pub mod coords;
+pub mod energy;
 pub mod inventory;
 pub mod items;
 pub mod light;

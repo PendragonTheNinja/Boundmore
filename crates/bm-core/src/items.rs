@@ -86,6 +86,9 @@ pub struct ToolStats {
     pub crit_effect: f32,
     /// Swings before it breaks.
     pub durability: u16,
+    /// Energy a swing costs (`energy`); Boundless's tools all cost damage
+    /// / 50 (tuning 2.1).
+    pub energy: u16,
     /// The shape one swing hits; None: one block.
     pub aoe: Option<Aoe>,
 }
@@ -115,6 +118,8 @@ pub enum ItemKind {
         family: ShapeFamily,
         precise: bool,
         durability: u16,
+        /// Energy a cut costs (`energy`).
+        energy: u16,
     },
     /// Fires a hook that sticks where it strikes, to swing from and climb
     /// (`movement::step`). One use per shot.
@@ -125,6 +130,8 @@ pub enum ItemKind {
         reel_out: f32,
         hookshot: bool,
         durability: u16,
+        /// Energy a shot costs (`energy`).
+        energy: u16,
     },
     /// Links two portals of the same size (ADR-0009): made at one, used up
     /// at the other. The stack's `tag` is the portal it was made at.
@@ -169,6 +176,7 @@ impl ItemDef {
                 family,
                 precise,
                 durability,
+                ..
             } => Some((family, precise, durability)),
             _ => None,
         }
@@ -184,6 +192,7 @@ impl ItemDef {
                 reel_in,
                 reel_out,
                 hookshot,
+                energy,
                 ..
             } => Some(GrappleSpec {
                 range: range as f64,
@@ -191,7 +200,19 @@ impl ItemDef {
                 reel_in_speed: reel_in as f64,
                 reel_out_speed: reel_out as f64,
                 hookshot,
+                energy,
             }),
+            _ => None,
+        }
+    }
+
+    /// Energy one use costs (a swing, a shot, a cut), for anything that
+    /// tires you (`energy`).
+    pub fn energy(&self) -> Option<u16> {
+        match self.kind {
+            ItemKind::Tool(ToolStats { energy, .. })
+            | ItemKind::Chisel { energy, .. }
+            | ItemKind::Grapple { energy, .. } => Some(energy),
             _ => None,
         }
     }
@@ -309,6 +330,7 @@ struct GrappleEntry {
     #[serde(default)]
     hookshot: bool,
     durability: u16,
+    energy: u16,
 }
 
 #[derive(Deserialize)]
@@ -317,6 +339,13 @@ struct ChiselEntry {
     #[serde(default)]
     precise: bool,
     durability: u16,
+    /// Boundless's basic chisels cost 10 a cut (tuning 4.9).
+    #[serde(default = "chisel_energy")]
+    energy: u16,
+}
+
+fn chisel_energy() -> u16 {
+    10
 }
 
 #[derive(Deserialize)]
@@ -333,6 +362,9 @@ struct ToolEntry {
     durability: u16,
     #[serde(default)]
     aoe: Option<Aoe>,
+    /// Energy per swing; unset, damage / 50 as for every Boundless tool.
+    #[serde(default)]
+    energy: Option<u16>,
 }
 
 impl ToolEntry {
@@ -345,6 +377,7 @@ impl ToolEntry {
             crit_effect: self.crit_effect,
             durability: self.durability,
             aoe: self.aoe,
+            energy: self.energy.unwrap_or((self.damage / 50) as u16),
         }
     }
 }
@@ -406,6 +439,7 @@ impl ItemRegistry {
                     family: c.family,
                     precise: c.precise,
                     durability: c.durability,
+                    energy: c.energy,
                 },
                 (None, None, Some(g)) => ItemKind::Grapple {
                     range: g.range,
@@ -414,6 +448,7 @@ impl ItemRegistry {
                     reel_out: g.reel_out,
                     hookshot: g.hookshot,
                     durability: g.durability,
+                    energy: g.energy,
                 },
                 (None, None, None) if e.portal_token => ItemKind::PortalToken,
                 (None, None, None) => ItemKind::Material,
@@ -658,6 +693,23 @@ mod tests {
     }
 
     #[test]
+    fn uses_cost_boundless_energy() {
+        // Tools damage / 50, grapples per shot, chisels 10 (tuning 2.1, 1.1,
+        // 4.9; milestone 10).
+        let (_, i) = setup();
+        let cost = |n: &str| i.get(i.id(n).unwrap()).unwrap().energy();
+        assert_eq!(cost("hand_stone"), Some(4));
+        assert_eq!(cost("wood_axe"), Some(6));
+        assert_eq!(cost("stone_hammer"), Some(8));
+        assert_eq!(cost("copper_shovel"), Some(8));
+        assert_eq!(cost("iron_hammer"), Some(14));
+        assert_eq!(cost("copper_grapple"), Some(60));
+        assert_eq!(cost("iron_grapple"), Some(80));
+        assert_eq!(cost("square_chisel"), Some(10));
+        assert_eq!(cost("stone"), None);
+    }
+
+    #[test]
     fn torches_have_a_variant_for_every_face() {
         let (b, i) = setup();
         let torch = i.id("torch").unwrap();
@@ -723,16 +775,16 @@ mod tests {
             matches!(ItemRegistry::build(&b, &toml), Err(ItemError::BadTool(_)))
         };
         assert!(!bad(
-            "{ range = 10.0, shot_speed = 50.0, reel_in = 5.0, reel_out = 5.0, durability = 9 }"
+            "{ range = 10.0, shot_speed = 50.0, reel_in = 5.0, reel_out = 5.0, durability = 9, energy = 60 }"
         ));
         assert!(bad(
-            "{ range = 500.0, shot_speed = 50.0, reel_in = 5.0, reel_out = 5.0, durability = 9 }"
+            "{ range = 500.0, shot_speed = 50.0, reel_in = 5.0, reel_out = 5.0, durability = 9, energy = 60 }"
         ));
         assert!(bad(
-            "{ range = 10.0, shot_speed = 0.0, reel_in = 5.0, reel_out = 5.0, durability = 9 }"
+            "{ range = 10.0, shot_speed = 0.0, reel_in = 5.0, reel_out = 5.0, durability = 9, energy = 60 }"
         ));
         assert!(bad(
-            "{ range = 10.0, shot_speed = 50.0, reel_in = 5.0, reel_out = 5.0, durability = 0 }"
+            "{ range = 10.0, shot_speed = 50.0, reel_in = 5.0, reel_out = 5.0, durability = 0, energy = 60 }"
         ));
     }
 

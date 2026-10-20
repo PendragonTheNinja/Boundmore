@@ -432,7 +432,13 @@ pub struct Hud<'a> {
     pub reclaim_waiting: bool,
     /// The aimed block's health, shown under the crosshair.
     pub block_bar: Option<BlockBar>,
+    /// Energy left, 0 to 1 (milestone 10), shown as a bar over the hotbar.
+    pub energy: f32,
 }
+
+/// The energy bar's fill: a warm yellow, turning red when nearly empty.
+const ENERGY_FULL: Color32 = Color32::from_rgb(238, 200, 96);
+const ENERGY_LOW: Color32 = Color32::from_rgb(214, 96, 70);
 
 /// A block's health bar: what is left (0 to 1), and one shield per 100
 /// armour of the planet's tier, as Boundless showed it.
@@ -559,9 +565,26 @@ pub fn hud(ctx: &egui::Context, h: &Hud) {
             }
         });
 
+    // Energy: a slim bar across the hotbar's width, just above it.
+    egui::Area::new(Id::unique("energy"))
+        .anchor(Align2::CENTER_BOTTOM, vec2(0.0, -(18.0 + SLOT + 12.0)))
+        .interactable(false)
+        .order(egui::Order::Background)
+        .show(ctx, |ui| {
+            let (rect, _) = ui.allocate_exact_size(vec2(width, 6.0), Sense::hover());
+            let painter = ui.painter();
+            painter.rect_filled(rect.expand(1.0), CornerRadius::same(3), Color32::from_black_alpha(150));
+            let left = h.energy.clamp(0.0, 1.0);
+            if left > 0.0 {
+                let fill = Rect::from_min_size(rect.min, vec2(rect.width() * left, rect.height()));
+                let colour = if left < 0.2 { ENERGY_LOW } else { ENERGY_FULL };
+                painter.rect_filled(fill, CornerRadius::same(3), colour);
+            }
+        });
+
     if !h.notices.is_empty() {
         egui::Area::new(Id::unique("notices"))
-            .anchor(Align2::CENTER_BOTTOM, vec2(0.0, -(18.0 + SLOT + 26.0)))
+            .anchor(Align2::CENTER_BOTTOM, vec2(0.0, -(18.0 + SLOT + 34.0)))
             .interactable(false)
             .order(egui::Order::Background)
             .show(ctx, |ui| {

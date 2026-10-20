@@ -12,6 +12,8 @@
 #             everything. action_speed sets the time between swings;
 #             crit_effect defaults to 0.2; aoe 1x2 | 3x1 | cross | 3x3 | random
 #             (none yet: forging brings it). One durability per swing.
+#             energy per swing defaults to damage / 50, as for every
+#             Boundless tool (milestone 10).
 #   chisel    { family = square | slope | bevel | round, precise, durability }
 #             cuts blocks into shapes (ADR-0008); precise cuts one eighth of
 #             a block at a time, otherwise an edge's two
@@ -21,6 +23,8 @@
 #             flies, reel_in and reel_out the rope's top speeds (blocks per
 #             second); a hookshot reels in by itself
 #   icon      texture in assets/textures/items/ (default: the name)
+#   energy    (grapples, required; chisels, default 10) energy per shot or
+#             cut, from a bar of 600 (bm-core `energy`, tuning 1.1, 4.9)
 #
 # A bare hand cannot break blocks (Nathan, 2026-10-20: as in Boundless);
 # new players start with a hand stone.
@@ -122,12 +126,12 @@ chisel = { family = "slope", precise = true, durability = 600 }
 [[item]]
 name = "copper_grapple"
 stack = 1
-grapple = { range = 10.0, shot_speed = 45.0, reel_in = 5.0, reel_out = 15.0, durability = 500 }
+grapple = { range = 10.0, shot_speed = 45.0, reel_in = 5.0, reel_out = 15.0, durability = 500, energy = 60 }
 
 [[item]]
 name = "iron_grapple"
 stack = 1
-grapple = { range = 20.0, shot_speed = 30.0, reel_in = 2.0, reel_out = 10.0, durability = 1000 }
+grapple = { range = 20.0, shot_speed = 30.0, reel_in = 2.0, reel_out = 10.0, durability = 1000, energy = 80 }
 
 # Portals (ADR-0009).
 

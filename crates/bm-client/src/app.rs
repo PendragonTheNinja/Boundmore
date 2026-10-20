@@ -310,6 +310,20 @@ impl Session {
         self.swinger.swung(at, swing_ticks(tool.action_speed));
         self.edit_seq += 1;
         let seq = self.edit_seq;
+        // Energy (milestone 10): spent right after input `at`, as the server
+        // will. Too tired, the swing does nothing but restart the pause; it
+        // is still sent so the server restarts it too.
+        if !self
+            .me
+            .spend(at, tool.energy, &self.movement, self.world.shape, &self.world)
+        {
+            return Some(ClientMsg::Swing {
+                seq,
+                at,
+                pos: self.world.shape.wrap_block(pos),
+                slot: slot as u8,
+            });
+        }
         let world = &self.world;
         let input = SwingInput {
             tool: &tool,
@@ -1296,8 +1310,15 @@ impl App {
                             });
                         if !in_me {
                             s.edit_seq += 1;
-                            s.world
-                                .predict_edit(s.edit_seq, hit.block, BlockState { shape: new, ..state });
+                            // Energy: a cut is spent before anything else is
+                            // ruled, as the server does; too tired, it is sent
+                            // but cuts nothing.
+                            let cost = held.and_then(|h| s.items.def(&h)).and_then(|d| d.energy()).unwrap_or(0);
+                            let at = s.me.seq;
+                            if s.me.spend(at, cost, &s.movement, s.world.shape, &s.world) {
+                                s.world
+                                    .predict_edit(s.edit_seq, hit.block, BlockState { shape: new, ..state });
+                            }
                             link.send(ClientMsg::Edit {
                                 seq: s.edit_seq,
                                 at: s.me.seq,
@@ -1453,6 +1474,7 @@ impl App {
                         .then(|| s.target_health())
                         .flatten()
                         .map(|(_, left, shields)| BlockBar { left, shields }),
+                    energy: s.me.state.energy() as f32 / bm_core::energy::MAX_ENERGY as f32,
                 },
             );
             match menu {
@@ -1875,6 +1897,7 @@ impl App {
                         vel: DVec3::ZERO,
                         on_ground: true,
                         hook: None,
+                        ..Default::default()
                     });
                     if in_hand {
                         s.selected = 6;
@@ -1917,6 +1940,7 @@ impl App {
                             stuck: Some(block),
                             reel: 0.0,
                         }),
+                        ..Default::default()
                     });
                     s.selected = 7;
                 }
@@ -1936,6 +1960,7 @@ impl App {
                         vel: DVec3::ZERO,
                         on_ground: true,
                         hook: None,
+                        ..Default::default()
                     });
                 }
                 (self.yaw, self.pitch) = (0.0, -0.02);

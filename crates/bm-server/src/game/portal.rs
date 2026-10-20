@@ -638,6 +638,8 @@ impl Game {
             vel: DVec3::ZERO,
             on_ground: true,
             hook: None,
+            // Energy goes with you.
+            ..self.players[&id].state
         };
         let Some(p) = self.players.get_mut(&id) else { return };
         p.trip = None;

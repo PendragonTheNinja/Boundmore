@@ -26,6 +26,9 @@ struct Entry {
     seq: u32,
     input: PlayerInput,
     grapple: Option<GrappleSpec>,
+    /// Energy costs of the swings and cuts that follow this input (the server
+    /// applies them right after it, in this order); a replay re-applies them.
+    spends: Vec<u16>,
     state: PlayerState,
 }
 
@@ -110,9 +113,37 @@ impl Predictor {
             seq: self.seq,
             input,
             grapple,
+            spends: Vec::new(),
             state: self.state,
         });
         self.seq
+    }
+
+    /// A swing or chisel cut costing `cost` follows input `at`: spends it
+    /// there (`PlayerState::try_spend`, as the server will) and replays the
+    /// inputs after it. Returns whether there was enough energy; a use with
+    /// too little does nothing but restart the pause.
+    pub fn spend(
+        &mut self,
+        at: u32,
+        cost: u16,
+        cfg: &MoveConfig,
+        shape: PlanetShape,
+        world: &impl PhysicsWorld,
+    ) -> bool {
+        let Some(i) = self.history.iter().position(|e| e.seq == at) else {
+            // Older than anything we remember: spend from where we are.
+            return self.state.try_spend(cost);
+        };
+        let mut state = self.history[i].state;
+        let spent = state.try_spend(cost);
+        self.history[i].spends.push(cost);
+        self.history[i].state = state;
+        for e in self.history.iter_mut().skip(i + 1) {
+            replay(&mut state, e, cfg, shape, world);
+        }
+        self.state = state;
+        spent
     }
 
     /// The last `n` inputs, newest first, for a redundant input datagram.
@@ -146,8 +177,7 @@ impl Predictor {
                 self.history.pop_front();
             }
             for e in self.history.iter_mut() {
-                movement::step(&mut self.state, &e.input, cfg, e.grapple.as_ref(), shape, world);
-                e.state = self.state;
+                replay(&mut self.state, e, cfg, shape, world);
             }
             self.seq = self.seq.max(ack);
             self.previous = self.state;
@@ -177,8 +207,7 @@ impl Predictor {
             self.history.pop_front();
         }
         for e in self.history.iter_mut() {
-            movement::step(&mut self.state, &e.input, cfg, e.grapple.as_ref(), shape, world);
-            e.state = self.state;
+            replay(&mut self.state, e, cfg, shape, world);
         }
         if ack > self.seq {
             // Inputs we never sent? Only possible after a reconnect; adopt.
@@ -207,6 +236,16 @@ impl Predictor {
     }
 }
 
+/// Runs one remembered input again from `state`, with the spends that
+/// followed it, and remembers the result.
+fn replay(state: &mut PlayerState, e: &mut Entry, cfg: &MoveConfig, shape: PlanetShape, world: &impl PhysicsWorld) {
+    movement::step(state, &e.input, cfg, e.grapple.as_ref(), shape, world);
+    for &cost in &e.spends {
+        state.try_spend(cost);
+    }
+    e.state = *state;
+}
+
 fn same(a: &PlayerState, b: &PlayerState, shape: PlanetShape) -> bool {
     let hooks = match (a.hook, b.hook) {
         (None, None) => true,
@@ -218,6 +257,8 @@ fn same(a: &PlayerState, b: &PlayerState, shape: PlanetShape) -> bool {
     shape.delta(a.pos, b.pos).length() < TOLERANCE
         && (a.vel - b.vel).length() < TOLERANCE
         && a.on_ground == b.on_ground
+        && a.spent == b.spent
+        && a.rest == b.rest
         && hooks
 }
 
@@ -373,6 +414,48 @@ mod tests {
     }
 
     #[test]
+    fn swings_spend_energy_where_the_server_does_with_no_correction() {
+        // Swings (cost 8) follow inputs 20, 55 and 90; the server spends
+        // each right after its input, and so do we, even when we learn of
+        // the swing after predicting later inputs.
+        let (cfg, w) = (MoveConfig::default(), Floor(10));
+        let inputs: Vec<PlayerInput> = (1..=200).map(walk).collect();
+        let swings = [20u32, 55, 90];
+        let mut s = spawn();
+        let truth: Vec<PlayerState> = inputs
+            .iter()
+            .enumerate()
+            .map(|(i, input)| {
+                movement::step(&mut s, input, &cfg, None, shape(), &w);
+                if swings.contains(&(i as u32 + 1)) {
+                    assert!(s.try_spend(8));
+                }
+                s
+            })
+            .collect();
+        let mut p = Predictor::new(spawn());
+        for (i, input) in inputs.iter().enumerate() {
+            let seq = p.tick(*input, None, &cfg, shape(), &w);
+            // We swing a couple of inputs late: the spend lands at its own
+            // input and the ones after are replayed.
+            if let Some(&at) = swings.iter().find(|&&at| at + 2 == seq) {
+                assert!(p.spend(at, 8, &cfg, shape(), &w));
+            }
+            if i >= 5 && i % 3 == 0 {
+                let ack = i as u32 - 4;
+                p.reconcile(i as u64, ack, truth[ack as usize - 1], &cfg, shape(), &w);
+            }
+        }
+        assert_eq!(p.corrections, 0);
+        assert_eq!(p.state, truth[199]);
+        assert_eq!(
+            p.state.energy(),
+            600 - 3 * 8,
+            "each swing restarted the pause: nothing back yet"
+        );
+    }
+
+    #[test]
     fn matching_snapshots_cause_no_correction() {
         let (cfg, w) = (MoveConfig::default(), Floor(10));
         let inputs: Vec<PlayerInput> = (1..=200).map(walk).collect();
@@ -409,6 +492,7 @@ mod tests {
             reel_in_speed: 10.0,
             reel_out_speed: 10.0,
             hookshot: false,
+            energy: 60,
         };
         let inputs: Vec<PlayerInput> = (1..=300u32)
             .map(|i| PlayerInput {

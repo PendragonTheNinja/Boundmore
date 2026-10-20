@@ -1213,6 +1213,21 @@ impl Game {
     }
 
     fn edit(&mut self, id: u32, seq: u32, pos: BlockPos, action: EditAction) {
+        // A chisel cut costs energy first, whatever is ruled after (the
+        // client spends it the same way when it sends the cut); too tired,
+        // it does nothing but start the pause again.
+        if let EditAction::Chisel { slot, .. } = action
+            && let Some(p) = self.players.get_mut(&id)
+            && let Some(cost) = p
+                .inventory
+                .get(slot as usize)
+                .and_then(|s| self.items.get(s.item))
+                .filter(|d| d.chisel().is_some())
+                .and_then(|d| d.energy())
+            && !p.state.try_spend(cost)
+        {
+            return self.edit_refused(id, seq, pos, "too tired");
+        }
         let accepted = match self.check_edit(id, pos, action) {
             Ok(a) => a,
             Err(Refusal::Quiet(why)) => return self.edit_refused(id, seq, pos, why),

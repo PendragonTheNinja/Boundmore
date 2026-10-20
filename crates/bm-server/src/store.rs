@@ -271,6 +271,9 @@ impl From<SavedBody> for PlayerState {
             vel: b.vel,
             on_ground: b.on_ground,
             hook: None,
+            // Energy is never saved: a player arrives rested.
+            spent: 0,
+            rest: 0,
         }
     }
 }
