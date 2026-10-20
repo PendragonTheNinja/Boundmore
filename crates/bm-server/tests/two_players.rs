@@ -7,8 +7,8 @@ use bm_core::{
 use bm_net::quinn::Connection;
 use bm_net::{read_msg, write_msg};
 use bm_protocol::{
-    Channel, ChatLine, ClientDatagram, ClientMsg, EditAction, PROTOCOL_VERSION, ServerDatagram, ServerMsg, SlotRef,
-    StationView, StorageView, Welcome,
+    Channel, ChatLine, ClaimView, ClientDatagram, ClientMsg, EditAction, PROTOCOL_VERSION, PortalAction, PortalView,
+    ServerDatagram, ServerMsg, SlotRef, StationView, StorageView, Welcome,
 };
 use bm_server::config::{PlanetSpec, ServerConfig};
 use bm_server::store::{PlayerData, SavedBody, SavedStack, Store, UNIVERSE_FILE, WriteBatch};
@@ -36,6 +36,10 @@ struct TestClient {
     views: std::collections::VecDeque<StorageView>,
     /// The last reclaim heard of.
     reclaim: Option<Vec<ItemStack>>,
+    /// The last claim heard of.
+    claim: Option<ClaimView>,
+    /// Portal token names heard, by tag.
+    token_names: HashMap<u32, String>,
     chunks: HashMap<ChunkPos, Chunk>,
     seq: u32,
     /// The planet the player is on now, and where they arrived on it.
@@ -105,6 +109,8 @@ async fn hello(
         chat: Vec::new(),
         views: Default::default(),
         reclaim: None,
+        claim: None,
+        token_names: HashMap::new(),
         chunks: HashMap::new(),
         seq: 0,
     })
@@ -193,6 +199,8 @@ impl TestClient {
             ServerMsg::Chat { lines } => self.chat.extend(lines.iter().cloned()),
             ServerMsg::Storage(v) => self.views.push_back(v.clone()),
             ServerMsg::Reclaim { items } => self.reclaim = Some(items.clone()),
+            ServerMsg::Claim(c) => self.claim = Some(c.clone()),
+            ServerMsg::TokenNames { names } => self.token_names.extend(names.iter().cloned()),
             // Everything of the old planet goes, as in the game.
             ServerMsg::Travel(t) => {
                 self.chunks.clear();
@@ -2039,5 +2047,558 @@ async fn grapples_fire_stick_wear_and_need_a_grapple_in_hand() {
     assert_eq!(stack(&alice, 1), None);
     let (_, _, you, _) = alice.latest_snapshot().await;
     assert_eq!(you.hook, None, "nothing left in hand to hold it");
+    server.stop();
+}
+
+/// Claims the plot under the player's feet with the claim stone in hotbar
+/// `slot`, and the plots around it and above, so the ground for a few
+/// blocks each way is theirs.
+async fn claim_around(c: &mut TestClient, seq: u32, slot: u8) {
+    let feet = c.feet();
+    c.claim = None;
+    assert!(c.dig(seq, feet).await.0);
+    assert!(c.edit(seq + 1, feet, EditAction::Place { slot }).await.0, "claimed");
+    if c.claim.is_none() {
+        c.until(|m| matches!(m, ServerMsg::Claim(_))).await;
+    }
+    let id = c.claim.as_ref().unwrap().id;
+    let shape = c.shape();
+    let home = PlotPos::of(feet, shape);
+    let mut n = 1;
+    for dy in 0..=1 {
+        for (dx, dz) in [
+            (0, 0),
+            (1, 0),
+            (-1, 0),
+            (0, 1),
+            (0, -1),
+            (1, 1),
+            (1, -1),
+            (-1, 1),
+            (-1, -1),
+        ] {
+            if (dx, dy, dz) == (0, 0, 0) {
+                continue;
+            }
+            c.send(ClientMsg::ClaimPlot {
+                claim: id,
+                plot: home.offset(dx, dy, dz).wrap(shape),
+            })
+            .await;
+            n += 1;
+            c.until(|m| matches!(m, ServerMsg::Claim(v) if v.plots.len() == n))
+                .await;
+        }
+    }
+}
+
+/// A one-wide, two-tall portal of conduits (hotbar `slot`) standing on `ground`.
+async fn conduit_column(c: &mut TestClient, seq: u32, ground: BlockPos, slot: u8) {
+    for (i, dy) in [1, 2].into_iter().enumerate() {
+        assert!(
+            c.edit(seq + i as u32, ground.offset(0, dy, 0), EditAction::Place { slot })
+                .await
+                .0,
+            "conduit placed"
+        );
+    }
+}
+
+/// The next portal window matching `pred`.
+async fn portal_view(c: &mut TestClient, mut pred: impl FnMut(&PortalView) -> bool) -> PortalView {
+    match c.until(|m| matches!(m, ServerMsg::Portal(Some(v)) if pred(v))).await {
+        ServerMsg::Portal(Some(v)) => v,
+        _ => unreachable!(),
+    }
+}
+
+/// Opens the portal whose lowest corner is `pos` and returns its window.
+async fn open_portal(c: &mut TestClient, pos: BlockPos) -> PortalView {
+    c.send(ClientMsg::OpenPortal { pos: Some(pos) }).await;
+    portal_view(c, |v| v.corner == pos).await
+}
+
+/// After travel, edits tagged with inputs from before it are refused: move
+/// the inputs on past them.
+async fn after_travel(c: &mut TestClient) {
+    c.send_inputs(40, PlayerInput::default());
+    tokio::time::sleep(Duration::from_millis(800)).await;
+    c.settle().await;
+}
+
+async fn portal_do(c: &mut TestClient, pos: BlockPos, action: PortalAction) {
+    c.send(ClientMsg::Portal { pos, action }).await;
+}
+
+/// The tag of a portal token in the pack not among `known`.
+fn new_token(c: &TestClient, known: &[u32]) -> u32 {
+    let token = c.item("portal_token");
+    c.inv
+        .slots
+        .iter()
+        .flatten()
+        .find(|s| s.item == token && !known.contains(&s.tag))
+        .expect("a new token")
+        .tag
+}
+
+/// The slot of the first portal token in the pack bound to `tag`.
+fn token_slot(c: &TestClient, tag: u32) -> u8 {
+    let token = c.item("portal_token");
+    c.inv
+        .slots
+        .iter()
+        .position(|s| s.is_some_and(|s| s.item == token && s.tag == tag))
+        .expect("token in the pack") as u8
+}
+
+/// Walks with heading `yaw` until a portal moves the player: the planet
+/// travelled to (None for the same one) and where.
+async fn walk_through(c: &mut TestClient, yaw: u16) -> (Option<u16>, PlayerState) {
+    let input = PlayerInput {
+        forward: 1,
+        yaw,
+        ..Default::default()
+    };
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(10);
+    loop {
+        c.send_inputs(1, input);
+        tokio::time::sleep(Duration::from_millis(16)).await;
+        while let Ok(m) = c.msgs.try_recv() {
+            c.apply(&m);
+            let moved = match &m {
+                ServerMsg::Teleport { spawn, .. } => Some((None, *spawn)),
+                ServerMsg::Travel(t) => Some((Some(t.planet.id), t.spawn)),
+                _ => None,
+            };
+            if let Some(r) = moved {
+                // Stand still on the far side.
+                c.send_inputs(
+                    10,
+                    PlayerInput {
+                        yaw,
+                        ..Default::default()
+                    },
+                );
+                c.settle().await;
+                return r;
+            }
+        }
+        assert!(tokio::time::Instant::now() < deadline, "no portal took us");
+    }
+}
+
+/// Headings: 0 faces -Z, half a turn +Z.
+const SOUTH: u16 = 32768;
+const NORTH: u16 = 0;
+
+fn feet_block(s: &PlayerState) -> BlockPos {
+    BlockPos::containing(s.pos.x, s.pos.y + 0.01, s.pos.z)
+}
+
+/// Two portals on a claim, a token, a link, fuel: walking in comes out at
+/// the other, and each traveller pays at most once per portal per cooldown.
+/// Misshapen frames, conduits off a claim and conduits that would reshape a
+/// portal are refused.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn portals_link_fuel_and_carry_players_paying_once_per_cooldown() {
+    let dir = tempfile::tempdir().unwrap();
+    seed(
+        dir.path(),
+        "Alice",
+        &[
+            (5, "claim_stone", 1, 0),
+            (6, "portal_conduit", 20, 0),
+            (1, "wayshard", 20, 0),
+        ],
+    );
+    let server = bm_server::start(config(dir.path())).unwrap();
+    let mut alice = TestClient::login(&server, "Alice").await;
+    let feet = alice.feet();
+    alice.wait_for_chunk(feet.chunk()).await;
+    let shape = alice.shape();
+
+    // Not on her claim (she has none yet).
+    assert!(
+        !alice
+            .edit(1, feet.offset(1, 1, 0), EditAction::Place { slot: 6 })
+            .await
+            .0
+    );
+    alice.notice("Portal conduits go only on your own claim").await;
+    claim_around(&mut alice, 2, 5).await;
+
+    let a = feet.offset(0, 0, 2);
+    let b = feet.offset(3, 0, -3);
+    conduit_column(&mut alice, 10, a, 6).await;
+    conduit_column(&mut alice, 12, b, 6).await;
+
+    // An L of conduits is no portal.
+    let l = feet.offset(-3, 0, 3);
+    conduit_column(&mut alice, 14, l, 6).await;
+    assert!(
+        alice
+            .edit(16, l.offset(-1, 1, 0), EditAction::Place { slot: 6 })
+            .await
+            .0
+    );
+    alice
+        .send(ClientMsg::OpenPortal {
+            pos: Some(l.offset(0, 1, 0)),
+        })
+        .await;
+    alice.until(|m| matches!(m, ServerMsg::Portal(None))).await;
+    alice.notice(bm_core::portal::SHAPE_RULE).await;
+
+    // The first open makes the portal.
+    let (a_up, b_up) = (a.offset(0, 1, 0), b.offset(0, 1, 0));
+    let v = open_portal(&mut alice, a_up).await;
+    assert_eq!(
+        (v.corner, v.width, v.height, v.link.clone(), v.open, v.fuel),
+        (a_up, 1, 2, None, false, 0)
+    );
+    assert_eq!((v.capacity, v.trip_cost, v.cooldown_hours), (500, 1, 1.0));
+
+    // A conduit against it would change its shape.
+    assert!(!alice.edit(17, a.offset(1, 1, 0), EditAction::Place { slot: 6 }).await.0);
+    alice.notice("That would change the shape of a portal").await;
+
+    // A token of A, named for what it opens.
+    portal_do(&mut alice, a_up, PortalAction::MakeToken).await;
+    alice.until(|m| matches!(m, ServerMsg::TokenNames { .. })).await;
+    alice.settle().await;
+    let a_id = new_token(&alice, &[]);
+    assert_eq!(
+        alice.token_names[&a_id],
+        format!("1 by 2, Testworld, near {}, {}", a_up.x, a_up.z)
+    );
+
+    // Linked at B with it, both ways; the token is used up.
+    open_portal(&mut alice, b_up).await;
+    let slot = token_slot(&alice, a_id);
+    portal_do(&mut alice, b_up, PortalAction::Link { slot }).await;
+    let v = portal_view(&mut alice, |v| v.link.is_some()).await;
+    assert_eq!(v.link.unwrap(), format!("Testworld, near {}, {}", a_up.x, a_up.z));
+    alice.settle().await;
+    assert_eq!(alice.count("portal_token"), 0);
+    // B's own token cannot link B.
+    portal_do(&mut alice, b_up, PortalAction::MakeToken).await;
+    alice.until(|m| matches!(m, ServerMsg::TokenNames { .. })).await;
+    alice.settle().await;
+    let b_id = new_token(&alice, &[]);
+    let slot = token_slot(&alice, b_id);
+    portal_do(&mut alice, b_up, PortalAction::Link { slot }).await;
+    alice.notice("That token is for this portal").await;
+    assert_eq!(alice.count("portal_token"), 1, "nothing consumed");
+    let v = open_portal(&mut alice, a_up).await;
+    assert_eq!(v.link.unwrap(), format!("Testworld, near {}, {}", b_up.x, b_up.z));
+    assert!(!v.open, "no fuel, no way through");
+
+    // Only wayshards fuel it; five go into each side, and both open.
+    portal_do(&mut alice, a_up, PortalAction::AddFuel { slot: 6, count: 5 }).await;
+    alice.notice("Only wayshards fuel a portal").await;
+    portal_do(&mut alice, a_up, PortalAction::AddFuel { slot: 1, count: 5 }).await;
+    let v = portal_view(&mut alice, |v| v.fuel == 5).await;
+    assert!(v.open);
+    portal_do(&mut alice, b_up, PortalAction::AddFuel { slot: 1, count: 5 }).await;
+    alice.settle().await;
+    assert_eq!(alice.count("wayshard"), 10);
+    let surface = alice.block("portal_surface");
+    for p in [a_up, a_up.offset(0, 1, 0), b_up, b_up.offset(0, 1, 0)] {
+        assert_eq!(state_at(&alice, p).id, surface, "open at {p:?}");
+    }
+
+    // Through A, out of B's far face; A's tank pays one.
+    let (planet, there) = walk_through(&mut alice, SOUTH).await;
+    assert_eq!(planet, None, "same planet");
+    assert_eq!(feet_block(&there), shape.wrap_block(b.offset(0, 1, 1)));
+    assert_eq!(there.vel, glam::DVec3::ZERO);
+    assert_eq!(open_portal(&mut alice, a_up).await.fuel, 4);
+    // Back through B (B pays), and through A again within the hour: free.
+    let (_, there) = walk_through(&mut alice, NORTH).await;
+    assert_eq!(feet_block(&there), shape.wrap_block(a.offset(0, 1, -1)));
+    let (_, there) = walk_through(&mut alice, SOUTH).await;
+    assert_eq!(feet_block(&there), shape.wrap_block(b.offset(0, 1, 1)));
+    assert_eq!(open_portal(&mut alice, a_up).await.fuel, 4, "charged once");
+    assert_eq!(open_portal(&mut alice, b_up).await.fuel, 4);
+    server.stop();
+}
+
+/// A portal with fuel stands; its tank and link survive a restart, as do
+/// tokens' names; emptied, a conduit breaks and the portal is gone.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn portals_survive_a_restart_and_break_only_when_empty() {
+    let dir = tempfile::tempdir().unwrap();
+    seed(
+        dir.path(),
+        "Alice",
+        &[
+            (5, "claim_stone", 1, 0),
+            (6, "portal_conduit", 20, 0),
+            (1, "wayshard", 20, 0),
+        ],
+    );
+    let (a, b, a_id, b_id) = {
+        let server = bm_server::start(config(dir.path())).unwrap();
+        let mut alice = TestClient::login(&server, "Alice").await;
+        let feet = alice.feet();
+        alice.wait_for_chunk(feet.chunk()).await;
+        claim_around(&mut alice, 1, 5).await;
+        let (a, b) = (feet.offset(0, 1, 2), feet.offset(3, 1, -3));
+        conduit_column(&mut alice, 10, a.offset(0, -1, 0), 6).await;
+        conduit_column(&mut alice, 12, b.offset(0, -1, 0), 6).await;
+        open_portal(&mut alice, a).await;
+        portal_do(&mut alice, a, PortalAction::MakeToken).await;
+        alice.until(|m| matches!(m, ServerMsg::TokenNames { .. })).await;
+        alice.settle().await;
+        let a_id = new_token(&alice, &[]);
+        open_portal(&mut alice, b).await;
+        let slot = token_slot(&alice, a_id);
+        portal_do(&mut alice, b, PortalAction::Link { slot }).await;
+        portal_view(&mut alice, |v| v.link.is_some()).await;
+        portal_do(&mut alice, a, PortalAction::AddFuel { slot: 1, count: 7 }).await;
+        // A token of each kept in the pack.
+        portal_do(&mut alice, b, PortalAction::MakeToken).await;
+        alice.until(|m| matches!(m, ServerMsg::TokenNames { .. })).await;
+        alice.settle().await;
+        let b_id = new_token(&alice, &[]);
+        portal_do(&mut alice, a, PortalAction::MakeToken).await;
+        alice.settle().await;
+        assert_eq!(alice.count("portal_token"), 2);
+        assert_eq!(alice.count("wayshard"), 13);
+        drop(alice);
+        server.stop();
+        (a, b, a_id, b_id)
+    };
+
+    let server = bm_server::start(config(dir.path())).unwrap();
+    let mut alice = TestClient::login(&server, "Alice").await;
+    alice
+        .until(|m| matches!(m, ServerMsg::TokenNames { names } if names.len() == 2))
+        .await;
+    assert_eq!(
+        alice.token_names[&b_id],
+        format!("1 by 2, Testworld, near {}, {}", b.x, b.z)
+    );
+    alice.wait_for_chunk(a.chunk()).await;
+    alice.wait_for_chunk(b.chunk()).await;
+    alice.settle().await;
+    let v = open_portal(&mut alice, a).await;
+    assert_eq!((v.fuel, v.open), (7, true));
+    assert_eq!(v.link.unwrap(), format!("Testworld, near {}, {}", b.x, b.z));
+    assert_eq!(state_at(&alice, a).id, alice.block("portal_surface"), "still open");
+    assert_eq!(state_at(&alice, b).id, alice.block("portal_conduit"), "B has no fuel");
+
+    // Unlinked, it closes; with fuel inside it still cannot be broken.
+    portal_do(&mut alice, a, PortalAction::Unlink).await;
+    portal_view(&mut alice, |v| v.link.is_none() && !v.open).await;
+    alice.settle().await;
+    let conduit = alice.block("portal_conduit");
+    assert_eq!(state_at(&alice, a).id, conduit);
+    assert_eq!(open_portal(&mut alice, b).await.link, None, "both ways");
+    assert!(!alice.dig(30, a).await.0);
+    alice.notice("Empty the portal's tank before breaking it").await;
+    assert_eq!(state_at(&alice, a).id, conduit);
+
+    // The owner takes the fuel back; then it breaks, and A's token names a
+    // portal that is gone.
+    open_portal(&mut alice, a).await;
+    portal_do(&mut alice, a, PortalAction::TakeFuel { count: 100 }).await;
+    portal_view(&mut alice, |v| v.fuel == 0).await;
+    alice.settle().await;
+    assert_eq!(alice.count("wayshard"), 20);
+    let conduits = alice.count("portal_conduit");
+    assert!(alice.dig(31, a).await.0, "an empty portal breaks");
+    alice.settle().await;
+    assert_eq!(alice.count("portal_conduit"), conduits + 1);
+    assert_eq!(alice.token_names[&a_id], "a portal that is gone");
+    // The one conduit left is no portal.
+    alice
+        .send(ClientMsg::OpenPortal {
+            pos: Some(a.offset(0, 1, 0)),
+        })
+        .await;
+    alice.notice(bm_core::portal::SHAPE_RULE).await;
+    server.stop();
+}
+
+/// A portal on one planet linked to one on another: walking in is the
+/// journey to the other planet, arriving at the far portal, and costs two.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn portals_carry_players_between_planets() {
+    let dir = tempfile::tempdir().unwrap();
+    seed(
+        dir.path(),
+        "Alice",
+        &[
+            (5, "claim_stone", 1, 0),
+            (7, "claim_stone", 1, 0),
+            (6, "portal_conduit", 20, 0),
+            (1, "wayshard", 20, 0),
+        ],
+    );
+    let cfg = ServerConfig {
+        shrine_guard: 0,
+        ..universe(dir.path())
+    };
+    let server = bm_server::start(cfg).unwrap();
+    let mut alice = TestClient::login(&server, "Alice").await;
+    let home = alice.feet();
+    alice.wait_for_chunk(home.chunk()).await;
+    claim_around(&mut alice, 1, 5).await;
+    let a = home.offset(0, 1, 2);
+    conduit_column(&mut alice, 30, a.offset(0, -1, 0), 6).await;
+    open_portal(&mut alice, a).await;
+
+    // On Dryside, B, and a token of it.
+    let shrine = alice.shrine();
+    alice.send(ClientMsg::Warp { shrine, planet: 1 }).await;
+    alice.until(|m| matches!(m, ServerMsg::Travel(_))).await;
+    after_travel(&mut alice).await;
+    let there = alice.feet();
+    let far_shrine = alice.shrine();
+    alice.wait_for_chunk(there.chunk()).await;
+    claim_around(&mut alice, 40, 7).await;
+    let b = there.offset(3, 1, -3);
+    conduit_column(&mut alice, 60, b.offset(0, -1, 0), 6).await;
+    open_portal(&mut alice, b).await;
+    portal_do(&mut alice, b, PortalAction::MakeToken).await;
+    alice.until(|m| matches!(m, ServerMsg::TokenNames { .. })).await;
+    alice.settle().await;
+    let b_id = new_token(&alice, &[]);
+    assert_eq!(
+        alice.token_names[&b_id],
+        format!("1 by 2, Dryside, near {}, {}", b.x, b.z)
+    );
+
+    // Home again: A is linked with B's token, and fuelled for one trip.
+    let shrine = alice.shrine();
+    alice.send(ClientMsg::Warp { shrine, planet: 0 }).await;
+    alice.until(|m| matches!(m, ServerMsg::Travel(_))).await;
+    after_travel(&mut alice).await;
+    alice.wait_for_chunk(a.chunk()).await;
+    alice.settle().await;
+    open_portal(&mut alice, a).await;
+    let slot = token_slot(&alice, b_id);
+    portal_do(&mut alice, a, PortalAction::Link { slot }).await;
+    let v = portal_view(&mut alice, |v| v.link.is_some()).await;
+    assert_eq!(v.link.unwrap(), format!("Dryside, near {}, {}", b.x, b.z));
+    assert_eq!(v.trip_cost, 2);
+    portal_do(&mut alice, a, PortalAction::AddFuel { slot: 1, count: 3 }).await;
+    let v = portal_view(&mut alice, |v| v.fuel == 3).await;
+    assert!(v.open);
+    alice.settle().await;
+    assert_eq!(state_at(&alice, a).id, alice.block("portal_surface"));
+
+    // Nobody is on Dryside: its chunks load for the trip.
+    let (planet, spawn) = walk_through(&mut alice, SOUTH).await;
+    assert_eq!(planet, Some(1));
+    assert_eq!(feet_block(&spawn), b.offset(0, 0, 1));
+    alice.wait_for_chunk(b.chunk()).await;
+    alice.settle().await;
+    assert_eq!(state_at(&alice, b).id, alice.block("portal_conduit"), "B is unfuelled");
+
+    // Back by shrine: two were taken, and one is too few for another trip.
+    alice
+        .send(ClientMsg::Warp {
+            shrine: far_shrine,
+            planet: 0,
+        })
+        .await;
+    alice.until(|m| matches!(m, ServerMsg::Travel(_))).await;
+    alice.wait_for_chunk(a.chunk()).await;
+    alice.settle().await;
+    let v = open_portal(&mut alice, a).await;
+    assert_eq!((v.fuel, v.open), (1, false));
+    assert_eq!(state_at(&alice, a).id, alice.block("portal_conduit"), "dormant");
+    server.stop();
+}
+
+/// A lapsing claim takes its portals with it: unlinked and gone, open
+/// surfaces turned to ash like the conduits, the tanks' fuel in reclaim.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn a_lapsed_claims_portals_go_and_their_fuel_waits_in_reclaim() {
+    let dir = tempfile::tempdir().unwrap();
+    seed(
+        dir.path(),
+        "Alice",
+        &[
+            (5, "claim_stone", 1, 0),
+            (6, "portal_conduit", 20, 0),
+            (1, "wayshard", 20, 0),
+        ],
+    );
+    let (a, b) = {
+        let server = bm_server::start(config(dir.path())).unwrap();
+        let mut alice = TestClient::login(&server, "Alice").await;
+        let feet = alice.feet();
+        alice.wait_for_chunk(feet.chunk()).await;
+        claim_around(&mut alice, 1, 5).await;
+        let (a, b) = (feet.offset(0, 1, 2), feet.offset(3, 1, -3));
+        conduit_column(&mut alice, 10, a.offset(0, -1, 0), 6).await;
+        conduit_column(&mut alice, 12, b.offset(0, -1, 0), 6).await;
+        open_portal(&mut alice, a).await;
+        portal_do(&mut alice, a, PortalAction::MakeToken).await;
+        alice.until(|m| matches!(m, ServerMsg::TokenNames { .. })).await;
+        alice.settle().await;
+        let a_id = new_token(&alice, &[]);
+        open_portal(&mut alice, b).await;
+        let slot = token_slot(&alice, a_id);
+        portal_do(&mut alice, b, PortalAction::Link { slot }).await;
+        portal_do(&mut alice, a, PortalAction::AddFuel { slot: 1, count: 6 }).await;
+        portal_do(&mut alice, b, PortalAction::AddFuel { slot: 1, count: 4 }).await;
+        alice.settle().await;
+        assert_eq!(state_at(&alice, a).id, alice.block("portal_surface"));
+        assert_eq!(alice.count("wayshard"), 10);
+        drop(alice);
+        server.stop();
+        (a, b)
+    };
+    {
+        let store = Store::open(&planet_file(dir.path())).unwrap();
+        let data = store.player("alice").unwrap().unwrap();
+        store
+            .write(&WriteBatch {
+                players: vec![(
+                    "alice".into(),
+                    PlayerData {
+                        last_seen: 1_000_000,
+                        ..data
+                    },
+                )],
+                ..Default::default()
+            })
+            .unwrap();
+    }
+    {
+        let server = bm_server::start(config(dir.path())).unwrap();
+        let mut bob = TestClient::register(&server, "Bob").await;
+        if !bob.welcome.claims.is_empty() {
+            bob.until(|m| matches!(m, ServerMsg::ClaimRemoved { .. })).await;
+        }
+        bob.wait_for_chunk(a.chunk()).await;
+        bob.wait_for_chunk(b.chunk()).await;
+        bob.settle().await;
+        let ash = bob.block("ash");
+        for p in [a, a.offset(0, 1, 0), b, b.offset(0, 1, 0)] {
+            assert_eq!(state_at(&bob, p).id, ash, "ash at {p:?}");
+        }
+        drop(bob);
+        server.stop();
+    }
+    let server = bm_server::start(config(dir.path())).unwrap();
+    let mut alice = TestClient::login(&server, "Alice").await;
+    alice.until(|m| matches!(m, ServerMsg::Reclaim { .. })).await;
+    let wayshard = alice.item("wayshard");
+    assert_eq!(alice.reclaim.clone().unwrap(), vec![ItemStack::new(wayshard, 10)]);
+    alice.settle().await;
+    assert!(
+        alice
+            .notices
+            .iter()
+            .any(|n| n.ends_with("Its stored items wait for you at any warp shrine.")),
+        "{:?}",
+        alice.notices
+    );
     server.stop();
 }

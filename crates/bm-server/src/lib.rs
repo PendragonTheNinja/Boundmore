@@ -10,6 +10,7 @@ pub mod game;
 pub mod lapse;
 pub mod net;
 pub mod planet;
+pub mod portals;
 pub mod reclaim;
 pub mod storage;
 pub mod store;

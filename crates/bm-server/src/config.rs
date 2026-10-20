@@ -84,6 +84,15 @@ pub struct ServerConfig {
     /// far each way across, down, and twice as far up. 0 protects the shrine
     /// alone.
     pub shrine_guard: u32,
+    /// Most wayshards a portal's tank holds (ADR-0009).
+    pub portal_tank_capacity: u32,
+    /// Wayshards one charged trip through a portal costs, to a portal on the
+    /// same planet and to one on another.
+    pub portal_trip_cost_same_planet: u32,
+    pub portal_trip_cost_other_planet: u32,
+    /// Seconds a traveller's charge at one portal lasts: trips through it
+    /// within this time are free.
+    pub portal_charge_cooldown: u64,
 
     /// Save version 2 settings, still read so an old `server.toml` keeps its
     /// planet: they apply to the first planet.
@@ -110,6 +119,10 @@ impl Default for ServerConfig {
             claim_keep_days: 183,
             claim_keep_seconds: None,
             shrine_guard: 4,
+            portal_tank_capacity: 500,
+            portal_trip_cost_same_planet: 1,
+            portal_trip_cost_other_planet: 2,
+            portal_charge_cooldown: 3600,
             planet_name: None,
             seed: None,
             width_chunks: None,
@@ -167,6 +180,16 @@ impl ServerConfig {
         self.claim_keep_seconds.unwrap_or(self.claim_keep_days as u64 * 86_400)
     }
 
+    /// The portal tunables, the cooldown in ticks.
+    pub fn portal_rules(&self) -> crate::portals::PortalRules {
+        crate::portals::PortalRules {
+            capacity: self.portal_tank_capacity,
+            cost_same_planet: self.portal_trip_cost_same_planet,
+            cost_other_planet: self.portal_trip_cost_other_planet,
+            cooldown_ticks: (self.portal_charge_cooldown as f64 / bm_core::TICK_DT).round() as u64,
+        }
+    }
+
     /// Moves version 2's single-planet settings onto the first planet.
     pub fn apply_legacy(&mut self) {
         let (name, seed, width) = (self.planet_name.take(), self.seed.take(), self.width_chunks.take());
@@ -218,6 +241,16 @@ impl ServerConfig {
         if self.shrine_guard > 16 {
             bail!("shrine_guard must be at most 16");
         }
+        if self.portal_trip_cost_same_planet == 0 || self.portal_trip_cost_other_planet == 0 {
+            bail!("portal trip costs must be at least 1 (an empty tank must close a portal)");
+        }
+        if self.portal_tank_capacity
+            < self
+                .portal_trip_cost_same_planet
+                .max(self.portal_trip_cost_other_planet)
+        {
+            bail!("portal_tank_capacity must hold at least one trip");
+        }
         Ok(())
     }
 }
@@ -253,5 +286,6 @@ mod tests {
             (cfg.start_planet, cfg.height_chunks, cfg.shrine_guard),
             (d.start_planet, d.height_chunks, d.shrine_guard)
         );
+        assert_eq!(cfg.portal_rules(), d.portal_rules());
     }
 }

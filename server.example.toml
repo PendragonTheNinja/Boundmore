@@ -12,6 +12,12 @@ plot_allowance = 64
 claim_keep_days = 183
 # Blocks around each warp shrine nobody may change.
 shrine_guard = 4
+# Portals: the most wayshards a tank holds, what a charged trip costs (to the
+# same planet, to another), and the seconds a traveller's charge lasts.
+portal_tank_capacity = 500
+portal_trip_cost_same_planet = 1
+portal_trip_cost_other_planet = 2
+portal_charge_cooldown = 3600
 # Index into the list below of the planet new players start on.
 start_planet = 0
 
