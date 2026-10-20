@@ -415,6 +415,7 @@ impl BlockRegistry {
             opaque: self.defs.iter().map(|d| d.opaque).collect(),
             translucent: self.defs.iter().map(|d| d.translucent).collect(),
             light: self.defs.iter().map(|d| d.light).collect(),
+            mount: self.defs.iter().map(|d| d.mount).collect(),
         }
     }
 }
@@ -426,6 +427,7 @@ pub struct BlockFlags {
     opaque: Vec<bool>,
     translucent: Vec<bool>,
     light: Vec<u8>,
+    mount: Vec<Option<Mount>>,
 }
 
 impl BlockFlags {
@@ -448,6 +450,12 @@ impl BlockFlags {
     #[inline]
     pub fn light(&self, id: BlockId) -> u8 {
         self.light.get(id.0 as usize).copied().unwrap_or(0)
+    }
+
+    /// Where a prop attaches (`None` for every block that is not a prop).
+    #[inline]
+    pub fn mount(&self, id: BlockId) -> Option<Mount> {
+        self.mount.get(id.0 as usize).copied().flatten()
     }
 
     /// Number of ids in the catalogue the tables were built from.
