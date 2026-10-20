@@ -1,6 +1,6 @@
 # Milestone 8: Portals
 
-*Spec written 2026-10-19.*
+*Spec written 2026-10-19. Built 2026-10-20; awaiting Nathan's play-test.*
 
 ## Goal
 
@@ -53,9 +53,10 @@ See-through portal windows (a later milestone), portals that load the far side's
 
 ## Status
 
-- [ ] Spec, ADR-0009, contract, data
-- [ ] Server
-- [ ] Client
-- [ ] Art
-- [ ] Integrated
+- [x] Spec, ADR-0009, contract, data (wayshard ore on every kind, re-pinned with the old pins kept for older planets)
+- [x] Server: portal records in their own table, the window and its actions, links, tanks, open and dormant surfaces, travel (same planet by `Teleport`, other planets by the journey, far chunks loaded without the loop waiting), charging once per player per portal per hour, breaking rules, claim lapse (fuel to reclaim), tokens saved as `portal_token@id`, wayshards appended to existing planets (upgrade check from `main`: "Verdance: wayshard_vein added to its ores", players kept). 6 unit and 4 end-to-end tests.
+- [x] Client: E on conduits and surfaces, the portal window (size, link, open or dormant and why, tank bar, buttons with reasons when disabled, carried tokens by name), token tooltips, `Teleport` taken as a jump with no correction, `--demo-ui portal`; screenshot `docs/media/m8-portal-window.png`
+- [x] Art: wayshard vein, conduit, portal surface, wayshard and token icons
+- [x] Integrated: 329 tests, fmt and clippy clean
+- [ ] Follow-ups: `Portal(None)` should name the portal it closes (a late close could shut a window reopened within one round trip); `PortalView` could carry the portal id so the window greys out this portal's own token; arriving players keep their old facing (state carries no yaw)
 - [ ] Nathan's play-test

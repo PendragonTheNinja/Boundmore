@@ -52,7 +52,7 @@ cargo clippy --workspace --all-targets -- -D warnings
 cargo test --workspace
 ```
 
-Expected test counts (M7 done, 2026-10-19): bm-core 96, bm-worldgen 32, bm-mesh 22, bm-protocol 6, bm-server 42 unit + 21 end-to-end, bm-client 79, bm-texgen 5 (303 in all). CI (`.github/workflows/ci.yml`) runs the same on Linux and builds on Windows.
+Expected test counts (M8 built, 2026-10-20): bm-core 101, bm-worldgen 33, bm-mesh 22, bm-protocol 6, bm-server 48 unit + 25 end-to-end, bm-client 89, bm-texgen 5 (329 in all). CI (`.github/workflows/ci.yml`) runs the same on Linux and builds on Windows.
 
 **Upgrade check (any change to a saved or versioned format):** build the server from `main` in a separate worktree and target dir, let it create a universe (`bots --count 2 --planets 2` to make players), stop it, then open that data dir with the new server and read its log. Unit tests built from the new code missed exactly this once (2026-10-19: chunk format 2 refused every older universe).
 
@@ -97,7 +97,7 @@ Drive it with `xdotool` (`windowfocus --sync`, then plain `keydown`/`click`, not
 
 ## Status
 
-**Where we are (handoff, 2026-10-19):** milestones 1 to 7 are on `main` (M7: chisels, then grapples); Nathan has play-tested up to M3. Next: player-built portals with the agreed fuel rule (roadmap; spec first, as milestone 8), then a skills proposal for Nathan before building any progression. Open follow-ups: the rope is drawn with 1-pixel lines (a few strands side by side), a real rope mesh would look better; the rest of the roadmap's M7 line (swimming improvements, far views) is not specced yet.
+**Where we are (handoff, 2026-10-20):** milestones 1 to 6 and M7 part 1 are on `main`; M7 part 2 (grapples, now tuned to Boundless's copper and iron numbers) and M8 (portals) are built on branch `ccr-845f9c04-ch9enf`, awaiting merge and Nathan's play-test; he has play-tested up to M3. Nathan's direction (2026-10-19): Boundless first, identity second, tuned from `docs/research/boundless-tuning.md` (sections 1 to 4 compiled: grapples and movement, tools and mining, combat and creatures, materials and crafting; 5, skills and forging, in progress). Next: bring mining in line with Boundless (tool damage against block health by tier, section 2; the action-speed-to-hits formula is the gap, Nathan may time it in game), then a skills proposal for Nathan before building any progression. Open follow-ups: M8's listed in its Status; the rope is drawn with 1-pixel strands; swimming improvements and far views are not specced.
 
 - **Milestone 1, Foundation: done** (2026-10-18). `docs/milestones/01-foundation.md`.
 - **Milestone 2, A World Worth Looking At: built** (2026-10-18), play-tested by Nathan (breaking, water fixed). `docs/milestones/02-a-world-worth-looking-at.md`.
@@ -106,6 +106,7 @@ Drive it with `xdotool` (`windowfocus --sync`, then plain `keydown`/`click`, not
 - **Milestone 5, Keep and Talk: built, awaiting Nathan's play-test.** `docs/milestones/05-keep-and-talk.md`: storage chests and chat. Inserted ahead of Movement and Shape; the roadmap was renumbered.
 - **Milestone 6, Colour and Ash: built, awaiting Nathan's play-test.** `docs/milestones/06-colour-and-ash.md`; block states with colour and shape (ADR-0007), 255-colour palette, planet colours (generator 3), claims lapse to coloured ash, reclaim at warp shrines.
 - **Milestone 7, Movement and Shape: built (chisels, then grapples), awaiting Nathan's play-test.** `docs/milestones/07-movement-and-shape.md`; shapes are a family plus eight octants (ADR-0008); the grapple hook lives in `PlayerState` and runs inside `movement::step` (protocol 11); saves keep the pre-grapple body layout (`store::SavedBody`).
+- **Milestone 8, Portals: built (2026-10-20), awaiting Nathan's play-test.** `docs/milestones/08-portals.md`, ADR-0009: conduit rectangles linked by tokens, each side's tank pays per trip (wayshards, a new deep ore), never burns idle; protocol 12.
 - **Design research:** `docs/research/boundless-forum-feedback.md` (what Boundless players liked and disliked). Read it before designing any Boundless system. Decided from it so far: no beacon fuel; a claim lapses only after 6 months without a visit, and its contents go back to the owner (2026-10-18); on a lapse the build turns to ash blocks that keep each block's colour, as in Boundless (2026-10-19). Player-built portals will need fuel, but less punishing than Boundless's (2026-10-19).
 - **Mechanics research:** `docs/research/boundless-mechanics.md` (how Boundless's systems worked, from the forum and wiki). Sources reachable from the sandbox: the forum's Discourse JSON API (`https://forum.playboundless.com/search.json?q=...`, `/t/<id>.json`) and the fandom wiki's MediaWiki API only (`https://boundless.fandom.com/api.php?action=parse&page=<Title>&prop=wikitext&format=json`; page URLs return 403). The wiki is frozen around spring 2020: prefer later dev posts and patch notes. Read the relevant section before designing a system, and do the research yourself rather than asking Nathan for facts the forum holds.
 - Update this section and the milestone's Status section at the end of every working session.

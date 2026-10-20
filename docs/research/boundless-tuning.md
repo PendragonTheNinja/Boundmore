@@ -9,7 +9,7 @@ Boundless's item names appear only to say which number belongs to which item; Bo
 | 1 | Grapples and player movement | compiled 2026-10-20 |
 | 2 | Tools and mining: tool stats per tier, block health by world tier, the damage formula, boons, skills, drops | compiled 2026-10-20 |
 | 3 | Weapons, combat, health, creatures: slingbows, bombs, damage formula, elements, creature stats and drops, meteors | compiled 2026-10-20 |
-| 4 | Materials, worlds, crafting | in progress |
+| 4 | Materials, worlds, crafting: tiers, world types and sizes, ore and gem placement and yields, machines, fuel, recipe scaling, progression ladder | compiled 2026-10-20 |
 | 5 | Skills, attributes, forging | in progress |
 
 Older notes: `boundless-mechanics.md` (how systems work, EA-era numbers) and `boundless-forum-feedback.md` (what players liked and disliked).
@@ -910,3 +910,377 @@ Temporary worlds since Release 218/219 (Mar-Apr 2019): no beacons, no regen, atm
 - Unit of bomb "Area of Effect" (2 to 5): the AoE boon adds "0.3 m" per level [BI-forge], so the base value is metres (radius assumed).
 - Skill per-rank values (armour/resist points, regen epics, Zeal, Protection Epic multipliers): the game's own tooltip strings are templates filled from progression data that none of the fan sites publish (checked mayumi `raw/english.json` and the decoded `compileditems.msgpack`, which holds item records but only references to attribute bundles). Needs in-game observation or a video.
 - Decoded mayumi `compileditems.msgpack` gives small extras: item equip time 0.2 s for weapons; bomb projectile fuse 3 s (vs 3.85 s "charge time" on the bag [BI]); creature attacks are modelled as items (wildstock charge, hopper explosion, spitter base/lobbed/sticky/shotgun/cluster projectiles, cuttletrunk base/homing slow/homing rapid/lobbed timed/sticky/cluster projectiles and a damage beam), but their damage numbers live in attribute bundles that are not published.
+
+---
+
+## 4. Materials, worlds and crafting (tuning reference)
+
+Researched 2026-10-19/20. Boundless item names appear only to say which item a number belongs to; Boundmore must use its own names.
+
+### Sources and how far to trust them
+
+| Key | Source | What it is | Version / date | Trust |
+|---|---|---|---|---|
+| MAY | `https://boundless.mayumi.fi/recipes/recipes.js` (also `raw/recipes.msgpack`, `raw/compileditems.msgpack`, decoded locally) | Recipe data exported from the game: machine, output per single/bulk/mass, duration (seconds), spark, power, inputs | Game data, late build (has Release 249 items such as melee and shields; about 2021) | high |
+| BI-ATTR | `https://boundlessinfo.com/assets/data/item-attributes.json` | Base stats per tool material (damage, speed, durability, crit, grapple length and reel speeds) | Game data, late build (has melee weapons, 2021) | high |
+| BI-REC | `https://boundlessinfo.com/assets/data/compiled-recipes.json` | Same recipe data as MAY, independent export | late build | high (cross-check only) |
+| PF-DROP | `https://pfiffel.com/bl/drops/dataBlockDrops.js` | Per-block drop table: item, chance, world tier (index 0 = T1) | Game data, late build | high |
+| PF-DMG | `https://pfiffel.com/bl/dmg/damageCalculator.js` | Block health base values, per-tier health multiplier and armour | Fan calculator built from game data | medium-high |
+| ITEMS | `raw/compileditems.msgpack` from MAY (decoded) | Fuel spark and burn time, beacon fuel time, portal shard power, chisel type | Game data, late build | high |
+| NEVIR | https://forum.playboundless.com/t/19716 post 2 (2018-10-17, player who read the game files) | Spawn rules per seam: altitude, depth below surface, depth below liquid | Release 200-ish | medium-high |
+| WIKI | `boundless.fandom.com` API | Infoboxes, tier table, recipe boxes | Version 244 to 249 (2020) | medium; older than the data files where they disagree |
+| DEV | Forum posts by Wonderstruck staff | Rules and intent | dated per row | high for that date |
+
+"Single / bulk / mass" means the three craft sizes every recipe offers (the "s/b/m" columns below). Durations are seconds of machine time before power bonuses.
+
+---
+
+### 4.1 World tiers
+
+| Tier | Name | Block health × | Block armour | Atmosphere protection needed | Source |
+|---|---|---|---|---|---|
+| 1 | Placid | 1.0 | 0 | 0 | WIKI World (v244), PF-DMG |
+| 2 | Temperate | 1.0 (PF-DMG) / 1.1 (WIKI) | 0 | 0 | conflict, see 4.10 |
+| 3 | Rugged | 1.5 | 100 | 0 | WIKI, PF-DMG |
+| 4 | Inhospitable | 2.0 | 200 | 1 | WIKI, PF-DMG |
+| 5 | Turbulent | 3.0 | 400 | 3 | WIKI, PF-DMG |
+| 6 | Fierce | 4.0 | 600 | 5 | WIKI, PF-DMG |
+| 7 | Savage | 5.0 | 800 | 7 | WIKI, PF-DMG; forum t/26463 post 138 (2019-03-04) |
+| 8 | Brutal | 6.0 | 1000 | 10 (max skill 7 + best food 3) | same; T8 never went live for players (t/64922, 2023; t/46878, 2020) |
+
+- Confidence: high. Armour is subtracted from each hit's damage before it is applied to block health (PF-DMG `damageTable`: `actualDamage = max(dmg - armour, 0)`).
+- Internally tiers count from 0 (dev Tobelawe, https://forum.playboundless.com/t/14575 post 139, 2018-08-11).
+
+**Block health before the tier multiplier** (PF-DMG `aHealthBase`, high): plants, fungi and boulders 800; soil, sand and foliage 800; rock, trunk, gravel, ash, mud and growth 1200; seams 2400.
+
+**World size and height** (high unless noted):
+- Permanent worlds are 4608 × 4608 blocks (288 chunks of 16), flat and wrapping on X and Z. Valid sizes are multiples of 1536 m from 3072 m, because of LOD (chunk at LOD 4 = 256 m), 3 × 3 texture tiling and a 1 km draw distance. Dev lucadeltodecso, https://forum.playboundless.com/t/12734 posts 26 and 29, 2018-04-06; world size fixed at 4608 m from Testing 15, https://forum.playboundless.com/t/4600, 2016-06-24.
+- Exoworlds are 3072 m across. Dev lucadeltodecso, https://forum.playboundless.com/t/41263, 2020-02-06.
+- Sovereign worlds come in 3072, 4608 and 6144 m (192, 288, 384 chunks). Player, https://forum.playboundless.com/t/50733 post 14, 2020-09-17 (medium).
+- Height: 256 blocks; the highest block sits at 255 and a standing player's head reaches 257 or 258. https://forum.playboundless.com/t/12504 (2018-03-22, dev lucadeltodecso explains why it cannot grow: lighting and memory cost). Altitude counts from the bottom (mantle), not from the surface (t/14255 post 13).
+- Plots are 8 × 8 × 8; a world is 576 × 576 plots in plan (t/22851, t/10893 dev).
+- Sea level: about 62 to 64 on most worlds (player Stretchious: "always at height 62", t/50733 post 608, 2020-09-24; another player says 64, t/50885 post 7, 2020-09-19). Water reflections only render at the world's sea level (dev lucadeltodecso, t/36414, 2019-10-21). Blast worlds have their sea at about 32 with lava underground (t/50885 post 7; Serpensarindi gleam lake at 32, t/50733 post 608). Confidence: medium.
+- Lava surface underground is usually at altitude 16 (player guides, t/34506 2019-08-27, t/39645 2020-01-05). Medium.
+- Day length: one 2015 player remark of a 24-minute cycle (t/2829). Low; leave to the day-cycle research.
+
+### 4.2 World types
+
+Each permanent world is a tier plus a type. Types group in threes by the protection they need (WIKI World page, v244, high):
+
+| Protection | Types | Typical tiers in the 2018-2020 universe | Gems native to that group |
+|---|---|---|---|
+| none (T1-3) / Caustic | Lush, Corrosive, Toxic, special Umbris | Lush T1-4; Corrosive and Toxic T5-6; Umbris T7 exo | Amethyst (Corrosive, rarer on Toxic), Emerald (Toxic, e.g. Shedu Tier) |
+| Potent | Metal, Shock, Chill, special Rift | Metal T3-4; Shock T6; Chill T5-6; Rift T7 exo | Topaz (Shock, e.g. Galan), Sapphire (Chill, e.g. Houchus I) |
+| Volatile | Coal, Blast, Burn, special Blink | Coal T3-4; Blast T5-6; Burn T6; Blink T7 exo | Diamond (Blast), Ruby (Burn) |
+
+- Tier and type list of the 50 permanent worlds as of 2020: WIKI World page (e.g. Placid Lush T1 starters, Rugged Metal T3 Lamblis, Turbulent Toxic T5 Flan, Fierce Blast T6 Malurialakrib, Fierce Shock T6 Galan/Cardass, Fierce Chill T6 Houchus I, Fierce Burn T6 Alcyon). Release 207 (2018-11-21, https://forum.playboundless.com/t/22187) added T5 and T6 worlds so each server region had every gem.
+- Coal worlds are richer in coal, Metal worlds in metals and have lava on the surface and a green-tinted atmosphere, Lush worlds have both at lower density (players, https://forum.playboundless.com/t/50885 posts 2-7, 2020-09-19; medium). Surface plants and biomes follow the Lush/Metal/Coal family even at T5-6 (t/19615 post 2, 2018-10-16, medium).
+- Special T7 worlds: Rift channels Shock and Chill and needs Potent protection; Blink channels Blast and Burn, Volatile; Umbris channels Corrosion and Toxin, Caustic. Dev, Testing 218, https://forum.playboundless.com/t/28046, 2019-03-28 (high).
+- Exoworlds: temporary roaming worlds, "mid and high level", no beacons or campfires, no regeneration, atmosphere rises in the last 30 minutes; distance from the host world grows with the host's tier (same dev post). Lifetime "a few dozen real-life hours" (WIKI World page); later posts speak of several days (see section 6 of the main notes).
+- Regeneration on permanent worlds starts about 4 hours after the last interaction in an area and proceeds over several hours; basic blocks come back before seams and plants (WIKI World page, medium).
+- Hazards seen in the data: Growth, Mould, Tangle and Thorns blocks (slow, damage or toxic effects) on T4+ worlds (WIKI infoboxes); lava pools under 16 and on Metal surfaces.
+
+### 4.3 Ores, gems and lucents: where they spawn
+
+Spawn rules (NEVIR, game-file reading, 2018-10-17; medium-high). Altitude is height above the world floor; surface distance is how far under the ground surface; liquid distance is how far under water or lava. Values in brackets are the preferred (densest) range.
+
+| Seam | Altitude | Below surface | Below liquid | Tiers / world types | Notes |
+|---|---|---|---|---|---|
+| Soft coal | any (20+) | 5+ (10+) | | all | |
+| Medium coal | any (25-45) | 20+ (40+) | | all | |
+| Hard coal | any (0-20) | 50+ (80+) | | T3+ (drops T1+ in data) | often next to diamond (WIKI image) |
+| Copper | any (35-140) | 2+ (5-30) | | all worlds (WIKI) | most common metal |
+| Iron | any (20-120) | 5+ (30-70) | | all; scarce on T1-2 (t/14881, 2018) | |
+| Silver | 10-40 (20-30) | 20-70 (30-60) | | T3+, mainly Metal (WIKI; t/15700) | rare where diamond is (t/34506) |
+| Gold | 10-20 | 25+ (40+) | | T4+ (WIKI; t/15700) | |
+| Titanium | any (10-230) | 70+ (90+) | | T4 Metal worlds, every type from T5 (dev Tobelawe t/14575 #139, 2018-08-11: min 40 deep) | depth conflict 40 vs 70, see 4.10 |
+| Amethyst | 0-20 (0-15) | 5-60 (10-30) | 0-25 (1-15) | Corrosive, rarer Toxic, T5+ | lines round the edges of shallow water (t/34506) |
+| Emerald | 0-20 (0-15) | 2-60 (5-15) | 10+ (20+) | Toxic/Corrosive T5+ | under lakes at least 10 deep |
+| Diamond | 0-30 (0-10) | 70+ (90+) | | Blast/Burn T5+ (WIKI) | deep under mountains; mostly exclusive with ruby |
+| Ruby | 10-15 | 50-70 | | Burn/Blast T5+ | below sandy deserts (DEV intent) |
+| Topaz | 90+ (130+) | 10+ (20+) | | Shock/Chill T5+ | inside mountains, up to 220 |
+| Sapphire | 80-140 (95-125) | 10-75 (20-40) | | Chill, sometimes other Potent | inside hills |
+| Small / medium / large fossil | any | 3-40 / 5-50 / 5-60 | | all | larger fossils prefer higher ground |
+| Ancient tech remnant / component / device | 20+ / 40+ / 75+ | 3+ / 5+ / 5+ | | all | used in every machine recipe |
+| Blink (lucent) | about 5-25 | | | T7 Blink exo | player figures (t/41310 2020-02-09, t/34506), medium |
+| Rift (lucent) | about 20-60 | | | T7 Rift exo | same |
+| Umbris (lucent) | about 120-160 | | | T7 Umbris exo | same |
+| Oortstone seam | | | | exists in data, never placed on worlds (WIKI "may be mythical"); oortstone comes from meteor drops | |
+
+Dev design intent for these places (Tobelawe, https://forum.playboundless.com/t/14255 post 6, 2018-07-27, high): amethyst shallow water; emerald deep water; sapphire inside hills; topaz inside mountains; diamond deep below mountains; ruby below sandy deserts; copper mid; iron lower-mid; silver mid; gold low; titanium deep under mountains; fossils scattered below the surface; tech higher up. The same post says resource data has two parts: where resources are and how much there is, set per world.
+
+Atlas: glass + copper (recipe below); shows a density heat map for the resource put into it, blue < light blue < yellow < white; syncs to one world; updates almost in real time since 2019 (t/34506). Release 207 made the map account for the higher drop count on higher tiers.
+
+### 4.4 Yields per block, by tier (PF-DROP, high)
+
+Expected items from one natural block, without luck. Each table entry is one roll with that chance; the numbers below are the sums.
+
+| Seam | T1 | T2 | T3 | T4 | T5 | T6 | T7 | T8 |
+|---|---|---|---|---|---|---|---|---|
+| Copper, iron, soft coal, small fossil, tech remnant | 1.5 | 1.5 | 1.7 | 1.7 | 2.05 | 2.05 | 2.05 | 2.05 |
+| Medium coal, medium fossil, tech component | 1.0 | 1.0 | 1.5 | 1.5 | 1.7 | 1.7 | 2.05 | 2.05 |
+| Silver, gold | 1.0 | 1.0 | 1.0 | 1.5 | 1.5 | 1.7 | 1.7 | 2.05 |
+| Titanium, hard coal, large fossil, tech device, all six gems | 1.0 | 1.0 | 1.0 | 1.0 | 1.5 | 1.8 | 1.8 | 2.2 |
+| Blink, rift, umbris | 1.5 at every tier |
+
+Pattern: each resource has a "home tier" where it starts at 1.0, then steps up 1.5, 1.7 (or 1.8), 2.05 (or 2.2) as the tier rises above it. This is the main reward for mining on harder worlds.
+
+Luck: the drop chance of every roll is multiplied by `1 + (luck / 9) × 0.9 × 2` (so up to ×2.8 at 9 luck), each roll capped at 1; the gathering epic adds +1 to the multiplier for surface-gathered blocks (PF-DROP page code `dropsBlocks.js`; medium-high, it is the fan site's formula). A 2017 player measurement on a T3 world with luck III saw 2.4 soft coal, 1.7 medium coal, 2.4 iron, 2.5 copper and 1.7 silver per block (t/9621, Release 180; old).
+
+Secondary drops (chance per block, PF-DROP):
+
+| Block | Drop | T1 | T2 | T3 | T4 | T5 | T6 | T7 | T8 |
+|---|---|---|---|---|---|---|---|---|---|
+| Any rock (3 kinds) | flint | 1.5% | 1.5% | 2% | 2% | | | | |
+| | rock salt | | | | 1% | 1% | 1% | 1% | 1% |
+| | opal | | | | 0.1% | 0.1% | 0.1% | 0.1% | 0.1% |
+| | sulphur (igneous), saltpetre (sedimentary), olivine (metamorphic) | | | | 0.1% | 0.1% | 0.1% | 0.1% | 0.1% |
+| | cobalt | | | | | 0.1% | 0.1% | 0.1% | 0.1% |
+| Gravel | flint | 5% all tiers |
+| | saltpetre | | | 0.3% | 0.3% | 0.5% | 0.5% | 0.8% | 0.8% |
+| Sand | olivine | 0.2% | 0.2% | 0.3% | 0.3% | 0.3% | 0.3% | 0.5% | 0.5% |
+| Foliage (3 kinds) | berry (low / mid / high grade) | 10% (T1-3) | | | 6% mid | 3% mid + 3% high | 3% high | 3% | 3% |
+| | fibrous leaf (cloth) | | | | 1% | 1% | 1% | | |
+| | inky leaf | | | | | | 0.5% | 0.5% | 0.5% |
+| Trunk (3 kinds) | sap (glue) | 8% | 8% | 8% | 8% | 12% | 12% | 12% | 12% |
+| | bark (leather) | | | 3% | 3% | 3% | 4% | 4% | 4% |
+| Soil (3 kinds) | tubers | about 1.5% per tier band |
+| Tangle, thorns | vital orb | 3% |
+| Mould | pulsating orb | 3% |
+| Growth | shimmering orb | 2% |
+
+Flint matters: the stone furnace base, iron furnace base and titanium furnace base all need it, and it only drops on T1-4 (rock) or from gravel.
+
+### 4.5 Natural block families
+
+| Family | Kinds in Boundless | Health base | Tool | Notes (source WIKI v244 unless noted) |
+|---|---|---|---|---|
+| Rock | igneous, sedimentary, metamorphic | 1200 | hammer | every world; 3 rock kinds, each recoloured per world; crafted into stones (2 per rock, crafting table), bricks, refined rock |
+| Soil | silty, clay, peaty (plus grass tops: three grass kinds over each soil) | 800 | shovel | peaty soil is weak fuel; silty soil + sand makes glass |
+| Sand, gravel | one each | 800 / 1200 | shovel | gravel gives flint |
+| Wood | ancient, lustrous, twisted trunks | 1200 | axe | trunk → 2 timber (crafting table); trunk is fuel; sticks are 4 per trunk |
+| Foliage | lush, exotic, waxy | 800 | axe | berries and leaf drops |
+| Ice | ice, glacier (glacier "may contain resources"), snow | | shovel | |
+| Crystal | gleam (light-emitting, 255 colours) | | any | |
+| Liquids | water, lava; rare solidified liquids amber and bitumen (made from resin and oil) | | | |
+| Hazard blocks | growth, mould, tangle, thorns | 1200 / 800 | | T4+ |
+| Floor | mantle, unbreakable | | | |
+
+Prestige, mine XP and coin value per seam (WIKI infoboxes v244; high): copper 6 / 24 XP; iron 7 / 40; silver 8 / 64; gold 9 / 80; titanium 10 / 136; soft coal 6 / 24; coal 7 / 64; hard coal 9 / 104; gems 11 / 176; lucents 12 / 216; rock 1 / 2.
+
+### 4.6 Machines
+
+| Machine | Built at | Recipe (single craft) | Makes | Time s/b/m | Spark s/b/m | Notes |
+|---|---|---|---|---|---|---|
+| Crafting table | hand / crafting table | 10 timber | 1 / 5 / 25 | 0 | 0 | the only machine you can carry and place anywhere; no coils |
+| Workbench | crafting table | 10 timber + 3 base metal bars + 1 tech remnant | 4 blocks / 20 / 100 | 60 / 300 / 1500 | 0 | 4 blocks touching make one machine (WIKI Machine) |
+| Stone furnace | crafting table | base: 10 stones + 1 flint; crucible: 10 stones | 1 / 5 / 25 | 15 / 75 / 375 | 0 | crucible on top of base; heat multiplier 1.0 |
+| Iron furnace | workbench | base: 6 iron bars + 4 flint; crucible: 6 iron bars | 1 / 5 / 25 | 90 / 450 / 2250 | 0 | heat multiplier 0.5 (WIKI Furnace) |
+| Titanium furnace | workbench | base: 6 titanium alloy + 16 flint; crucible: 6 titanium alloy | 1 / 5 / 25 | 180 / 900 / 4500 | 400 / 2000 / 10000 | heat multiplier 0.25; needs Machine Crafting 2 |
+| Extractor | workbench | 10 stones + 3 base metal + 3 tech remnant | 4 / 20 / 100 | 180 / 900 / 4500 | 0 | extracts cloth, essences, oort shards |
+| Mixer | workbench | 10 stones + 3 base metal + 6 tech remnant | 4 / 20 / 100 | 450 / 2250 / 11250 | 0 | alloys, brick mixtures, bonding agents |
+| Refinery | workbench | 10 stones + 3 base alloy + 6 remnant + 1 component | 4 / 20 / 100 | 450 / 2250 / 11250 | 400 / 2000 / 10000 | refined metal, gems, rock |
+| Compactor | workbench | same as refinery | 4 / 20 / 100 | 450 / 2250 / 11250 | 400 / 2000 / 10000 | 10 → 1 compaction |
+| Centraforge | workbench | same as refinery | 4 / 20 / 100 | 900 / 4500 / 22500 | 400 / 2000 / 10000 | forging |
+| Spark generator | workbench | 1 iron furnace base + 3 base metal + 3 tech component + 15 cogs | 1 / 5 / 25 | 450 / 2250 / 11250 | 0 | joins with neighbours into one store |
+| Spark link | workbench | 6 base metal + 1 remnant | 10 / 50 / 250 | 60 / 300 / 1500 | 0 | each machine needs its own link to a generator (WIKI Spark) |
+| Power coil (one per machine type) | workbench | 1 iron furnace base + 3 tech component + 3 machined copper/iron/gold + 1 compact gem (diamond = workbench, ruby = compactor, sapphire = extractor, topaz = refinery, emerald = mixer, amethyst = centraforge) | 1 / 5 / 25 | 900 / 4500 / 22500 | 800 / 4000 / 20000 | +100 power each (WIKI) |
+| Advanced power coil | workbench | 1 titanium furnace base + 3 machined titanium/gold/silver alloy + 2 refined gem + 6 component + 1 device | 1 / 5 / 25 | 1800 / 9000 / 45000 | 2000 / 10000 / 50000 | needs 1500 power to craft; +300 power each (WIKI) |
+| Chrysominter (coin) | workbench | 10 timber + 3 machined copper + 1 gold alloy + 2 component | 1 / 20 / 100 | | 300 / 6000 / 30000 | |
+
+Sources: MAY `recipes.js` (machine, durations, spark, inputs, outputs), cross-checked against WIKI recipe boxes (v244; same inputs, older durations for some). Confidence high.
+
+Machine rules (WIKI Machine, Machine Power, Power Coil pages, v244; medium-high):
+- A coil powers exactly one machine of its own type; up to 24 coils on one machine; placed with about a 1 m air gap.
+- A recipe may need a minimum power. Power above the minimum shortens craft time and cuts its spark cost.
+- Machines wear with use; at 0% the queue stops until repaired with a spanner. Spanner "wear removed per hit": stone 100, copper 400, iron 700, silver 1500, gold 2000, titanium 6000, gems 10000 (BI-ATTR). Each recipe lists a wear cost per size (e.g. workbench single 2, compactor 29).
+- Power thresholds in use are clustered at 500, 1000, 1500, 2000 and 3000 (gem tools 1500, lucent tools 3000; player note t/22224, 2018-11-22, confirmed by MAY).
+
+### 4.7 Spark and fuel
+
+Spark is made by burning fuel in a spark generator. From ITEMS (`fuelData`: spark amount, burn time in seconds, generator wear), high:
+
+| Fuel | Spark | Burn s | Spark/s |
+|---|---|---|---|
+| Stick | 7 | 1 | 7 |
+| Timber | 15 | 3.5 | 4.3 |
+| Peaty soil | 20 | 7 | 2.9 |
+| Trunk | 30 | 7 | 4.3 |
+| Soft coal | 100 | 10 | 10 |
+| Combustion particle (crop) | 150 | 15 | 10 |
+| Medium coal | 250 | 20 | 12.5 |
+| Hard coal | 800 | 30 | 26.7 |
+| Compact peat | 500 | 100 | 5 |
+| Enriched peat | 550 | 50 | 11 |
+| Compact soft coal | 1500 | 150 | 10 |
+| Enriched soft coal | 1650 | 75 | 22 |
+| Compact combustion particle | 2250 | 225 | 10 |
+| Compact medium coal | 4500 | 300 | 15 |
+| Enriched medium coal | 4950 | 150 | 33 |
+| Compact hard coal | 15000 | 500 | 30 |
+| Enriched hard coal | 16500 | 250 | 66 |
+| Coal-infused combustion particle | 18000 | 600 | 30 |
+| Enriched combustion particle | 19800 | 300 | 66 |
+
+- Compacting coal is a net gain: 10 hard coal give 8000 spark, one compact hard coal gives 15000 (cost: compactor time 480 s and 800 spark, 2000 power). Same pattern for soft (1000 → 1500) and medium (2500 → 4500).
+- Furnaces burn fuel as heat. Each smelt has a heat cost (MAY lists it in the spark field for furnace recipes): copper bar 100, iron 150, silver 300, gold 400, titanium 600, glass 100, glue 100, bricks 200. Furnace heat multipliers: stone 1.0, iron 0.5, titanium 0.25 (WIKI Furnace; medium, unclear if the multiplier applies to heat, time or both).
+
+Portal and beacon fuel numbers live in other sections; for reference from ITEMS: oort shard portal power 1, oort amalgam 3; beacon fuel items last 28, 28, 56, 112 and 112 days (2,419,200 to 9,676,800 s) for the five grades.
+
+### 4.8 Processing chains (MAY, high)
+
+All times are single craft; bulk = 8× inputs for 10× output at 10× time, mass = 36× inputs for 50× output at 50× time.
+
+| Step | Machine | Inputs → output | Time | Spark / heat | Power |
+|---|---|---|---|---|---|
+| Copper bar | furnace | 1 ore → 1 | 30 | heat 100 | |
+| Iron bar | furnace | 1 ore → 1 | 60 | heat 150 | |
+| Silver bar | furnace | 1 ore → 1 | 120 | heat 300 | |
+| Gold bar | furnace | 1 ore → 1 | 180 | heat 400 | |
+| Titanium bar | furnace | 1 ore → 1 | 240 | heat 600 | |
+| Silver alloy | mixer | 1 silver bar + 1 iron bar → 1 | 40 | 100 | |
+| Gold alloy | mixer | 1 gold bar + 1 copper bar → 1 | 50 | 100 | |
+| Titanium alloy | mixer | 1 titanium bar + 2 silver or gold alloy → 1 | 60 | 200 | |
+| Compact metal | compactor | 10 bars/alloy → 1 | copper 50, iron 60, silver alloy 100, gold alloy 110, titanium alloy 120 | 100 (base), 400 (alloys) | |
+| Refined metal | refinery | 1 compact → 1 | copper 20, iron 30, silver 40, gold 50, titanium 60 | 0 base, 400 alloys | |
+| Machined metal | workbench | 1 refined → 1 | copper 20, iron 30, silver 40, gold 50, titanium 60 | 200 base, 400 alloys | |
+| Compact gem | compactor | 10 rough → 1 | 240 | 800 | |
+| Refined gem | refinery | 1 compact → 1 | 120 | 800 | |
+| Compact lucent (rift, blink, umbris, oortstone) | compactor | 10 rough → 1 | 480 | 2000 | 3000 |
+| Refined lucent | refinery | 1 compact → 1 | 240 | 2000 | 3000 |
+| Compact coal soft / medium / hard | compactor | 10 → 1 | 120 / 240 / 480 | 200 / 400 / 800 | 500 / 1000 / 2000 |
+| Timber | crafting table | 1 trunk → 2 | 0 | | |
+| Stones | crafting table | 1 rock → 2 | 10 | | |
+| Refined rock / wood | refinery | 8 stones or timber → 1 | 30 | | |
+| Glass | furnace | 2 sand + 2 silty soil → 1 | 30 | heat 100 | |
+| Cog | workbench | 1 copper bar → 1 | 30 | | |
+| Glue | furnace | 1 sap + 1 bone → 1 | 20 | heat 100 | |
+| Sackcloth | extractor | 2 fibrous leaf → 1 | 30 | | |
+| Cotton cloth | refinery | 2 sackcloth → 1 | 60 | | |
+| Leather | refinery | 4 hide + 4 bark → 1 | 60 | 200 | 500 |
+| Hard leather | furnace | 2 leather + 2 water buckets → 1 | 120 | heat 400 | |
+| Bonding agent | mixer | 2 glue + 2 ancient essence + 1 fresh essence + 1 pulsating orb → 1 | 30 | | |
+| Enriched bonding agent | mixer | 4 glue + 10 ancient + 5 fresh essence + 1 shimmering orb → 1 | 60 | 200 | |
+| Super-enriched bonding agent | mixer | 8 glue + 60 ancient + 30 fresh essence + 1 shadow orb → 1 | 90 | 400 | 1500 |
+| Oort shard | extractor | 1 rough oortstone → 10 | 180 | 400 | |
+| Oort amalgam | compactor | 18 shards + 4 meteorite ichor → 4 | 180 | 1000 | 2000 |
+
+Raw cost of one tool head material unit, all the way from ore:
+- Iron tool: 3 iron bars = 3 ore.
+- Gold alloy tool: 3 gold alloy = 3 gold ore + 3 copper ore.
+- Titanium alloy tool: 3 titanium alloy = 3 titanium ore + 6 silver/gold alloy (= 6 more precious ore + 6 base ore).
+- Gem tool: 3 refined gems = 3 compact = 30 rough gems.
+- Lucent tool: 3 refined = 30 rough lucent.
+
+### 4.9 Tools, grapples, chisels, spanners: recipes and stats by tier
+
+**Recipe pattern** (MAY, high). Every hammer, axe, shovel, chisel and spanner of a material uses the same recipe; grapples swap sticks for ancient tech. Output 1 / 3 / 10 for single / bulk / mass, inputs 3/8/22 head material, 4/10/29 sticks, 1/3/8 binding, 1/3/8 glue grade.
+
+| Tier step | Head (×3) | Binding | Glue grade | Time s (single) | Spark | Power | Built at |
+|---|---|---|---|---|---|---|---|
+| Wood | 4 timber + 4 sticks + 4 leaves | | | 0 | | | crafting table |
+| Stone | 4 stones + 4 sticks + 4 leaves | | | 10 | | | crafting table |
+| Copper | copper bar | sackcloth | glue | 60 | 0 | 0 | workbench |
+| Iron | iron bar | sackcloth | glue | 120 | 0 | 0 | workbench |
+| Silver | silver alloy | cotton cloth | bonding agent | 240 | 800 | 0 | workbench |
+| Gold | gold alloy | cotton cloth | bonding agent | 480 | 800 | 0 | workbench |
+| Titanium | titanium alloy | cotton cloth | enriched bonding agent | 1200 | 1500 | 0 | workbench |
+| Gem (6 kinds) | refined gem | leather | enriched bonding agent | 1800 | 2000 | 1500 | workbench |
+| Lucent (rift, umbris, blink) | refined lucent | hard leather | super-enriched bonding agent | 3600 | 4000 | 3000 | workbench |
+
+Extras: spanners add cogs (2 copper/iron, 4 silver/gold/titanium, 6 gem). Grapples drop the sticks and add ancient tech: copper/iron 3 remnants; silver/gold 5 remnants; titanium and gems 1 component + 5 remnants (topaz and sapphire 1 remnant); lucents 1 device + 3 components + 10 remnants. Atlas: 4 glass + 2 copper bars at a workbench, 30 s. Warp conduit: 2 rock + 2 trunk, crafting table. Portal conduit: 5 refined rock + 5 refined wood + 10 opal, workbench, 450 s, 800 spark, 1000 power (so portals need T4+ opal).
+
+**Base stats by material** (BI-ATTR, high). Damage and durability are the material's base before skills, forging and brews.
+
+| Material | Damage | Speed | Crit chance / effect | Durability | Energy per swing | Forge flexibility |
+|---|---|---|---|---|---|---|
+| Wood | 300 | 20 | 0 / 0.2 | 600 | 6 | 150 |
+| Stone | 400 | 15 | 0 / 0.2 | 600 | 8 | 120 |
+| Copper | 400 | 30 | 0 / 0.2 | 700 | 8 | 110 |
+| Iron | 700 | 10 | 0.2 / 0.2 | 900 | 14 | 110 |
+| Silver alloy | 650 | 30 | 0 / 0.2 | 1200 | 13 | 100 |
+| Gold alloy | 700 | 10 | 0.5 / 0.75 | 1100 | 14 | 90 |
+| Titanium alloy | 1000 | 25 | 0.2 / 0.4 | 1500 | 20 | 90 |
+| Amethyst | 1000 | 38 | 0.2 / 0.2 | 2400 | 20 | 70 |
+| Topaz | 1100 | 38 | 0 / 0.2 | 2400 | 22 | 70 |
+| Sapphire | 1300 | 30 | 0.2 / 0.2 | 2200 | 26 | 75 |
+| Ruby | 1400 | 30 | 0 / 0.2 | 2200 | 28 | 75 |
+| Emerald | 1800 | 15 | 0.2 / 0.2 | 2000 | 36 | 80 |
+| Diamond | 1900 | 15 | 0 / 0.2 | 2000 | 38 | 80 |
+| Blink | 1350 | 45 | 0 / 0.2 | 3800 | 27 | 10 |
+| Umbris | 2000 | 30 | 0.1 / 0.2 | 3200 | 40 | 10 |
+| Oortstone | 2500 | 20 | 0.2 / 0.2 | 3000 | 50 | 10 |
+| Rift | 3400 | 5 | 0 / 0.2 | 3000 | 68 | 10 |
+
+Each material has two-way trade-offs: pairs share a slot (silver fast vs gold critical; amethyst/topaz fast and long-lived vs diamond/emerald hard-hitting; ruby/sapphire balanced), which is where the "swift / heavy / balanced" adjectives in the item names come from. The wiki's Hammer table (v244) has older, different numbers; use BI-ATTR.
+
+Hits to break, derived (base material damage, no skills, no forging; health × tier multiplier, damage minus armour). Medium: real play adds power skill and brews, and a T6 one-shot needs a forged diamond hammer plus a full mining build (t/34506).
+
+| Tool vs rock (1200) | T1 | T2 | T3 | T4 | T5 | T6 | T7 | T8 |
+|---|---|---|---|---|---|---|---|---|
+| Wood / stone / copper | 3-4 | 3-4 | 6-9 | 12-24 | no | no | no | no |
+| Iron / gold | 2 | 2 | 3 | 5 | 12 | 48 | no | no |
+| Titanium | 2 | 2 | 2 | 3 | 6 | 12 | 30 | no |
+| Diamond | 1 | 1 | 1 | 2 | 3 | 4 | 6 | 8 |
+| Rift | 1 | 1 | 1 | 1 | 2 | 2 | 3 | 3 |
+
+Seams take twice as many (health 2400). The armour step is the real tier gate: a 700-damage iron tool does 100 per hit on T6.
+
+**Grapples** (BI-ATTR, high). Lengths in blocks, speeds as given in the data.
+
+| Material | Durability | Energy per shot | Shot speed | Max length | Reel in | Reel out |
+|---|---|---|---|---|---|---|
+| Copper | 500 | 60 | 45 | 10 | 5 | 15 |
+| Iron | 1000 | 80 | 30 | 20 | 2 | 10 |
+| Silver alloy | 1000 | 100 | 50 | 18 | 10 | 20 |
+| Gold alloy | 1000 | 100 | 30 | 25 | 10 | 20 |
+| Titanium alloy | 1200 | 120 | 40 | 20 | 40 | 40 |
+| Amethyst | 2000 | 150 | 55 | 15 | 40 | 30 |
+| Diamond | 2000 | 150 | 35 | 30 | 30 | 40 |
+| Emerald | 2000 | 150 | 35 | 30 | 40 | 30 |
+| Topaz | 2000 | 150 | 40 | 15 | 55 | 25 |
+| Ruby | 2000 | 150 | 45 | 20 | 45 | 35 |
+| Sapphire | 2000 | 150 | 45 | 20 | 35 | 45 |
+| Rift | 2000 | 250 | 40 | 40 | 45 | 45 |
+| Umbris | 2000 | 250 | 50 | 30 | 55 | 55 |
+| Blink | 2000 | 250 | 70 | 20 | 70 | 40 |
+| Oortstone | 1000 | 250 | 45 | 35 | 60 | 50 |
+
+**Chisels** (BI-ATTR and ITEMS, high): two stat classes only. Basic chisel (stone to titanium): speed 50, durability 800, energy 10, can cut hardness up to 3. Advanced chisel (gems and up): speed 80, durability 2000, energy 20, hardness 10. Chisel kind per material (ITEMS `chiselType`: 1 square, 2 bevel; `chiselPrecision` 1 or 2 for precise and fine kinds): stone square precise; titanium square; gold bevel; iron bevel precise; amethyst square precise; diamond bevel; emerald bevel precise; sapphire square; rift bevel finest; umbris square finest; oortstone square. Section 1 of the main notes covers what each cut does.
+
+**Totem** (BI-ATTR): damage 200, speed 20, durability 400.
+
+### 4.10 Progression ladder (what a new player unlocks, in order)
+
+Built from the recipe gates above (high for the gates, medium for the order players follow):
+
+1. Hands and wood: timber → crafting table → wood tools. Stone tools from stones + sticks + leaves.
+2. Stone furnace (stones + flint; flint from gravel or rock on T1-4). Smelt copper and iron ore.
+3. Workbench (timber + 3 bars + 1 ancient tech remnant): copper and iron tools, iron furnace, extractor (cloth from fibrous leaf, which only drops on T4+ foliage, a known new-player wall: t/12447, t/12559, 2018).
+4. Mixer: silver and gold alloys (silver T3+, gold T4+). Spark generator and links; refinery and compactor need alloys and a tech component and start using spark.
+5. Titanium (T4 Metal, T5+ everywhere, deep): titanium alloy tools and furnace.
+6. Gems (T5-6 by world type): compact → refine; the first power coils need a compact gem each; gem tools need 1500 power, so 5 advanced or 15 basic coils on a workbench.
+7. Centraforge forging (traits), then T7 exoworld lucents (3000 power, hard leather, super-enriched bonding agent).
+
+Atmosphere protection gates T4+ worlds; elemental protection comes from skills (up to 7) and food (up to 3).
+
+### 4.11 Conflicts
+
+1. **T2 block health**: WIKI World (v244) says ×1.1; PF-DMG calculator says ×1.0. Prefer PF-DMG if it was built from game data; confirm in play (medium).
+2. **Smelting times**: WIKI copper bar 2 min, heat 100 (v249 page); MAY says 30 s for a single bar with heat 100. MAY is the later export; the furnace multiplier may explain part of it.
+3. **Fuel values**: WIKI Spark table has compact soft coal 1200 spark over 2 min, compact medium 3000 over 3 min, compact hard 9600 over 6 min, stick 30 and medium coal over 15 s; ITEMS has 1500/150 s, 4500/300 s, 15000/500 s, stick 7 and medium coal 20 s. Use ITEMS (later game data).
+4. **Titanium depth**: dev said at least 40 below the surface (2018-08-11), NEVIR says 70+ (2018-10-17). The resource rebalance between them may explain it; use 70+ with 90+ preferred.
+5. **Tool stats**: WIKI Hammer and Tool pages disagree with each other and with BI-ATTR (e.g. diamond 650 vs 1900 damage). Use BI-ATTR.
+6. **Sea level**: 62 vs 64 in player posts; blast worlds 32.
+7. **Gem placement before July 2018**: amethyst used to be high in mountains; Release 194-195 moved every gem and ore (t/14255). Anything older than Aug 2018 is obsolete.
+
+### 4.12 Open questions
+
+- Per-tool-type damage modifiers (hammer vs rock, shovel vs soil, axe vs wood) and the penalty for the wrong tool: the attribute bundles are named in ITEMS ("Item Hammer Initial") but their values were not in any file I could read.
+- AoE yield rules, and how forging boons scale damage, beyond PF-DMG's AoE table (horizontal 3 blocks at 0.4 damage, below 2 at 0.6, cross 5 at 0.4, all 9 at 0.4).
+- World-generation parameters per type (mountain height, cave density, how much of each ore per world): only the boundlexx API has per-world counts, and it is blocked from the sandbox.
+- How power above a recipe's minimum shortens time and spark: the formula is not in the data files.
+- Exact furnace rule: is heat per smelt multiplied by the furnace's multiplier, or the time?
+- Coil power values (+100 basic, +300 advanced) come from WIKI descriptions only.
+- Day length in minutes.
+- Exoworld lifetime and tier range (T1-T6 ordinary exos plus T7 specials is my reading; not confirmed in data).

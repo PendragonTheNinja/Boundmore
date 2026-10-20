@@ -40,9 +40,9 @@ Boundless burned shards every hour whether a portal was used or not (1 to 9 an h
 
 | Value | Now | Check |
 |---|---|---|
-| Trip cost | 1 wayshard on the same planet, 2 between planets | Does a busy hub drain too fast, or never? |
-| Charge cooldown | 1 hour per player per portal | Back-and-forth trips should feel free |
-| Tank | 500 wayshards | How often does an owner restock? |
+| Trip cost | 1 wayshard on the same planet, 2 between planets (`portal_trip_cost_same_planet`, `portal_trip_cost_other_planet`) | Does a busy hub drain too fast, or never? |
+| Charge cooldown | 1 hour per player per portal (`portal_charge_cooldown`, seconds) | Back-and-forth trips should feel free |
+| Tank | 500 wayshards (`portal_tank_capacity`) | How often does an owner restock? |
 | Portal sizes | 1 to 6 wide, 2 to 6 tall | Boundless went up to 24 conduits for its longest links |
 | Wayshard rarity | vein size 6, threshold 0.64, below y 68 and 24 under the surface | How long to mine a stack of 100? |
 | Conduit recipe | 4 stone, 1 copper ingot, 1 wayshard for 2 | A 1 by 2 portal costs one wayshard |
