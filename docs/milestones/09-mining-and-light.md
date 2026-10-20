@@ -80,9 +80,16 @@ Every number below comes from `docs/research/boundless-tuning.md` (section numbe
 
 ## Status
 
-- [x] Spec (this file), contract, data (2026-10-20)
-- [ ] Server
-- [ ] Client
-- [ ] Torches
-- [ ] Integrated: tests, fmt, clippy, upgrade check, screenshots
-- [ ] Nathan's play-test
+*Built 2026-10-20 on branch `claude/amazing-pascal-lwttor`; awaiting merge and Nathan's play-test.*
+
+- [x] Spec, contract, data (bm-core `mining.rs`, catalogue fields, protocol 13)
+- [x] Server: swings on the input timeline with exact cadence, damage that heals after 5 s, areas (skipping protected blocks), bonus yields by tier, wear per swing, torch placement on floors and walls, torches fall with their support (into the breaker's pack), torches on a lapsing claim go out, held light in snapshots (`crates/bm-server/src/game/mining.rs`, `damage.rs`). `ServerConfig::items` loads a test catalogue (the only way to test an area tool end to end).
+- [x] Client: swing loop and prediction (`crates/bm-client/src/mining.rs`, canonical positions as the server), health bar with one shield per 100 armour, cracks from damage, torch mounts from the clicked face, the demo answering swings, `--demo-ui mining` and `--demo-ui torches`; screenshots `docs/media/m9-block-health.png`, `docs/media/m9-torches.png`.
+- [x] Torches: prop mesh (`crates/bm-mesh/src/props.rs`; wall torches lean out), held light as shader point lights (own and other players'), torch texture and icons for torch, stick, flint, hand stone and wood tools.
+- [x] Nathan's decisions applied (2026-10-20): a bare hand breaks nothing (a swing needs a tool; "You need a tool to break blocks. A hand stone needs nothing to craft"); new players start with a hand stone in the last hotbar slot (existing characters craft one from nothing); walk 3.0, sprint 5.0, reach 4.
+- [x] Integrated: 366 tests, fmt and clippy clean; upgrade check from `main` (players kept, no errors).
+- [ ] Nathan's play-test. Things to judge: swing timing and hits per block against Boundless; healing after 5 s (guess); torch brightness (light 10, guess); the slower walk and shorter reach.
+- Follow-ups:
+  - Block light has no colour, so torches light white; warm and tinted light needs coloured light, which gem torches need too.
+  - Flint is slow until boulders (M11): rock 1.5%, gravel 5%.
+  - The wood tool recipe was corrected to 4 timber, 4 sticks and 4 foliage from the recipe data.
