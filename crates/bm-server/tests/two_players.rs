@@ -2,7 +2,7 @@
 
 use bm_core::{
     BlockId, BlockPos, BlockRegistry, BlockState, Chiselling, Chunk, ChunkPos, Colour, Inventory, ItemRegistry,
-    ItemStack, PlayerInput, PlayerState, PlotPos, ShapeFamily,
+    ItemStack, PlayerInput, PlayerState, PlotPos, ShapeFamily, Station,
 };
 use bm_net::quinn::Connection;
 use bm_net::{read_msg, write_msg};
@@ -11,7 +11,7 @@ use bm_protocol::{
     ServerDatagram, ServerMsg, SlotRef, StationView, StorageView, Welcome,
 };
 use bm_server::config::{PlanetSpec, ServerConfig};
-use bm_server::store::{PlayerData, SavedBody, SavedStack, Store, UNIVERSE_FILE, WriteBatch};
+use bm_server::store::{PlayerData, SavedBody, SavedStack, SavedStation, Store, UNIVERSE_FILE, WriteBatch};
 use std::collections::HashMap;
 use std::path::Path;
 use std::time::Duration;
@@ -828,153 +828,449 @@ async fn full_inventories_refuse_breaks_and_tools_hit_harder_and_wear_out() {
     server.stop();
 }
 
+/// Asks for a station's view again and returns the next one matching `pred`.
+async fn look_at_station(c: &mut TestClient, pos: BlockPos, pred: impl FnMut(&StationView) -> bool) -> StationView {
+    c.send(ClientMsg::WatchStation { pos: Some(pos) }).await;
+    c.station(pred).await
+}
+
+async fn craft_at(c: &mut TestClient, recipe: u16, count: u16, station: Option<BlockPos>) {
+    c.send(ClientMsg::Craft { recipe, count, station }).await;
+}
+
+async fn fuel(c: &mut TestClient, pos: BlockPos, slot: u8, count: u16, into: bool) {
+    c.send(ClientMsg::StationFuel { pos, slot, count, into }).await;
+}
+
+/// Milestone 11, acceptance 3 and 4: hand recipes anywhere, the crafting
+/// table crafting over time, and a workbench that works only as 4 blocks
+/// touching, whose queue and output belong to the whole group.
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
-async fn crafting_by_hand_and_at_a_workbench() {
+async fn crafting_by_hand_at_a_table_and_at_a_four_block_workbench() {
     let dir = tempfile::tempdir().unwrap();
-    seed(dir.path(), "Alice", &[(5, "trunk", 2, 0), (6, "stone", 3, 0)]);
+    seed(
+        dir.path(),
+        "Alice",
+        &[
+            (0, "workbench", 5, 0),
+            (5, "trunk", 6, 0),
+            (6, "stone", 1, 0),
+            (10, "stones", 6, 0),
+            (11, "glow_crystal", 1, 0),
+            (12, "copper_ingot", 3, 0),
+            (13, "relic_fragment", 1, 0),
+        ],
+    );
     let server = bm_server::start(config(dir.path())).unwrap();
     let mut alice = TestClient::login(&server, "Alice").await;
+    let shape = alice.shape();
     let feet = alice.feet();
-    alice.wait_for_chunk(feet.chunk()).await;
+    for dx in -1..=4 {
+        for dz in -1..=4 {
+            alice.wait_for_chunk(feet.offset(dx, 1, dz).chunk()).await;
+        }
+    }
 
-    // Hand recipes are instant and all or nothing.
+    // Hand recipes are instant and all or nothing; 2 timber a trunk.
     let timber = alice.recipe("timber");
-    alice
-        .send(ClientMsg::Craft {
-            recipe: timber,
-            count: 3,
-            station: None,
-        })
-        .await;
+    craft_at(&mut alice, timber, 7, None).await;
     alice.notice("You do not have the materials").await;
-    assert_eq!(alice.count("trunk"), 2);
-    alice
-        .send(ClientMsg::Craft {
-            recipe: timber,
-            count: 2,
-            station: None,
-        })
-        .await;
+    assert_eq!(alice.count("trunk"), 6);
+    craft_at(&mut alice, timber, 5, None).await;
     alice.settle().await;
-    assert_eq!((alice.count("trunk"), alice.count("timber")), (0, 8));
-    let workbench = alice.recipe("workbench");
-    alice
-        .send(ClientMsg::Craft {
-            recipe: workbench,
-            count: 1,
-            station: None,
-        })
-        .await;
+    assert_eq!((alice.count("trunk"), alice.count("timber")), (1, 10));
+    let r = alice.recipe("crafting_table");
+    craft_at(&mut alice, r, 1, None).await;
     alice.settle().await;
-    assert_eq!((alice.count("workbench"), alice.count("timber")), (1, 4));
+    assert_eq!((alice.count("crafting_table"), alice.count("timber")), (1, 0));
 
-    // A station recipe needs its station.
-    let hammer = alice.recipe("stone_hammer");
-    alice
-        .send(ClientMsg::Craft {
-            recipe: hammer,
-            count: 1,
-            station: None,
-        })
-        .await;
-    alice.notice("That is made at a Workbench").await;
+    // A table recipe needs a table.
+    let stones = alice.recipe("stones");
+    craft_at(&mut alice, stones, 1, None).await;
+    alice.notice("That is made at a Crafting Table").await;
 
-    // Set the workbench down where she stands, and queue a hammer.
-    assert!(alice.dig(1, feet).await.0);
+    let table = shape.wrap_block(feet.offset(1, 1, 0));
     let slot = (0..10)
-        .find(|&i| stack(&alice, i).is_some_and(|s| s.item == alice.item("workbench")))
+        .find(|&i| stack(&alice, i).is_some_and(|s| s.item == alice.item("crafting_table")))
+        .unwrap() as u8;
+    assert!(place(&mut alice, 1, table, slot, None).await.0);
+    let empty = look_at_station(&mut alice, table, |_| true).await;
+    assert_eq!(
+        (empty.pos, empty.station, empty.idle.clone()),
+        (table, Station::CraftingTable, None)
+    );
+    assert!(empty.jobs.is_empty() && empty.output.is_empty());
+    // Hand recipes work at a table too, still instantly.
+    craft_at(&mut alice, timber, 1, Some(table)).await;
+    alice.settle().await;
+    assert_eq!((alice.count("trunk"), alice.count("timber")), (0, 2));
+    // A workbench recipe is not made at a table.
+    let r = alice.recipe("claim_stone");
+    craft_at(&mut alice, r, 1, Some(table)).await;
+    alice.notice("That is made at a Workbench").await;
+    // Stones from rock, over time; the table cannot be broken meanwhile.
+    craft_at(&mut alice, stones, 1, Some(table)).await;
+    let queued = alice.station(|v| !v.jobs.is_empty()).await;
+    assert_eq!(queued.jobs[0].recipe, stones);
+    alice.settle().await;
+    assert_eq!(alice.count("stone"), 0, "inputs taken at once");
+    alice
+        .station(|v| v.jobs.first().is_some_and(|j| j.progress > 0.05))
+        .await;
+    assert!(!alice.dig(2, table).await.0, "a working station cannot be broken");
+    alice.notice("Empty the Crafting Table before breaking it").await;
+    let done = look_at_station(&mut alice, table, |v| !v.output.is_empty()).await;
+    assert_eq!((done.output[0].item, done.output[0].count), (alice.item("stones"), 2));
+    alice.send(ClientMsg::CollectStation { pos: table }).await;
+    alice.station(|v| v.output.is_empty()).await;
+    alice.settle().await;
+    assert_eq!(alice.count("stones"), 8);
+    // Three workbench blocks do nothing.
+    let row = [feet.offset(1, 1, 2), feet.offset(2, 1, 2), feet.offset(3, 1, 2)].map(|p| shape.wrap_block(p));
+    for (i, p) in row.iter().enumerate() {
+        assert!(place(&mut alice, 10 + i as u32, *p, 0, None).await.0);
+    }
+    let idle = look_at_station(&mut alice, row[1], |_| true).await;
+    assert_eq!(idle.idle.as_deref(), Some("A workbench needs 4 blocks touching"));
+    assert_eq!(idle.station, Station::Workbench);
+    let claim_stone = alice.recipe("claim_stone");
+    craft_at(&mut alice, claim_stone, 1, Some(row[1])).await;
+    alice.notice("A workbench needs 4 blocks touching").await;
+    assert_eq!(alice.count("glow_crystal"), 1, "nothing taken");
+
+    // The fourth, touching the end of the row by a face: it works, and the
+    // view (pushed to her as it formed) names its first block.
+    let fourth = shape.wrap_block(feet.offset(3, 1, 3));
+    assert!(place(&mut alice, 13, fourth, 0, None).await.0);
+    let first = *[row[0], row[1], row[2], fourth]
+        .iter()
+        .min_by_key(|p| (p.y, p.z, p.x))
         .unwrap();
+    let working = look_at_station(&mut alice, row[1], |_| true).await;
+    assert_eq!(working.idle, None);
+    assert_eq!(working.pos, first);
+    // A fifth touching is refused.
     assert!(
-        alice
-            .edit(
-                2,
-                feet,
-                EditAction::Place {
-                    slot: slot as u8,
-                    mount: None
-                }
-            )
+        !place(&mut alice, 14, shape.wrap_block(feet.offset(4, 1, 2)), 0, None)
             .await
             .0
     );
-    alice.send(ClientMsg::WatchStation { pos: Some(feet) }).await;
-    let empty = alice.station(|_| true).await;
-    assert!(empty.jobs.is_empty() && empty.output.is_empty());
-    alice
-        .send(ClientMsg::Craft {
-            recipe: hammer,
-            count: 1,
-            station: Some(feet),
-        })
-        .await;
+    alice.notice("Only 4 Workbench blocks can touch").await;
+
+    // Crafting at any of its blocks queues at the machine.
+    craft_at(&mut alice, claim_stone, 1, Some(fourth)).await;
     let queued = alice.station(|v| !v.jobs.is_empty()).await;
-    assert_eq!(queued.jobs[0].recipe, hammer);
+    assert_eq!((queued.pos, queued.jobs[0].recipe), (first, claim_stone));
+    for (seq, p) in [(15, row[1]), (16, fourth)] {
+        assert!(!alice.dig(seq, p).await.0, "no block of it breaks while it works");
+        alice.notice("Empty the Workbench before breaking it").await;
+    }
+    let done = look_at_station(&mut alice, row[2], |v| !v.output.is_empty()).await;
+    assert_eq!((done.pos, done.output[0].item), (first, alice.item("claim_stone")));
+    alice.send(ClientMsg::CollectStation { pos: row[1] }).await;
+    alice.station(|v| v.output.is_empty()).await;
     alice.settle().await;
-    assert_eq!(
-        (alice.count("stone"), alice.count("timber")),
-        (0, 2),
-        "inputs taken at once"
-    );
+    assert_eq!(alice.count("claim_stone"), 1, "collected from another block");
 
-    // Progress arrives while it runs; it cannot be broken meanwhile.
-    alice
-        .station(|v| v.jobs.first().is_some_and(|j| j.progress > 0.1))
-        .await;
-    assert!(!alice.dig(3, feet).await.0, "a working station cannot be broken");
-    alice.notice("Empty the Workbench before breaking it").await;
-
-    // The craft may have finished while she was digging; ask again.
-    alice.send(ClientMsg::WatchStation { pos: Some(feet) }).await;
-    let done = alice.station(|v| !v.output.is_empty()).await;
-    assert!(done.jobs.is_empty());
-    assert_eq!(done.output[0].item, alice.item("stone_hammer"));
-    assert!(!alice.dig(4, feet).await.0, "nor while its output waits");
-
-    alice.send(ClientMsg::CollectStation { pos: feet }).await;
-    let emptied = alice.station(|v| v.output.is_empty()).await;
-    assert!(emptied.jobs.is_empty());
-    alice.settle().await;
-    assert_eq!(alice.count("stone_hammer"), 1, "collected");
-    assert!(alice.dig(5, feet).await.0, "an empty station breaks");
-    assert_eq!(alice.count("workbench"), 1);
+    // Empty, a block breaks, and what is left says it needs 4 again.
+    assert!(alice.dig(17, fourth).await.0, "an empty machine breaks");
+    let broken = look_at_station(&mut alice, row[1], |_| true).await;
+    assert_eq!(broken.idle.as_deref(), Some("A workbench needs 4 blocks touching"));
+    assert_eq!(alice.count("workbench"), 2);
     server.stop();
 }
 
+/// Milestone 11, acceptance 5: a furnace is a crucible on a base; a craft
+/// starts when there is heat for it, burning fuel from its slot; without,
+/// it waits; fuel moves in and out; a furnace with fuel cannot be broken.
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
-async fn station_jobs_continue_across_a_restart() {
+async fn a_furnace_burns_fuel_for_heat_and_waits_without_it() {
     let dir = tempfile::tempdir().unwrap();
-    seed(dir.path(), "Alice", &[(5, "workbench", 1, 0), (6, "stone", 8, 0)]);
-    let feet = {
+    seed(
+        dir.path(),
+        "Alice",
+        &[
+            (0, "furnace", 1, 0),
+            (1, "furnace_crucible", 1, 0),
+            (2, "coal", 3, 0),
+            (3, "copper_ore", 2, 0),
+            (4, "stone", 1, 0),
+        ],
+    );
+    let server = bm_server::start(config(dir.path())).unwrap();
+    let mut alice = TestClient::login(&server, "Alice").await;
+    let shape = alice.shape();
+    let feet = alice.feet();
+    alice.wait_for_chunk(feet.chunk()).await;
+    alice.wait_for_chunk(feet.offset(1, 2, 0).chunk()).await;
+    let base = shape.wrap_block(feet.offset(1, 1, 0));
+    let top = shape.wrap_block(feet.offset(1, 2, 0));
+    let copper = alice.recipe("copper_ingot");
+
+    // A base alone does nothing.
+    assert!(place(&mut alice, 1, base, 0, None).await.0);
+    let alone = look_at_station(&mut alice, base, |_| true).await;
+    assert_eq!(alone.idle.as_deref(), Some("A furnace needs its crucible on top"));
+    craft_at(&mut alice, copper, 1, Some(base)).await;
+    alice.notice("A furnace needs its crucible on top").await;
+    alice.notices.clear();
+    fuel(&mut alice, base, 2, 1, true).await;
+    alice.notice("A furnace needs its crucible on top").await;
+    alice.settle().await;
+    assert_eq!(
+        (alice.count("copper_ore"), alice.count("coal")),
+        (2, 3),
+        "nothing taken"
+    );
+
+    // With its crucible it works, opened from either block.
+    assert!(place(&mut alice, 2, top, 1, None).await.0);
+    let v = look_at_station(&mut alice, top, |_| true).await;
+    assert_eq!(
+        (v.pos, v.station, v.idle.clone(), v.fuel, v.heat),
+        (base, Station::Furnace, None, None, 0)
+    );
+
+    // No fuel: the job waits, without progress.
+    craft_at(&mut alice, copper, 2, Some(top)).await;
+    let waiting = alice.station(|v| !v.jobs.is_empty()).await;
+    assert_eq!(waiting.jobs[0].progress, 0.0);
+    tokio::time::sleep(Duration::from_millis(600)).await;
+    let still = look_at_station(&mut alice, base, |_| true).await;
+    assert_eq!(still.jobs[0].progress, 0.0, "waits for heat");
+
+    // Only what burns goes in.
+    fuel(&mut alice, top, 4, 1, true).await;
+    alice.notice("That does not burn").await;
+    // Two coal: one burns at once for the first craft, one waits.
+    fuel(&mut alice, top, 2, 2, true).await;
+    let lit = alice.station(|v| v.fuel.is_some_and(|f| f.count == 1)).await;
+    assert_eq!(lit.heat, 0, "a coal is 100 heat, a copper bar takes 100");
+    alice.settle().await;
+    assert_eq!(alice.count("coal"), 1);
+    alice
+        .station(|v| v.jobs.first().is_some_and(|j| j.progress > 0.0))
+        .await;
+
+    // Fuel in the slot: neither block breaks.
+    for (seq, p) in [(3, top), (4, base)] {
+        assert!(!alice.dig(seq, p).await.0);
+        alice.notice("Empty the Furnace before breaking it").await;
+    }
+    // Taking the fuel out (into a chosen slot) leaves the craft burning.
+    fuel(&mut alice, base, 7, 5, false).await;
+    let out = look_at_station(&mut alice, base, |v| v.fuel.is_none()).await;
+    assert!(out.jobs[0].progress > 0.0);
+    alice.settle().await;
+    assert_eq!(
+        stack(&alice, 7).map(|s| (s.item, s.count)),
+        Some((alice.item("coal"), 1))
+    );
+    assert_eq!(alice.count("coal"), 2);
+    server.stop();
+}
+
+/// Milestone 11, acceptance 9: jobs, the fuel slot, banked heat and a craft
+/// waiting for heat all survive a restart.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn station_jobs_fuel_and_heat_continue_across_a_restart() {
+    let dir = tempfile::tempdir().unwrap();
+    seed(
+        dir.path(),
+        "Alice",
+        &[
+            (0, "furnace", 2, 0),
+            (1, "furnace_crucible", 2, 0),
+            (2, "coal", 3, 0),
+            (3, "iron_ore", 1, 0),
+            (4, "copper_ore", 1, 0),
+        ],
+    );
+    let (burning, waiting) = {
         let server = bm_server::start(config(dir.path())).unwrap();
         let mut alice = TestClient::login(&server, "Alice").await;
+        let shape = alice.shape();
         let feet = alice.feet();
-        alice.wait_for_chunk(feet.chunk()).await;
-        assert!(alice.dig(1, feet).await.0);
-        assert!(alice.edit(2, feet, EditAction::Place { slot: 5, mount: None }).await.0);
-        let furnace = alice.recipe("furnace");
-        alice.send(ClientMsg::WatchStation { pos: Some(feet) }).await;
-        alice
-            .send(ClientMsg::Craft {
-                recipe: furnace,
-                count: 1,
-                station: Some(feet),
-            })
-            .await;
+        for dz in 0..=2 {
+            alice.wait_for_chunk(feet.offset(1, 2, dz).chunk()).await;
+        }
+        let burning = shape.wrap_block(feet.offset(1, 1, 0));
+        let waiting = shape.wrap_block(feet.offset(1, 1, 2));
+        for (seq, b) in [(1, burning), (3, waiting)] {
+            assert!(place(&mut alice, seq, b, 0, None).await.0);
+            assert!(place(&mut alice, seq + 1, b.offset(0, 1, 0), 1, None).await.0);
+        }
+        // Three coal; an iron bar burns two and banks 50.
+        alice.send(ClientMsg::WatchStation { pos: Some(burning) }).await;
+        fuel(&mut alice, burning, 2, 3, true).await;
+        alice.station(|v| v.fuel.is_some()).await;
+        let r = alice.recipe("iron_ingot");
+        craft_at(&mut alice, r, 1, Some(burning)).await;
+        let v = alice.station(|v| !v.jobs.is_empty()).await;
+        assert_eq!((v.fuel.map(|f| f.count), v.heat), (Some(1), 50));
+        // The other has nothing to burn.
+        alice.send(ClientMsg::WatchStation { pos: Some(waiting) }).await;
+        let r = alice.recipe("copper_ingot");
+        craft_at(&mut alice, r, 1, Some(waiting)).await;
         alice.station(|v| !v.jobs.is_empty()).await;
         drop(alice);
         server.stop();
-        feet
+        (burning, waiting)
     };
     let server = bm_server::start(config(dir.path())).unwrap();
     let mut alice = TestClient::login(&server, "Alice").await;
-    assert_eq!(alice.count("stone"), 0, "the inputs stay spent");
-    alice.wait_for_chunk(feet.chunk()).await;
-    alice.send(ClientMsg::WatchStation { pos: Some(feet) }).await;
-    let resumed = alice.station(|_| true).await;
+    assert_eq!(
+        (alice.count("iron_ore"), alice.count("copper_ore"), alice.count("coal")),
+        (0, 0, 0),
+        "the inputs and fuel stay spent"
+    );
+    alice.wait_for_chunk(burning.chunk()).await;
+    alice.wait_for_chunk(waiting.chunk()).await;
+    let resumed = look_at_station(&mut alice, burning, |_| true).await;
     assert_eq!(resumed.jobs.len(), 1, "the job survived");
-    assert!(resumed.jobs[0].progress < 1.0);
-    let done = alice.station(|v| !v.output.is_empty()).await;
-    assert_eq!(done.output[0].item, alice.item("furnace"));
+    assert_eq!((resumed.fuel.map(|f| f.count), resumed.heat), (Some(1), 50));
+    let p = resumed.jobs[0].progress;
+    assert!(p > 0.0 && p < 1.0);
+    alice.station(|v| v.jobs.first().is_some_and(|j| j.progress > p)).await;
+    let held = look_at_station(&mut alice, waiting, |_| true).await;
+    assert_eq!((held.jobs.len(), held.jobs[0].progress, held.fuel), (1, 0.0, None));
+    tokio::time::sleep(Duration::from_millis(400)).await;
+    let held = look_at_station(&mut alice, waiting, |_| true).await;
+    assert_eq!(held.jobs[0].progress, 0.0, "still waiting for heat");
+    server.stop();
+}
+
+/// Milestone 11, acceptance 4 and 9: a station saved at one workbench
+/// block before workbenches had four keeps its contents, and moves to the
+/// machine's first block when the group forms around it.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn a_workbench_saved_at_one_block_joins_its_machine() {
+    let dir = tempfile::tempdir().unwrap();
+    seed(dir.path(), "Alice", &[(0, "workbench", 4, 0)]);
+    let (old, shape, feet) = {
+        let server = bm_server::start(config(dir.path())).unwrap();
+        let mut alice = TestClient::login(&server, "Alice").await;
+        let shape = alice.shape();
+        let feet = alice.feet();
+        alice.wait_for_chunk(feet.offset(2, 1, 2).chunk()).await;
+        let old = shape.wrap_block(feet.offset(2, 1, 2));
+        assert!(place(&mut alice, 1, old, 0, None).await.0);
+        drop(alice);
+        server.stop();
+        (old, shape, feet)
+    };
+    {
+        // What a save from before milestone 11 holds: output at one block.
+        let store = Store::open(&planet_file(dir.path())).unwrap();
+        store
+            .write(&WriteBatch {
+                stations: vec![(
+                    0,
+                    old,
+                    Some(SavedStation {
+                        kind: Station::Workbench,
+                        jobs: vec![],
+                        started: 0,
+                        output: vec![Some(SavedStack {
+                            item: "stones".into(),
+                            count: 5,
+                            wear: 0,
+                        })],
+                        fuel: None,
+                        heat: 0,
+                        waiting: false,
+                    }),
+                )],
+                ..Default::default()
+            })
+            .unwrap();
+    }
+    let server = bm_server::start(config(dir.path())).unwrap();
+    let mut alice = TestClient::login(&server, "Alice").await;
+    alice.wait_for_chunk(old.chunk()).await;
+    let v = look_at_station(&mut alice, old, |_| true).await;
+    assert_eq!(v.pos, old);
+    assert_eq!(v.idle.as_deref(), Some("A workbench needs 4 blocks touching"));
+    assert_eq!(v.output[0].count, 5, "nothing lost");
+    assert!(!alice.dig(2, old).await.0);
+    alice.notice("Empty the Workbench before breaking it").await;
+    // Three more, so the old block is not the first.
+    let others = [feet.offset(1, 1, 2), feet.offset(3, 1, 2), feet.offset(1, 1, 1)].map(|p| shape.wrap_block(p));
+    for (i, p) in others.iter().enumerate() {
+        assert!(place(&mut alice, 3 + i as u32, *p, 0, None).await.0);
+    }
+    let first = *others.iter().chain([&old]).min_by_key(|p| (p.y, p.z, p.x)).unwrap();
+    assert_ne!(first, old);
+    let v = look_at_station(&mut alice, others[1], |_| true).await;
+    assert_eq!((v.pos, v.idle.clone()), (first, None));
+    assert_eq!(v.output[0].count, 5, "the record moved to the machine");
+    alice.send(ClientMsg::CollectStation { pos: old }).await;
+    alice.station(|v| v.output.is_empty()).await;
+    alice.settle().await;
+    assert_eq!(alice.count("stones"), 5);
+    server.stop();
+}
+
+/// Milestone 11, acceptance 2: gathering objects break with any tool and
+/// give their drops (whole expected counts always), and a plant falls with
+/// the ground it stands on, its drops into the breaker's pack.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn plants_and_boulders_give_their_drops_and_fall_with_their_ground() {
+    let dir = tempfile::tempdir().unwrap();
+    seed(
+        dir.path(),
+        "Alice",
+        &[
+            (0, "stone_axe", 1, 0),
+            (1, "stone_hammer", 1, 0),
+            (2, "stone_shovel", 1, 0),
+        ],
+    );
+    // Grow a spikeleaf, a boulder and another spikeleaf beside the arrival
+    // spot, by saving the chunk with them in it.
+    let (plant, boulder, perched) = {
+        let server = bm_server::start(config(dir.path())).unwrap();
+        let mut alice = TestClient::login(&server, "Alice").await;
+        let shape = alice.shape();
+        let feet = alice.feet();
+        let spots = [feet.offset(1, 1, 0), feet.offset(2, 1, 0), feet.offset(3, 1, 0)].map(|p| shape.wrap_block(p));
+        let mut chunks: HashMap<ChunkPos, Chunk> = HashMap::new();
+        for (p, name) in spots.iter().zip(["spikeleaf", "boulder", "spikeleaf"]) {
+            alice.wait_for_chunk(p.chunk()).await;
+            let c = chunks
+                .entry(p.chunk())
+                .or_insert_with(|| alice.chunks[&p.chunk()].clone());
+            assert!(c.state(p.local()).id.is_air());
+            c.set_state(p.local(), BlockState::plain(alice.block(name)));
+        }
+        drop(alice);
+        server.stop();
+        let store = Store::open(&planet_file(dir.path())).unwrap();
+        store
+            .write(&WriteBatch {
+                chunks: chunks.into_iter().map(|(p, c)| (0, p, c.encode())).collect(),
+                ..Default::default()
+            })
+            .unwrap();
+        (spots[0], spots[1], spots[2])
+    };
+    let server = bm_server::start(config(dir.path())).unwrap();
+    let mut alice = TestClient::login(&server, "Alice").await;
+    for p in [plant, boulder, perched] {
+        alice.wait_for_chunk(p.chunk()).await;
+    }
+    assert_eq!(state_at(&alice, plant).id, alice.block("spikeleaf"));
+    // A spikeleaf: at least 1 fibrous leaf and 1 tuber (1.3 each).
+    assert!(alice.dig_with(1, plant, 0).await.0);
+    assert!(alice.count("fibrous_leaf") >= 1 && alice.count("tuber") >= 1);
+    // A boulder: at least 1 flint (1.3).
+    assert!(alice.dig_with(2, boulder, 1).await.0);
+    assert!(alice.count("flint") >= 1);
+    // Digging out the ground under the other drops it into the pack.
+    let leaves = alice.count("fibrous_leaf");
+    assert!(alice.dig_with(3, perched.offset(0, -1, 0), 2).await.0);
+    assert_eq!(state_at(&alice, perched), BlockState::AIR, "it fell");
+    assert!(alice.count("fibrous_leaf") > leaves, "and its leaves are hers");
     server.stop();
 }
 
