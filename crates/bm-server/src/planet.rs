@@ -288,7 +288,7 @@ pub fn open(
         if flora > 0 {
             store.put_planet(id, &saved)?;
             tracing::info!(
-                "{}: flora added ({flora} kinds of plant, boulder and fungus, in chunks not yet saved)",
+                "{}: flora added ({flora} entries: plants, boulders and fungi, in chunks not yet saved)",
                 saved.name
             );
         }
