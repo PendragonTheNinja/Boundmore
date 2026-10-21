@@ -268,12 +268,32 @@ Not published anywhere found; every one is a **guess** until measured:
 
 ## Status
 
-*Spec written and decided 2026-10-21.*
+*Spec written and decided 2026-10-21. Part 1 built 2026-10-21; awaiting Nathan's play-test.*
 
 - [x] Research: tuning 3.1 to 3.7 (existing), 3.8 added (recipes, healing, behaviour; boundlexx has no creature data)
 - [x] Spec
 - [x] Nathan's decisions (2026-10-21): Boundless's defeat debt; a regen stand-in; fall damage gentler with grapple safety; dashers drop wayshards, meteorites next
 - [x] Part 1 foundation (2026-10-21): `bm-core` combat, creatures, slings, skills, debt; protocol 18; recipes and the tallow torch (Build plan above)
-- [ ] Part 1 server, client and art (agents)
+- [x] Part 1 art: icons for the slings and every creature part, the tallow torch (`tools/bm-texgen/src/creatures.rs`).
+- [x] Part 1 server (`crates/bm-server/src/game/creatures.rs`, `game/combat.rs`):
+  - creatures spawn around players out of sight, think (herd, ranged, flee), move by the players' physics and are rewound for hits;
+  - shots and strikes on one cadence with swings;
+  - per-player loot, XP to every attacker, defeat with the debt, Return to safe ground at half health;
+  - `SAVE_VERSION` 6 (`hurt`, `debt`; the upgrade from version 5 checked on a real universe);
+  - the 50-bot load test: about 200 creatures alive, no more slow ticks than M12 on the same machine.
+- [x] Part 1 client (`crates/bm-client/src/creatures.rs`, `combat.rs`, `fight_hud.rs`):
+  - health is server-led in prediction (hits and defeats are not corrections);
+  - box models of our own design, animated by pose, with name plates, health bars and armour shields;
+  - slings with Rapid Fire and Draw, tool strikes and looting;
+  - damage numbers and the red flash;
+  - the health bar, the defeat screen with Return, and the XP debt on the XP bar;
+  - `--demo-ui creatures` and `defeat`; screenshots `docs/media/m13-creatures.png`, `docs/media/m13-defeat.png`.
+- [x] Integrated: 491 tests; fmt and clippy clean.
+- Follow-ups:
+  - grazers do not keep together as herds;
+  - a charge's knockback shows as a prediction correction;
+  - no hit effect where a shot lands;
+  - grapple hooks do not stick in creatures;
+  - no end-to-end test of a defeat by a fall (it shares the defeat path with creature hits, which is tested).
 - [ ] Part 2: popper and bombs; drifter; exotics
 - [ ] Nathan's play-test

@@ -1837,7 +1837,10 @@ impl Demo {
         let (trunk, foliage) = (b("trunk"), b("foliage"));
         let planet = &mut self.planets[0];
         planet.flat = true;
-        planet.edits.retain(|_, s| s.id != trunk && s.id != foliage);
+        // Open ground: the patch's trees and its row of stations would hide
+        // the creatures.
+        planet.edits.clear();
+        let _ = (trunk, foliage);
         let chunks = self.chunks_around_spawn();
         self.events.extend(chunks.into_iter().map(NetEvent::Msg));
         let k = self.kinds();
