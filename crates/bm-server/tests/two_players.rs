@@ -59,6 +59,8 @@ struct TestClient {
     shot_ends: Vec<u32>,
     hits: Vec<(Target, u32, bool)>,
     defeated: Option<(u64, String)>,
+    /// Milestone 13 part 2: blasts heard (where, radius).
+    blasts: Vec<([f32; 3], f32)>,
 }
 
 /// Opens a connection and says hello; the welcome, or the refusal's reason.
@@ -134,6 +136,7 @@ async fn hello(
         shot_ends: Vec::new(),
         hits: Vec::new(),
         defeated: None,
+        blasts: Vec::new(),
     })
 }
 
@@ -243,6 +246,7 @@ impl TestClient {
             ServerMsg::ShotEnd { id } => self.shot_ends.push(*id),
             ServerMsg::Hit { target, amount, crit } => self.hits.push((*target, *amount, *crit)),
             ServerMsg::Defeated { debt, by } => self.defeated = Some((*debt, by.clone())),
+            ServerMsg::Blast { pos, radius } => self.blasts.push((*pos, *radius)),
             // Everything of the old planet goes, as in the game.
             ServerMsg::Travel(t) => {
                 self.chunks.clear();
@@ -4106,11 +4110,63 @@ damage = 100
 drops_min = 1
 drops_max = 1
 drops = [{ item = "bone", weight = 1, max = 1 }]
+
+[[creature]]
+name = "bomber"
+behaviour = "exploder"
+attack = { explode = { fuse = 0.5, radius = 4.0, knockback = 4.0, curl = 4.0, curl_chance = 0.0 } }
+half_width = 0.4
+height = 0.8
+walk_speed = 0.01
+run_speed = 0.01
+notice = 16.0
+give_up = 64.0
+forget = 120.0
+spawn_weight = 1
+group = [1, 1]
+
+[[creature.tiers]]
+health = 5000
+armour = 0
+xp = 60
+damage = 300
+drops_min = 1
+drops_max = 1
+drops = [{ item = "bone", weight = 1, max = 1 }]
+
+[[creature]]
+name = "flyer"
+behaviour = "flyer"
+attack = { barrage = { bolt_speed = 18.0, range = 28.0, cooldown = 1.0, hover = 4.0, bomb_below = 0.0, bomb_radius = 3.0, homing_below = 0.0, beam_tier = 9, lift_tier = 9, lift_cooldown = 30.0 } }
+half_width = 0.7
+height = 1.3
+walk_speed = 2.0
+run_speed = 6.0
+notice = 24.0
+give_up = 64.0
+forget = 120.0
+spawn_weight = 1
+group = [1, 1]
+
+[[creature.tiers]]
+health = 5000
+armour = 0
+xp = 60
+damage = 100
+drops_min = 1
+drops_max = 1
+drops = [{ item = "bone", weight = 1, max = 1 }]
 "#;
 
 /// `config` with the test creatures placed beside the arrival point (`kind`,
 /// offset along +X) and no natural spawning.
 fn creature_config(dir: &Path, placed: &[(&str, f64)]) -> ServerConfig {
+    let at: Vec<(&str, [f64; 3])> = placed.iter().map(|(k, dx)| (*k, [*dx, 0.0, 0.0])).collect();
+    creature_config_at(dir, &at)
+}
+
+/// `creature_config` with each creature at its own offset.
+fn creature_config_at(dir: &Path, placed: &[(&str, [f64; 3])]) -> ServerConfig {
     let path = dir.join("test-creatures.toml");
     std::fs::write(&path, TEST_CREATURES).unwrap();
     ServerConfig {
@@ -4118,10 +4174,10 @@ fn creature_config(dir: &Path, placed: &[(&str, f64)]) -> ServerConfig {
         creature_spawning: false,
         placed_creatures: placed
             .iter()
-            .map(|(kind, dx)| bm_server::config::PlacedCreature {
+            .map(|(kind, offset)| bm_server::config::PlacedCreature {
                 kind: kind.to_string(),
                 tier: 1,
-                offset: [*dx, 0.0, 0.0],
+                offset: *offset,
                 exotic: 0,
             })
             .collect(),
@@ -4187,6 +4243,31 @@ impl TestClient {
             yaw,
             pitch,
             charge: 0,
+        })
+        .await;
+    }
+
+    /// Throws a bomb from the bag in `slot`, held `hold` ticks, at the bag's
+    /// cadence, following the last input sent.
+    async fn throw(&mut self, slot: u8, yaw: u16, pitch: i16, hold: u16) {
+        self.ready();
+        if self.seq == 0 {
+            self.send_inputs(1, PlayerInput::default());
+        }
+        let at = self.seq;
+        let bag = self
+            .inv
+            .get(slot as usize)
+            .and_then(|s| self.items.get(s.item))
+            .and_then(|d| d.bomb());
+        let ticks = bag.map_or(1, |b| bm_core::mining::swing_ticks(b.action_speed));
+        self.last_swing = Some((at, ticks));
+        self.send(ClientMsg::Throw {
+            at,
+            slot,
+            yaw,
+            pitch,
+            hold,
         })
         .await;
     }
@@ -4541,5 +4622,299 @@ async fn tools_strike_creatures_in_reach_on_the_swing_cadence() {
         .await;
     alice.settle().await;
     assert_eq!(alice.inv.get(HAND as usize).unwrap().wear, 2, "a strike wears the tool");
+    server.stop();
+}
+
+// Milestone 13 part 2: bombs, the popper, the drifter.
+
+/// Where a creature stands now, from the next snapshot that carries it, and
+/// the player's state.
+async fn creature_at(c: &mut TestClient, id: u32) -> (glam::DVec3, PlayerState) {
+    let (r, you) = c.snapshot_with(id).await;
+    (glam::DVec3::new(r.pos[0] as f64, r.pos[1] as f64, r.pos[2] as f64), you)
+}
+
+/// Milestone 13 part 2, acceptance 2: a thrown copper bomb kills a creature
+/// for its XP; each throw on the bag's cadence costs its energy and one use,
+/// one sooner does nothing; others see the bomb fly, the thrower does not;
+/// everyone near hears the blast, which never hurts a player.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn a_thrown_bomb_kills_a_creature_on_the_bags_cadence() {
+    let dir = tempfile::tempdir().unwrap();
+    seed(dir.path(), "Alice", &[(0, "copper_bombs", 1, 0)]);
+    let server = bm_server::start(creature_config(dir.path(), &[("target", 5.0)])).unwrap();
+    let mut alice = TestClient::login(&server, "Alice").await;
+    let mut bob = TestClient::register(&server, "Bob").await;
+    let me = alice.welcome.player_id;
+    let shape = alice.shape();
+    let feet = alice.feet();
+    alice.wait_for_chunk(feet.chunk()).await;
+    bob.wait_for_chunk(feet.chunk()).await;
+    let id = alice.creature_of("target").await;
+    let (at, you) = creature_at(&mut alice, id).await;
+    let bag = alice.items.get(alice.item("copper_bombs")).unwrap().bomb().unwrap();
+    assert_eq!((bag.damage, bag.energy, bag.durability), (900, 90, 200));
+    let eye = you.pos + glam::DVec3::new(0.0, alice.welcome.movement.eye_height, 0.0);
+    let (yaw, pitch) = aim(
+        shape,
+        eye,
+        at + glam::DVec3::new(0.0, 0.7, 0.0),
+        bag.throw_speed as f64,
+        0.5,
+    );
+    let full = bm_core::combat::THROW_FULL_TICKS as u16;
+    let wear = |c: &TestClient| c.inv.get(0).unwrap().wear;
+
+    alice.throw(0, yaw, pitch, full).await;
+    let s = snapshot_after(&mut alice).await;
+    assert_eq!(s.energy(), bm_core::energy::MAX_ENERGY - 90);
+    alice
+        .until(|m| matches!(m, ServerMsg::Hit { target: Target::Creature(c), .. } if *c == id))
+        .await;
+    let first = alice.hits_on(Target::Creature(id))[0];
+    assert!(first >= 900, "a direct hit: {first}");
+    alice.settle().await;
+    assert_eq!(wear(&alice), 1, "one use a throw");
+    assert_eq!(alice.blasts.len(), 1, "the thrower hears the blast");
+    let flew = match bob.until(|m| matches!(m, ServerMsg::Shot(_))).await {
+        ServerMsg::Shot(v) => v,
+        _ => unreachable!(),
+    };
+    assert_eq!(
+        (flew.from, flew.kind),
+        (Target::Player(me), bm_protocol::ShotKind::Bomb)
+    );
+    bob.until(|m| matches!(m, ServerMsg::Blast { .. })).await;
+    assert!(alice.shots.is_empty(), "never told of your own bomb");
+
+    // Sooner than the cadence: nothing.
+    let at_now = alice.seq;
+    alice
+        .send(ClientMsg::Throw {
+            at: at_now,
+            slot: 0,
+            yaw,
+            pitch,
+            hold: full,
+        })
+        .await;
+    alice.settle().await;
+    assert_eq!(wear(&alice), 1, "too soon: no throw, no wear");
+    assert_eq!(alice.blasts.len(), 1);
+
+    // The second kills it.
+    alice.throw(0, yaw, pitch, full).await;
+    alice.creature_until(id, |v| v.dead).await;
+    alice.until_xp(60).await;
+    alice.settle().await;
+    assert_eq!(wear(&alice), 2);
+    bob.settle().await;
+    assert!(alice.hits_on(Target::Player(me)).is_empty(), "bombs never hurt players");
+    assert!(bob.hits.is_empty(), "nor anyone near");
+    server.stop();
+}
+
+/// Milestone 13 part 2, acceptance 2: a blast breaks the blocks around it
+/// that are not on someone else's claim, and they drop nothing and give no
+/// XP.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn a_blast_breaks_unclaimed_blocks_for_nothing() {
+    let dir = tempfile::tempdir().unwrap();
+    // A bag no recipe makes: 6000 damage (600 energy, a full bar), so its
+    // blast breaks even rock next to it.
+    let items = dir.path().join("test-items.toml");
+    std::fs::write(
+        &items,
+        format!(
+            "{}\n[[item]]\nname = \"test_bombs\"\nstack = 1\nbomb = {{ damage = 6000, radius = 3.0, knockback = 10.0 }}\n",
+            include_str!("../../../assets/items.toml")
+        ),
+    )
+    .unwrap();
+    seed(dir.path(), "Alice", &[(0, "test_bombs", 1, 0)]);
+    seed(
+        dir.path(),
+        "Bob",
+        &[(0, "copper_shovel", 1, 0), (1, "claim_stone", 1, 0)],
+    );
+    let server = bm_server::start(ServerConfig {
+        items: Some(items),
+        creature_spawning: false,
+        ..config(dir.path())
+    })
+    .unwrap();
+    let mut alice = TestClient::login(&server, "Alice").await;
+    let mut bob = TestClient::login(&server, "Bob").await;
+    let me = alice.welcome.player_id;
+    let shape = alice.shape();
+    let feet = alice.feet();
+    // A plot boundary across x near the feet: Bob claims the plot before it.
+    let bx = (feet.x - 4..=feet.x + 3)
+        .find(|x| x.rem_euclid(bm_core::PLOT_SIZE) == 0)
+        .unwrap();
+    let hit = BlockPos::new(bx, feet.y, feet.z);
+    let theirs = hit.offset(-1, 0, 0);
+    for c in [&mut alice, &mut bob] {
+        for dx in [-4, 0, 4] {
+            for dy in [-4, 0, 4] {
+                for dz in [-4, 0, 4] {
+                    let p = hit.offset(dx, dy, dz);
+                    if shape.contains_y(p.y) {
+                        c.wait_for_chunk(shape.wrap_block(p).chunk()).await;
+                    }
+                }
+            }
+        }
+    }
+    assert!(bob.dig_with(1, theirs, 0).await.0);
+    assert!(place(&mut bob, 2, theirs, 1, None).await.0);
+    alice.until(|m| matches!(m, ServerMsg::Claim(_))).await;
+    let claimed = PlotPos::of(theirs, shape);
+    let near: Vec<BlockPos> = (-3..=3)
+        .flat_map(|dx| (-3..=3).flat_map(move |dy| (-3..=3).map(move |dz| hit.offset(dx, dy, dz))))
+        .filter(|p| shape.contains_y(p.y))
+        .collect();
+    let before: Vec<(BlockPos, BlockState)> = near.iter().map(|p| (*p, state_at(&alice, *p))).collect();
+    let items_before: Vec<_> = (1..alice.inv.slots.len()).map(|i| stack(&alice, i)).collect();
+
+    // Thrown onto the top of the boundary block.
+    let eye = alice.spawn.pos + glam::DVec3::new(0.0, alice.welcome.movement.eye_height, 0.0);
+    let top = glam::DVec3::new(hit.x as f64 + 0.5, hit.y as f64 + 1.0, hit.z as f64 + 0.5);
+    let (yaw, pitch) = aim(shape, eye, top, 25.0, 0.5);
+    alice
+        .throw(0, yaw, pitch, bm_core::combat::THROW_FULL_TICKS as u16)
+        .await;
+    alice.until(|m| matches!(m, ServerMsg::Blast { .. })).await;
+    alice.settle().await;
+    let mut broken = 0;
+    for (p, was) in before {
+        let now = state_at(&alice, p);
+        if PlotPos::of(p, shape) == claimed {
+            assert_eq!(now, was, "{p:?} is on Bob's claim");
+        } else if now != was {
+            assert_eq!(now, BlockState::AIR, "{p:?} was broken");
+            broken += 1;
+        }
+    }
+    assert!(broken >= 1, "the blast broke something");
+    assert_eq!(state_at(&alice, theirs).id, alice.block("claim_stone"));
+    let items_after: Vec<_> = (1..alice.inv.slots.len()).map(|i| stack(&alice, i)).collect();
+    assert_eq!(items_after, items_before, "blasted blocks drop nothing");
+    assert_eq!(alice.character.xp, 0, "and give no XP");
+    assert_eq!(stack(&alice, 0).unwrap().wear, 1);
+    assert!(alice.hits_on(Target::Player(me)).is_empty());
+    server.stop();
+}
+
+/// Milestone 13 part 2, acceptance 1: a popper hurt by a player whistles,
+/// leaps and explodes: the blast hurts a player in the open, and not behind
+/// a wall; its body stays.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn a_poppers_blast_hurts_a_player_but_not_through_a_wall() {
+    let dir = tempfile::tempdir().unwrap();
+    seed(dir.path(), "Alice", &[(0, "timber", 4, 0)]);
+    let server = bm_server::start(creature_config_at(
+        dir.path(),
+        &[("bomber", [0.0, 0.0, 3.0]), ("bomber", [3.0, 0.0, 0.0])],
+    ))
+    .unwrap();
+    let mut alice = TestClient::login(&server, "Alice").await;
+    let me = alice.welcome.player_id;
+    let shape = alice.shape();
+    let feet = alice.feet();
+    alice.wait_for_chunk(feet.chunk()).await;
+    let k = alice.welcome.creatures.iter().position(|d| d.name == "bomber").unwrap() as u16;
+    while alice.creatures.values().filter(|v| v.kind == k).count() < 2 {
+        alice.until(|m| matches!(m, ServerMsg::Creature(_))).await;
+    }
+    let ids: Vec<u32> = alice.creatures.keys().copied().collect();
+    let (a, you) = creature_at(&mut alice, ids[0]).await;
+    let (walled, open) = if shape.delta(you.pos, a).z > 1.5 {
+        (ids[0], ids[1])
+    } else {
+        (ids[1], ids[0])
+    };
+
+    // A wall two blocks high between her and the one along +Z.
+    for (seq, dy) in [(1, 1), (2, 2)] {
+        let p = feet.offset(0, dy, 1);
+        alice.wait_for_chunk(shape.wrap_block(p).chunk()).await;
+        assert!(place(&mut alice, seq, p, 0, None).await.0, "wall block {dy}");
+    }
+    let hand = alice.swing_ticks(HAND);
+    alice.send_inputs(1, PlayerInput::default());
+    alice
+        .send(ClientMsg::Strike {
+            at: alice.seq,
+            creature: walled,
+            slot: HAND,
+        })
+        .await;
+    alice.creature_until(walled, |v| v.angry).await;
+    let gone = alice.creature_until(walled, |v| v.dead).await;
+    assert_eq!(gone.damage, 5000, "it blew itself up");
+    alice.settle().await;
+    assert_eq!(alice.blasts.len(), 1);
+    assert!(alice.hits_on(Target::Player(me)).is_empty(), "the wall stopped it");
+
+    // In the open, it hurts.
+    alice.send_inputs(hand, PlayerInput::default());
+    alice
+        .send(ClientMsg::Strike {
+            at: alice.seq,
+            creature: open,
+            slot: HAND,
+        })
+        .await;
+    alice
+        .until(|m| matches!(m, ServerMsg::Hit { target: Target::Player(p), .. } if *p == me))
+        .await;
+    let hurt = alice.hits_on(Target::Player(me))[0];
+    assert!((150..=300).contains(&hurt), "blast damage near its middle: {hurt}");
+    alice.creature_until(open, |v| v.dead).await;
+    assert_eq!(alice.blasts.len(), 2);
+    // The body stays to be looted.
+    alice.send(ClientMsg::Loot { creature: open }).await;
+    alice.creature_until(open, |v| v.looted).await;
+    server.stop();
+}
+
+/// Milestone 13 part 2, acceptance 3: an angered drifter takes off and its
+/// bolts hit a player.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn a_drifters_bolt_hits_a_player() {
+    let dir = tempfile::tempdir().unwrap();
+    seed(dir.path(), "Alice", &[]);
+    let server = bm_server::start(creature_config(dir.path(), &[("flyer", 4.0)])).unwrap();
+    let mut alice = TestClient::login(&server, "Alice").await;
+    let me = alice.welcome.player_id;
+    let feet = alice.feet();
+    alice.wait_for_chunk(feet.chunk()).await;
+    let id = alice.creature_of("flyer").await;
+    alice.send_inputs(1, PlayerInput::default());
+    alice
+        .send(ClientMsg::Strike {
+            at: alice.seq,
+            creature: id,
+            slot: HAND,
+        })
+        .await;
+    alice.creature_until(id, |v| v.angry).await;
+    alice
+        .until(|m| matches!(m, ServerMsg::Hit { target: Target::Player(p), .. } if *p == me))
+        .await;
+    assert_eq!(alice.hits_on(Target::Player(me))[0], 100);
+    let bolt = alice.shots.iter().find(|s| s.from == Target::Creature(id)).unwrap();
+    assert_eq!((bolt.kind, bolt.falloff), (bm_protocol::ShotKind::Bolt, 0.0));
+    // It flies (snapshots from before it took off may still be queued).
+    let mut flying = false;
+    for _ in 0..600 {
+        let (r, _) = alice.snapshot_with(id).await;
+        if r.pose == bm_protocol::Pose::Flying {
+            flying = true;
+            break;
+        }
+    }
+    assert!(flying);
     server.stop();
 }
