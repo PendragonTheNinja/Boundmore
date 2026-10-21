@@ -160,3 +160,7 @@ Boundless's live tree and tables exactly (Nathan, 2026-10-20), in Boundmore's na
 | Sling shot drop | gravity 20 x fall-off (a stone sling's shot drops about a block over its 15) | guess |
 | Draw | holding charges over 2 s to double damage | Boundless (charge time 2, charge effect 1) |
 | Respawn health | half of max | guess (a player complained of "half", 2018) |
+| Spawning | 24 to 48 blocks from a player, out of sight; at most 8 within 48 blocks of a player, 600 a planet; gone 10 s after no player is within 64; a kill's 32x32 column stays empty 5 minutes; bodies last 60 s | guesses (`crates/bm-server/src/game/creatures.rs`, `ServerConfig`) |
+| Grazer charges | 1 per run-up at tier 1, 2 at tier 2, 3 from tier 3; knockback lifts 5 blocks a second | guesses (Boundless: tier 1 once, more at higher tiers) |
+| Pelter distance | keeps 7 to 14 blocks from its target, aims 0.4 s before a volley | guesses |
+| Hit rewind | shots and strikes judged against creatures where you saw them, up to 12 ticks (0.2 s) back | not a feel number: lag fairness |
