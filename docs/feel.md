@@ -94,7 +94,7 @@ Not built yet, from Boundless: the better torch (tallow and sackcloth, at a work
 | What each plant, boulder and fungus drops | tuning 4.4a (e.g. spikeleaf 1.3 fibrous leaves, a boulder 1.3 flint) | Boundless, exact |
 | Where each grows, and how thick | spikeleaf on sand and dry patches (starter world too), frostbell on snow, nightlily by water, the rest on turf; boulders everywhere; fungi in caves, the glowcap deepest; about 20 plants and 5 boulders a minute's walk on the starter world | **Guess** (Boundless's placement is not published). Does it feel like a Boundless world? |
 | Recipes, times, heat | Boundless's, item for item, up to iron (spec table) | Boundless, exact |
-| Glue | 2 sap | **Stand-in** until creatures bring bone (Nathan, 2026-10-20) |
+| Glue | 2 sap | **Stand-in** until creatures bring bone (Nathan, 2026-10-20); M13 replaces it with 1 sap + 1 bone |
 | Relic seam | as common as copper about 0.7 to 1 | **Guess** |
 | A plant whose ground breaks | falls, its drops to the breaker | **Guess** |
 
@@ -140,3 +140,15 @@ Boundless's live tree and tables exactly (Nathan, 2026-10-20), in Boundmore's na
 
 - Day length.
 - How dark caves are without light.
+
+## Combat (M13, `docs/milestones/13-creatures-and-combat.md`)
+
+| Value | Now | Source, or guess |
+|---|---|---|
+| Health | 600, Vitality curve to 4000, Iron Body x3 | Boundless, exact |
+| Defeat | XP debt 10% of the next level, half XP until paid; nothing lost | **Nathan, 2026-10-21:** Boundless exactly |
+| Regen (stand-in) | 1.4 a second after 10 s out of combat (600 in about 7 min) | **Nathan, 2026-10-21:** stand-in until food. Rate from player reports; the 10 s is a guess |
+| Fall damage | share of max health by impact speed, softer on soft blocks, slightly gentler than Boundless | **Nathan, 2026-10-21.** Curve is a guess: measure 10, 20, 30 block falls in Boundless |
+| Hooked landing | no fall damage while a hook is attached | Boundless, and Nathan |
+| Grace after letting go | the first landing within 3 s of releasing a hook takes no fall damage | **Nathan, 2026-10-21** (momentum deaths from early releases); 3 s is a guess |
+| Creature speeds, notice and give-up ranges, attack rates | see `assets/creatures.toml` | guesses: Nathan can measure in game (spec, Measure in game) |

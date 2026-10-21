@@ -92,7 +92,7 @@ When a creature dies, its body stays for a short while. **Every nearby player hi
 | grazer 2 | 1 to 6 | + hide 6/2, fresh blood 5/2, milk gland 4/1, eye 2/1 |
 | pelter 1 | 1 to 5 | meat 23/2, tallow 19/2, bone 19/2, thick blood 11/2 |
 | pelter 2 | 2 to 6 | + hide 4/2 |
-| dasher 1 | 1 to 5 | lean meat 11/3, tallow 7/1, bone 7/1, hide 5/1, quick gland 5/2, fresh blood 4/1, rough wayshard **2/2** (see Decide) |
+| dasher 1 | 1 to 5 | lean meat 11/3, tallow 7/1, bone 7/1, hide 5/1, quick gland 5/2, fresh blood 4/1, rough wayshard **2/2** (Decided 4) |
 | dasher 2 | 2 to 7 | + eye 7/2, feather trophy 1/1, rough wayshard 2/4 |
 
 Higher tiers follow tuning 3.2.4 row by row. Elemental shards are left out until elemental creatures exist.
@@ -118,7 +118,7 @@ Boundless's live rules (Release 195):
 - An XP debt of 10% of the XP the next level needs. While in debt you earn half XP, and the debt clears as you earn.
 - You come back a short random distance from where you fell (Boundless's sanctum, then a warp back). Boundmore skips the sanctum and respawns you on safe ground nearby.
 
-See Decide 1: Nathan chooses whether to keep the debt.
+Kept exactly (Decided 1).
 
 ### Skills that start working
 
@@ -153,15 +153,16 @@ See Decide 1: Nathan chooses whether to keep the debt.
    - They move with the planet's physics (they collide with blocks, swim, fall and wrap the seam) and behave as described.
    - They show a health bar with armour pips, and their name with its tier word.
    - Creatures travel to clients as unreliable snapshots, interpolated like other players. Spawning and removal travel on the reliable stream.
-6. **Defeat.** At 0 health you are defeated. A screen offers "Return", and you respawn on safe ground near where you fell, never inside blocks or water. Then the defeat rule from Decide 1 applies.
-7. **Drops and XP.**
+6. **Healing and falls.** The stand-in regen. Fall damage with the hook-attached rule and the 3 s grace after release, each tested in `bm-core`.
+7. **Defeat.** At 0 health you are defeated. A screen offers "Return", and you respawn on safe ground near where you fell, never inside blocks or water. Then the XP debt applies (Decided 1).
+8. **Drops and XP.**
    - Hitting a body gives that player their own roll, once.
    - The kill's XP goes to every player who damaged the creature.
    - Glue's real recipe replaces the stand-in, and the torch, extractor and sling recipes exist.
-8. **Skills**: every skill listed above works, and its card stops saying "Comes later".
-9. **Load**: 50 bots on one planet with creatures around each keep the 30-second report free of slow ticks.
-10. **Protocol 18.** Creature kinds are data (`assets/creatures.toml`: health, armour, XP, speeds, attacks and drops per tier), sent in the handshake. Code refers to kinds by name.
-11. **Tests**:
+9. **Skills**: every skill listed above works, and its card stops saying "Comes later".
+10. **Load**: 50 bots on one planet with creatures around each keep the 30-second report free of slow ticks.
+11. **Protocol 18.** Creature kinds are data (`assets/creatures.toml`: health, armour, XP, speeds, attacks and drops per tier), sent in the handshake. Code refers to kinds by name.
+12. **Tests**:
     - every formula against tuning 3.3;
     - drop rolls against the weights;
     - spawning limits;
@@ -181,12 +182,19 @@ See Decide 1: Nathan chooses whether to keep the debt.
 3. **Drifter** (tier 3 worlds and up). It rests on a dock and flies when angered. It strafes and fires bolts and beams. Attacks unlock as its health drops (bomb at 80%, homing at 60%). Higher tiers lift a player and drop them, with a 30 s cooldown.
 4. **Exotic creatures**: marked with decals, carrying 1 or 2 buffs on low worlds. A health buff is +200% and an armour buff +100%. Damage and speed buffs are **guesses**. Exotics give more XP and drops.
 
-## Decide (Nathan)
+## Decided (Nathan, 2026-10-21)
 
-1. **Defeat penalty.** Boundless's XP debt exactly, or something lighter? Forum research rates the death penalty as a reason people logged off (`boundless-forum-feedback.md` 10). Recommendation: Boundless's exact rule, since nothing carried is lost and the Second Chance epic halves it.
-2. **Healing before food exists.** In Boundless, health came back only from being well fed (out of combat), the Mending epic, brews and healing bombs. Food and hunger are a later milestone. Recommendation: a stand-in, like the 2-sap glue. Out of combat, health returns at Boundless's "well fed" rate (a full 600 bar in about 7 minutes, the one rate players reported) until food arrives and takes over.
-3. **Fall damage.** Boundless took a share of max health by impact speed, softer on sand, and players named it the most common killer. The formula is not published. Recommendation: include it as Boundless did, with the curve marked a guess for you to tune in play.
-4. **Dashers drop wayshards.** Boundless's runner dropped rough oortstone, its portal fuel. Our portal fuel is wayshards (M8). Recommendation: dashers drop rough wayshards at Boundless's weights, so hunting is a second way to fuel portals besides digging deep.
+1. **Defeat penalty: Boundless exactly.**
+   - Nothing carried is lost.
+   - An XP debt of 10% of the next level, with half XP until it is paid.
+   - Second Chance halves the debt.
+   - You respawn on safe ground nearby.
+2. **Healing: a stand-in until food exists.** Out of combat, health returns at Boundless's well-fed rate: a full 600 bar in about 7 minutes, which is 1.4 a second. "Out of combat" means 10 s since you last took or dealt damage (**guess**). When food arrives, being well fed takes this over.
+3. **Fall damage: as Boundless or slightly gentler, and never a grapple's fault.** Nathan: "one of the main ways I died from fall damage was simply grappling around ... a single grapple let go too early while still in motion killed me so many times".
+   - **Attached means safe.** While a hook is attached to anything, a landing does no fall damage, from any height. This is Boundless's own rule: hooking the ground at the end of a long fall saves you.
+   - **Grace after letting go.** The first landing within **3 s** (**guess**, `fall_grace_after_release`) of releasing a hook takes no fall damage. A swing let go too early no longer kills. A fall that starts long after the release counts as normal.
+   - **The curve.** Damage is a share of max health by impact speed, as Boundless did, softer on sand, soil, snow and leaves, and none in water. Boundless's curve is unpublished, so ours is a **guess**, set slightly gentler and tuned by Nathan in play. Soft Landing (falling armour) applies.
+4. **Wayshards from dashers: yes**, at Boundless's weights, as one extra way to get portal fuel. Nathan: the main way players got portal fuel in Boundless was **meteorite hunts**. Meteors fall when you enter a new region, drop waves of creatures, and after the last wave every player loots the core; higher world tiers and more players make bigger meteors with better loot. "Hunts were always a lot of fun so it would be good to have." So meteorites, dropping wayshards, come soon after this milestone (roadmap).
 
 ## Measure in game (Nathan offered, 2026-10-21)
 
@@ -204,7 +212,7 @@ Not published anywhere found; every one is a **guess** until measured:
 
 - Elemental creatures, shards and status effects.
 - Meteorites and hunts.
-- Augments, brews, oils, leather (refinery), food and hunger (unless Decide 2 says otherwise).
+- Augments, brews, oils, leather (refinery), food and hunger (Decided 2: a regen stand-in until food).
 - Rage and focus.
 - Revive and the reviver tools.
 - Healing bombs.
@@ -215,11 +223,11 @@ Not published anywhere found; every one is a **guess** until measured:
 
 ## Status
 
-*Spec written 2026-10-21; waiting on Nathan's four decisions before the parts they touch. Everything else can be built meanwhile.*
+*Spec written and decided 2026-10-21.*
 
 - [x] Research: tuning 3.1 to 3.7 (existing), 3.8 added (recipes, healing, behaviour; boundlexx has no creature data)
 - [x] Spec
-- [ ] Nathan's decisions (Decide 1 to 4)
+- [x] Nathan's decisions (2026-10-21): Boundless's defeat debt; a regen stand-in; fall damage gentler with grapple safety; dashers drop wayshards, meteorites next
 - [ ] Part 1: health and damage rules; slings; creature system (spawning, AI, sync, models); grazer, pelter, dasher; drops and recipes; defeat; combat skills
 - [ ] Part 2: popper and bombs; drifter; exotics
 - [ ] Nathan's play-test
