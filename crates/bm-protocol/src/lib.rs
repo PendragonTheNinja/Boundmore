@@ -749,7 +749,9 @@ mod tests {
         let n = encode(&snap).len();
         assert!(n <= 1150, "{n} bytes");
         // Creatures go in snapshots of their own when players fill one.
-        let ServerDatagram::Snapshot { planet, tick, ack, you, .. } = snap;
+        let ServerDatagram::Snapshot {
+            planet, tick, ack, you, ..
+        } = snap;
         let snap = ServerDatagram::Snapshot {
             planet,
             tick,

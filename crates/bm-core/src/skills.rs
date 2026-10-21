@@ -829,7 +829,14 @@ mod tests {
         let t = SkillTree::builtin();
         let mut c = Character::default();
         c.add_xp(xp_for_level(50));
-        for id in ["vitality", "vitality", "slingbow_mastery", "kinetic_armour", "kinetic_resistance", "falling_armour"] {
+        for id in [
+            "vitality",
+            "vitality",
+            "slingbow_mastery",
+            "kinetic_armour",
+            "kinetic_resistance",
+            "falling_armour",
+        ] {
             c.learn(&t, id).unwrap();
         }
         c.learn(&t, "slingbow_epic").unwrap();

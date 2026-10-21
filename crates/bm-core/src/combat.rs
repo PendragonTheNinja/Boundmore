@@ -308,14 +308,25 @@ mod tests {
                 ..Default::default()
             };
             for _ in 0..600 {
-                step(&mut s, &PlayerInput::default(), &MoveConfig::default(), None, shape, &Floor(soft));
+                step(
+                    &mut s,
+                    &PlayerInput::default(),
+                    &MoveConfig::default(),
+                    None,
+                    shape,
+                    &Floor(soft),
+                );
             }
             s
         };
         assert_eq!(fall(2.0, false, u16::MAX).hurt, 0, "a short drop is harmless");
         let ten = fall(10.0, false, u16::MAX).hurt;
         assert!((60..160).contains(&ten), "ten blocks onto rock: {ten}");
-        assert_eq!(fall(10.0, true, u16::MAX).hurt, ten.div_ceil(2).max(ten / 2), "soft ground halves it");
+        assert_eq!(
+            fall(10.0, true, u16::MAX).hurt,
+            ten.div_ceil(2).max(ten / 2),
+            "soft ground halves it"
+        );
         let s = fall(40.0, false, u16::MAX);
         assert!(s.down, "forty blocks onto rock is a defeat");
         assert_eq!(fall(40.0, false, 0).hurt, 0, "just let go of a grapple: no harm");

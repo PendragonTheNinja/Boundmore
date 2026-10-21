@@ -311,7 +311,13 @@ mod tests {
         let hp: Vec<_> = grazer.tiers.iter().map(|t| (t.health, t.armour, t.xp)).collect();
         assert_eq!(
             hp,
-            [(1500, 0, 60), (3500, 0, 140), (9000, 0, 240), (25000, 0, 360), (60000, 0, 540)]
+            [
+                (1500, 0, 60),
+                (3500, 0, 140),
+                (9000, 0, 240),
+                (25000, 0, 360),
+                (60000, 0, 540)
+            ]
         );
         let pelter = k.get(k.id("pelter").unwrap()).unwrap();
         assert_eq!(pelter.tier(5).armour, 1000);
