@@ -11,7 +11,7 @@
 
 use std::f32::consts::{FRAC_1_SQRT_2, PI};
 
-use crate::color::{HUE_BLUE, HUE_GOLD, HUE_PURPLE, Ramp, RampSpec, Rgba};
+use crate::color::{HUE_BLUE, HUE_CYAN, HUE_GOLD, HUE_PURPLE, Ramp, RampSpec, Rgba};
 use crate::gathered::{blob, ramp};
 use crate::icons::{Icon, Lump, P, cord_ramp, inside_poly, leather_ramp, seg_dist, vine_ramp};
 use crate::materials::{copper_ramp, end_grain_ramp, plank_ramp, steel_ramp, stone_ramp};
@@ -359,10 +359,21 @@ fn hide() -> Tex {
 
 // -------------------------------------------------------------------- vials
 
+#[derive(Clone, Copy, PartialEq)]
+enum Fill {
+    /// Runs clean.
+    Plain,
+    /// Leaves a smear on the glass above the liquid and a slow bubble.
+    Thick,
+    /// Glows from its heart, fizzes with bubbles and throws a spark.
+    Volatile,
+}
+
 /// A stoppered glass vial of a liquid: a cork, a lipped neck, a rounded
-/// body filled from `level` down, a long glint up its left side. `thick`
-/// leaves a smear on the glass above the liquid and a slow bubble in it.
-fn vial(liquid: &Ramp, thick: bool) -> Tex {
+/// body filled from `level` down, a long glint up its left side, and the
+/// liquid's own manner ([`Fill`]).
+fn vial(liquid: &Ramp, fill: Fill) -> Tex {
+    let thick = fill == Fill::Thick;
     let glass = glass_ramp();
     let cork = end_grain_ramp();
     let level = 14.0f32;
@@ -397,6 +408,20 @@ fn vial(liquid: &Ramp, thick: bool) -> Tex {
             if thick && (px - 18.0).hypot(py - 22.5) < 1.6 {
                 t += 0.32;
             }
+            if fill == Fill::Volatile {
+                // Bright at its heart, and bubbles rising: lit rings with
+                // dark middles.
+                t = 0.35 + (1.0 - (px - 16.5).hypot(py - 21.0) / 7.0).max(0.0) * 0.6 - dx / 7.0 * 0.12;
+                for (bx, by, br) in [(18.5f32, 23.5f32, 1.7f32), (14.0, 18.5, 1.2), (19.0, 17.0, 0.9)] {
+                    let d = (px - bx).hypot(py - by);
+                    if d < br {
+                        t = if d < br - 0.8 { 0.55 } else { 1.0 };
+                    }
+                }
+                if py < meniscus + 1.0 {
+                    t = 0.95;
+                }
+            }
             return Some(liquid.pick(t, x, y));
         }
         if thick && body && !rim && py > meniscus - 3.0 && (x * 3 + y) % 5 < 2 {
@@ -417,6 +442,23 @@ fn vial(liquid: &Ramp, thick: bool) -> Tex {
         }
         Some(cork.pick(t, x, y))
     });
+    if fill == Fill::Volatile {
+        // A spark leaping off the cork: a bright four-point star.
+        icon.layer(false, |x, y| {
+            let (px, py) = (c(x), c(y));
+            for (sx, sy, r) in [(23.5f32, 5.0f32, 3.2f32), (25.5, 11.5, 1.6)] {
+                let (ex, ey) = ((px - sx).abs(), (py - sy).abs());
+                if (ex < 0.6 && ey < r) || (ey < 0.6 && ex < r) || (ex + ey < r * 0.5) {
+                    return Some(if ex < 0.6 && ey < 0.6 {
+                        Rgba::hex(0xffffff)
+                    } else {
+                        liquid.pick(0.85, x, y)
+                    });
+                }
+            }
+            None
+        });
+    }
     icon.finish()
 }
 
@@ -425,7 +467,7 @@ fn fresh_blood() -> Tex {
         .cool(HUE_PURPLE, 0.25)
         .warm(HUE_GOLD, 0.15)
         .build();
-    vial(&red, false)
+    vial(&red, Fill::Plain)
 }
 
 fn thick_blood() -> Tex {
@@ -433,7 +475,17 @@ fn thick_blood() -> Tex {
         .cool(HUE_PURPLE, 0.45)
         .warm(HUE_PURPLE, 0.2)
         .build();
-    vial(&dark, true)
+    vial(&dark, Fill::Thick)
+}
+
+/// Volatile blood: a vial of glowing orange-yellow, fizzing, a spark
+/// jumping off its cork.
+fn volatile_blood() -> Tex {
+    let fire = RampSpec::new(Rgba::hex(0xf09a20), 8, 0.32, 0.99)
+        .cool(HUE_PURPLE, 0.3)
+        .warm(HUE_GOLD, 0.5)
+        .build();
+    vial(&fire, Fill::Volatile)
 }
 
 /// Vital essence: a round flask glowing green-gold from inside, a bright
@@ -694,6 +746,8 @@ enum Pupil {
     Slit,
     /// A dasher's: round.
     Round,
+    /// A popper's: round, smouldering red at its rim.
+    Ember,
 }
 
 /// An eye: a ball, the iris turned a little to the top left, its pupil, and a bright catchlight.
@@ -732,7 +786,24 @@ fn eye(sclera: u32, iris: &Ramp, iris_r: f32, pupil: Pupil, name: &str) -> Tex {
             Pupil::Bar => ((ex / 4.4).powi(4) + (ey / 1.7).powi(4)) < 1.0,
             Pupil::Slit => ex.abs() < 1.3 * (1.0 - (ey / (iris_r - 0.6)).powi(2)).max(0.0).sqrt(),
             Pupil::Round => e < iris_r * 0.42,
+            Pupil::Ember => e < iris_r * 0.5,
         };
+        if matches!(pupil, Pupil::Ember) && inside {
+            // A coal: black at its middle, a ring smouldering red round
+            // it with hot flecks, a dark rim against the iris.
+            let k = e / (iris_r * 0.5);
+            return Some(if k > 0.86 {
+                Rgba::hex(0x2a0a06)
+            } else if k > 0.5 {
+                if unit(hash2(salt ^ 0xe, (x + y * 32) as u32)) > 0.72 {
+                    Rgba::hex(0xffd060)
+                } else {
+                    Rgba::hex(0xe8300c)
+                }
+            } else {
+                Rgba::hex(0x140606)
+            });
+        }
         if inside {
             return Some(Rgba::hex(0x120c18));
         }
@@ -776,6 +847,14 @@ fn dasher_eye() -> Tex {
         .warm(HUE_GOLD, 0.1)
         .build();
     eye(0x2c2c44, &yellow, 9.6, Pupil::Round, "dasher_eye")
+}
+
+fn popper_eye() -> Tex {
+    let ember = RampSpec::new(Rgba::hex(0xf07a1c), 8, 0.22, 0.97)
+        .cool(HUE_PURPLE, 0.3)
+        .warm(HUE_GOLD, 0.45)
+        .build();
+    eye(0x4a3230, &ember, 9.0, Pupil::Ember, "popper_eye")
 }
 
 // ----------------------------------------------------------------- trophies
@@ -1104,6 +1183,515 @@ fn sling(frame: Frame) -> Tex {
     icon.finish()
 }
 
+// ------------------------------------------------------ milestone 13 part 2
+
+/// Prime meat: a thick round roast tied with two loops of twine, deep red
+/// laced all over with fine marbling, a rind of fat round its rim.
+fn prime_meat() -> Tex {
+    let salt = seed("prime_meat");
+    let red = RampSpec::new(Rgba::hex(0xc42a3a), 8, 0.22, 0.86)
+        .cool(HUE_PURPLE, 0.35)
+        .warm(HUE_GOLD, 0.15)
+        .build();
+    let fat = ramp(0xf6e6d0, 0.6, 0.99);
+    let twine = cord_ramp();
+    let (cx, cy, rx, ry, depth) = (16.0f32, 12.5f32, 12.0f32, 8.0f32, 7);
+    let top = move |px: f32, py: f32| {
+        let (dx, dy) = (px - cx, py - cy);
+        let a = dy.atan2(dx);
+        let rough = 1.0 + 0.04 * (a * 3.0 + 0.7).sin() + 0.03 * (a * 5.0).cos();
+        (dx / rx).hypot(dy / ry) / rough
+    };
+    // Twine loops round the roast at these offsets from its middle.
+    let ties = [-5.0f32, 4.5];
+    let tied = move |px: f32| ties.iter().any(|t| (px - cx - t).abs() < 0.9);
+    let mut icon = Icon::new();
+    // The side: the outline dropped, a fat rind at its top, red below.
+    icon.layer(true, |x, y| {
+        let (px, py) = (c(x), c(y));
+        let down = (0..=depth).find(|&k| top(px, py - k as f32) <= 1.0)?;
+        if down == 0 {
+            return None;
+        }
+        let down = down as f32;
+        let shade = -(px - cx) / rx * 0.12;
+        if tied(px) {
+            return Some(twine.pick(0.45 + shade + if y % 2 == 0 { 0.12 } else { 0.0 }, x, y));
+        }
+        if down < 1.5 {
+            return Some(fat.pick(0.5 + shade, x, y));
+        }
+        // Streaks of fat through the cut side.
+        if (value(salt ^ 0x5, 4, 4, px * 1.4, py * 0.6) - 0.5).abs() < 0.06 {
+            return Some(fat.pick(0.42 + shade, x, y));
+        }
+        Some(red.pick(0.36 + shade - down / depth as f32 * 0.1, x, y))
+    });
+    // The top face.
+    icon.layer(false, |x, y| {
+        let (px, py) = (c(x), c(y));
+        let d = top(px, py);
+        if d > 1.0 {
+            return None;
+        }
+        let (dx, dy) = (px - cx, py - cy);
+        // The twine passes over the top, knotted on the right loop.
+        let knot = (px - cx - ties[1]).abs() < 1.8 && dy.abs() < 1.3;
+        if tied(px) || knot {
+            return Some(twine.pick(0.66 + lit(dx, dy, rx) * 0.2 + if knot { 0.15 } else { 0.0 }, x, y));
+        }
+        // A rind of fat round the rim.
+        if d > 0.84 {
+            return Some(fat.pick(0.68 + lit(dx, dy, rx) * 0.25, x, y));
+        }
+        let mut t = 0.5 + lit(dx, dy, rx) * 0.28 - d * d * 0.1;
+        // Dense marbling: a lace of thin white veins and flecks.
+        let m = value(salt, 4, 4, px * 1.6, py * 1.6);
+        let n = value(salt ^ 0x77, 4, 4, px * 2.4, py * 2.4);
+        if (m - 0.5).abs() < 0.045 || (n - 0.5).abs() < 0.035 {
+            return Some(fat.pick(0.72, x, y));
+        }
+        if (m - 0.5).abs() < 0.1 || (n - 0.5).abs() < 0.08 {
+            t += 0.14;
+        }
+        Some(red.pick(t, x, y))
+    });
+    icon.finish()
+}
+
+/// Heat sac: a fleshy sac lit ember red from inside, brightest at its
+/// heart, dark veins across it and embers rising off its top.
+fn heat_sac() -> Tex {
+    let salt = seed("heat_sac");
+    let sac = RampSpec::new(Rgba::hex(0xc8401c), 8, 0.18, 0.99)
+        .cool(HUE_PURPLE, 0.45)
+        .warm(HUE_GOLD, 0.5)
+        .build();
+    let (cx, cy, rx, ry) = (16.0f32, 18.5f32, 12.0f32, 10.0f32);
+    let mut icon = Icon::new();
+    // A pinched neck at the top, where it hung inside the beast.
+    icon.layer(true, |x, y| {
+        let (px, py) = (c(x), c(y));
+        let w = 2.2 + (py - 7.0).max(0.0) * 0.5;
+        ((px - 16.5).abs() < w && (6.0..11.0).contains(&py)).then(|| sac.pick(0.3 - (px - 16.5) / w * 0.1, x, y))
+    });
+    icon.layer(true, |x, y| {
+        let (px, py) = (c(x), c(y));
+        let (dx, dy) = (px - cx, py - cy);
+        let a = dy.atan2(dx);
+        let rough = 1.0 + 0.04 * ((a * 3.0 + 1.0).sin() * 0.6 + (a * 5.0).cos() * 0.4);
+        let d = (dx / rx).hypot(dy / ry) / rough;
+        if d > 1.0 {
+            return None;
+        }
+        // Glowing from inside: hot at the heart, darker skin at the rim,
+        // the top-left rim catching a little light.
+        let heat = (1.0 - (dx + 1.0).hypot((dy - 1.0) * 1.2) / rx).max(0.0);
+        let mut t = 0.2 + heat * 0.85 + lit(dx, dy, rx).max(0.0) * 0.12;
+        // Dark veins: the skin over the glow.
+        let m = value(salt, 4, 4, px * 1.2, py * 1.2);
+        if (m - 0.5).abs() < 0.04 && d < 0.92 {
+            t -= 0.38;
+        }
+        // The gloss.
+        if (px - 9.5).hypot(py - 12.5) < 1.5 {
+            t = 1.0;
+        }
+        Some(sac.pick(t, x, y))
+    });
+    // Embers rising off it.
+    icon.layer(false, |x, y| {
+        let (px, py) = (c(x), c(y));
+        for (ex, ey, r) in [
+            (8.5f32, 5.5f32, 1.2f32),
+            (24.0, 4.0, 1.4),
+            (25.5, 8.5, 0.9),
+            (11.0, 2.5, 0.8),
+        ] {
+            let d = (px - ex).hypot(py - ey);
+            if d < r {
+                return Some(if d < r - 0.6 {
+                    Rgba::hex(0xfff0a0)
+                } else {
+                    sac.pick(0.8, x, y)
+                });
+            }
+        }
+        None
+    });
+    icon.finish()
+}
+
+/// Float sac: a pale bladder swollen like a balloon, thin enough to see
+/// light through, tied at a knot below with a wisp trailing off.
+fn float_sac() -> Tex {
+    let skin = RampSpec::new(Rgba::hex(0xb8c4f0), 8, 0.5, 0.99)
+        .cool(HUE_PURPLE, 0.4)
+        .warm(HUE_CYAN, 0.3)
+        .build();
+    let (cx, cy, rx, ry) = (16.0f32, 13.0f32, 11.0f32, 10.5f32);
+    let mut icon = Icon::new();
+    // The wisp trailing from the knot.
+    let tail = Stroke::new(24, |s| (16.0 + (s * PI * 2.0).sin() * 2.0, 25.0 + s * 5.0));
+    tail.draw(
+        &mut icon,
+        false,
+        |_| 0.7,
+        |_, k, x, y| Some(skin.pick(0.4 + k * 0.15, x, y)),
+    );
+    // The knot.
+    icon.layer(true, |x, y| {
+        let (px, py) = (c(x), c(y));
+        let w = 1.2 + (25.5 - py).max(0.0) * 0.6;
+        ((px - 16.0).abs() < w && (22.0..26.0).contains(&py)).then(|| skin.pick(0.45 - (px - 16.0) / w * 0.12, x, y))
+    });
+    icon.layer(true, |x, y| {
+        let (px, py) = (c(x), c(y));
+        let (dx, dy) = (px - cx, py - cy);
+        // Rounder at the top, drawn to a point at the knot.
+        let squeeze = if dy > 0.0 { 1.0 + dy / ry * 0.55 } else { 1.0 };
+        let d = (dx * squeeze / rx).hypot(dy / ry);
+        if d > 1.0 {
+            return None;
+        }
+        // Translucent: bright through its middle, its rim a little deeper,
+        // light catching the top left.
+        let mut t = 0.72 + lit(dx, dy, rx) * 0.18 - (d - 0.6).max(0.0) * 0.55;
+        // Faint seams running from the knot over the top.
+        let a = (dx * squeeze).atan2(ry * 1.3 - dy);
+        if d > 0.25 && (a * 6.0).sin().abs() < 0.08 {
+            t -= 0.12;
+        }
+        // The big soft highlight and a little one.
+        let h = (dx + 4.5).hypot(dy + 4.5);
+        if h < 2.6 {
+            t = if h < 1.5 { 1.0 } else { 0.92 };
+        }
+        if (dx - 5.0).hypot(dy + 6.0) < 0.9 {
+            t = 1.0;
+        }
+        Some(skin.pick(t, x, y))
+    });
+    icon.finish()
+}
+
+/// Core trophy: a glowing ember core, crusted dark in patches, held up in
+/// a gold cup with three prongs on a little foot.
+fn core_trophy() -> Tex {
+    let salt = seed("core_trophy");
+    let gold = gold_ramp();
+    let glow = RampSpec::new(Rgba::hex(0xf07a1c), 8, 0.2, 0.99)
+        .cool(HUE_PURPLE, 0.4)
+        .warm(HUE_GOLD, 0.55)
+        .build();
+    let (cx, cy, r) = (16.0f32, 12.5f32, 9.0f32);
+    let mut icon = Icon::new();
+    // The foot and stem.
+    icon.layer(true, |x, y| {
+        let (px, py) = (c(x), c(y));
+        let dx = px - 16.0;
+        let foot = (26.0..29.5).contains(&py) && dx.abs() < 7.5 - (29.5 - py) * 0.6;
+        let stem = (20.0..26.0).contains(&py) && dx.abs() < 1.8 + (py - 23.0).abs() * 0.35;
+        if !foot && !stem {
+            return None;
+        }
+        let mut t = 0.55 - dx / 7.5 * 0.35;
+        if foot && py < 27.0 {
+            t += 0.2;
+        }
+        if stem && (py - 23.0).abs() < 0.7 {
+            t += 0.25;
+        }
+        Some(gold.pick(t, x, y))
+    });
+    // The core.
+    icon.layer(true, |x, y| {
+        let (px, py) = (c(x), c(y));
+        let (dx, dy) = (px - cx, py - cy);
+        let d = dx.hypot(dy);
+        if d > r {
+            return None;
+        }
+        let heat = 1.0 - (dx + 0.5).hypot(dy + 0.5) / r;
+        let mut t = 0.25 + heat * 0.85;
+        // A dark crust in patches, its edges cracked with light.
+        let m = value(salt, 4, 4, px * 0.9, py * 0.9);
+        if m > 0.64 && d > r * 0.4 {
+            t = if m < 0.67 {
+                0.75
+            } else {
+                0.08 + lit(dx, dy, r).max(0.0) * 0.12
+            };
+        }
+        if (dx + 3.5).hypot(dy + 4.0) < 1.3 {
+            t = 1.0;
+        }
+        Some(glow.pick(t, x, y))
+    });
+    // The cup round its lower part, and two prongs hugging its sides up
+    // past its middle, each ending in a bead.
+    icon.layer(true, |x, y| {
+        let (px, py) = (c(x), c(y));
+        let (dx, dy) = (px - cx, py - cy);
+        let cup = dy > 5.0 && dy < 9.5 && (dx / (r + 1.0)).hypot((dy - 3.0) / (r - 1.5)) < 1.0;
+        let (d, a) = (dx.hypot(dy), dy.atan2(dx));
+        let arm = (d - r - 0.1).abs() < 0.8 && ((-0.75..0.9).contains(&a) || !(-2.4..=2.25).contains(&a));
+        let bead = [-0.75f32, -2.4]
+            .iter()
+            .any(|&b| (dx - (r + 0.1) * b.cos()).hypot(dy - (r + 0.1) * b.sin()) < 1.4);
+        let prong = arm || bead;
+        if !cup && !prong {
+            return None;
+        }
+        let mut t = 0.55 - dx / r * 0.3;
+        if cup && dy < 5.2 {
+            t += 0.3;
+        }
+        if prong && !cup {
+            t = 0.6 + lit(dx, dy, r) * 0.35;
+        }
+        Some(gold.pick(t, x, y))
+    });
+    icon.finish()
+}
+
+/// Tentacle trophy: a jointed tentacle tip rising from the bottom right and
+/// curling round on itself, suckers along its inner side, bound in gold
+/// at its cut end.
+fn tentacle_trophy() -> Tex {
+    let skin = RampSpec::new(Rgba::hex(0xa8488a), 8, 0.2, 0.92)
+        .cool(HUE_BLUE, 0.35)
+        .warm(HUE_GOLD, 0.2)
+        .build();
+    let sucker = ramp(0xf4c8d4, 0.45, 0.99);
+    let (cx, cy) = (16.5f32, 14.5f32);
+    let rad = |s: f32| 12.5 - s * 10.5;
+    let ang = |s: f32| 2.3 + s * 8.0;
+    let at = move |s: f32| (cx - ang(s).cos() * rad(s), cy + ang(s).sin() * rad(s) * 0.95);
+    let width = |s: f32| 4.4 * (1.0 - s).powf(0.9) + 0.6;
+    let path = Stroke::new(200, at);
+    let mut icon = Icon::new();
+    path.draw(&mut icon, true, width, |s, k, x, y| {
+        if let Some(g) = gold_band(s, k, 0.0, 0.035, x, y) {
+            return Some(g);
+        }
+        let mut t = 0.55 + k * 0.32;
+        // Joints: dark rings, each segment swelling a little between.
+        let seg = (s * 14.0).fract();
+        if seg < 0.12 && s > 0.06 {
+            t -= 0.24;
+        } else {
+            t -= (seg - 0.5).abs() * 0.12;
+        }
+        Some(skin.pick(t, x, y))
+    });
+    // Suckers: pale discs in a row along its inner side, smaller towards
+    // the tip, each with a dark mouth.
+    let discs: Vec<(P, f32)> = (0..9)
+        .map(|i| {
+            let s = 0.09 + i as f32 * 0.075;
+            let (px, py) = at(s);
+            let (ix, iy) = (cx - px, cy - py);
+            let l = ix.hypot(iy).max(1e-3);
+            let w = width(s);
+            ((px + ix / l * w * 0.5, py + iy / l * w * 0.5), (w * 0.38).max(0.7))
+        })
+        .collect();
+    icon.layer(false, |x, y| {
+        let (px, py) = (c(x), c(y));
+        for &((sx, sy), r) in &discs {
+            let (dx, dy) = (px - sx, py - sy);
+            let d = dx.hypot(dy);
+            if d < r {
+                if r > 1.1 && d < r * 0.45 {
+                    return Some(skin.pick(0.15, x, y));
+                }
+                return Some(sucker.pick(0.6 + lit(dx, dy, r) * 0.35, x, y));
+            }
+        }
+        None
+    });
+    icon.finish()
+}
+
+/// Bomb charge: a cartridge of rolled paper along the diagonal, its ends
+/// crimped, tied with two turns of twine round a red band, a short fuse
+/// out of its top end.
+fn bomb_charge() -> Tex {
+    let paper = RampSpec::new(Rgba::hex(0xd8c08a), 8, 0.3, 0.97)
+        .cool(HUE_PURPLE, 0.3)
+        .warm(HUE_GOLD, 0.3)
+        .build();
+    let band = RampSpec::new(Rgba::hex(0xb83a2a), 7, 0.22, 0.8)
+        .cool(HUE_PURPLE, 0.35)
+        .warm(HUE_GOLD, 0.2)
+        .build();
+    let twine = cord_ramp();
+    let fuse = fuse_ramp();
+    let (a, b) = ((7.5f32, 24.5f32), (22.5f32, 9.5f32));
+    let body = Stroke::new(30, |s| (a.0 + (b.0 - a.0) * s, a.1 + (b.1 - a.1) * s));
+    let mut icon = Icon::new();
+    // The fuse, curling out of the top end.
+    let wick = Stroke::new(16, |s| {
+        (b.0 + 1.5 + s * 4.0, b.1 - 1.5 - s * 5.0 + (s * PI).sin() * 1.6)
+    });
+    wick.draw(
+        &mut icon,
+        false,
+        |_| 0.8,
+        |s, _, x, y| {
+            Some(if s > 0.88 {
+                Rgba::hex(0xff9a2a)
+            } else {
+                fuse.pick(0.5 + if (x + y) % 2 == 0 { 0.3 } else { 0.0 }, x, y)
+            })
+        },
+    );
+    body.draw(
+        &mut icon,
+        true,
+        |s| {
+            // Crimped ends: pinched in over the last bit.
+            let e = s.min(1.0 - s);
+            if e < 0.06 { 3.4 + e * 30.0 } else { 5.2 }
+        },
+        |s, k, x, y| {
+            let mut t = 0.55 + k * 0.34;
+            let e = s.min(1.0 - s);
+            if e < 0.07 {
+                // The twisted end.
+                t += if (x + y) % 2 == 0 { 0.12 } else { -0.12 };
+            }
+            // Twine either side of the band.
+            if (s - 0.36).abs() < 0.035 || (s - 0.64).abs() < 0.035 {
+                return Some(twine.pick(0.5 + k * 0.3, x, y));
+            }
+            // A red band of warning round its middle.
+            if (s - 0.5).abs() < 0.1 {
+                return Some(band.pick(0.5 + k * 0.36, x, y));
+            }
+            // The paper's wrap: a spiral seam.
+            if (s * 30.0 + k * 1.5).fract() < 0.1 && e > 0.07 {
+                t -= 0.14;
+            }
+            Some(paper.pick(t, x, y))
+        },
+    );
+    icon.finish()
+}
+
+fn fuse_ramp() -> Ramp {
+    Ramp::from_hex(&[0x2a1810, 0x4a2c18, 0x6a4424, 0x8a5c30])
+}
+
+/// A bag of bombs: a leather pouch, its mouth open, three round bombs
+/// sitting in it with their fuses up. Copper bombs are bright copper with
+/// copper fittings on the pouch, iron ones dark iron with iron fittings.
+fn bombs(metal: Frame) -> Tex {
+    let salt = seed(if metal == Frame::Copper {
+        "copper_bombs"
+    } else {
+        "iron_bombs"
+    });
+    let shell = if metal == Frame::Copper {
+        copper_ramp()
+    } else {
+        RampSpec::new(Rgba::hex(0x4a4c58), 8, 0.12, 0.85)
+            .cool(HUE_BLUE, 0.3)
+            .build()
+    };
+    let fitting = if metal == Frame::Copper {
+        copper_ramp()
+    } else {
+        steel_ramp()
+    };
+    let leather = leather_ramp();
+    let cord = cord_ramp();
+    let fuse = fuse_ramp();
+    let balls = [(10.5f32, 13.0f32, 5.0f32), (21.5, 12.5, 5.0), (16.0, 9.5, 5.0)];
+    let mut icon = Icon::new();
+    // The back of the pouch's mouth.
+    icon.layer(true, |x, y| {
+        let (dx, dy) = (c(x) - 16.0, c(y) - 16.5);
+        ((dx / 12.0).hypot(dy / 3.0) < 1.0).then(|| leather.pick(0.25 + dx / 12.0 * 0.05, x, y))
+    });
+    for (i, &(bx, by, r)) in balls.iter().enumerate() {
+        // The fuse first, under the ball.
+        let lean = if i == 0 { -1.0 } else { 1.0 };
+        let wick = Stroke::new(10, |s| (bx + lean * (1.0 + s * 2.0), by - r + 1.0 - s * 3.2));
+        wick.draw(
+            &mut icon,
+            true,
+            |_| 0.7,
+            |s, _, x, y| {
+                Some(if s > 0.82 {
+                    Rgba::hex(0xffa030)
+                } else {
+                    fuse.pick(0.55, x, y)
+                })
+            },
+        );
+        icon.layer(true, |x, y| {
+            let (dx, dy) = (c(x) - bx, c(y) - by);
+            let d = dx.hypot(dy);
+            if d > r {
+                return None;
+            }
+            // The fuse cap: a little collar on top.
+            if dy < -r + 2.0 && (dx - lean * 0.8).abs() < 1.5 {
+                return Some(fitting.pick(0.75, x, y));
+            }
+            let mut t = 0.5 + lit(dx, dy, r) * 0.4 - (d / r).powi(2) * 0.12;
+            // A seam round its middle with rivets.
+            if (dy - 0.5).abs() < 0.6 {
+                t -= 0.22;
+                if unit(hash2(salt, (x + i * 7) as u32)) > 0.7 {
+                    t += 0.4;
+                }
+            }
+            if (dx + r * 0.38).hypot(dy + r * 0.42) < 1.1 {
+                t = 1.0;
+            }
+            Some(shell.pick(t, x, y))
+        });
+    }
+    // The pouch: rounded below, its front lip rolled over just under the
+    // bombs' middles, tied with a drawstring and a metal clasp.
+    icon.layer(true, |x, y| {
+        let (px, py) = (c(x), c(y));
+        let (dx, dy) = (px - 16.0, py - 21.0);
+        let lip = 16.5 + (dx * 0.5).cos() * 0.6;
+        let inside = py >= lip
+            && (dx / 12.5).hypot(dy.max(0.0) / 8.5) < 1.0
+            && dx.abs() < 12.5 - (lip + 1.5 - py).max(0.0) * 2.0;
+        if !inside {
+            return None;
+        }
+        // A metal clasp at the front.
+        let (kx, ky) = (dx, py - (lip + 3.6));
+        if (kx / 2.6).hypot(ky / 2.2) < 1.0 {
+            return Some(fitting.pick(0.55 + lit(kx, ky, 2.4) * 0.4, x, y));
+        }
+        // The drawstring along under the lip.
+        if (py - (lip + 3.4)).abs() < 0.6 {
+            return Some(cord.pick(0.55 + if x % 2 == 0 { 0.15 } else { 0.0 }, x, y));
+        }
+        let mut t = 0.55 - dx / 12.5 * 0.3 - dy.max(0.0) / 8.5 * 0.12;
+        // The rolled lip.
+        if py < lip + 1.6 {
+            t += 0.22;
+        } else if py < lip + 2.4 {
+            t -= 0.18;
+        }
+        // Stitching down the sides.
+        if (dx.abs() - 8.5).abs() < 0.5 && py > lip + 3.0 && y % 2 == 0 {
+            t += 0.25;
+        }
+        Some(leather.pick(t, x, y))
+    });
+    icon.finish()
+}
+
 /// Paints the creature part's or sling's icon called `name`, if it is one.
 pub fn paint(name: &str) -> Option<Tex> {
     Some(match name {
@@ -1121,6 +1709,16 @@ pub fn paint(name: &str) -> Option<Tex> {
         "grazer_eye" => grazer_eye(),
         "pelter_eye" => pelter_eye(),
         "dasher_eye" => dasher_eye(),
+        "popper_eye" => popper_eye(),
+        "volatile_blood" => volatile_blood(),
+        "prime_meat" => prime_meat(),
+        "heat_sac" => heat_sac(),
+        "float_sac" => float_sac(),
+        "core_trophy" => core_trophy(),
+        "tentacle_trophy" => tentacle_trophy(),
+        "bomb_charge" => bomb_charge(),
+        "copper_bombs" => bombs(Frame::Copper),
+        "iron_bombs" => bombs(Frame::Iron),
         "horn_trophy" => horn_trophy(),
         "scale_trophy" => scale_trophy(),
         "feather_trophy" => feather_trophy(),
