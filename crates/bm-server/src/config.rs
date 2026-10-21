@@ -52,6 +52,9 @@ pub struct PlacedCreature {
     pub tier: u8,
     /// Feet position, from where players arrive.
     pub offset: [f64; 3],
+    /// Exotic buffs (`creatures::Exotic` bits; 0, the default: none).
+    #[serde(default)]
+    pub exotic: u8,
 }
 
 /// The default universe: one planet of each built-in kind, the gentle one

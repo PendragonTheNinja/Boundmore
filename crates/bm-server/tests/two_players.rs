@@ -4122,6 +4122,7 @@ fn creature_config(dir: &Path, placed: &[(&str, f64)]) -> ServerConfig {
                 kind: kind.to_string(),
                 tier: 1,
                 offset: [*dx, 0.0, 0.0],
+                exotic: 0,
             })
             .collect(),
         ..config(dir)

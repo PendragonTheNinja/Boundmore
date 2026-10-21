@@ -24,6 +24,7 @@ use crate::reclaim::Reclaims;
 use crate::storage::move_stack;
 use crate::store::{PlayerData, Store, WriteBatch, load_slots, save_slots};
 
+mod blasts;
 mod combat;
 mod creatures;
 mod mining;
@@ -128,6 +129,14 @@ enum Queued {
         creature: u32,
         slot: u8,
     },
+    /// A bomb thrown (milestone 13 part 2).
+    Throw {
+        at: u32,
+        slot: u8,
+        yaw: u16,
+        pitch: i16,
+        hold: u16,
+    },
 }
 
 impl Queued {
@@ -136,13 +145,16 @@ impl Queued {
     fn seq_pos(&self) -> Option<(u32, BlockPos)> {
         match *self {
             Queued::Edit { seq, pos, .. } | Queued::Swing { seq, pos, .. } => Some((seq, pos)),
-            Queued::Skill { .. } | Queued::Shoot { .. } | Queued::Strike { .. } => None,
+            Queued::Skill { .. } | Queued::Shoot { .. } | Queued::Strike { .. } | Queued::Throw { .. } => None,
         }
     }
 
     /// An attack: about the planet it was sent on, refused quietly.
     fn attack(&self) -> bool {
-        matches!(self, Queued::Shoot { .. } | Queued::Strike { .. })
+        matches!(
+            self,
+            Queued::Shoot { .. } | Queued::Strike { .. } | Queued::Throw { .. }
+        )
     }
 }
 
@@ -788,8 +800,23 @@ impl Game {
             }
             Event::Msg { id, msg } => match msg {
                 ClientMsg::Skill { at, action } => self.queue(id, at, Queued::Skill { at, action }),
-                // Milestone 13 part 2: bombs (server work to come).
-                ClientMsg::Throw { .. } => {}
+                ClientMsg::Throw {
+                    at,
+                    slot,
+                    yaw,
+                    pitch,
+                    hold,
+                } => self.queue(
+                    id,
+                    at,
+                    Queued::Throw {
+                        at,
+                        slot,
+                        yaw,
+                        pitch,
+                        hold,
+                    },
+                ),
                 ClientMsg::Shoot {
                     at,
                     slot,
@@ -1203,6 +1230,13 @@ impl Game {
                 charge,
             } => self.shoot(id, at, slot, yaw, pitch, charge),
             Queued::Strike { at, creature, slot } => self.strike(id, at, creature, slot),
+            Queued::Throw {
+                at,
+                slot,
+                yaw,
+                pitch,
+                hold,
+            } => self.throw(id, at, slot, yaw, pitch, hold),
         }
     }
 

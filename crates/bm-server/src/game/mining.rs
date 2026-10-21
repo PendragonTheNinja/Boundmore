@@ -271,7 +271,7 @@ impl Game {
 
     /// Tells everyone who has the chunk how much damage the block at `canon`
     /// has taken.
-    fn tell_health(&self, pi: usize, canon: BlockPos, damage: u32) {
+    pub(super) fn tell_health(&self, pi: usize, canon: BlockPos, damage: u32) {
         let chunk = canon.chunk();
         for o in self
             .players
@@ -332,7 +332,7 @@ impl Game {
     /// Everything a broken block takes with it, after its yield: the block
     /// becomes air for everyone, a claim stone's claim goes, a storage block
     /// closes, a conduit's portal goes, and props it held fall.
-    fn block_gone(&mut self, pi: usize, canon: BlockPos, old: BlockId, by: Option<u32>) {
+    pub(super) fn block_gone(&mut self, pi: usize, canon: BlockPos, old: BlockId, by: Option<u32>) {
         let storage_gone = self.planets[pi].world.registry.get(old).storage > 0;
         let claim_removed = if old == self.claim_stone {
             self.planets[pi].claims.remove_by_stone(canon)

@@ -12,14 +12,17 @@ use super::creatures::{
 };
 use super::mining::roll;
 use super::{Game, send_slots, wear_slot};
-use bm_core::combat::{CHARGE_TICKS, DamageKind, charge_multiplier, dealt, shot_step, taken};
+use bm_core::combat::{
+    CHARGE_TICKS, DamageKind, HOMING_TURN_PER_TICK, charge_multiplier, dealt, homing_step, shot_step, taken,
+};
 use bm_core::creatures::{Attack, roll_drops};
+use bm_core::items::ToolClass;
 use bm_core::mining::{is_crit, skilled_tool, swing_ticks};
 use bm_core::movement::{PhysicsWorld, look_dir};
 use bm_core::raycast::raycast_shaped;
 use bm_core::skills::defeat_debt;
 use bm_core::{BlockPos, HOTBAR_SLOTS, PlayerState};
-use bm_protocol::{ServerMsg, ShotView, Target};
+use bm_protocol::{ServerMsg, ShotKind, ShotView, Target};
 use glam::DVec3;
 
 /// Health a defeated player comes back with, as a share of their max: half,
@@ -34,7 +37,11 @@ const RETURN_MAX: f64 = 24.0;
 const RETURN_TRIES: usize = 48;
 
 /// Players within this many blocks of a shot are told it flies.
-const SHOT_TELL_RANGE: f64 = 96.0;
+pub(super) const SHOT_TELL_RANGE: f64 = 96.0;
+
+/// A bomb that strikes terrain rests this far short of where it struck
+/// (blocks), so it lies in the air beside the block.
+const BOMB_REST_GAP: f64 = 0.05;
 
 /// What a defeat by a fall is called (`ServerMsg::Defeated::by`).
 pub(super) const BY_A_FALL: &str = "a fall";
@@ -51,7 +58,7 @@ pub(super) enum Shooter {
     Creature(u32),
 }
 
-/// A shot in flight.
+/// A shot in flight: a pellet, a bolt, a homing bolt or a bomb.
 pub(super) struct Shot {
     pub id: u32,
     pub planet: usize,
@@ -67,24 +74,75 @@ pub(super) struct Shot {
     pub crit_effect: f32,
     /// Players told it flies: they hear when it ends.
     pub watchers: Vec<u32>,
+    pub kind: ShotKind,
+    /// The player a homing bolt turns toward.
+    pub homing: Option<u32>,
+    /// A bomb: ticks of fuse left, and its blast.
+    pub fuse: u32,
+    pub blast: Option<BlastSpec>,
+    /// A bomb lying where it landed.
+    pub resting: bool,
+}
+
+/// What a bomb's blast does.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub(super) struct BlastSpec {
+    pub radius: f32,
+    pub knockback: f32,
+}
+
+impl Shot {
+    /// A pellet or bolt (or, with `kind`, any shot without a blast) from
+    /// `from` at `pos` with `vel`.
+    #[allow(clippy::too_many_arguments)]
+    pub(super) fn new(
+        planet: usize,
+        from: Shooter,
+        kind: ShotKind,
+        pos: DVec3,
+        vel: DVec3,
+        falloff: f32,
+        range: f32,
+        damage: u32,
+    ) -> Self {
+        Self {
+            id: 0,
+            planet,
+            from,
+            pos,
+            vel,
+            falloff,
+            range,
+            travelled: 0.0,
+            damage,
+            crit_chance: 0.0,
+            crit_effect: 0.0,
+            watchers: Vec::new(),
+            kind,
+            homing: None,
+            fuse: 0,
+            blast: None,
+            resting: false,
+        }
+    }
 }
 
 /// The fixed roll a hit on creature `cid` makes for its crit: as a swing's
 /// at a block, by who hit, at which input, and what.
-fn creature_crit(chance: f32, player: u32, at: u32, cid: u32) -> bool {
+pub(super) fn creature_crit(chance: f32, player: u32, at: u32, cid: u32) -> bool {
     is_crit(chance, player, at, BlockPos::new(cid as i64, -1, -(at as i64)))
 }
 
 /// How far back a player's hit is judged: the client's interpolation delay,
 /// plus the inputs still waiting (their timeline runs behind), at most
 /// [`MAX_REWIND_TICKS`].
-fn rewind_for(pending: usize) -> u32 {
+pub(super) fn rewind_for(pending: usize) -> u32 {
     (REWIND_TICKS + pending as u32).min(MAX_REWIND_TICKS)
 }
 
 impl Game {
     /// Whether the cadence allows a use (swing, strike, shot) at input `at`.
-    fn ready_at(&self, id: u32, at: u32) -> bool {
+    pub(super) fn ready_at(&self, id: u32, at: u32) -> bool {
         self.players.get(&id).is_some_and(|p| {
             p.last_swing
                 .is_none_or(|(last, ticks)| at as u64 >= last as u64 + ticks as u64)
@@ -135,21 +193,25 @@ impl Game {
             }
         }
         let shot = Shot {
-            id: self.next_shot,
-            planet: pi,
-            from: Shooter::Player { id, at, rewind },
-            pos: eye,
-            vel,
-            falloff: sling.falloff,
-            range: sling.range,
-            travelled: 0.0,
-            damage,
             crit_chance: sling.crit_chance,
             crit_effect: sling.crit_effect,
-            watchers: Vec::new(),
+            ..Shot::new(
+                pi,
+                Shooter::Player { id, at, rewind },
+                ShotKind::Pellet,
+                eye,
+                vel,
+                sling.falloff,
+                sling.range,
+                damage,
+            )
         };
         self.launch(shot);
-        // A weapon fired near a herd angers it (Boundless's wildstock).
+        self.weapon_fired_near(pi, id, eye);
+    }
+
+    /// A weapon fired near a herd angers it (Boundless's wildstock).
+    pub(super) fn weapon_fired_near(&mut self, pi: usize, id: u32, eye: DVec3) {
         let shape = self.planets[pi].world.shape;
         let kinds = &self.creature_kinds;
         let tick = self.tick;
@@ -166,7 +228,8 @@ impl Game {
 
     /// Puts a shot in flight and tells the players near it (never a player
     /// their own shot: they drew it already).
-    fn launch(&mut self, mut shot: Shot) {
+    pub(super) fn launch(&mut self, mut shot: Shot) {
+        shot.id = self.next_shot;
         self.next_shot = self.next_shot.wrapping_add(1).max(1);
         let shape = self.planets[shot.planet].world.shape;
         let view = ServerMsg::Shot(ShotView {
@@ -179,8 +242,8 @@ impl Game {
             vel: shot.vel.as_vec3().to_array(),
             falloff: shot.falloff,
             range: shot.range,
-            kind: bm_protocol::ShotKind::Pellet,
-            homing: None,
+            kind: shot.kind,
+            homing: shot.homing.map(Target::Player),
         });
         let shooter = match shot.from {
             Shooter::Player { id, .. } => Some(id),
@@ -198,9 +261,11 @@ impl Game {
         self.shots.push(shot);
     }
 
-    /// Flies every shot one tick: it ends on a solid block, after its range,
-    /// or on what it hits (a creature, for a player's shot; a player, for a
-    /// creature's).
+    /// Flies every shot one tick. Pellets and bolts end on a solid block,
+    /// after their range, or on what they hit (a creature, for a player's
+    /// shot; a player, for a creature's). A homing bolt turns toward its
+    /// player as it flies. A bomb falls, rests where it lands, and goes off
+    /// when its fuse ends or when it touches what it is meant for.
     pub(super) fn step_shots(&mut self) {
         let mut shots = std::mem::take(&mut self.shots);
         let tick = self.tick;
@@ -210,7 +275,23 @@ impl Game {
             let planet = &self.planets[s.planet];
             let world = &planet.world;
             let shape = world.shape;
-            let (pos, vel) = shot_step(s.pos, s.vel, s.falloff);
+            let bomb = s.blast.is_some();
+            if bomb {
+                s.fuse = s.fuse.saturating_sub(1);
+            }
+            let (pos, vel) = if s.resting {
+                (s.pos, DVec3::ZERO)
+            } else if let Some(pid) = s.homing {
+                match self.players.get(&pid).filter(|p| p.planet == s.planet && !p.state.down) {
+                    Some(p) => {
+                        let chest = p.state.pos + DVec3::new(0.0, m.height * 0.5, 0.0);
+                        homing_step(s.pos, s.vel, s.pos + shape.delta(s.pos, chest), HOMING_TURN_PER_TICK)
+                    }
+                    None => shot_step(s.pos, s.vel, 0.0),
+                }
+            } else {
+                shot_step(s.pos, s.vel, s.falloff)
+            };
             let step = pos - s.pos;
             let len = step.length();
             // What it would hit first along this tick's path: (fraction, what).
@@ -253,30 +334,60 @@ impl Game {
                 }
             }
             let travelled = s.travelled + len;
-            let end = match first {
-                Some((_, hit)) => Some(hit),
-                None if travelled >= s.range as f64 => Some(None),
-                None => None,
-            };
-            match end {
+            // How it ends, if it does: what it hit, and where.
+            let end: Option<(Option<Target>, DVec3)> = match first {
+                Some((t, Some(target))) => Some((Some(target), s.pos + step * t)),
+                Some((t, None)) if bomb => {
+                    // It comes to rest just short of where it struck.
+                    let back = if len > 1e-9 {
+                        (t * len - BOMB_REST_GAP).max(0.0) / len
+                    } else {
+                        0.0
+                    };
+                    s.pos = shape.wrap_point(s.pos + step * back);
+                    s.vel = DVec3::ZERO;
+                    s.resting = true;
+                    s.travelled = travelled;
+                    (s.fuse == 0).then_some((None, s.pos))
+                }
+                Some((t, None)) => Some((None, s.pos + step * t)),
+                None if bomb && s.fuse == 0 => Some((None, pos)),
+                None if !bomb && travelled >= s.range as f64 => Some((None, pos)),
                 None => {
                     s.pos = shape.wrap_point(pos);
                     s.vel = vel;
                     s.travelled = travelled;
-                    true
+                    None
                 }
-                Some(hit) => {
-                    ended.push((s.planet, s.id, std::mem::take(&mut s.watchers), hit, ShotHit::of(s)));
+            };
+            match end {
+                None => true,
+                Some((hit, at)) => {
+                    ended.push((
+                        s.planet,
+                        s.id,
+                        std::mem::take(&mut s.watchers),
+                        hit,
+                        shape.wrap_point(at),
+                        ShotHit::of(s),
+                    ));
                     false
                 }
             }
         });
         self.shots = shots;
-        for (pi, id, watchers, hit, what) in ended {
+        for (pi, id, watchers, hit, at, what) in ended {
             for w in watchers {
                 if let Some(o) = self.players.get(&w) {
                     o.out.send(&ServerMsg::ShotEnd { id });
                 }
+            }
+            if let Some(blast) = what.blast {
+                match what.from {
+                    Shooter::Player { id, at: input, .. } => self.player_blast(pi, id, input, at, &what, blast),
+                    Shooter::Creature(cid) => self.creature_blast(pi, cid, at, what.damage, blast),
+                }
+                continue;
             }
             match (hit, what.from) {
                 (Some(Target::Creature(cid)), Shooter::Player { id, at, .. }) => {
@@ -284,7 +395,7 @@ impl Game {
                     self.player_hits_creature(pi, id, cid, what.damage, crit, what.crit_effect);
                 }
                 (Some(Target::Player(pid)), Shooter::Creature(cid)) => {
-                    self.creature_hits_player(pi, cid, pid, what.damage);
+                    self.creature_hits_player(pi, cid, pid, what.damage, DamageKind::Kinetic);
                 }
                 _ => {}
             }
@@ -331,15 +442,34 @@ impl Game {
         }
         let crit = creature_crit(tool.crit_chance, id, at, cid);
         self.player_hits_creature(pi, id, cid, tool.damage, crit, tool.crit_effect);
+        // A hammer stuns a popper.
+        if tool.class == Some(ToolClass::Hammer) {
+            let tick = self.tick;
+            if let Some(c) = self.herds[pi].get_mut(cid).filter(|c| c.alive()) {
+                let def = self.creature_kinds.get(c.kind).expect("present");
+                c.hammered(def, tick);
+            }
+        }
     }
 
-    /// A player's hit lands on a creature: armour, threat, the numbers.
-    fn player_hits_creature(&mut self, pi: usize, id: u32, cid: u32, damage: u32, crit: bool, crit_effect: f32) {
-        let Some(c) = self.herds[pi].get(cid).filter(|c| c.alive()) else {
+    /// A player's hit lands on a creature: armour, threat, the numbers. A
+    /// curled popper takes nothing; the first hit on a popper may curl it.
+    pub(super) fn player_hits_creature(
+        &mut self,
+        pi: usize,
+        id: u32,
+        cid: u32,
+        damage: u32,
+        crit: bool,
+        crit_effect: f32,
+    ) {
+        let tick = self.tick;
+        let curl = roll(&mut self.rng);
+        let Some(c) = self.herds[pi].get_mut(cid).filter(|c| c.alive()) else {
             return;
         };
         let def = self.creature_kinds.get(c.kind).expect("present");
-        let amount = dealt(damage, crit, crit_effect, def.tier(c.tier).armour);
+        let amount = c.struck(def, tick, curl, dealt(damage, crit, crit_effect, c.armour(def)));
         if let Some(p) = self.players.get_mut(&id) {
             p.state.fought();
             p.out.send(&ServerMsg::Hit {
@@ -372,14 +502,14 @@ impl Game {
                 provoke(c, def, id, tick);
             }
         }
-        if c.damage >= def.tier(c.tier).health {
+        if c.damage >= c.max_health(def) {
             self.kill(pi, cid);
         }
     }
 
     /// A creature dies: its body stays for drops, every player who hurt it
     /// gets the kill's XP, and its column spawns nothing for a while.
-    fn kill(&mut self, pi: usize, cid: u32) {
+    pub(super) fn kill(&mut self, pi: usize, cid: u32) {
         let tick = self.tick;
         let Some(c) = self.herds[pi].get_mut(cid) else { return };
         let def = self.creature_kinds.get(c.kind).expect("present");
@@ -387,7 +517,10 @@ impl Game {
         c.mind = super::creatures::Mind::Calm;
         c.threat.clear();
         c.pose = bm_protocol::Pose::Dead;
-        let xp = def.tier(c.tier).xp as u64;
+        c.flying = false;
+        c.beam = None;
+        c.lift = None;
+        let xp = c.xp(def) as u64;
         let hurt_by = std::mem::take(&mut c.hurt_by);
         let at = c.state.pos;
         tracing::debug!("{} {cid} died", def.title(c.tier));
@@ -418,7 +551,12 @@ impl Game {
         let luck = p.effects.luck_multiplier();
         let account = p.account.clone();
         let rng = &mut self.rng;
-        let drops = roll_drops(def.tier(c.tier), luck, || roll(rng));
+        // An exotic gives more rolls.
+        let extra = c.exotic.extra_rolls();
+        let mut table = def.tier(c.tier).clone();
+        table.drops_min = table.drops_min.saturating_add(extra);
+        table.drops_max = table.drops_max.saturating_add(extra);
+        let drops = roll_drops(&table, luck, || roll(rng));
         let c = self.herds[pi].get_mut(cid).expect("present");
         if !c.take_loot(&account) {
             return tracing::debug!("#{id} looted body {cid} again");
@@ -447,7 +585,7 @@ impl Game {
     pub(super) fn charge_hit(&mut self, pi: usize, cid: u32, pid: u32, dir: DVec3) {
         let Some(c) = self.herds[pi].get(cid) else { return };
         let def = self.creature_kinds.get(c.kind).expect("present");
-        let damage = def.tier(c.tier).damage;
+        let damage = c.hit_damage(def);
         let knock = match def.attack {
             Attack::Charge { knockback, .. } => knockback as f64,
             _ => 0.0,
@@ -459,7 +597,7 @@ impl Game {
             p.state.vel = dir * knock + DVec3::new(0.0, KNOCK_UP, 0.0);
             p.state.on_ground = false;
         }
-        self.creature_hits_player(pi, cid, pid, damage);
+        self.creature_hits_player(pi, cid, pid, damage, DamageKind::Kinetic);
     }
 
     /// A pelter's volley at player `pid`: its burst for its tier, fanned
@@ -489,32 +627,28 @@ impl Game {
         let lift = 0.5 * bm_core::combat::SHOT_GRAVITY * CREATURE_SHOT_FALLOFF as f64 * t * t;
         let base = DVec3::new(d.x, d.y + lift, d.z).normalize();
         let n = burst[(c.tier.clamp(1, 3) - 1) as usize].max(1);
-        let damage = def.tier(c.tier).damage;
+        let damage = c.hit_damage(def);
         for k in 0..n {
             let off = (k as f64 - (n - 1) as f64 / 2.0) * (spread as f64).to_radians();
             let (s, co) = (off.sin(), off.cos());
             let dir = DVec3::new(base.x * co - base.z * s, base.y, base.x * s + base.z * co);
-            let shot = Shot {
-                id: self.next_shot,
-                planet: pi,
-                from: Shooter::Creature(cid),
-                pos: from,
-                vel: dir * speed as f64,
-                falloff: CREATURE_SHOT_FALLOFF,
+            let shot = Shot::new(
+                pi,
+                Shooter::Creature(cid),
+                ShotKind::Pellet,
+                from,
+                dir * speed as f64,
+                CREATURE_SHOT_FALLOFF,
                 range,
-                travelled: 0.0,
                 damage,
-                crit_chance: 0.0,
-                crit_effect: 0.0,
-                watchers: Vec::new(),
-            };
+            );
             self.launch(shot);
         }
     }
 
-    /// A creature's hit on a player: armour and resistance, then health; at
-    /// 0, defeat.
-    pub(super) fn creature_hits_player(&mut self, pi: usize, cid: u32, pid: u32, amount: u32) {
+    /// A creature's hit of `kind` on a player: armour and resistance, then
+    /// health; at 0, defeat.
+    pub(super) fn creature_hits_player(&mut self, pi: usize, cid: u32, pid: u32, amount: u32, kind: DamageKind) {
         let by = self.herds[pi]
             .get(cid)
             .map(|c| self.creature_kinds.get(c.kind).expect("present").title(c.tier))
@@ -524,7 +658,7 @@ impl Game {
         if p.state.down || p.planet != pi {
             return;
         }
-        let amount = taken(amount, DamageKind::Kinetic, &p.effects.defence(), r);
+        let amount = taken(amount, kind, &p.effects.defence(), r);
         p.state.take(amount);
         p.out.send(&ServerMsg::Hit {
             target: Target::Player(pid),
@@ -609,6 +743,7 @@ pub(super) struct ShotHit {
     pub damage: u32,
     pub crit_chance: f32,
     pub crit_effect: f32,
+    pub blast: Option<BlastSpec>,
 }
 
 impl ShotHit {
@@ -618,6 +753,7 @@ impl ShotHit {
             damage: s.damage,
             crit_chance: s.crit_chance,
             crit_effect: s.crit_effect,
+            blast: s.blast,
         }
     }
 }
