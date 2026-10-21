@@ -26,9 +26,11 @@ use crate::store::{PlayerData, Store, WriteBatch, load_slots, save_slots};
 
 mod mining;
 mod portal;
+mod skills;
 mod stations;
 use anyhow::{Context, Result};
 use bm_core::movement::{self, MoveConfig, PlayerInput, PlayerState};
+use bm_core::skills::{Character, Effects, SkillTree};
 use bm_core::{
     BlockId, BlockPos, BlockState, CHUNK_SIZE, ChunkPos, Colour, ColourPalette, HOTBAR_SLOTS, Inventory, ItemId,
     ItemRegistry, ItemStack, Mount, PlanetShape, PlotPos, RecipeBook, Shape, Station, TICK_DT, chisel,
@@ -36,7 +38,7 @@ use bm_core::{
 use bm_net::quinn::Connection;
 use bm_protocol::{
     Channel, ChatLine, ClientMsg, EditAction, LOCAL_CHAT_RANGE, MAX_NAME_LEN, PLAYERS_PER_SNAPSHOT, PlanetSummary,
-    RemotePlayer, ServerDatagram, ServerMsg, SlotRef, StorageView, Travel, Welcome,
+    RemotePlayer, ServerDatagram, ServerMsg, SkillAction, SlotRef, StorageView, Travel, Welcome,
 };
 use crossbeam_channel::{Receiver, Sender, TryRecvError};
 use glam::DVec3;
@@ -89,7 +91,7 @@ const LAPSE_CHECK_EVERY: u64 = 60;
 const LAPSE_PLOT_EVERY: u64 = 15;
 
 /// What waits in a player's queue for the input it follows.
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Debug)]
 enum Queued {
     Edit {
         seq: u32,
@@ -102,13 +104,21 @@ enum Queued {
         pos: BlockPos,
         slot: u8,
     },
+    /// A change to the character's skills (milestone 12): what the page
+    /// does to the body counts from the input it follows.
+    Skill {
+        at: u32,
+        action: SkillAction,
+    },
 }
 
 impl Queued {
-    /// The answer to a request refused before it was looked at.
-    fn seq_pos(&self) -> (u32, BlockPos) {
+    /// The answer to an edit or swing refused before it was looked at (None
+    /// for a skill change).
+    fn seq_pos(&self) -> Option<(u32, BlockPos)> {
         match *self {
-            Queued::Edit { seq, pos, .. } | Queued::Swing { seq, pos, .. } => (seq, pos),
+            Queued::Edit { seq, pos, .. } | Queued::Swing { seq, pos, .. } => Some((seq, pos)),
+            Queued::Skill { .. } => None,
         }
     }
 }
@@ -154,6 +164,15 @@ struct Player {
     trip: Option<portal::Trip>,
     /// Portal tokens whose names this player has been sent.
     told_tokens: HashSet<u32>,
+    /// Progression (milestone 12), saved with the account.
+    character: Character,
+    /// What the active page does (kept in step with `character`).
+    effects: Effects,
+    /// XP changed since the character was last sent (sent at most every
+    /// `skills::CHARACTER_EVERY` ticks).
+    character_dirty: bool,
+    /// The light-source epic shines now (not in daylight under open sky).
+    inner_light: bool,
 }
 
 /// A player who left, held in memory until the save holding their last state
@@ -162,6 +181,7 @@ struct Departed {
     planet: usize,
     state: PlayerState,
     inventory: Inventory,
+    character: Character,
     /// Fires (or disconnects) once their save is written; None until sent.
     written: Option<Receiver<()>>,
 }
@@ -261,6 +281,8 @@ pub struct Game {
     damage: Vec<DamageMap>,
     /// Bonus yields are rolled from this (splitmix64).
     rng: u64,
+    /// The skill tree (`assets/skills.toml`), sent in every welcome.
+    skills: SkillTree,
 }
 
 /// One planet's load, as the report shows it.
@@ -481,6 +503,7 @@ impl Game {
             rng: std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
                 .map_or(0x2545_f491, |d| d.as_nanos() as u64),
+            skills: SkillTree::builtin(),
         })
     }
 
@@ -587,6 +610,10 @@ impl Game {
         if self.tick % STORAGE_CHECK_EVERY == 0 {
             self.check_open_storage();
             self.check_open_portals();
+            self.update_inner_light();
+        }
+        if self.tick % skills::CHARACTER_EVERY == 0 {
+            self.send_dirty_characters();
         }
         let ids: Vec<u32> = self.players.keys().copied().collect();
         for id in &ids {
@@ -676,8 +703,7 @@ impl Game {
                 }
             }
             Event::Msg { id, msg } => match msg {
-                // Milestone 12: skills (server agent).
-                ClientMsg::Skill { .. } => {}
+                ClientMsg::Skill { at, action } => self.queue(id, at, Queued::Skill { at, action }),
                 ClientMsg::StationFuel { pos, slot, count, into } => self.station_fuel(id, pos, slot, count, into),
                 ClientMsg::Edit { seq, at, pos, action } => self.queue(id, at, Queued::Edit { seq, pos, action }),
                 ClientMsg::Swing { seq, at, pos, slot } => self.queue(id, at, Queued::Swing { seq, at, pos, slot }),
@@ -727,8 +753,8 @@ impl Game {
             out.close("this server is full");
             return;
         }
-        let (planet, saved, mut inventory) = match self.departed.remove(&account) {
-            Some(d) => (d.planet, Some(d.state), d.inventory),
+        let (planet, saved, mut inventory, character) = match self.departed.remove(&account) {
+            Some(d) => (d.planet, Some(d.state), d.inventory, d.character),
             None => match self.store.player(&account) {
                 Ok(Some(data)) => (
                     data.planet as usize,
@@ -736,8 +762,9 @@ impl Game {
                     Inventory {
                         slots: load_slots(&self.items, &data.inventory, &name),
                     },
+                    skills::sanitize(data.character.into(), &self.skills),
                 ),
-                Ok(None) => (self.start, None, self.starting_inventory()),
+                Ok(None) => (self.start, None, self.starting_inventory(), Character::default()),
                 Err(e) => {
                     // Never start them afresh: the empty inventory would be
                     // saved over the real one.
@@ -763,6 +790,12 @@ impl Game {
                 ..s
             })
             .unwrap_or_else(|| pl.arrival());
+        // What the character's skills do to the body, from the first input.
+        let effects = character.effects(&self.skills);
+        let state = PlayerState {
+            body: effects.body(),
+            ..state
+        };
         out.send(&ServerMsg::Welcome(Box::new(Welcome {
             player_id: id,
             account: name.clone(),
@@ -772,8 +805,8 @@ impl Game {
             items: self.items.defs().to_vec(),
             colours: self.colours.clone(),
             recipes: self.recipes.recipes.clone(),
-            skills: bm_core::skills::SkillTree::builtin().skills,
-            character: bm_core::skills::Character::default(),
+            skills: self.skills.skills.clone(),
+            character: character.clone(),
             inventory: inventory.clone(),
             movement: self.movement,
             spawn: state,
@@ -781,7 +814,8 @@ impl Game {
             view_radius: self.cfg.view_radius,
             reach: self.cfg.reach,
             claims: pl.claims.views(),
-            plot_allowance: self.cfg.plot_allowance,
+            // Plots bought with marks included (the client adds nothing).
+            plot_allowance: self.cfg.plot_allowance.saturating_add(character.plots_bought),
         })));
         for (oid, other) in self.players.iter().filter(|(_, o)| o.planet == planet) {
             out.send(&ServerMsg::PlayerJoined {
@@ -844,6 +878,10 @@ impl Game {
                 portal_guard: false,
                 trip: None,
                 told_tokens: HashSet::new(),
+                character,
+                effects,
+                character_dirty: false,
+                inner_light: false,
             },
         );
         self.tell_tokens(id);
@@ -865,6 +903,7 @@ impl Game {
                 // A player who leaves lets go of their grapple.
                 state: PlayerState { hook: None, ..p.state },
                 inventory: p.inventory,
+                character: p.character,
                 written: None,
             },
         );
@@ -948,12 +987,16 @@ impl Game {
                     world,
                 );
                 if let Some(h) = held {
-                    p.state = h;
+                    // Held in place, but a skill change since still counts.
+                    p.state = PlayerState {
+                        body: p.state.body,
+                        ..h
+                    };
                 }
                 p.last_seq += 1;
                 p.last_input = input;
                 p.bank -= 1.0;
-                if events.fired || events.released {
+                if (events.fired || events.released) && mining::roll(&mut self.rng) >= p.effects.wear_saved() {
                     let before = p.inventory.clone();
                     let mut broke = None;
                     if let Some(s) = p.inventory.slots[slot].as_mut() {
@@ -979,7 +1022,17 @@ impl Game {
     /// overtake the break of the one before it.
     fn queue(&mut self, id: u32, at: u32, queued: Queued) {
         let Some(p) = self.players.get_mut(&id) else { return };
-        let (seq, pos) = queued.seq_pos();
+        let Some((seq, pos)) = queued.seq_pos() else {
+            // A skill change belongs to no planet: travel does not void it.
+            if at <= p.last_seq && p.edits.is_empty() {
+                self.apply_queued(id, queued);
+            } else if at > p.last_seq + MAX_EDIT_LEAD || p.edits.len() >= MAX_QUEUED_EDITS {
+                self.skill_refused(id, at, "Too much at once. Try again".into());
+            } else {
+                p.edits.push_back((at, queued));
+            }
+            return;
+        };
         if p.travel_guard.is_some_and(|g| at <= g) {
             // Sent about the planet they left.
             self.edit_refused(id, seq, pos, "edit from before travelling");
@@ -1004,6 +1057,7 @@ impl Game {
         match queued {
             Queued::Edit { seq, pos, action } => self.edit(id, seq, pos, action),
             Queued::Swing { seq, at, pos, slot } => self.swing(id, seq, at, pos, slot),
+            Queued::Skill { at, action } => self.skill(id, at, action),
         }
     }
 
@@ -1144,7 +1198,8 @@ impl Game {
                                     .get(o.last_input.slot as usize)
                                     .filter(|_| (o.last_input.slot as usize) < HOTBAR_SLOTS)
                                     .and_then(|s| self.items.get(s.item))
-                                    .map_or(0, |d| d.held_light),
+                                    .map_or(0, |d| d.held_light)
+                                    .max(if o.inner_light { skills::INNER_LIGHT } else { 0 }),
                             },
                         ))
                     })
@@ -1216,7 +1271,13 @@ impl Game {
             .filter(|(i, _)| *i != pi)
             .map(|(_, p)| p.claims.used_by(account))
             .sum();
-        self.cfg.plot_allowance.saturating_sub(elsewhere)
+        // Plots bought with marks add to it (Nathan, 2026-10-21).
+        let bought = self
+            .players
+            .values()
+            .find(|p| p.account == account)
+            .map_or(0, |p| p.character.plots_bought);
+        self.cfg.plot_allowance.saturating_add(bought).saturating_sub(elsewhere)
     }
 
     fn edit(&mut self, id: u32, seq: u32, pos: BlockPos, action: EditAction) {
@@ -1275,15 +1336,26 @@ impl Game {
                 }
             }
             Effect::Chiselled { slot } => {
-                broke = wear_slot(&self.items, &mut p.inventory, slot);
+                // The durability epic spares some wear.
+                if mining::roll(&mut self.rng) >= p.effects.wear_saved() {
+                    broke = wear_slot(&self.items, &mut p.inventory, slot);
+                }
             }
         }
         send_slots(p, &before);
         if let Some(text) = broke {
             p.out.send(&ServerMsg::Notice { text });
         }
+        // Building inside your own claim earns the block's build XP.
+        let build_xp = match accepted.effect {
+            Effect::Placed { .. } if planet.claims.at_block(canon).is_some_and(|c| c.owner == p.account) => {
+                planet.world.registry.get(new.id).build_xp as u64
+            }
+            _ => 0,
+        };
         self.stats.edits += 1;
         self.change_block(pi, canon, new, Some(id));
+        self.add_xp(id, build_xp);
         if let Some(claim) = claim_created {
             if let Some(p) = self.players.get(&id) {
                 p.out.send(&ServerMsg::Notice {
@@ -1386,7 +1458,13 @@ impl Game {
         if !p.sent.contains(&canon.chunk()) {
             return Err("chunk not loaded for this player".into());
         }
-        if !in_reach(shape, &self.movement, self.cfg.reach, &p.state, canon) {
+        if !in_reach(
+            shape,
+            &self.movement,
+            self.cfg.reach + p.effects.control,
+            &p.state,
+            canon,
+        ) {
             return Err("out of reach".into());
         }
         let current = world.block(canon).ok_or("chunk not resident")?;
@@ -1514,6 +1592,9 @@ impl Game {
                     .and_then(|d| d.chisel())
                     .ok_or("not a chisel")?;
                 let state = world.state(canon).ok_or("chunk not resident")?;
+                // The chisels epic lets any chisel make a precise (one
+                // octant) cut, as well as its own.
+                let precise = precise || (p.effects.chisel_epic && octants.count_ones() == 1);
                 let new = chisel::apply(reg.get(current), state, family, precise, octants, restore)?;
                 if restore {
                     // Filling back must not close over a player: the octants
@@ -1548,7 +1629,13 @@ impl Game {
             let canon = shape.wrap_block(shrine);
             p.sent.contains(&canon.chunk())
                 && planet.world.block(canon) == Some(self.warp_shrine)
-                && in_reach(shape, &self.movement, self.cfg.reach, &p.state, canon)
+                && in_reach(
+                    shape,
+                    &self.movement,
+                    self.cfg.reach + p.effects.control,
+                    &p.state,
+                    canon,
+                )
         }
     }
 
@@ -1579,6 +1666,11 @@ impl Game {
         let Some(p) = self.players.get_mut(&id) else { return };
         let from = p.planet;
         p.planet = to;
+        // The character's skills go with them.
+        let arrival = PlayerState {
+            body: p.state.body,
+            ..arrival
+        };
         p.state = arrival;
         // Inputs and edits sent about the old planet are not replayed on the
         // new one; inputs carry on from the newest seen, standing still.
@@ -1670,7 +1762,13 @@ impl Game {
         if !p.sent.contains(&canon.chunk()) {
             return Err("chunk not loaded for this player".into());
         }
-        if !in_reach(shape, &self.movement, self.cfg.reach, &p.state, canon) {
+        if !in_reach(
+            shape,
+            &self.movement,
+            self.cfg.reach + p.effects.control,
+            &p.state,
+            canon,
+        ) {
             return Err(Refusal::Told("That is out of reach".into()));
         }
         let block = planet.world.block(canon).ok_or("chunk not resident")?;
@@ -2240,21 +2338,22 @@ impl Game {
             .duration_since(std::time::UNIX_EPOCH)
             .map_or(0, |d| d.as_secs());
         let planets = &self.planets;
-        let data = |planet: usize, state: PlayerState, inv: &Inventory| PlayerData {
+        let data = |planet: usize, state: PlayerState, inv: &Inventory, c: &Character| PlayerData {
             planet: planets[planet].id,
             state: Some(state.into()),
             inventory: save_slots(items, inv),
             last_seen: now,
+            character: c.clone().into(),
         };
         let mut players: Vec<(String, PlayerData)> = self
             .players
             .values()
-            .map(|p| (p.account.clone(), data(p.planet, p.state, &p.inventory)))
+            .map(|p| (p.account.clone(), data(p.planet, p.state, &p.inventory, &p.character)))
             .collect();
         let mut done: Vec<Sender<()>> = done.into_iter().collect();
         let mut written = None;
         for (account, d) in self.departed.iter_mut().filter(|(_, d)| d.written.is_none()) {
-            players.push((account.clone(), data(d.planet, d.state, &d.inventory)));
+            players.push((account.clone(), data(d.planet, d.state, &d.inventory, &d.character)));
             let rx = written.get_or_insert_with(|| {
                 let (tx, rx) = crossbeam_channel::bounded(1);
                 done.push(tx);

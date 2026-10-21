@@ -149,7 +149,7 @@ impl Game {
             .all(|b| planet.claims.at_block(*b).is_some_and(|c| c.owner == p.account))
             && blocks
                 .iter()
-                .any(|b| in_reach(shape, &self.movement, self.cfg.reach, &p.state, *b))
+                .any(|b| in_reach(shape, &self.movement, self.cfg.reach + p.effects.control, &p.state, *b))
     }
 
     /// Closes every portal window its watcher may no longer use.
@@ -174,6 +174,18 @@ impl Game {
         }
     }
 
+    /// Why this player may not use a portal's window: the portal epic, when
+    /// the server requires it (milestone 12, as in Boundless).
+    fn portal_epic_missing(&self, id: u32) -> Option<String> {
+        let p = self.players.get(&id)?;
+        (self.cfg.portal_epic_required && !p.effects.portal_epic).then(|| {
+            format!(
+                "Opening portals needs the {} skill",
+                super::skills::effect_name(&self.skills, bm_core::skills::Effect::PortalEpic)
+            )
+        })
+    }
+
     pub(super) fn open_portal(&mut self, id: u32, pos: Option<BlockPos>) {
         let Some(pos) = pos else {
             if let Some(p) = self.players.get_mut(&id) {
@@ -181,7 +193,11 @@ impl Game {
             }
             return;
         };
-        match self.portal_access(id, pos) {
+        let access = match self.portal_epic_missing(id) {
+            Some(why) => Err(Refusal::Told(why)),
+            None => self.portal_access(id, pos),
+        };
+        match access {
             Ok(pid) => {
                 let view = self.portal_view(pid);
                 if let Some(p) = self.players.get_mut(&id) {
@@ -201,6 +217,9 @@ impl Game {
     }
 
     pub(super) fn portal_action(&mut self, id: u32, pos: BlockPos, action: PortalAction) {
+        if let Some(why) = self.portal_epic_missing(id) {
+            return self.notice(id, &why);
+        }
         let pid = match self.portal_access(id, pos) {
             Ok(pid) => pid,
             Err(r) => return self.tell(id, r),

@@ -93,6 +93,9 @@ pub struct ServerConfig {
     /// Seconds a traveller's charge at one portal lasts: trips through it
     /// within this time are free.
     pub portal_charge_cooldown: u64,
+    /// Opening a portal's window needs the portal epic (Waywise), as in
+    /// Boundless (Nathan, 2026-10-21: required, "maybe we change later").
+    pub portal_epic_required: bool,
     /// An item catalogue to use instead of the built-in `assets/items.toml`
     /// (tests use one to try tools no recipe makes yet). Saves name items,
     /// so a catalogue may add items freely.
@@ -129,6 +132,7 @@ impl Default for ServerConfig {
             portal_trip_cost_same_planet: 1,
             portal_trip_cost_other_planet: 2,
             portal_charge_cooldown: 3600,
+            portal_epic_required: true,
             items: None,
             planet_name: None,
             seed: None,
