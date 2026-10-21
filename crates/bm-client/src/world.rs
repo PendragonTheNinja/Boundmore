@@ -266,6 +266,19 @@ impl ClientWorld {
         self.pending.len()
     }
 
+    /// The light at a point (the block holding it), for lighting what is
+    /// not meshed (creatures, players, shots) as terrain is lit. A solid
+    /// block holds no light of its own, so the point is lifted out of one
+    /// (a body sunk a little into the ground) when the block above is open.
+    pub fn light_at(&self, p: glam::DVec3) -> bm_core::Light {
+        let b = BlockPos::containing(p.x, p.y, p.z);
+        let l = self.light.light_at(b);
+        if l.0 == 0 && self.block(b).is_some_and(|id| self.flags.opaque(id)) {
+            return self.light.light_at(b.offset(0, 1, 0));
+        }
+        l
+    }
+
     pub fn dirty_count(&self) -> usize {
         self.mesher.dirty.len()
     }

@@ -1,8 +1,8 @@
-// Players, lines (the block highlight, claim outlines) and the crosshair: small things drawn with
+// Boxes (players, creatures, shots), lines (the block highlight, claim outlines) and the crosshair: small things drawn with
 // plain positions.
 
 
-// ---- boxes (other players), instanced unit cube ----
+// ---- boxes (players, creatures, shots, the hook), instanced unit cube ----
 
 struct BoxIn {
     @location(0) corner: vec3<f32>,
@@ -10,26 +10,53 @@ struct BoxIn {
     @location(2) center: vec3<f32>,
     @location(3) half_size: vec3<f32>,
     @location(4) color: vec4<f32>,
+    // A unit quaternion (x, y, z, w) turning the box about its centre.
+    @location(5) rotation: vec4<f32>,
+    // x: sky light, y: block light (0..1, from the light map where the box
+    // stands), z: brightness, w: glow (0 lit like terrain, 1 shines alone).
+    @location(6) light: vec4<f32>,
 };
 
 struct BoxOut {
     @builtin(position) clip: vec4<f32>,
     @location(0) color: vec3<f32>,
+    @location(1) rel: vec3<f32>,
+    @location(2) normal: vec3<f32>,
+    @location(3) light: vec4<f32>,
 };
+
+fn rotate(q: vec4<f32>, v: vec3<f32>) -> vec3<f32> {
+    let t = 2.0 * cross(q.xyz, v);
+    return v + q.w * t + cross(q.xyz, t);
+}
 
 @vertex
 fn vs_box(in: BoxIn) -> BoxOut {
-    let rel = in.center + in.corner * in.half_size;
+    let rel = in.center + rotate(in.rotation, in.corner * in.half_size);
     var out: BoxOut;
     out.clip = g.view_proj * vec4<f32>(rel, 1.0);
-    let light = (0.6 + 0.4 * max(dot(in.normal, g.sun_dir.xyz), 0.0) * g.sun_dir.w) * g.sun_color.w;
-    out.color = in.color.rgb * light;
+    out.color = in.color.rgb;
+    out.rel = rel;
+    out.normal = rotate(in.rotation, in.normal);
+    out.light = in.light;
     return out;
 }
 
+// Lit as terrain is (`shade` in terrain.wgsl): the light curve on sky and
+// block light, held torches, sunlit faces, then fog.
 @fragment
 fn fs_box(in: BoxOut) -> @location(0) vec4<f32> {
-    return vec4<f32>(in.color, 1.0);
+    let n = normalize(in.normal);
+    let sky = light_curve(in.light.x);
+    let block = light_curve(max(in.light.y, point_light(in.rel, n)));
+    let sun = max(dot(n, g.sun_dir.xyz), 0.0) * g.sun_dir.w;
+    let sky_light = sky * g.sun_color.w * (0.82 + 0.18 * sun);
+    let light = max(vec3<f32>(sky_light), BLOCK_TINT * block) + AMBIENT;
+    let lit = in.color * face_shade(n) * light * in.light.z;
+    let c = mix(lit, in.color, clamp(in.light.w, 0.0, 1.0));
+    let d = length(in.rel);
+    let fog = clamp((d - g.params.x) / max(g.params.y - g.params.x, 1.0), 0.0, 1.0);
+    return vec4<f32>(mix(c, sky_gradient(in.rel / max(d, 0.001)), fog * fog), 1.0);
 }
 
 // ---- lines (block highlight, claim outlines), camera-relative positions ----

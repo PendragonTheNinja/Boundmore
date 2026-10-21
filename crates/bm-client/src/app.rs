@@ -3,6 +3,8 @@
 
 use crate::chat::{ChatAction, ChatBox};
 use crate::claims::{Claims, outline};
+use crate::combat::{Anchor, Defeat, FireMode, Floaters, Losses, Shots, Trigger};
+use crate::creatures::{Creatures, Seen};
 use crate::icons::icon_for;
 use crate::items::Items;
 use crate::menus::{
@@ -27,7 +29,7 @@ use bm_core::{
 };
 use bm_protocol::{
     ClientDatagram, ClientMsg, EditAction, INPUT_REDUNDANCY, MIN_PASSWORD_LEN, PlanetInfo, PlanetSummary, PortalView,
-    ServerDatagram, ServerMsg, StorageView, Travel,
+    ServerDatagram, ServerMsg, StorageView, Target, Travel,
 };
 use glam::{DVec3, Vec3};
 use std::collections::{HashMap, HashSet};
@@ -44,11 +46,22 @@ use winit::window::{CursorGrabMode, Fullscreen, Window, WindowId};
 /// says the same if a swing reaches it).
 const NEED_A_TOOL: &str = "You need a tool to break blocks. A hand stone needs nothing to craft";
 
+/// Said when attacking a creature with nothing to fight with.
+const NEED_A_WEAPON: &str = "Hold a tool or a sling to fight";
+/// Creatures are aimed at this far (when nearer than the terrain behind).
+const CREATURE_AIM: f64 = 40.0;
+/// Where the eye sits above the feet while down (defeated).
+const DOWN_EYE: f64 = 0.35;
+/// A held sling is drawn at this scale.
+const HELD_SLING_SCALE: f32 = 0.7;
+
 const MOUSE_SENSITIVITY: f64 = 0.0022;
 /// Seconds between repeated places while the button is held.
 const PLACE_REPEAT: f64 = 0.22;
 const MAX_TICKS_PER_FRAME: u32 = 8;
 const PLAYER_VISUAL_HEIGHT: f32 = 2.0;
+/// The camera's vertical field of view.
+const FOV_Y: f32 = 75.0 * std::f32::consts::PI / 180.0;
 /// Claim mode aims this far at terrain, and this far into open air.
 const CLAIM_AIM: f64 = 48.0;
 const CLAIM_AIM_AIR: f64 = 10.0;
@@ -89,7 +102,7 @@ pub struct Options {
     /// `travel`, `travelling`, `sky`, `storage`, `chat`, `colours`,
     /// `coloured-icons`, `reclaim`, `shapes`, `chisel`, `grapple`, `portal`,
     /// `mining`, `torches`, `table`, `furnace`, `extractor`, `flora`,
-    /// `skills` or `login`).
+    /// `creatures`, `defeat`, `skills` or `login`).
     pub demo: Option<String>,
 }
 
@@ -162,6 +175,33 @@ struct Session {
     journey: Option<Journey>,
     /// What waits in this account's reclaim (`ServerMsg::Reclaim`).
     reclaim: Vec<ItemStack>,
+    /// Creatures the server told us of (milestone 13), and where each is
+    /// drawn this frame.
+    creatures: Creatures,
+    seen: Vec<Seen>,
+    /// The creature (or body) aimed at and how far: within `CREATURE_AIM`,
+    /// nearer than the first solid block.
+    aim_creature: Option<(u32, f64)>,
+    /// The sling's trigger, on the swing cooldown (`swinger`).
+    trigger: Trigger,
+    /// Shots in the air, ours and others'.
+    shots: Shots,
+    /// Damage numbers floating up.
+    floaters: Floaters,
+    /// Matches health lost with the server's `Hit`s (falls get a number of
+    /// their own).
+    losses: Losses,
+    /// When we last lost health (seconds), for the red flash.
+    hurt_at: f64,
+    last_hurt: u32,
+    defeat: Defeat,
+    /// A body's loot was asked for on this press of the attack button.
+    looted_this_press: bool,
+    /// Told "hold a tool or a sling" for this press.
+    told_no_weapon: bool,
+    /// The server tick the remote lights were last said for: parts of one
+    /// tick add to them, a newer tick replaces them.
+    lights_tick: u64,
 }
 
 impl Session {
@@ -187,7 +227,23 @@ impl Session {
             .map_err(|e| format!("the server sent a bad skill tree: {e}"))?;
         let shape = w.planet.shape;
         let bought = w.character.plots_bought;
+        let hurt = w.spawn.hurt;
+        let mut losses = Losses::default();
+        losses.reset(hurt);
         Ok(Self {
+            creatures: Creatures::new(w.creatures),
+            seen: Vec::new(),
+            aim_creature: None,
+            trigger: Trigger::default(),
+            shots: Shots::default(),
+            floaters: Floaters::default(),
+            losses,
+            hurt_at: f64::NEG_INFINITY,
+            last_hurt: hurt,
+            defeat: Defeat::default(),
+            looted_this_press: false,
+            told_no_weapon: false,
+            lights_tick: 0,
             account: w.account,
             player_id: w.player_id,
             welcome_tick: w.tick,
@@ -237,6 +293,13 @@ impl Session {
         self.claims = Claims::new(shape, t.claims);
         self.remotes = Remotes::default();
         self.remote_lights.clear();
+        self.lights_tick = 0;
+        self.creatures.clear();
+        self.seen.clear();
+        self.aim_creature = None;
+        self.shots.clear();
+        self.losses.reset(t.spawn.hurt);
+        self.last_hurt = t.spawn.hurt;
         self.me.teleport(t.spawn);
         self.welcome_tick = t.tick;
         self.welcome_local = local_ticks;
@@ -263,6 +326,9 @@ impl Session {
     /// flight carry on; what we aimed at and were breaking does not.
     fn teleport(&mut self, spawn: bm_core::PlayerState, tick: u64) {
         self.me.jump(spawn, tick);
+        // A respawn (Return) comes this way too: health starts afresh.
+        self.losses.reset(spawn.hurt);
+        self.last_hurt = spawn.hurt;
         self.target = None;
         self.use_target = None;
         self.chisel = None;
@@ -511,21 +577,32 @@ impl Session {
 
     /// Applies a snapshot; one about another planet (sent before we
     /// travelled, overtaking the stream) is dropped. Returns whether it was used.
-    fn snapshot(&mut self, d: ServerDatagram, local: f64) -> bool {
+    fn snapshot(&mut self, d: ServerDatagram, local: f64, reconcile: bool) -> bool {
         let ServerDatagram::Snapshot {
             planet,
             tick,
             ack,
             you,
             others,
-            creatures: _,
+            creatures,
         } = d;
         if planet != self.planet.id {
             return false;
         }
         let shape = self.world.shape;
-        self.me.reconcile(tick, ack, you, &self.movement, shape, &self.world);
-        self.remote_lights = others.iter().map(|o| (o.id, o.light)).collect();
+        if reconcile {
+            self.me.reconcile(tick, ack, you, &self.movement, shape, &self.world);
+        }
+        // One tick may come in several parts, each with other players: their
+        // lights add up; a newer tick starts afresh.
+        if tick > self.lights_tick {
+            self.lights_tick = tick;
+            self.remote_lights.clear();
+        }
+        if tick == self.lights_tick {
+            self.remote_lights.extend(others.iter().map(|o| (o.id, o.light)));
+        }
+        self.creatures.record(tick, &creatures);
         self.remotes.record(
             tick,
             local,
@@ -604,6 +681,97 @@ impl Session {
         (self.world.registry.get(block).storage > 0).then_some(hit.block)
     }
 
+    /// `ServerMsg::Hit`: damage we dealt (a number over the creature, which
+    /// flashes) or took (a number by the crosshair, and the red flash).
+    fn hit(&mut self, target: Target, amount: u32, crit: bool, now: f64) {
+        match target {
+            Target::Creature(id) => {
+                self.creatures.flash(id);
+                if let Some(c) = self.seen.iter().find(|c| c.id == id)
+                    && let Some(k) = self.creatures.kind(c.kind)
+                {
+                    let over = c.pos + DVec3::new(0.0, k.height as f64 + 0.3, 0.0);
+                    self.floaters.add(Anchor::World(over), amount, crit, false, now);
+                }
+            }
+            Target::Player(id) if id == self.player_id => {
+                self.losses.hit(amount, now);
+                self.floaters.add(Anchor::Me, amount, crit, true, now);
+                self.hurt_at = now;
+            }
+            Target::Player(_) => {}
+        }
+    }
+
+    /// Name plates to show: the creature aimed at, and hurt living ones
+    /// within `fight_hud::PLATE_RANGE`.
+    fn plates(&self, eye: DVec3, forward: Vec3, screen: egui::Rect) -> Vec<crate::fight_hud::Plate> {
+        let shape = self.world.shape;
+        let aimed = self.aim_creature.map(|a| a.0);
+        let mut out = Vec::new();
+        for c in &self.seen {
+            let Some(k) = self.creatures.kind(c.kind) else { continue };
+            let pos = shape.nearest_lap(eye, c.pos);
+            let near = (pos - eye).length() <= crate::fight_hud::PLATE_RANGE;
+            if aimed != Some(c.id) && !(c.damage > 0 && !c.dead && near) {
+                continue;
+            }
+            let over = pos + DVec3::new(0.0, k.height as f64 + 0.55, 0.0);
+            let Some(at) = crate::fight_hud::to_screen((over - eye).as_vec3(), forward, FOV_Y, screen) else {
+                continue;
+            };
+            let t = k.tier(c.tier);
+            out.push(crate::fight_hud::Plate {
+                at,
+                title: k.title(c.tier),
+                angry: c.angry,
+                left: 1.0 - c.damage.min(t.health) as f32 / t.health.max(1) as f32,
+                shields: t.armour / 100,
+                dead: c.dead,
+            });
+        }
+        out
+    }
+
+    /// The damage numbers on screen now.
+    fn numbers(&self, eye: DVec3, forward: Vec3, screen: egui::Rect, now: f64) -> Vec<crate::fight_hud::Number> {
+        let shape = self.world.shape;
+        self.floaters
+            .visible(now)
+            .into_iter()
+            .filter_map(|(f, rise, alpha)| {
+                let at = match f.at {
+                    Anchor::World(p) => {
+                        let p = shape.nearest_lap(eye, p) + DVec3::new(0.0, rise as f64 * 0.9, 0.0);
+                        crate::fight_hud::to_screen((p - eye).as_vec3(), forward, FOV_Y, screen)?
+                            + egui::vec2(f.drift * 36.0, 0.0)
+                    }
+                    Anchor::Me => screen.center() + egui::vec2(28.0 + f.drift * 30.0, -36.0 - rise * 60.0),
+                };
+                Some(crate::fight_hud::Number {
+                    at,
+                    amount: f.amount,
+                    crit: f.crit,
+                    taken: f.taken,
+                    alpha,
+                })
+            })
+            .collect()
+    }
+
+    /// Where the camera is, `alpha` of the way through the tick: the eye,
+    /// or low by the ground while down.
+    fn render_eye(&self, alpha: f64) -> DVec3 {
+        let shape = self.world.shape;
+        let feet = self.me.render_pos(alpha, shape);
+        let height = if self.me.state.down {
+            DOWN_EYE
+        } else {
+            self.movement.eye_height
+        };
+        shape.wrap_point(feet + DVec3::new(0.0, height, 0.0))
+    }
+
     /// Whether the block aimed at is a warp shrine.
     fn aiming_at_shrine(&self) -> Option<BlockPos> {
         let hit = self.target?;
@@ -648,6 +816,9 @@ pub struct App {
     /// A left click not yet sent as a grapple shot (clicks between ticks
     /// wait for the next one).
     fire_pending: bool,
+    /// A left click not yet seen by the attack code (a sling's click must
+    /// count however short).
+    attack_pending: bool,
     /// `--demo-ui`: where to put us once the block its hook holds exists.
     demo_pose: Option<bm_core::PlayerState>,
     grabbed: bool,
@@ -701,6 +872,7 @@ impl App {
             keys: HashSet::new(),
             mouse: [false; 2],
             fire_pending: false,
+            attack_pending: false,
             demo_pose: None,
             grabbed: false,
             yaw: 0.0,
@@ -991,7 +1163,8 @@ impl App {
             match ev {
                 NetEvent::Connected(w) => self.welcome(*w),
                 NetEvent::Msg(m) => self.handle_msg(m),
-                NetEvent::Snapshot(d) => self.handle_snapshot(d),
+                NetEvent::Snapshot(d) => self.handle_snapshot(d, true),
+                NetEvent::Observed(d) => self.handle_snapshot(d, false),
                 NetEvent::Disconnected(reason) => {
                     tracing::warn!("disconnected: {reason}");
                     let was_playing = self.session.is_some();
@@ -1155,6 +1328,17 @@ impl App {
             ServerMsg::Travel(t) => return self.travel(*t),
             ServerMsg::Storage(view) => return self.storage_update(view),
             ServerMsg::Portal(view) => return self.portal_update(view),
+            ServerMsg::Defeated { debt, by } => {
+                // The defeat screen takes the mouse; nothing else stays open.
+                self.close_menu(false);
+                self.claim_mode = false;
+                self.mouse = [false; 2];
+                self.set_grab(false);
+                if let Some(s) = &mut self.session {
+                    s.defeat.defeated(by, debt);
+                }
+                return;
+            }
             ServerMsg::Teleport { spawn, tick } => {
                 if let Some(Menu::Portal(_)) = self.menu {
                     self.close_menu(true);
@@ -1175,13 +1359,11 @@ impl App {
         let now = self.now();
         let Some(s) = &mut self.session else { return };
         match m {
-            // Milestone 13: creatures, shots and defeat (client work to come).
-            ServerMsg::Creature(_)
-            | ServerMsg::CreatureGone { .. }
-            | ServerMsg::Shot(_)
-            | ServerMsg::ShotEnd { .. }
-            | ServerMsg::Hit { .. }
-            | ServerMsg::Defeated { .. } => {}
+            ServerMsg::Creature(v) => s.creatures.view(v),
+            ServerMsg::CreatureGone { id } => s.creatures.gone(id),
+            ServerMsg::Shot(v) => s.shots.server(&v),
+            ServerMsg::ShotEnd { id } => s.shots.end(id),
+            ServerMsg::Hit { target, amount, crit } => s.hit(target, amount, crit, now),
             ServerMsg::Chunk { pos, data } => match Chunk::decode(&data) {
                 Ok(c) => s.world.insert_chunk(pos, c),
                 Err(e) => tracing::warn!("bad chunk {pos:?} from server: {e}"),
@@ -1225,14 +1407,15 @@ impl App {
             | ServerMsg::Travel(_)
             | ServerMsg::Storage(_)
             | ServerMsg::Portal(_)
+            | ServerMsg::Defeated { .. }
             | ServerMsg::Teleport { .. } => {}
         }
     }
 
-    fn handle_snapshot(&mut self, d: ServerDatagram) {
+    fn handle_snapshot(&mut self, d: ServerDatagram, reconcile: bool) {
         let local = self.local_ticks();
         if let Some(s) = &mut self.session {
-            s.snapshot(d, local);
+            s.snapshot(d, local, reconcile);
         }
     }
 
@@ -1293,6 +1476,18 @@ impl App {
         let dt = (now - self.last_frame).as_secs_f64().min(0.25);
         self.last_frame = now;
         self.handle_net();
+        // Defeated (the server said so, or our prediction took its word):
+        // the defeat screen holds the mouse until we are back on our feet.
+        let down = self.session.as_mut().is_some_and(|s| {
+            s.defeat.observe(s.me.state.down);
+            s.defeat.is_down()
+        });
+        if down && (self.grabbed || self.menu.is_some()) {
+            self.close_menu(false);
+            self.claim_mode = false;
+            self.set_grab(false);
+        }
+        let local = self.local_ticks();
 
         let input = self.sample_input();
         let playing = self.grabbed && self.menu.is_none() && !self.chat.open;
@@ -1302,6 +1497,8 @@ impl App {
             [false; 2]
         };
         let claim_mode = self.claim_mode;
+        // A press of the attack button, however short (a sling's click).
+        let pressed = std::mem::take(&mut self.attack_pending) && playing && !claim_mode;
         let (yaw, pitch) = (self.yaw, self.pitch);
         let now_s = self.now();
         let Some(s) = &mut self.session else { return };
@@ -1358,6 +1555,36 @@ impl App {
             self.accumulator = 0.0;
         }
         s.me.decay_correction(dt);
+
+        // Creatures where we draw them, shots in the air, and what we lost.
+        let shape = s.world.shape;
+        s.seen = match s.remotes.server_tick(local) {
+            Some(t) => s.creatures.sample(t, shape),
+            None => Vec::new(),
+        };
+        s.creatures.animate(&s.seen, dt as f32, shape);
+        {
+            let (world, creatures, seen) = (&s.world, &s.creatures, &s.seen);
+            let solid = |p: BlockPos| world.block(p).is_some_and(|b| world.flags.solid(b));
+            let creature = |a: DVec3, b: DVec3| {
+                seen.iter().filter(|c| !c.dead).any(|c| {
+                    creatures
+                        .hit_box(c, shape.nearest_lap(a, c.pos))
+                        .is_some_and(|(lo, hi)| crate::combat::segment_hits(a, b, lo, hi))
+                })
+            };
+            for _ in 0..ticks {
+                s.shots.tick(shape, solid, creature);
+            }
+        }
+        s.floaters.update(now_s);
+        if let Some(fall) = s.losses.observe(s.me.state.hurt, now_s) {
+            s.floaters.add(Anchor::Me, fall, false, true, now_s);
+        }
+        if s.me.state.hurt > s.last_hurt {
+            s.hurt_at = now_s;
+        }
+        s.last_hurt = s.me.state.hurt;
         // Skill changes the server never answered were refused (it said
         // why): what they changed goes.
         let bodies = s.progress.expire(s.me.seq);
@@ -1457,7 +1684,88 @@ impl App {
                 }
             }
         }
-        let mouse = if chisel.is_some() { [false; 2] } else { mouse };
+        let mut mouse = if chisel.is_some() { [false; 2] } else { mouse };
+        // Fighting (milestone 13). A creature nearer than the terrain is
+        // what we aim at. A sling shoots (never breaking blocks); a tool or
+        // the hand stone strikes a living creature in reach; a body in reach
+        // is looted once a press. Slings, strikes and swings share one
+        // cooldown (`swinger`), as on the server.
+        let effects = *s.progress.effects();
+        let sling = held.and_then(|h| s.items.def(&h)).and_then(|d| d.sling());
+        let tool = s.items.registry.swing_tool(held.map(|h| h.item));
+        let world = &s.world;
+        let terrain = raycast(eye, dir, CREATURE_AIM, |p| {
+            world.block(p).is_some_and(|b| world.flags.solid(b))
+        })
+        .map_or(CREATURE_AIM, |h| h.distance);
+        s.aim_creature = s.creatures.pick(&s.seen, eye, dir, terrain, s.world.shape, false);
+        let attack_held = mouse[0];
+        if let Some(l) = sling.filter(|_| !s.me.state.down && !s.travelling() && !claim_mode) {
+            mouse[0] = false;
+            let skilled = effects.skilled_sling(&l);
+            let mode = FireMode::of(&effects);
+            if let Some(fire) = s
+                .trigger
+                .update(mode, pressed, attack_held, s.swinger.ready_at(), first_seq, s.me.seq)
+            {
+                s.swinger.swung(fire.at, swing_ticks(skilled.action_speed));
+                // Spent right after its input, as the server will; too tired,
+                // the shot is still sent (the server restarts the pause too)
+                // but nothing flies.
+                let spent =
+                    s.me.spend(fire.at, skilled.energy, &s.movement, s.world.shape, &s.world);
+                link.send(ClientMsg::Shoot {
+                    at: fire.at,
+                    slot: slot as u8,
+                    yaw: input.yaw,
+                    pitch: input.pitch,
+                    charge: fire.charge,
+                });
+                if spent {
+                    s.shots.fire(
+                        s.me.state.eye(&s.movement),
+                        bm_core::movement::look_dir(input.yaw, input.pitch),
+                        skilled.shot_speed as f64,
+                        skilled.range as f64,
+                        skilled.falloff,
+                    );
+                }
+            }
+        } else {
+            s.trigger.reset();
+            if attack_held
+                && let Some((id, distance)) = s.aim_creature
+                && distance <= s.reach()
+                && let Some(c) = s.creatures.get(id).cloned()
+            {
+                // Aimed at a creature in reach: the block behind it is safe.
+                mouse[0] = false;
+                if c.dead {
+                    if !c.looted && !s.looted_this_press {
+                        s.looted_this_press = true;
+                        link.send(ClientMsg::Loot { creature: id });
+                    }
+                } else if let Some(tool) = tool {
+                    if let Some(at) = s.swinger.next(first_seq, s.me.seq) {
+                        s.swinger
+                            .swung(at, swing_ticks(skilled_tool(&tool, &effects).action_speed));
+                        s.me.spend(at, tool.energy, &s.movement, s.world.shape, &s.world);
+                        link.send(ClientMsg::Strike {
+                            at,
+                            creature: id,
+                            slot: slot as u8,
+                        });
+                    }
+                } else if !s.told_no_weapon {
+                    s.told_no_weapon = true;
+                    self.notices.push(NEED_A_WEAPON.into(), now_s);
+                }
+            }
+        }
+        if !attack_held {
+            s.looted_this_press = false;
+            s.told_no_weapon = false;
+        }
         // Swinging: holding break swings the selected tool at once, then
         // every `swing_ticks` of the tool that made the last swing (a bare
         // hand, or a non-tool, breaks nothing: say so once per press). The server rules each swing on the same input
@@ -1553,6 +1861,9 @@ impl App {
         let claim_mode = self.claim_mode;
         let shrine_tab = &mut self.shrine_tab;
         let skill_ui = &mut self.skill_ui;
+        let alpha = self.accumulator / TICK_DT;
+        let (yaw, pitch) = (self.yaw, self.pitch);
+        let mut return_pressed = false;
         let out = e.ctx.run_ui(raw, |ui| {
             let ctx = ui.ctx().clone();
             let Some(s) = session else {
@@ -1599,8 +1910,41 @@ impl App {
                         .map(|(_, left, shields)| BlockBar { left, shields }),
                     energy: s.me.state.energy() as f32 / s.me.state.max_energy().max(1) as f32,
                     level: Some(bm_core::skills::level_of(s.progress.character().xp)),
+                    health: (s.me.state.health(), s.me.state.max_health()),
+                    debt: s.progress.character().debt,
                 },
             );
+            // Fighting: name plates, numbers, the hurt flash, the charge
+            // ring and the defeat screen.
+            {
+                let eye = s.render_eye(alpha);
+                let forward = Camera {
+                    eye,
+                    yaw,
+                    pitch,
+                    fov_y: FOV_Y,
+                }
+                .forward()
+                .as_vec3();
+                let screen = ctx.content_rect();
+                let plates = if menu.is_none() {
+                    s.plates(eye, forward, screen)
+                } else {
+                    Vec::new()
+                };
+                let numbers = s.numbers(eye, forward, screen, now);
+                let flash = (1.0 - (now - s.hurt_at) / crate::fight_hud::FLASH_SECONDS).clamp(0.0, 1.0) as f32;
+                return_pressed = crate::fight_hud::show(
+                    &ctx,
+                    &crate::fight_hud::FightView {
+                        flash,
+                        plates: &plates,
+                        numbers: &numbers,
+                        charge: s.trigger.charge(s.me.seq),
+                        defeat: s.defeat.details(),
+                    },
+                );
+            }
             match menu {
                 Some(Menu::Inventory) => menus::inventory(&ctx, &s.items, &s.icons, s.selected, drag, &mut actions),
                 Some(Menu::Crafting(station)) => {
@@ -1696,6 +2040,12 @@ impl App {
         let prims = e.ctx.tessellate(out.shapes, out.pixels_per_point);
         let ppp = out.pixels_per_point;
         self.apply_actions(actions);
+        if return_pressed {
+            let now = self.now();
+            if self.session.as_mut().is_some_and(|s| s.defeat.press_return(now)) {
+                self.send(ClientMsg::Return);
+            }
+        }
         for a in chat_actions {
             match a {
                 ChatAction::Send(m) => self.send(m),
@@ -1794,13 +2144,12 @@ impl App {
         let shape = s.world.shape;
         let sky = Sky::at(&s.planet.day, &s.planet.look, s.sky_tick(local));
         let planets = sky.planets(&s.universe, s.planet.id);
-        let feet = s.me.render_pos(alpha, shape);
-        let eye = shape.wrap_point(feet + DVec3::new(0.0, s.movement.eye_height, 0.0));
+        let eye = s.render_eye(alpha);
         let camera = Camera {
             eye,
             yaw,
             pitch,
-            fov_y: 75f32.to_radians(),
+            fov_y: FOV_Y,
         };
         let remotes = s.remotes.sample(local, shape);
         let mut boxes: Vec<BoxInstance> = remotes
@@ -1814,13 +2163,41 @@ impl App {
                     s.movement.half_width as f32,
                 );
                 let centre = (pos - eye).as_vec3() + Vec3::new(0.0, half.y, 0.0);
-                BoxInstance {
-                    center: centre.to_array(),
-                    half_size: half.to_array(),
-                    color: player_colour(id),
-                }
+                BoxInstance::new(
+                    centre,
+                    half,
+                    player_colour(id),
+                    BoxInstance::light_of(s.world.light_at(pos + DVec3::new(0.0, 1.0, 0.0))),
+                )
             })
             .collect();
+        // Creatures, lit where they stand, coats leaning to the planet's colour.
+        let light = |p: DVec3| BoxInstance::light_of(s.world.light_at(p));
+        boxes.extend(s.creatures.boxes(&s.seen, eye, shape, s.planet.look.color, light));
+        // Shots: small glowing pellets with a short trail. Ours start at the
+        // eye, so they show once clear of it.
+        for (pos, dir, mine) in s.shots.drawn(alpha) {
+            let rel = shape.nearest_lap(eye, pos) - eye;
+            if mine && rel.length() < 0.9 {
+                continue;
+            }
+            let colour = if mine { SHOT_OURS } else { SHOT_THEIRS };
+            for i in 0..4 {
+                let fade = 1.0 - i as f32 * 0.24;
+                let c = [colour[0] * fade, colour[1] * fade, colour[2] * fade, 1.0];
+                let at = (rel - dir * (i as f64 * 0.16)).as_vec3();
+                boxes.push(BoxInstance::new(at, Vec3::splat(0.065 * fade), c, [1.0, 0.0, 1.0, 1.0]));
+            }
+        }
+        // The sling in hand, low and to the right.
+        if let Some(def) = s.items.slot(s.selected).and_then(|h| s.items.def(&h))
+            && def.sling().is_some()
+            && !s.me.state.down
+        {
+            let turn = glam::Quat::from_rotation_y(-yaw as f32) * glam::Quat::from_rotation_x(pitch as f32);
+            let hand = turn * Vec3::new(0.3, -0.3, -0.55);
+            boxes.extend(held_sling(&def.name, turn, hand, light(eye)));
+        }
         let (mut lines, xray) = self.claim_lines(eye);
         // Grapple ropes: ours from just below and right of the eye (where a
         // hand would be), everyone else's from their hands.
@@ -1867,11 +2244,12 @@ impl App {
                 });
             }
             let b = (to - eye).as_vec3();
-            boxes.push(BoxInstance {
-                center: b.to_array(),
-                half_size: [0.09; 3],
-                color: HOOK_COLOUR,
-            });
+            boxes.push(BoxInstance::new(
+                b,
+                Vec3::splat(0.09),
+                HOOK_COLOUR,
+                BoxInstance::light_of(s.world.light_at(to)),
+            ));
         }
         if let Some(r) = &mut self.renderer {
             r.set_point_lights(&s.held_lights(&remotes, &camera));
@@ -2016,6 +2394,34 @@ impl App {
                     });
                 }
                 (self.yaw, self.pitch) = (0.0, -0.45);
+            }
+            // One of each creature on level ground, a stone sling in hand;
+            // or just defeated by a Hardy Grazer, the defeat screen up.
+            "creatures" | "defeat" => {
+                let down = screen == "defeat";
+                if let Some(Link::Demo(d)) = &mut self.link {
+                    if down {
+                        d.show_defeat();
+                    } else {
+                        d.show_creatures();
+                    }
+                }
+                if let Some(s) = &mut self.session {
+                    let mut at = bm_core::PlayerState {
+                        pos: DVec3::from_array(crate::demo::FIGHT_VIEW),
+                        on_ground: true,
+                        loose: u16::MAX,
+                        ..Default::default()
+                    };
+                    if down {
+                        at.take(at.max_health());
+                    }
+                    s.me.teleport(at);
+                    s.losses.reset(at.hurt);
+                    s.last_hurt = at.hurt;
+                    s.selected = 8;
+                }
+                (self.yaw, self.pitch) = (0.0, -0.16);
             }
             "claims" => {
                 self.yaw = 0.7;
@@ -2210,6 +2616,81 @@ impl App {
     }
 }
 
+/// Shot colours (linear): ours a pale gold, everyone else's ember.
+const SHOT_OURS: [f32; 4] = [1.0, 0.78, 0.36, 1.0];
+const SHOT_THEIRS: [f32; 4] = [1.0, 0.32, 0.08, 1.0];
+
+/// A sling held in hand: a forked frame, its band and pouch, in the
+/// material the sling is made of; `turn` is the camera's, `hand` where it
+/// is held (camera-relative), `light` the light there.
+fn held_sling(name: &str, turn: glam::Quat, hand: Vec3, light: [f32; 4]) -> Vec<BoxInstance> {
+    use glam::Quat;
+    let srgb = |c: [u8; 3]| {
+        let l = crate::colour::srgb_to_linear(c);
+        [l[0], l[1], l[2], 1.0]
+    };
+    let frame = if name.contains("copper") {
+        srgb([214, 122, 70])
+    } else if name.contains("iron") {
+        srgb([150, 156, 166])
+    } else {
+        srgb([140, 94, 54])
+    };
+    let leather = srgb([92, 58, 34]);
+    let band = srgb([60, 44, 36]);
+    let k = HELD_SLING_SCALE;
+    let turn = turn * Quat::from_rotation_x(0.2) * Quat::from_rotation_z(-0.25);
+    let part = |at: Vec3, half: Vec3, rot: Quat, colour: [f32; 4]| BoxInstance {
+        center: (hand + turn * (at * k)).to_array(),
+        half_size: (half * k).to_array(),
+        color: colour,
+        rotation: (turn * rot).normalize().to_array(),
+        light,
+    };
+    let mut out = vec![
+        part(
+            Vec3::new(0.0, -0.1, 0.0),
+            Vec3::new(0.025, 0.1, 0.025),
+            Quat::IDENTITY,
+            frame,
+        ),
+        part(
+            Vec3::new(0.0, -0.13, 0.0),
+            Vec3::new(0.032, 0.045, 0.032),
+            Quat::IDENTITY,
+            leather,
+        ),
+    ];
+    for s in [-1.0f32, 1.0] {
+        out.push(part(
+            Vec3::new(s * 0.04, 0.06, 0.0),
+            Vec3::new(0.022, 0.075, 0.022),
+            Quat::from_rotation_z(-s * 0.5),
+            frame,
+        ));
+        out.push(part(
+            Vec3::new(s * 0.075, 0.13, 0.0),
+            Vec3::new(0.026, 0.02, 0.026),
+            Quat::IDENTITY,
+            frame,
+        ));
+        // A strand from the prong back to the pouch.
+        out.push(part(
+            Vec3::new(s * 0.04, 0.125, 0.06),
+            Vec3::new(0.007, 0.007, 0.07),
+            Quat::from_rotation_y(s * 0.55),
+            band,
+        ));
+    }
+    out.push(part(
+        Vec3::new(0.0, 0.12, 0.12),
+        Vec3::new(0.035, 0.028, 0.022),
+        Quat::IDENTITY,
+        leather,
+    ));
+    out
+}
+
 fn player_colour(id: u32) -> [f32; 4] {
     let h = id.wrapping_mul(2_654_435_761);
     let c = |shift: u32| 0.25 + 0.6 * ((h >> shift) & 0xff) as f32 / 255.0;
@@ -2329,6 +2810,12 @@ impl ApplicationHandler for App {
                 if !in_game || self.chat.open || egui_typing || event.repeat {
                     return;
                 }
+                // Down: the defeat screen is all there is (Enter returns; T
+                // still opens the chat).
+                let down = self.session.as_ref().is_some_and(|s| s.defeat.is_down());
+                if down && code != KeyCode::KeyT {
+                    return;
+                }
                 match code {
                     KeyCode::Enter | KeyCode::NumpadEnter | KeyCode::KeyT => {
                         self.open_chat(true);
@@ -2381,6 +2868,9 @@ impl ApplicationHandler for App {
                 if !in_game || self.menu.is_some() || self.chat.open {
                     return; // the menus (or the chat box) have it
                 }
+                if self.session.as_ref().is_some_and(|s| s.defeat.is_down()) {
+                    return; // the defeat screen has it
+                }
                 let down = state == ElementState::Pressed;
                 if down && !self.grabbed {
                     self.set_grab(true);
@@ -2401,6 +2891,7 @@ impl ApplicationHandler for App {
                         // Every press counts, however short: a grapple shot
                         // must not be lost between two frames.
                         self.fire_pending |= down && !self.mouse[0];
+                        self.attack_pending |= down && !self.mouse[0];
                         self.mouse[0] = down;
                     }
                     MouseButton::Right => self.mouse[1] = down,
@@ -2524,7 +3015,7 @@ mod tests {
         // Life on the first planet: chunks, a remote player, claims, an edit
         // in flight, a block half broken, meshes being made.
         assert!(s.world.chunk_count() > 0);
-        assert!(s.snapshot(snapshot(0, 10, 0, 128.5), 10.0));
+        assert!(s.snapshot(snapshot(0, 10, 0, 128.5), 10.0, true));
         s.remotes.joined(9, "Wren".into());
         assert!(!s.remotes.sample(30.0, s.world.shape).is_empty());
         assert!(s.claims.iter().count() > 0);
@@ -2566,10 +3057,10 @@ mod tests {
         std::thread::sleep(std::time::Duration::from_millis(300));
         assert!(s.world.take_meshes().is_empty());
         // A late snapshot of the old planet is dropped; the new one's is used.
-        assert!(!s.snapshot(snapshot(0, 20, seq, 1.5), 61.0));
+        assert!(!s.snapshot(snapshot(0, 20, seq, 1.5), 61.0, true));
         assert_eq!(s.me.state, spawn);
         assert!(s.remotes.sample(90.0, s.world.shape).is_empty());
-        assert!(s.snapshot(snapshot(2, 21, seq, 128.5), 62.0));
+        assert!(s.snapshot(snapshot(2, 21, seq, 128.5), 62.0, true));
         assert_eq!(s.me.corrections, 0);
 
         // The ground arrives; after the screen's minimum the journey lands
@@ -2849,7 +3340,7 @@ mod tests {
         assert!(s.journey.is_none(), "no travel screen on the same planet");
         assert_eq!(s.me.corrections, 0);
         // An older snapshot does not pull us back.
-        a.handle_snapshot(snapshot(0, 400, 0, 128.5));
+        a.handle_snapshot(snapshot(0, 400, 0, 128.5), true);
         assert_eq!(a.session.as_ref().unwrap().me.state, to);
     }
 

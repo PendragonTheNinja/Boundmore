@@ -45,3 +45,41 @@ fn sky_gradient(dir: vec3<f32>) -> vec3<f32> {
     c += g.sun_color.rgb * (pow(toward_sun, 12.0) * 0.35 + pow(toward_sun, 128.0) * 0.6);
     return c;
 }
+
+// ---- lighting shared by terrain and boxes (creatures, players) ----
+
+// Classic per-face shading: the top is brightest, the underside darkest.
+// Slanted faces blend by how much they face each way (the squares of a unit
+// normal sum to one), so a cube face gets exactly its old value.
+fn face_shade(n: vec3<f32>) -> f32 {
+    let q = n * n;
+    return q.x * 0.82 + q.z * 0.70 + q.y * select(0.52, 1.0, n.y > 0.0);
+}
+
+// Perceived brightness of a light level: each step down is a fixed fraction
+// darker, so falloff reads as a smooth glow rather than a staircase.
+fn light_curve(l: f32) -> f32 {
+    return pow(l, 1.7);
+}
+
+// The darkest anything gets: sealed caves are dark, but never pure black.
+const AMBIENT: f32 = 0.012;
+// Block light is warm, like lamplight on stone.
+const BLOCK_TINT: vec3<f32> = vec3<f32>(1.0, 0.88, 0.70);
+
+// Block light from the held torches (`Renderer::set_point_lights`), 0..1:
+// each falls off one level per block, as block light spreads, measured to
+// the point half a block out from the surface (where a face samples its
+// block light). No occlusion: a held torch lights through walls within its
+// reach, a fair trade for never re-meshing a light that moves every frame.
+fn point_light(rel: vec3<f32>, n: vec3<f32>) -> f32 {
+    let p = rel + n * 0.5;
+    let count = min(u32(g.screen.w), 16u);
+    var best = 0.0;
+    for (var i = 0u; i < count; i++) {
+        let l = g.point_lights[i];
+        best = max(best, l.w - length(p - l.xyz));
+    }
+    return clamp(best, 0.0, 15.0) / 15.0;
+}
+

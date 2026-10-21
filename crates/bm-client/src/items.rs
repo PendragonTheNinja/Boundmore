@@ -187,6 +187,21 @@ impl Items {
                     l.damage,
                     trim_float(l.range)
                 ));
+                // The true cadence: whole ticks between shots, as fired.
+                let per_second = bm_core::TICK_HZ as f32 / bm_core::mining::swing_ticks(l.action_speed) as f32;
+                lines.push(format!(
+                    "{} shots a second, flying {} blocks a second",
+                    trim_float(per_second),
+                    trim_float(l.shot_speed)
+                ));
+                if l.crit_chance > 0.0 {
+                    lines.push(format!(
+                        "{}% chance of a critical hit, {} times the damage",
+                        trim_float(l.crit_chance * 100.0),
+                        trim_float(1.0 + l.crit_effect)
+                    ));
+                }
+                lines.push(format!("{} energy a shot", l.energy));
                 if let Some((left, total)) = self.durability(stack) {
                     lines.push(format!("{left} of {total} uses left"));
                 }
@@ -436,7 +451,28 @@ mod tests {
             torch.contains("hangs on a wall") && torch.contains("while held"),
             "{torch}"
         );
-        for t in [iron, hand, torch] {
+        let mut sling = stack(&i, "iron_sling", 1).unwrap();
+        sling.wear = 100;
+        let sling = i.tooltip(&sling);
+        let per_second = 60.0 / bm_core::mining::swing_ticks(10.0) as f32;
+        assert!(
+            sling.starts_with("Heavy Iron Sling\n")
+                && sling.contains("Shoots 600 damage up to 20 blocks")
+                && sling.contains(&format!(
+                    "{} shots a second, flying 35 blocks a second",
+                    trim_float(per_second)
+                ))
+                && sling.contains("20% chance of a critical hit, 1.2 times the damage")
+                && sling.contains("12 energy a shot")
+                && sling.contains("800 of 900 uses left"),
+            "{sling}"
+        );
+        let stone = i.tooltip(&stack(&i, "stone_sling", 1).unwrap());
+        assert!(
+            stone.contains("6 energy a shot") && !stone.contains("critical"),
+            "{stone}"
+        );
+        for t in [iron, hand, torch, sling, stone] {
             assert!(!t.contains('\u{2014}'));
         }
     }

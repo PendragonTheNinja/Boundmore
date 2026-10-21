@@ -183,6 +183,55 @@ pub struct Demo {
     /// server's own `Character` methods.
     tree: SkillTree,
     character: Character,
+    /// Creatures and fighting (milestone 13).
+    fight: DemoFight,
+}
+
+/// Where `show_creatures` and `show_defeat` put the player.
+pub const FIGHT_VIEW: [f64; 3] = [128.5, 44.0, 129.5];
+
+/// A creature as the demo keeps it.
+#[derive(Clone, Debug)]
+struct DemoCreature {
+    id: u32,
+    kind: u16,
+    tier: u8,
+    pos: DVec3,
+    yaw: u16,
+    pose: bm_protocol::Pose,
+    damage: u32,
+    angry: bool,
+    dead: bool,
+    looted: bool,
+    /// Walks back and forth between two x positions at this speed.
+    pace: Option<(f64, f64, f64)>,
+    /// Someone else keeps hitting it (a stand-in for another player), so
+    /// its numbers keep floating up for a screenshot.
+    beaten: bool,
+}
+
+#[derive(Default)]
+struct DemoFight {
+    creatures: Vec<DemoCreature>,
+    /// The demo's server tick, three a snapshot at 20 a second.
+    tick: u64,
+    snap_timer: f64,
+    beat_timer: f64,
+    beats: u32,
+    rng: u64,
+}
+
+impl DemoFight {
+    /// A number in 0..1 (xorshift; the demo's own dice).
+    fn rand(&mut self) -> f64 {
+        if self.rng == 0 {
+            self.rng = 0x9e37_79b9_7f4a_7c15;
+        }
+        self.rng ^= self.rng << 13;
+        self.rng ^= self.rng >> 7;
+        self.rng ^= self.rng << 17;
+        (self.rng >> 11) as f64 / (1u64 << 53) as f64
+    }
 }
 
 fn shape() -> PlanetShape {
@@ -351,6 +400,7 @@ impl Demo {
             push_timer: 0.0,
             tree: SkillTree::builtin(),
             character: Character::default(),
+            fight: DemoFight::default(),
         };
         d.welcome();
         d
@@ -1019,6 +1069,7 @@ impl Demo {
             self.events
                 .push_back(NetEvent::Msg(ServerMsg::BlockHealth { pos, damage }));
         }
+        self.run_fight(dt);
         if self.release.is_some_and(|r| Instant::now() >= r) {
             self.release = None;
             let held = std::mem::take(&mut self.held);
@@ -1201,6 +1252,16 @@ impl Demo {
             ClientMsg::Portal { pos, action } => self.portal_action(pos, action),
             ClientMsg::Swing { seq, at, pos, slot } => self.swing(seq, at, pos, slot),
             ClientMsg::Skill { at, action } => self.skill(at, action),
+            ClientMsg::Shoot {
+                at,
+                slot,
+                yaw,
+                pitch,
+                charge,
+            } => self.shoot(at, slot, yaw, pitch, charge),
+            ClientMsg::Strike { at, creature, slot } => self.strike(at, creature, slot),
+            ClientMsg::Loot { creature } => self.loot(creature),
+            ClientMsg::Return => self.come_back(),
             ClientMsg::Hello { .. } => {}
             // The old hold-to-break message, until the protocol drops it.
             #[allow(unreachable_patterns)]
@@ -1747,6 +1808,320 @@ impl Demo {
 
 /// The four demo planets, each with its kind's look, a shrine and, where
 /// the kind grows them, trees. Only the first has the stations.
+impl Demo {
+    fn kinds(&self) -> bm_core::creatures::CreatureKinds {
+        bm_core::creatures::CreatureKinds::builtin()
+    }
+
+    fn push_creature(&mut self, i: usize) {
+        let c = &self.fight.creatures[i];
+        let v = bm_protocol::CreatureView {
+            id: c.id,
+            kind: c.kind,
+            tier: c.tier,
+            damage: c.damage,
+            angry: c.angry,
+            dead: c.dead,
+            looted: c.looted,
+        };
+        self.events.push_back(NetEvent::Msg(ServerMsg::Creature(v)));
+    }
+
+    /// `--demo-ui creatures`: level ground with one of each creature in
+    /// view: a grazer, a Tough pelter someone keeps hitting (taking aim), a
+    /// dasher, a grazer's body, and a Hardy grazer walking past; a stone
+    /// and an iron sling in the hotbar.
+    pub fn show_creatures(&mut self) {
+        use bm_protocol::Pose;
+        let b = |n: &str| self.blocks.id(n).expect("builtin block");
+        let (trunk, foliage) = (b("trunk"), b("foliage"));
+        let planet = &mut self.planets[0];
+        planet.flat = true;
+        planet.edits.retain(|_, s| s.id != trunk && s.id != foliage);
+        let chunks = self.chunks_around_spawn();
+        self.events.extend(chunks.into_iter().map(NetEvent::Msg));
+        let k = self.kinds();
+        let kind = |n: &str| k.id(n).expect("builtin creature");
+        let at = |x: f64, z: f64| DVec3::new(x, (GROUND + 1) as f64, z);
+        let creature = |id, kind, tier, pos, yaw, pose| DemoCreature {
+            id,
+            kind,
+            tier,
+            pos,
+            yaw,
+            pose,
+            damage: 0,
+            angry: false,
+            dead: false,
+            looted: false,
+            pace: None,
+            beaten: false,
+        };
+        let deg = |d: f64| ((d / 360.0).rem_euclid(1.0) * 65536.0) as u16;
+        self.fight.creatures = vec![
+            creature(1, kind("grazer"), 1, at(124.5, 121.5), deg(35.0), Pose::Idle),
+            DemoCreature {
+                damage: 3100,
+                angry: true,
+                beaten: true,
+                ..creature(2, kind("pelter"), 3, at(129.0, 121.0), deg(170.0), Pose::Windup)
+            },
+            creature(3, kind("dasher"), 1, at(133.0, 123.0), deg(-60.0), Pose::Idle),
+            DemoCreature {
+                dead: true,
+                damage: 1500,
+                ..creature(4, kind("grazer"), 1, at(126.0, 125.0), deg(80.0), Pose::Dead)
+            },
+            DemoCreature {
+                pace: Some((119.0, 128.0, 1.4)),
+                ..creature(5, kind("grazer"), 2, at(121.0, 115.5), deg(90.0), Pose::Walk)
+            },
+        ];
+        for i in 0..self.fight.creatures.len() {
+            self.push_creature(i);
+        }
+        // Slings in the last two hotbar slots.
+        let before = self.inv.clone();
+        for (slot, name) in [(8, "stone_sling"), (9, "iron_sling")] {
+            let id = self.items.id(name).expect("builtin item");
+            self.inv.slots[slot] = Some(ItemStack::new(id, 1));
+        }
+        self.slots_since(&before);
+    }
+
+    /// `--demo-ui defeat`: a level 10 character just defeated by a Hardy
+    /// Grazer, with the XP debt it costs.
+    pub fn show_defeat(&mut self) {
+        self.show_creatures();
+        let xp = bm_core::skills::xp_for_level(10) + 2_400;
+        let debt = bm_core::skills::defeat_debt(xp, false);
+        self.character = Character {
+            xp,
+            debt,
+            ..Default::default()
+        };
+        self.events.push_back(NetEvent::Msg(ServerMsg::Character {
+            character: self.character.clone(),
+            at: 0,
+        }));
+        self.events.push_back(NetEvent::Msg(ServerMsg::Defeated {
+            debt,
+            by: "Hardy Grazer".into(),
+        }));
+    }
+
+    /// Moves the creatures, keeps hitting the beaten one, and sends a
+    /// snapshot of them 20 times a second (`NetEvent::Observed`: the demo
+    /// does not simulate the player).
+    fn run_fight(&mut self, dt: f64) {
+        if self.fight.creatures.is_empty() {
+            return;
+        }
+        self.fight.snap_timer += dt;
+        while self.fight.snap_timer >= 0.05 {
+            self.fight.snap_timer -= 0.05;
+            self.fight.tick += 3;
+            for c in &mut self.fight.creatures {
+                if let Some((from, to, speed)) = c.pace
+                    && !c.dead
+                {
+                    let east = c.yaw < 32768;
+                    c.pos.x += if east { speed } else { -speed } * 0.05;
+                    if c.pos.x >= to {
+                        c.yaw = 49152;
+                    } else if c.pos.x <= from {
+                        c.yaw = 16384;
+                    }
+                }
+            }
+            let creatures = self
+                .fight
+                .creatures
+                .iter()
+                .map(|c| bm_protocol::RemoteCreature {
+                    id: c.id,
+                    pos: c.pos.as_vec3().to_array(),
+                    yaw: c.yaw,
+                    pose: if c.dead { bm_protocol::Pose::Dead } else { c.pose },
+                })
+                .collect();
+            self.events
+                .push_back(NetEvent::Observed(bm_protocol::ServerDatagram::Snapshot {
+                    planet: self.planets[self.here].info.id,
+                    tick: self.fight.tick,
+                    ack: 0,
+                    you: PlayerState::default(),
+                    others: Vec::new(),
+                    creatures,
+                }));
+        }
+        self.fight.beat_timer += dt;
+        if self.fight.beat_timer >= 0.8 {
+            self.fight.beat_timer = 0.0;
+            self.fight.beats += 1;
+            let crit = self.fight.beats % 3 == 0;
+            // An untrained iron hammer's 700, a crit's 840, less armour 200.
+            let amount = if crit { 640 } else { 500 };
+            let k = self.kinds();
+            for i in 0..self.fight.creatures.len() {
+                let c = &mut self.fight.creatures[i];
+                if !c.beaten || c.dead {
+                    continue;
+                }
+                let health = k.get(c.kind).map_or(1, |d| d.tier(c.tier).health);
+                // Never quite killed: it keeps its bar for the picture.
+                c.damage = (c.damage + amount) % (health * 9 / 10);
+                let id = c.id;
+                self.events.push_back(NetEvent::Msg(ServerMsg::Hit {
+                    target: bm_protocol::Target::Creature(id),
+                    amount,
+                    crit,
+                }));
+                self.push_creature(i);
+            }
+        }
+    }
+
+    /// Whether a swing, strike or shot at input `at` may happen (the shared
+    /// cooldown), starting the next one `ticks` later if so.
+    fn cadence(&mut self, at: u32, ticks: u32) -> bool {
+        if let Some((last_at, last)) = self.last_swing
+            && at < last_at.saturating_add(last)
+        {
+            return false;
+        }
+        self.last_swing = Some((at, ticks));
+        true
+    }
+
+    /// `damage` (already skilled) on creature `i`, with the crit roll: the
+    /// hit after armour, the death and the numbers.
+    fn damage_creature(&mut self, i: usize, damage: u32, crit_chance: f32, crit_effect: f32) {
+        let k = self.kinds();
+        let crit = self.fight.rand() < crit_chance as f64;
+        let c = &mut self.fight.creatures[i];
+        let t = k.get(c.kind).expect("builtin kind").tier(c.tier);
+        let dealt = bm_core::combat::dealt(damage, crit, crit_effect, t.armour);
+        c.damage = (c.damage + dealt).min(t.health);
+        c.angry = true;
+        if c.damage >= t.health {
+            c.dead = true;
+            c.pose = bm_protocol::Pose::Dead;
+        }
+        let id = c.id;
+        self.events.push_back(NetEvent::Msg(ServerMsg::Hit {
+            target: bm_protocol::Target::Creature(id),
+            amount: dealt,
+            crit,
+        }));
+        self.push_creature(i);
+    }
+
+    /// A sling shot, by the server's rules: the shared cadence on the
+    /// sling's skilled action speed, one wear, Draw's charge, and the shot
+    /// flown from `FIGHT_VIEW`'s eye (the demo does not know where we stand)
+    /// until it meets a living creature or its range. Unlike the server it
+    /// spends no energy (the client predicts that) and flies through blocks.
+    fn shoot(&mut self, at: u32, slot: u8, yaw: u16, pitch: i16, charge: u16) {
+        let Some(sling) = self
+            .inv
+            .get(slot as usize)
+            .and_then(|s| self.items.get(s.item))
+            .and_then(|d| d.sling())
+        else {
+            return;
+        };
+        let effects = self.character.effects(&self.tree);
+        let l = effects.skilled_sling(&sling);
+        if !self.cadence(at, bm_core::mining::swing_ticks(l.action_speed)) {
+            return;
+        }
+        self.wear(slot as usize);
+        let charge = if effects.charging { charge as u32 } else { 0 };
+        let damage = (l.damage as f64 * bm_core::combat::charge_multiplier(charge)).round() as u32;
+        let eye = DVec3::from_array(FIGHT_VIEW) + DVec3::new(0.0, MoveConfig::default().eye_height, 0.0);
+        let mut pos = eye;
+        let mut vel = bm_core::movement::look_dir(yaw, pitch) * l.shot_speed as f64;
+        let mut flown = 0.0;
+        let k = self.kinds();
+        while flown < l.range as f64 {
+            let (next, v) = bm_core::combat::shot_step(pos, vel, l.falloff);
+            flown += (next - pos).length();
+            let hit = self.fight.creatures.iter().position(|c| {
+                let d = k.get(c.kind).expect("builtin kind");
+                let (hw, h) = (d.half_width as f64, d.height as f64);
+                let (lo, hi) = (c.pos - DVec3::new(hw, 0.0, hw), c.pos + DVec3::new(hw, h, hw));
+                !c.dead && crate::combat::segment_hits(pos, next, lo, hi)
+            });
+            if let Some(i) = hit {
+                return self.damage_creature(i, damage, l.crit_chance, l.crit_effect);
+            }
+            (pos, vel) = (next, v);
+        }
+    }
+
+    /// A tool's strike on a creature: the shared cadence on the tool's
+    /// skilled action speed, its damage (the same on creatures as on blocks:
+    /// hand stone 200, iron 700), a crit roll, the creature's armour, one
+    /// wear. Unlike the server it checks no reach.
+    fn strike(&mut self, at: u32, creature: u32, slot: u8) {
+        let item = self.inv.get(slot as usize).map(|s| s.item);
+        let Some(tool) = self.items.swing_tool(item) else {
+            return;
+        };
+        let effects = self.character.effects(&self.tree);
+        let tool = crate::mining::skilled_tool(&tool, &effects);
+        if !self.cadence(at, bm_core::mining::swing_ticks(tool.action_speed)) {
+            return;
+        }
+        self.wear(slot as usize);
+        let Some(i) = self.fight.creatures.iter().position(|c| c.id == creature && !c.dead) else {
+            return;
+        };
+        self.damage_creature(i, tool.damage, tool.crit_chance, tool.crit_effect);
+    }
+
+    /// Our own drops from a body, once (`creatures::roll_drops`).
+    fn loot(&mut self, creature: u32) {
+        let Some(i) = self.fight.creatures.iter().position(|c| c.id == creature) else {
+            return;
+        };
+        let c = self.fight.creatures[i].clone();
+        if !c.dead || c.looted {
+            return;
+        }
+        let k = self.kinds();
+        let tier = k.get(c.kind).expect("builtin kind").tier(c.tier).clone();
+        let luck = self.character.effects(&self.tree).luck_multiplier();
+        let fight = &mut self.fight;
+        let drops = bm_core::creatures::roll_drops(&tier, luck, || fight.rand());
+        let before = self.inv.clone();
+        for (name, n) in drops {
+            if let Ok(id) = self.items.id(&name) {
+                let _ = self.inv.add_all_coloured(&self.items, id, Colour::NATURAL, n);
+            }
+        }
+        self.slots_since(&before);
+        self.fight.creatures[i].looted = true;
+        self.push_creature(i);
+    }
+
+    /// Return after a defeat: back at the view, revived at half health.
+    fn come_back(&mut self) {
+        let mut spawn = PlayerState {
+            pos: DVec3::from_array(FIGHT_VIEW),
+            on_ground: true,
+            down: true,
+            ..Default::default()
+        };
+        spawn.revive(spawn.max_health() / 2);
+        self.events.push_back(NetEvent::Msg(ServerMsg::Teleport {
+            spawn,
+            tick: self.fight.tick,
+        }));
+    }
+}
+
 fn demo_planets(blocks: &BlockRegistry) -> Vec<DemoPlanet> {
     let kinds: KindsFile = toml::from_str(include_str!("../../../assets/planets.toml")).expect("planets.toml is valid");
     let b = |n: &str| blocks.id(n).expect("builtin block");
@@ -2281,6 +2656,115 @@ mod tests {
             stack.count,
             "it came back in its colour"
         );
+    }
+
+    /// The `Hit`s and creature views among the demo's answers.
+    fn fight_news(ev: &[NetEvent]) -> (Vec<(u32, u32, bool)>, Vec<bm_protocol::CreatureView>) {
+        let mut hits = Vec::new();
+        let mut views = Vec::new();
+        for e in ev {
+            match e {
+                NetEvent::Msg(ServerMsg::Hit {
+                    target: bm_protocol::Target::Creature(id),
+                    amount,
+                    crit,
+                }) => hits.push((*id, *amount, *crit)),
+                NetEvent::Msg(ServerMsg::Creature(v)) => views.push(v.clone()),
+                _ => {}
+            }
+        }
+        (hits, views)
+    }
+
+    #[test]
+    fn the_demo_fights_by_the_rules() {
+        let mut d = Demo::new("Tester");
+        d.show_creatures();
+        d.poll();
+        let hammer = 0u8;
+        let speed = d
+            .items
+            .swing_tool(d.items.id("stone_hammer").ok())
+            .unwrap()
+            .action_speed;
+        let ticks = bm_core::mining::swing_ticks(speed);
+        let strike = |d: &mut Demo, at| {
+            d.send(ClientMsg::Strike {
+                at,
+                creature: 1,
+                slot: hammer,
+            });
+            fight_news(&d.poll())
+        };
+        // A stone hammer on a tier 1 grazer (1500 health, no armour): 400 a
+        // strike, on the swing cadence.
+        let (hits, views) = strike(&mut d, 10);
+        assert_eq!(hits, vec![(1, 400, false)]);
+        assert!(views[0].angry && !views[0].dead);
+        let (hits, _) = strike(&mut d, 11);
+        assert!(hits.is_empty(), "too soon after the last");
+        let wear = d.inv.get(hammer as usize).unwrap().wear;
+        assert_eq!(wear, 38 + 1, "one wear a strike that landed");
+        let mut at = 10;
+        let mut last = Vec::new();
+        for _ in 0..3 {
+            at += ticks;
+            last = strike(&mut d, at).1;
+        }
+        assert!(last[0].dead && last[0].damage == 1500, "four strikes kill it");
+        // The cooldown is shared: a sling right after the strike waits.
+        let shoot = |d: &mut Demo, at, (yaw, pitch)| {
+            d.send(ClientMsg::Shoot {
+                at,
+                slot: 8,
+                yaw,
+                pitch,
+                charge: 0,
+            });
+            fight_news(&d.poll())
+        };
+        // Aimed at the Tough pelter's middle from where the demo stands us.
+        let eye = DVec3::from_array(FIGHT_VIEW) + DVec3::new(0.0, MoveConfig::default().eye_height, 0.0);
+        let to = DVec3::new(129.0, 44.45, 121.0) - eye;
+        let aim = bm_core::PlayerInput::from_angles(to.x.atan2(-to.z), (to.y / to.length()).asin());
+        assert!(shoot(&mut d, at + 1, aim).0.is_empty(), "the strike's cooldown");
+        // Stone sling 300 less the Tough pelter's 200 armour.
+        let (hits, _) = shoot(&mut d, at + ticks, aim);
+        assert_eq!(hits, vec![(2, 100, false)]);
+        // Looting the body: our own drops once.
+        d.send(ClientMsg::Loot { creature: 1 });
+        let ev = d.poll();
+        assert!(ev.iter().any(|e| matches!(e, NetEvent::Msg(ServerMsg::Slots { .. }))));
+        assert!(fight_news(&ev).1[0].looted);
+        d.send(ClientMsg::Loot { creature: 1 });
+        assert!(fight_news(&d.poll()).1.is_empty(), "once");
+        // A living creature has nothing to loot.
+        d.send(ClientMsg::Loot { creature: 3 });
+        assert!(fight_news(&d.poll()).1.is_empty());
+    }
+
+    #[test]
+    fn the_demo_brings_us_back_at_half_health() {
+        let mut d = Demo::new("Tester");
+        d.show_defeat();
+        let ev = d.poll();
+        assert!(ev.iter().any(|e| matches!(
+            e,
+            NetEvent::Msg(ServerMsg::Defeated { debt: 750, by }) if by == "Hardy Grazer"
+        )));
+        assert!(ev.iter().any(|e| matches!(
+            e,
+            NetEvent::Msg(ServerMsg::Character { character, .. }) if character.debt == 750
+        )));
+        d.send(ClientMsg::Return);
+        let back = d.poll().into_iter().find_map(|e| match e {
+            NetEvent::Msg(ServerMsg::Teleport { spawn, .. }) => Some(spawn),
+            _ => None,
+        });
+        let spawn = back.expect("a teleport back");
+        assert!(!spawn.down);
+        assert_eq!(spawn.health(), spawn.max_health() / 2);
+        assert_eq!(spawn.pos, DVec3::from_array(FIGHT_VIEW));
     }
 
     #[test]

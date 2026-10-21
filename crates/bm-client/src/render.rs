@@ -130,12 +130,44 @@ struct BoxVertex {
     normal: [f32; 3],
 }
 
+/// One box to draw: camera-relative centre, half extents, colour (linear),
+/// a turn about its centre and the light it stands in. Must match `BoxIn`
+/// in shaders/simple.wgsl.
 #[repr(C)]
-#[derive(Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
+#[derive(Clone, Copy, Debug, PartialEq, bytemuck::Pod, bytemuck::Zeroable)]
 pub struct BoxInstance {
     pub center: [f32; 3],
     pub half_size: [f32; 3],
     pub color: [f32; 4],
+    /// A unit quaternion (x, y, z, w).
+    pub rotation: [f32; 4],
+    /// Sky light and block light (0 to 1, as the light map has them where
+    /// the box stands), brightness (1 normal), glow (0 lit like terrain, 1
+    /// shining by itself: shots, a hit's flash).
+    pub light: [f32; 4],
+}
+
+impl BoxInstance {
+    /// Light for a box out in full daylight with nothing else.
+    #[cfg(test)]
+    pub const OPEN_SKY: [f32; 4] = [1.0, 0.0, 1.0, 0.0];
+
+    /// An unturned box in `light`.
+    pub fn new(center: Vec3, half_size: Vec3, color: [f32; 4], light: [f32; 4]) -> Self {
+        Self {
+            center: center.to_array(),
+            half_size: half_size.to_array(),
+            color,
+            rotation: glam::Quat::IDENTITY.to_array(),
+            light,
+        }
+    }
+
+    /// The light-map light at a point as `light` takes it (brightness 1, no
+    /// glow).
+    pub fn light_of(l: bm_core::light::Light) -> [f32; 4] {
+        [l.sky() as f32 / 15.0, l.block() as f32 / 15.0, 1.0, 0.0]
+    }
 }
 
 /// A chunk's buffers: cube quads (with their count) and cut-block
@@ -528,7 +560,7 @@ impl Renderer {
             Some(wgpu::VertexBufferLayout {
                 array_stride: std::mem::size_of::<BoxInstance>() as u64,
                 step_mode: wgpu::VertexStepMode::Instance,
-                attributes: &wgpu::vertex_attr_array![2 => Float32x3, 3 => Float32x3, 4 => Float32x4],
+                attributes: &wgpu::vertex_attr_array![2 => Float32x3, 3 => Float32x3, 4 => Float32x4, 5 => Float32x4, 6 => Float32x4],
             }),
         ];
         let box_pipeline = pipeline(
@@ -1481,6 +1513,20 @@ mod tests {
         assert_eq!(std::mem::size_of::<Vertex>(), 8);
         assert_eq!(std::mem::size_of::<ShapedVertex>(), 16);
         assert_eq!(std::mem::size_of::<LineVertex>(), 28);
+        // centre 12, half size 12, colour 16, rotation 16, light 16, in the
+        // order of `BoxIn`'s locations 2 to 6.
+        assert_eq!(std::mem::size_of::<BoxInstance>(), 72);
+        let b = BoxInstance::new(Vec3::ONE, Vec3::ONE, [0.0; 4], BoxInstance::OPEN_SKY);
+        let base = &b as *const BoxInstance as usize;
+        let offsets = [
+            &b.center as *const _ as usize - base,
+            &b.half_size as *const _ as usize - base,
+            &b.color as *const _ as usize - base,
+            &b.rotation as *const _ as usize - base,
+            &b.light as *const _ as usize - base,
+        ];
+        assert_eq!(offsets, [0, 12, 24, 40, 56]);
+        assert_eq!(b.rotation, [0.0, 0.0, 0.0, 1.0], "unturned");
     }
 
     #[test]

@@ -15,6 +15,9 @@ pub enum NetEvent {
     Connected(Box<Welcome>),
     Msg(ServerMsg),
     Snapshot(ServerDatagram),
+    /// A snapshot whose `you` is not ours to reconcile: the offline demo
+    /// (`--demo-ui`) sends the world around a player it does not simulate.
+    Observed(ServerDatagram),
     Disconnected(String),
 }
 

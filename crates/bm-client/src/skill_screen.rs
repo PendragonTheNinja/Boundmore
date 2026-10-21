@@ -132,6 +132,16 @@ fn header(ui: &mut Ui, v: &SkillView) {
                 .color(MUTED)
                 .small(),
             );
+            if c.debt > 0 {
+                ui.label(
+                    egui::RichText::new(format!(
+                        "XP debt: {}. You earn half XP until it is paid",
+                        grouped(c.debt)
+                    ))
+                    .color(crate::menus::DEBT_RED)
+                    .small(),
+                );
+            }
         });
         ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
             ui.spacing_mut().item_spacing.x = 10.0;

@@ -447,9 +447,19 @@ pub struct Hud<'a> {
     /// Level, XP into it and XP it needs (milestone 12), shown as a thin
     /// bar under the hotbar.
     pub level: Option<(u32, u64, u64)>,
+    /// Health left and the most there is (milestone 13), a bar beside
+    /// energy's.
+    pub health: (u32, u32),
+    /// XP still owed after a defeat: a red stretch on the XP bar.
+    pub debt: u64,
 }
 
 const XP_BAR: Color32 = Color32::from_rgb(132, 196, 236);
+/// XP owed after a defeat, on the XP bar and the skill screen.
+pub const DEBT_RED: Color32 = Color32::from_rgb(226, 82, 70);
+/// The health bar's fill: a warm red, darker when low.
+const HEALTH_FULL: Color32 = Color32::from_rgb(214, 64, 58);
+const HEALTH_LOW: Color32 = Color32::from_rgb(150, 34, 34);
 
 /// The energy bar's fill: a warm yellow, turning red when nearly empty.
 const ENERGY_FULL: Color32 = Color32::from_rgb(238, 200, 96);
@@ -471,7 +481,7 @@ const SHIELD_FILL: Color32 = Color32::from_rgb(196, 210, 232);
 const BAR_DROP: f32 = 30.0;
 
 /// The fill colour for `left`: fresh green, through gold, to red.
-fn bar_colour(left: f32) -> Color32 {
+pub(crate) fn bar_colour(left: f32) -> Color32 {
     let mix = |a: Color32, b: Color32, t: f32| {
         let l = |x: u8, y: u8| (x as f32 + (y as f32 - x as f32) * t).round() as u8;
         Color32::from_rgb(l(a.r(), b.r()), l(a.g(), b.g()), l(a.b(), b.b()))
@@ -484,7 +494,7 @@ fn bar_colour(left: f32) -> Color32 {
 }
 
 /// A small heater shield, `w` wide, its top edge at `top`.
-fn paint_shield(painter: &egui::Painter, centre_x: f32, top: f32, w: f32) {
+pub(crate) fn paint_shield(painter: &egui::Painter, centre_x: f32, top: f32, w: f32) {
     let h = w * 1.2;
     let (l, r) = (centre_x - w / 2.0, centre_x + w / 2.0);
     let points = vec![
@@ -580,18 +590,38 @@ pub fn hud(ctx: &egui::Context, h: &Hud) {
             }
         });
 
-    // Energy: a slim bar across the hotbar's width, just above it.
+    // Health and energy: two slim bars side by side across the hotbar's
+    // width, just above it; health on the left with its numbers.
     egui::Area::new(Id::unique("energy"))
-        .anchor(Align2::CENTER_BOTTOM, vec2(0.0, -(18.0 + SLOT + 12.0)))
+        .anchor(Align2::CENTER_BOTTOM, vec2(0.0, -(18.0 + SLOT + 10.0)))
         .interactable(false)
         .order(egui::Order::Background)
         .show(ctx, |ui| {
-            let (rect, _) = ui.allocate_exact_size(vec2(width, 6.0), Sense::hover());
+            let (row, _) = ui.allocate_exact_size(vec2(width, 10.0), Sense::hover());
             let painter = ui.painter();
-            painter.rect_filled(rect.expand(1.0), CornerRadius::same(3), Color32::from_black_alpha(150));
+            let half = (width - 10.0) / 2.0;
+            let health = Rect::from_min_size(row.min, vec2(half, row.height()));
+            let energy = Rect::from_min_size(pos2(row.right() - half, row.top() + 2.0), vec2(half, 6.0));
+            for r in [health, energy] {
+                painter.rect_filled(r.expand(1.0), CornerRadius::same(3), Color32::from_black_alpha(150));
+            }
+            let (now, max) = h.health;
+            let left = (now as f32 / max.max(1) as f32).clamp(0.0, 1.0);
+            if left > 0.0 {
+                let fill = Rect::from_min_size(health.min, vec2(health.width() * left, health.height()));
+                let colour = if left < 0.25 { HEALTH_LOW } else { HEALTH_FULL };
+                painter.rect_filled(fill, CornerRadius::same(3), colour);
+            }
+            painter.text(
+                health.center(),
+                Align2::CENTER_CENTER,
+                format!("{now} / {max}"),
+                FontId::proportional(10.0),
+                Color32::from_rgb(255, 240, 232),
+            );
             let left = h.energy.clamp(0.0, 1.0);
             if left > 0.0 {
-                let fill = Rect::from_min_size(rect.min, vec2(rect.width() * left, rect.height()));
+                let fill = Rect::from_min_size(energy.min, vec2(energy.width() * left, energy.height()));
                 let colour = if left < 0.2 { ENERGY_LOW } else { ENERGY_FULL };
                 painter.rect_filled(fill, CornerRadius::same(3), colour);
             }
@@ -619,6 +649,22 @@ pub fn hud(ctx: &egui::Context, h: &Hud) {
                 if f > 0.0 {
                     let fill = Rect::from_min_size(bar.min, vec2(bar.width() * f, bar.height()));
                     painter.rect_filled(fill, CornerRadius::same(2), XP_BAR);
+                }
+                // A defeat's debt: the XP still owed, in red after the fill.
+                if h.debt > 0 {
+                    let d = (h.debt as f32 / need.max(1) as f32).clamp(0.0, 1.0 - f).max(0.01);
+                    let owed = Rect::from_min_size(
+                        pos2(bar.left() + bar.width() * f, bar.top()),
+                        vec2(bar.width() * d, bar.height()),
+                    );
+                    painter.rect_filled(owed, CornerRadius::same(2), DEBT_RED);
+                    painter.text(
+                        pos2(bar.right() + 6.0, rect.center().y),
+                        Align2::LEFT_CENTER,
+                        format!("XP debt {}", h.debt),
+                        FontId::proportional(11.0),
+                        DEBT_RED,
+                    );
                 }
             });
     }

@@ -447,7 +447,7 @@ impl Remotes {
     }
 }
 
-fn lerp_angle(a: u16, b: u16, f: f64) -> u16 {
+pub fn lerp_angle(a: u16, b: u16, f: f64) -> u16 {
     let d = b.wrapping_sub(a) as i16 as f64;
     (a as f64 + d * f).rem_euclid(65536.0) as u16
 }
