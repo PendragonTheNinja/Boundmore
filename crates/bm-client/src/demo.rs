@@ -16,6 +16,7 @@
 
 use crate::net::NetEvent;
 use bm_core::portal::{PortalAxis, PortalFrame};
+use bm_core::skills::{Character, SkillTree};
 use bm_core::{
     BlockId, BlockPos, BlockRegistry, BlockState, CHUNK_SIZE, Chunk, ChunkPos, Colour, ColourPalette, DayCycle,
     Inventory, ItemRegistry, ItemStack, LocalPos, MoveConfig, PlanetLook, PlanetShape, PlayerState, PlotPos,
@@ -178,6 +179,10 @@ pub struct Demo {
     chip_timer: f64,
     last: Instant,
     push_timer: f64,
+    /// The skill tree and our character (milestone 12), ruled by the
+    /// server's own `Character` methods.
+    tree: SkillTree,
+    character: Character,
 }
 
 fn shape() -> PlanetShape {
@@ -344,6 +349,8 @@ impl Demo {
             chip_timer: 0.0,
             last: Instant::now(),
             push_timer: 0.0,
+            tree: SkillTree::builtin(),
+            character: Character::default(),
         };
         d.welcome();
         d
@@ -359,8 +366,8 @@ impl Demo {
             items: self.items.defs().to_vec(),
             colours: self.colours.clone(),
             recipes: self.book.recipes.clone(),
-            skills: bm_core::skills::SkillTree::builtin().skills,
-            character: bm_core::skills::Character::default(),
+            skills: self.tree.skills.clone(),
+            character: self.character.clone(),
             inventory: self.inv.clone(),
             movement: MoveConfig::default(),
             spawn: PlayerState {
@@ -1192,6 +1199,7 @@ impl Demo {
             ClientMsg::OpenPortal { pos } => self.open_portal(pos),
             ClientMsg::Portal { pos, action } => self.portal_action(pos, action),
             ClientMsg::Swing { seq, at, pos, slot } => self.swing(seq, at, pos, slot),
+            ClientMsg::Skill { at, action } => self.skill(at, action),
             ClientMsg::Hello { .. } => {}
             // The old hold-to-break message, until the protocol drops it.
             #[allow(unreachable_patterns)]
@@ -1265,10 +1273,66 @@ impl Demo {
         self.machine_of.get(&pos).copied().unwrap_or(pos)
     }
 
+    /// A skill change after input `at` (taken as the tick: the demo runs
+    /// one input a tick from 0), ruled as the server rules it; switching
+    /// pages is never "at home" here.
+    fn skill(&mut self, at: u32, action: bm_protocol::SkillAction) {
+        match crate::skills::apply(&mut self.character, &self.tree, &action, at as u64, false) {
+            Ok(()) => self.events.push_back(NetEvent::Msg(ServerMsg::Character {
+                character: self.character.clone(),
+                at,
+            })),
+            Err(why) => self.notice(&why.to_string()),
+        }
+    }
+
+    /// `--demo-ui skills`: a level 24 character with marks, two pages and
+    /// points spent on both, the first in use.
+    pub fn show_skills(&mut self) {
+        let mut c = Character {
+            xp: bm_core::skills::xp_for_level(24) + 17_250,
+            // Marks earned to 24, less a page bought.
+            marks: (2..=24).map(bm_core::skills::marks_for_level).sum::<u32>() - bm_core::skills::PAGE_PRICE,
+            ..Default::default()
+        };
+        c.pages.push(Default::default());
+        let first = [
+            ("power", 8),
+            ("dexterity", 4),
+            ("control", 2),
+            ("hammer_mastery", 3),
+            ("tool_crafting", 1),
+            ("hammer_epic", 1),
+            ("light_epic", 1),
+        ];
+        for (id, n) in first {
+            for _ in 0..n {
+                c.learn(&self.tree, id).expect("the demo page fits");
+            }
+        }
+        c.active = 1;
+        for (id, n) in [("zeal", 4), ("luck", 3), ("shovel_mastery", 2)] {
+            for _ in 0..n {
+                c.learn(&self.tree, id).expect("the demo page fits");
+            }
+        }
+        c.active = 0;
+        c.cleanses_used = 3;
+        self.character = c;
+        self.events.push_back(NetEvent::Msg(ServerMsg::Character {
+            character: self.character.clone(),
+            at: 0,
+        }));
+    }
+
     fn craft(&mut self, recipe: u16, count: u16, station: Option<BlockPos>) {
         let Some(r) = self.book.get(recipe).cloned() else {
             return;
         };
+        if let Some(why) = crate::skills::recipe_gate(&self.tree, &self.character.effects(&self.tree), &r) {
+            self.notice(&why);
+            return;
+        }
         let at = station.map(|p| self.machine(p));
         if r.station != Station::Hand {
             let Some(s) = at.and_then(|p| self.stations.get(&p)) else {
@@ -1473,7 +1537,8 @@ impl Demo {
     /// no look direction (it gets no inputs): an area tool's shape faces
     /// east. Unlike the server it checks no reach.
     fn swing(&mut self, seq: u32, at: u32, pos: BlockPos, slot: u8) {
-        use bm_core::mining::{HEAL_TICKS, aoe_blocks, block_health, is_crit, swing_damage, swing_ticks};
+        use crate::mining::{skill_swing_damage, skilled_tool};
+        use bm_core::mining::{HEAL_TICKS, aoe_blocks, block_health, is_crit, swing_ticks};
         let hit = shape().wrap_block(pos);
         let heal = HEAL_TICKS as u32;
         self.damage.retain(|_, (_, last)| at < last.saturating_add(heal));
@@ -1495,6 +1560,9 @@ impl Demo {
                 .push_back(NetEvent::Msg(ServerMsg::BlockHealth { pos: hit, damage }));
             return;
         };
+        let effects = self.character.effects(&self.tree);
+        let mult = effects.damage_multiplier(tool.class);
+        let tool = skilled_tool(&tool, &effects);
         self.last_swing = Some((at, swing_ticks(tool.action_speed)));
         let tier = self.planets[self.here].info.tier;
         let area = tool.aoe.map_or(1.0, bm_core::Aoe::multiplier);
@@ -1514,7 +1582,7 @@ impl Demo {
                 continue;
             }
             let crit = is_crit(tool.crit_chance, 1, at, p);
-            let dealt = swing_damage(&tool, def, tier, crit, area);
+            let dealt = skill_swing_damage(&tool, def, tier, crit, area, mult);
             if dealt == 0 {
                 continue;
             }

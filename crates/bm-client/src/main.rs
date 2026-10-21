@@ -17,6 +17,8 @@ mod portal;
 mod predict;
 mod render;
 mod settings;
+mod skill_screen;
+mod skills;
 mod sky;
 mod storage;
 mod textures;

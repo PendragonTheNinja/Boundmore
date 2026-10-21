@@ -9,11 +9,13 @@ use crate::menus::{
     self, Arrival, BlockBar, CraftingView, Drag, Hud, ItemIcons, LiveStation, LoginForm, Menu, Notices, PortalWindow,
     ShrineTab, StorageWindow, TravelView, UiAction,
 };
-use crate::mining::{BlockHit, DamageMap, SwingInput, Swinger, predict_swing};
+use crate::mining::{BlockHit, DamageMap, SwingInput, Swinger, predict_swing, skilled_tool};
 use crate::net::{self, ConnectOptions, Link, NetEvent};
 use crate::predict::{Predictor, RemoteSample, Remotes};
 use crate::render::{BoxInstance, Camera, EguiFrame, LineVertex, Renderer, Scene};
 use crate::settings::Settings;
+use crate::skill_screen::{SkillUi, SkillView};
+use crate::skills::Progress;
 use crate::sky::Sky;
 use crate::textures::TextureSet;
 use crate::world::ClientWorld;
@@ -86,8 +88,8 @@ pub struct Options {
     /// (`hud`, `inventory`, `crafting`, `station`, `claims`, `shrine`,
     /// `travel`, `travelling`, `sky`, `storage`, `chat`, `colours`,
     /// `coloured-icons`, `reclaim`, `shapes`, `chisel`, `grapple`, `portal`,
-    /// `mining`, `torches`, `table`, `furnace`, `extractor`, `flora` or
-    /// `login`).
+    /// `mining`, `torches`, `table`, `furnace`, `extractor`, `flora`,
+    /// `skills` or `login`).
     pub demo: Option<String>,
 }
 
@@ -114,8 +116,13 @@ struct Session {
     welcome_tick: u64,
     welcome_local: f64,
     movement: MoveConfig,
-    reach: f64,
+    /// The server's reach for an untrained character; Grasp adds to it
+    /// (`Session::reach`).
+    base_reach: f64,
     view_radius: u8,
+    /// Level, XP, marks and skill pages: the server's word and our
+    /// prediction (milestone 12).
+    progress: Progress,
     world: ClientWorld,
     me: Predictor,
     remotes: Remotes,
@@ -173,6 +180,8 @@ impl Session {
                 .map_err(|e| format!("the server sent a block catalogue without portals: {e}"))
         };
         let (portal_conduit, portal_surface) = (portal("portal_conduit")?, portal("portal_surface")?);
+        let tree = bm_core::skills::SkillTree::from_defs(w.skills)
+            .map_err(|e| format!("the server sent a bad skill tree: {e}"))?;
         let shape = w.planet.shape;
         Ok(Self {
             account: w.account,
@@ -180,8 +189,9 @@ impl Session {
             welcome_tick: w.tick,
             welcome_local: local_ticks,
             movement: w.movement,
-            reach: w.reach,
+            base_reach: w.reach,
             view_radius: w.view_radius,
+            progress: Progress::new(tree, w.character),
             claims: Claims::new(shape, w.claims),
             world: ClientWorld::new(shape, registry),
             me: Predictor::new(w.spawn),
@@ -259,8 +269,9 @@ impl Session {
     fn aim(&mut self, eye: DVec3, dir: DVec3) {
         let world = &self.world;
         let surface = self.portal_surface;
+        let reach = self.reach();
         let aim = |surfaces: bool| {
-            raycast_shaped(eye, dir, self.reach, |p| {
+            raycast_shaped(eye, dir, reach, |p| {
                 let st = world.state(p)?;
                 if surfaces && st.id == surface {
                     return Some(Shape::FULL);
@@ -275,6 +286,64 @@ impl Session {
         };
         self.target = aim(false);
         self.use_target = aim(true);
+    }
+
+    /// How far we reach: the server's base plus Grasp (milestone 12).
+    fn reach(&self) -> f64 {
+        crate::skills::reach(self.base_reach, self.progress.effects())
+    }
+
+    /// Our best estimate of the server's tick now.
+    fn server_tick(&self, local: f64) -> u64 {
+        self.remotes
+            .server_tick(local)
+            .unwrap_or(self.welcome_tick as f64 + (local - self.welcome_local))
+            .max(0.0) as u64
+    }
+
+    /// Standing inside one of our own claims ("at home": switching skill
+    /// pages is free there).
+    fn at_home(&self) -> bool {
+        let feet = self.me.state.pos;
+        let plot = PlotPos::of(BlockPos::containing(feet.x, feet.y, feet.z), self.world.shape);
+        self.claims.at(plot).is_some_and(|c| c.owner == self.account)
+    }
+
+    /// Sets the bodies a skill change implies (`Progress::server`, `act`,
+    /// `expire`) in prediction, where they differ from what we predicted.
+    fn set_bodies(&mut self, bodies: Vec<(u32, bm_core::movement::Body)>) {
+        for (at, body) in bodies {
+            if self.me.body_at(at) != Some(body) {
+                self.me
+                    .set_body(at, body, &self.movement, self.world.shape, &self.world);
+            }
+        }
+    }
+
+    /// A skill change from the skill screen, following our latest input:
+    /// predicted (body included, so moving and energy change at once and
+    /// match the server) and returned to send, or refused with why.
+    fn skill_action(&mut self, action: bm_protocol::SkillAction, local: f64) -> Result<ClientMsg, String> {
+        let at = self.me.seq;
+        let tick = self.server_tick(local);
+        let home = self.at_home();
+        self.progress
+            .act(at, action.clone(), tick, home)
+            .map_err(|r| r.to_string())?;
+        let body = self.progress.effects().body();
+        self.set_bodies(vec![(at, body)]);
+        Ok(ClientMsg::Skill { at, action })
+    }
+
+    /// `ServerMsg::Character`: the server's word on the character, after
+    /// the change that followed input `at` (0: XP or marks alone).
+    fn character(&mut self, character: bm_core::skills::Character, at: u32) {
+        let mut bodies = self.progress.server(character, at);
+        if at == 0 && !self.progress.waiting() {
+            // Nothing in flight: what we move with is the page's.
+            bodies.push((self.me.seq, self.progress.effects().body()));
+        }
+        self.set_bodies(bodies);
     }
 
     /// What a right click holding `item` would place against the target: its
@@ -308,7 +377,10 @@ impl Session {
         let item = self.items.slot(slot).map(|h| h.item);
         // A bare hand breaks nothing (Nathan, 2026-10-20: as in Boundless).
         let tool = self.items.registry.swing_tool(item)?;
-        self.swinger.swung(at, swing_ticks(tool.action_speed));
+        let effects = *self.progress.effects();
+        // Skills quicken the cadence (Deftness, mastery, the tool's epic).
+        self.swinger
+            .swung(at, swing_ticks(skilled_tool(&tool, &effects).action_speed));
         self.edit_seq += 1;
         let seq = self.edit_seq;
         // Energy (milestone 10): spent right after input `at`, as the server
@@ -328,6 +400,7 @@ impl Session {
         let world = &self.world;
         let input = SwingInput {
             tool: &tool,
+            effects: &effects,
             hit: pos,
             look,
             player: self.player_id,
@@ -491,11 +564,13 @@ impl Session {
     /// Held torches as point lights (`Renderer::set_point_lights`): ours at
     /// the hand (where the rope starts), everyone else's at their hands.
     fn held_lights(&self, remotes: &[(u32, RemoteSample)], camera: &Camera) -> Vec<(DVec3, u8)> {
-        let mine = self
+        let held = self
             .items
             .slot(self.selected)
             .and_then(|h| self.items.def(&h))
             .map_or(0, |d| d.held_light);
+        // The light-source epic lights around us like a held torch.
+        let mine = crate::skills::carried_light(held, self.progress.effects());
         let forward = camera.forward();
         let right = forward.cross(DVec3::Y).normalize_or_zero();
         let hand = camera.eye + right * 0.3 - DVec3::Y * 0.35 + forward * 0.4;
@@ -546,6 +621,8 @@ pub struct App {
     portal_view: Option<PortalView>,
     /// The warp shrine window's open tab.
     shrine_tab: ShrineTab,
+    /// The skill screen's chosen category and reset question.
+    skill_ui: SkillUi,
     /// Storage blocks we closed whose `closed` answer has not come back yet:
     /// that answer must not close the same block opened again meanwhile.
     storage_closing: Vec<BlockPos>,
@@ -602,6 +679,7 @@ impl App {
             storage_view: None,
             portal_view: None,
             shrine_tab: ShrineTab::Worlds,
+            skill_ui: SkillUi::default(),
             storage_closing: Vec::new(),
             chat: ChatBox::default(),
             claim_mode: false,
@@ -714,6 +792,9 @@ impl App {
         }
         if let Menu::Travel(_) = menu {
             self.shrine_tab = ShrineTab::Worlds;
+        }
+        if let Menu::Skills = menu {
+            self.skill_ui.confirm_reset = false;
         }
         if let Menu::Portal(pos) = menu {
             self.portal_view = None;
@@ -877,6 +958,14 @@ impl App {
                 UiAction::LogIn { register } => self.start_login(register),
                 UiAction::CancelLogin => self.cancel_login(),
                 UiAction::CloseMenu => self.close_menu(true),
+                UiAction::Skill(action) => {
+                    let (now, local) = (self.now(), self.local_ticks());
+                    let Some(s) = &mut self.session else { continue };
+                    match s.skill_action(action, local) {
+                        Ok(m) => self.send(m),
+                        Err(why) => self.notices.push(why, now),
+                    }
+                }
             }
         }
     }
@@ -1084,8 +1173,7 @@ impl App {
                 }
             }
             ServerMsg::BlockChanged { pos, block } => s.block_changed(pos, block),
-            // Milestone 12: the client agent shows the character.
-            ServerMsg::Character { .. } => {}
+            ServerMsg::Character { character, at } => s.character(character, at),
             ServerMsg::BlockHealth { pos, damage } => s.block_health(pos, damage),
             ServerMsg::EditResult { seq, pos, block, .. } => s.edit_result(seq, pos, block),
             ServerMsg::PlayerJoined { id, name } => s.remotes.joined(id, name),
@@ -1250,6 +1338,10 @@ impl App {
             self.accumulator = 0.0;
         }
         s.me.decay_correction(dt);
+        // Skill changes the server never answered were refused (it said
+        // why): what they changed goes.
+        let bodies = s.progress.expire(s.me.seq);
+        s.set_bodies(bodies);
 
         // Targeting and editing.
         let eye = s.me.state.eye(&s.movement);
@@ -1282,6 +1374,8 @@ impl App {
         s.place_cooldown -= dt;
         s.chisel = None;
         if let (Some((family, precise, _)), Some(hit)) = (chisel, s.target) {
+            // The chisels epic makes any chisel precise (milestone 12).
+            let precise = precise || s.progress.effects().chisel_epic;
             let shape = s.world.block_shape(hit.block);
             let plan = crate::chisel::plan(&hit, shape, precise);
             s.chisel = Some((hit.block, plan));
@@ -1414,6 +1508,7 @@ impl App {
     /// Runs this frame's menus and HUD and returns them tessellated.
     fn run_ui(&mut self) -> Option<(Vec<egui::ClippedPrimitive>, egui::TexturesDelta, f32)> {
         self.ensure_coloured_icons();
+        let local = self.local_ticks();
         let window = self.window.clone()?;
         let e = self.egui.as_mut()?;
         let mut raw = e.winit.take_egui_input(&window);
@@ -1437,6 +1532,7 @@ impl App {
         let live = self.live_station.as_ref();
         let claim_mode = self.claim_mode;
         let shrine_tab = &mut self.shrine_tab;
+        let skill_ui = &mut self.skill_ui;
         let out = e.ctx.run_ui(raw, |ui| {
             let ctx = ui.ctx().clone();
             let Some(s) = session else {
@@ -1481,7 +1577,8 @@ impl App {
                         .then(|| s.target_health())
                         .flatten()
                         .map(|(_, left, shields)| BlockBar { left, shields }),
-                    energy: s.me.state.energy() as f32 / bm_core::energy::MAX_ENERGY as f32,
+                    energy: s.me.state.energy() as f32 / s.me.state.max_energy().max(1) as f32,
+                    level: Some(bm_core::skills::level_of(s.progress.character().xp)),
                 },
             );
             match menu {
@@ -1500,6 +1597,7 @@ impl App {
                             station,
                             live,
                             now,
+                            progress: &s.progress,
                         },
                         &mut actions,
                     );
@@ -1537,6 +1635,19 @@ impl App {
                             slots,
                         },
                         drag,
+                        &mut actions,
+                    );
+                }
+                Some(Menu::Skills) => {
+                    let wait = s.progress.switch_wait(s.server_tick(local));
+                    crate::skill_screen::skills(
+                        &ctx,
+                        &SkillView {
+                            progress: &s.progress,
+                            switch_wait: wait,
+                            at_home: s.at_home(),
+                        },
+                        skill_ui,
                         &mut actions,
                     );
                 }
@@ -1842,6 +1953,15 @@ impl App {
         let now = self.now();
         match screen.as_str() {
             "inventory" => self.open_menu(Menu::Inventory),
+            // A level 24 character with two pages and marks, some points
+            // spent; the demo answers changes as the server would.
+            "skills" => {
+                if let Some(Link::Demo(d)) = &mut self.link {
+                    d.show_skills();
+                }
+                self.pitch = -0.12;
+                self.open_menu(Menu::Skills);
+            }
             "crafting" => self.open_menu(Menu::Crafting(None)),
             "station" => {
                 // Face the demo workbench (four blocks in a T), two blocks
@@ -2202,6 +2322,7 @@ impl ApplicationHandler for App {
                         }
                     }
                     KeyCode::KeyI | KeyCode::Tab => self.toggle(Menu::Inventory),
+                    KeyCode::KeyK => self.toggle(Menu::Skills),
                     KeyCode::KeyC => {
                         let m = self.crafting_menu();
                         self.toggle(m);
@@ -2457,7 +2578,7 @@ mod tests {
         let eye = DVec3::new(128.5, 45.6, 128.5);
         let to = DVec3::new(128.5, 44.5, 131.5) - eye;
         let world = &s.world;
-        s.target = raycast(eye, to.normalize(), s.reach, |p| {
+        s.target = raycast(eye, to.normalize(), s.reach(), |p| {
             world.block(p).is_some_and(|b| world.flags.solid(b))
         });
         assert_eq!(s.aiming_at_shrine(), Some(shrine));
