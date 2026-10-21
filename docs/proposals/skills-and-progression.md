@@ -11,6 +11,7 @@
 - **Death**: Boundless's XP debt (10% of the next level, half XP until repaid), when combat exists.
 - **Base movement and reach**: Boundless's untrained values (run 3.0, sprint 5.0, reach 4), raised by Agility and Control (Nathan's separate answer, the same day).
 - **Order of building**: as question 7 recommends (mining-related skills first, the rest with their systems).
+- **Marks** (Nathan, 2026-10-21): earned only by levelling, no real money; they buy plots at 30 each as in Boundless; the portal epic is required to open portals, as in Boundless ("for now, maybe we change later").
 - **Names** stay Boundmore's own (CLAUDE.md: never Boundless's names or text); meanings and numbers are Boundless's.
 
 *The original proposal follows. The numbers come from `docs/research/boundless-tuning.md` section 5 (levels, skills, XP), section 2.7 (skills that change mining) and section 1.6 (movement); player opinions from `docs/research/boundless-forum-feedback.md` (section 9 and principle 5).*

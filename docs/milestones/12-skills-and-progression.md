@@ -89,29 +89,13 @@ Everything you do earns XP. Levels give skill points and the per-level currency,
    - XP from each source, end to end;
    - the save upgrade.
 
-## Questions for Nathan (built around meanwhile)
+## Decided (Nathan, 2026-10-21)
 
-1. **Real money.** Boundless's currency could also be bought with real money, and its shop sold cosmetics and plots for it. Boundmore's marks are earned only, by levelling. Real-money purchases are a business decision for later. Agreed?
-2. **Plots for marks.** Boundless sold extra plots for about 30 marks each. Boundmore gives every account a fixed plot allowance (`ServerConfig::plot_allowance`). Should levelling buy plots, as in Boundless? Not built until you say.
-3. **Portal epic.** In Boundless you needed this epic (5 points, unlocked at level 10) to open portals. Copying it means a new player cannot use the portals they build in M8 until level 10. Build it as Boundless had it?
-
-## Shared contract (built first, by the main session)
-
-- **bm-core `skills.rs`**:
-  - the level, points, marks and cleanse tables;
-  - `SkillTree` (from `assets/skills.toml`: 73 skills in Boundmore's names, `effect = "later"` for those waiting on other systems);
-  - `Character` (XP, marks, pages, active page, cleanses, switch time) with `learn`, `cleanse`, `reset_page`, `buy_page`, `switch_page`, each refusing in plain words;
-  - `Effects` (what a page does) with `damage_multiplier`, `action_speed_bonus`, `crit_bonus`, `reach`, `luck_multiplier`, `max_energy`, `regen_per_tick`, `wear_saved`, `crafting`, and `body()`.
-- **Movement**:
-  - `PlayerState::body` (`Body`: run and sprint bonus, high jump, double jump, energy and refill bonus, grapple shot bonus), plus `jump_held` and `air_jumped`, read by `movement::step` and `energy`.
-  - The server sets `body` from the active page at the input a skill change follows, and the client does the same in prediction. Saved bodies arrive untrained until the character's body is applied on joining.
-- **Data**:
-  - `BlockDef::mine_xp` and `build_xp` (Boundless's per-block data; gathering objects scale with the tier's health multiplier, a guess);
-  - `Recipe::xp` and `Recipe::skill` (`SkillGate { name, level }`; tool crafting 1 for copper and iron tools, tech crafting 1 for copper and iron grapples and chisels).
-- **bm-protocol 16**:
-  - `Welcome::skills` and `Welcome::character`;
-  - `ClientMsg::Skill { at, action: SkillAction }` (Learn, Cleanse, ResetPage, BuyPage, SwitchPage);
-  - `ServerMsg::Character { character, at }`.
+1. **Real money: no.** Marks come only from levelling ("Currently only by leveling yes").
+2. **Plots for marks: yes**, as in Boundless.
+   - 30 marks a plot, no discount for more, 1 to 80 at a time.
+   - Bought plots add to the account's plot allowance (`ServerConfig::plot_allowance`, 64) and are saved with the character (`Character::plots_bought`, `SkillAction::BuyPlots`).
+3. **Portal epic: required, as in Boundless** ("Yes for now, maybe we change later"). Opening a portal's window needs the Waywise epic (level 10). `ServerConfig::portal_epic_required` defaults to true, so it can be switched off later.
 
 ## Non-goals
 
