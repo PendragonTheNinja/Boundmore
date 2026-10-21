@@ -948,6 +948,45 @@ Temporary worlds since Release 218/219 (Mar-Apr 2019): no beacons, no regen, atm
 
 ---
 
+### 3.8 Combat recipes, healing and creature behaviour (checked 2026-10-21)
+
+**Recipes** from [BI-rec] (`compiled-recipes.json` + `item-names.json`, fetched 2026-10-21), high. Single craft; craft XP and skill gates from the same data.
+
+| Output | Inputs | Machine | Time | Heat / spark | XP | Gate |
+|---|---|---|---|---|---|---|
+| Stone slingbow | 4 stones (any), 4 sticks, 4 leaves (any) | crafting table | 10 s | | 4 | none |
+| Copper slingbow (swift) | 3 copper bars, 4 sticks, 1 sackcloth, 1 glue | workbench | 60 s | | 10 | weapon crafting 1 |
+| Iron slingbow (heavy) | 3 iron bars, 4 sticks, 1 sackcloth, 1 glue | workbench | 120 s | | 14 | weapon crafting 1 |
+| Iron fist (reward-gated item) | 3 iron bars, 4 sticks, 1 sackcloth, 1 glue | workbench | 120 s | | 14 | weapon crafting 1 |
+| Bag of copper bombs | 3 copper bars, 1 bomb charge, 1 sackcloth | workbench | 60 s | | 10 | weapon crafting 1 |
+| Bag of iron bombs | 3 iron bars, 1 bomb charge, 1 sackcloth | workbench | 120 s | | 14 | weapon crafting 1 |
+| Bomb charge | 2 saltpetre, 5 flint, 1 volatile blood | workbench | 90 s | | 12 | weapon crafting 1 |
+| Glue | 1 sap, 1 bone | furnace | 20 s | heat 100 | 5 | none |
+| Torch (the better torch, 4) | 1 stick, 1 flint, 1 tallow, 1 sackcloth | workbench | 20 s | | 4 | decoration crafting 1 |
+| Cooked meat | 1 raw meat | furnace | 60 s | heat 100 | 8 | none |
+| Cooked lean / prime meat | 1 raw lean / prime meat | furnace | 60 s | heat 100 | 9 / 10 | none |
+| Fresh vital essence | 5 bone (1), 5 tallow (1), 5 raw meat (2), 3 hide (2), 2 fresh or viscous blood (3), 2 volatile blood (3, 100 spark) | extractor | 30 to 120 s | | 2 to 8 | none |
+| Leather | 4 hide, 4 bark | refinery | 60 s | spark 200 | 12 | none |
+| Slide block | 4 ice, 2 tallow | refinery | 30 s | spark 400 | 10 | decoration crafting 2 |
+| Oils (restorative, boost, reduction, channelling) | 2 fragments + 1 clay soil + 2 tallow | mixer | 30 to 120 s | | 6 to 32 | brew crafting 1 to 2 |
+| Meaty broth / casserole | 3 raw meat + 1 water bucket / 4 raw meat + 2 edible lamella | furnace | 120 s | heat 100 | 10 | food crafting 1 / 2 |
+| Slingbow augments (5 kinds x 3 ranks) | rock + a creature part (viscous blood, adrenal gland, thermal sac, spark sac, floatation sac) + sulphur, olivine or cobalt fragments | compactor | 60 / 120 / 240 s | spark 100 / 200 / 400 | 10 / 16 / 30 | augment crafting 1 to 3 |
+
+What each creature part is for, in the final game: **bone** glue, essence; **tallow** the better torch, oils (brews), slide blocks, essence; **hide** leather (refinery), forge pastes, essence; **raw meat** food; **bloods** brews, bomb charges (volatile), amalgams (fresh), augments (viscous); **glands and sacs** augments, brews.
+
+**Healing** (forum, high): health comes back only from being fed ("being full regenerates a little bit of health every second or so when out of combat", Arkhainn 2018-09-17, t/16766; "on my hunter my health if depleted takes around 7 min to refill", same topic), the health regeneration epic (+25 per 5 s, works in combat, stacks with fullness), brews, healing bombs and foods. A player respawns with part of their health (t/21283 complains of "half"; low). Environmental damage (fall, lava, drowning) takes a share of max health while healing is flat (t/17849).
+
+**Creature behaviour** from the developers' creature devlogs (gerryjacobs, Sept 2016, t/4972 to t/5046; design intent before release, medium):
+- *Wildstock*: herding, the most common creature, in large groups; idle wandering; many never become agitated; those that do charge and headbutt.
+- *Spitter*: never walks, always runs from place to place; cautious; strafes around its target while shooting; alone or in groups; armour on head, spine and tail.
+- *Roadrunner*: rare, always alone; pecks while idle; runs as fast as it can from any player it notices; very rare variants charge once before running.
+- *Hopper*: alone or in small groups, hopping; passive until triggered; curls into an invulnerable ball that can be grappled and thrown.
+- *Cuttletrunk*: flies, strafes and shoots; rests on a "dock" on the surface when idle (the dock drops items too); a pull and push beam; some lift a player and drop them; middle and high threat worlds.
+- Creatures are tinted from the blocks of the biome they live in.
+- Not published anywhere found (2026-10-21): move speeds, detection and leash ranges, attack cooldowns and damage per attack, spawn counts. The boundlexx API (`/skills/`, `/metals/` work; `/items/`, `/recipes/`, `/worlds/`, `/exports/` return server errors) has no creature data; boundlessinfo's `item-attributes.json` has no creature records.
+
+---
+
 ## 4. Materials, worlds and crafting (tuning reference)
 
 Researched 2026-10-19/20. Boundless item names appear only to say which item a number belongs to; Boundmore must use its own names.

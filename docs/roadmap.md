@@ -20,7 +20,7 @@ What a Boundless player expects to find, and where each stands. "Ours" is the Bo
 | Settlements | Plots near each other form ranked settlements | M8 |
 | Portals and travel | Player-built portals link planets; warps; grapples | Warp shrines at each spawn (M4, free for now). Player-built portals need fuel, less punishing than Boundless (Nathan, 2026-10-19). Agreed (Nathan, 2026-10-19): a portal never disappears (dormant when empty, reopens when refuelled), uses no fuel while idle, and charges each player at most once per portal per cooldown (a tunable; a day is one option, shorter is fine), so back-and-forth trips cannot drain it. Decided (Nathan, 2026-10-19): the fuel is a new mined crystal (wayshards), the portal's own tank pays per trip, portals link with tokens as in Boundless, see-through windows come in a later milestone. Built as M8 (`docs/milestones/08-portals.md`, ADR-0009). Grapples: M7 part 2 (built 2026-10-19), one hook at a time; dual grapples later |
 | Player economy | Shop stands and request baskets; almost nothing sold by NPCs | M8 |
-| Hunting and creatures | Creatures per planet with drops; world bosses | M9 |
+| Hunting and creatures | Creatures per planet with drops; world bosses | M13 (spec written): Boundless's five creatures; meteorites and bosses later |
 | Meteors and events | Meteor strikes with special drops; temporary worlds that appear for a while | M9 |
 | Guilds | Shared plots, permissions, guild buffs | M8 |
 | Sovereign worlds | Players rent whole planets | M10 |
@@ -51,6 +51,8 @@ What a Boundless player expects to find, and where each stands. "Ours" is the Bo
 **M11: The crafting chain** (built 2026-10-20, `milestones/11-crafting-chain.md`). Boundless's materials and machines up to iron tools: crafting table, stones, sticks, the two-part stone furnace with fuel and heat, an old-tech seam, sap and glue (2 sap until creatures bring bone), the extractor and sackcloth. Also the **gatherable plants, boulders and fungi** scattered over every world, which give fibrous leaves, flint, beans, petals, lamellae and orbs (tuning 4.4a).
 
 **M12: Skills and progression (built 2026-10-21).** Boundless's levels, XP, skill tree, pages, respecs and marks; marks buy plots. See `milestones/12-skills-and-progression.md`.
+
+**M13: Creatures and combat** (spec 2026-10-21, `milestones/13-creatures-and-combat.md`). Health, damage and defeat, slings, Boundless's creatures in our own names and models (grazer, pelter, dasher; then popper with bombs, and drifter), per-player drops, bone for the real glue, tallow for the better torch, and the combat skills.
 
 *After that, still Boundless first (Nathan, 2026-10-19 and 2026-10-20): creatures and combat (bone, tallow and hide, then glue's real recipe), food and hunger, forging. Each gets its own spec and number when it starts.*
 
