@@ -319,6 +319,11 @@ impl PhysicsWorld for ClientWorld {
         self.block(p) == Some(self.water)
     }
 
+    /// Soft ground softens a fall (milestone 13). Unloaded reads as hard.
+    fn soft(&self, p: BlockPos) -> bool {
+        self.block(p).is_some_and(|b| self.flags.soft(b))
+    }
+
     fn shape(&self, p: BlockPos) -> Shape {
         self.block_shape(p)
     }

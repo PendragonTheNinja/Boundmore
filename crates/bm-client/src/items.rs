@@ -181,6 +181,16 @@ impl Items {
                     lines.push(format!("{left} of {total} uses left"));
                 }
             }
+            ItemKind::Sling(l) => {
+                lines.push(format!(
+                    "Shoots {} damage up to {} blocks with left click",
+                    l.damage,
+                    trim_float(l.range)
+                ));
+                if let Some((left, total)) = self.durability(stack) {
+                    lines.push(format!("{left} of {total} uses left"));
+                }
+            }
             ItemKind::PortalToken => lines.push(match self.token_name(stack.tag) {
                 Some(name) => format!("Links to: {name}"),
                 None => "Links two portals of the same size".into(),

@@ -18,13 +18,14 @@
 use bm_core::{
     BlockDef, BlockPos, BlockState, ChunkPos, ColourPalette, DayCycle, Inventory, ItemDef, ItemStack, Mount,
     MoveConfig, PlanetLook, PlanetShape, PlayerInput, PlayerState, PlotPos, Recipe, Station,
+    creatures::CreatureDef,
     skills::{Character, SkillDef},
 };
 use glam::DVec3;
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
 
 /// Bump on any change to a message below. Client and server must match.
-pub const PROTOCOL_VERSION: u32 = 17;
+pub const PROTOCOL_VERSION: u32 = 18;
 
 /// QUIC application protocol name; also refuses non-Boundmore peers early.
 pub const ALPN: &[u8] = b"boundmore/1";
@@ -145,6 +146,23 @@ pub enum ClientMsg {
     OpenPortal { pos: Option<BlockPos> },
     /// Act on the open portal (`pos`: any of its conduits or surface blocks).
     Portal { pos: BlockPos, action: PortalAction },
+    /// Fires the sling in `slot` right after input `at`, along `yaw` and
+    /// `pitch` (milestone 13). `charge`: ticks held with Draw (the server
+    /// clamps it). Energy is spent at `at` on both sides, as for swings.
+    Shoot {
+        at: u32,
+        slot: u8,
+        yaw: u16,
+        pitch: i16,
+        charge: u16,
+    },
+    /// Swings the tool in `slot` at a creature right after input `at`
+    /// (tools and the hand stone hit creatures, on the swing timing).
+    Strike { at: u32, creature: u32, slot: u8 },
+    /// Hits a dead creature's body for your own drops (once per body).
+    Loot { creature: u32 },
+    /// Defeated: come back on safe ground near where you fell.
+    Return,
 }
 
 /// What the portal window's buttons do.
@@ -252,6 +270,8 @@ pub struct Welcome {
     pub claims: Vec<ClaimView>,
     /// Plots this account may claim in all.
     pub plot_allowance: u32,
+    /// The creature catalogue (`assets/creatures.toml`).
+    pub creatures: Vec<CreatureDef>,
 }
 
 /// Everything a client needs to be on a planet.
@@ -425,6 +445,63 @@ pub enum ServerMsg {
     TokenNames {
         names: Vec<(u32, String)>,
     },
+    /// A creature came into view, or changed (hurt, angry, died, looted by
+    /// you). Its position travels in snapshots.
+    Creature(CreatureView),
+    /// A creature left view or vanished.
+    CreatureGone {
+        id: u32,
+    },
+    /// A shot is flying: draw it (`combat::shot_step` flies it exactly as the
+    /// server does). Your own shots are drawn at once and not sent back.
+    Shot(ShotView),
+    /// A shot hit something or ran out of range.
+    ShotEnd {
+        id: u32,
+    },
+    /// Damage dealt, for the numbers that float up: to the one who dealt it
+    /// and the one who took it.
+    Hit {
+        target: Target,
+        amount: u32,
+        crit: bool,
+    },
+    /// You were defeated. `debt` is the XP debt added.
+    Defeated {
+        debt: u64,
+        by: String,
+    },
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub enum Target {
+    Player(u32),
+    Creature(u32),
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct CreatureView {
+    pub id: u32,
+    /// Index into `Welcome::creatures`.
+    pub kind: u16,
+    pub tier: u8,
+    /// Health lost.
+    pub damage: u32,
+    /// Hostile to players right now (for the name's colour).
+    pub angry: bool,
+    pub dead: bool,
+    /// You have taken your drops from this body.
+    pub looted: bool,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+pub struct ShotView {
+    pub id: u32,
+    pub from: Target,
+    pub pos: [f32; 3],
+    pub vel: [f32; 3],
+    pub falloff: f32,
+    pub range: f32,
 }
 
 /// A portal as its window shows it.
@@ -521,12 +598,38 @@ pub enum ServerDatagram {
         ack: u32,
         you: PlayerState,
         others: Vec<RemotePlayer>,
+        /// Creatures near you, nearest first, at most
+        /// [`CREATURES_PER_SNAPSHOT`]. A snapshot full of players carries
+        /// none: the rest go in further snapshots of the same tick.
+        creatures: Vec<RemoteCreature>,
     },
 }
 
+/// What a creature is doing, for its animation.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub enum Pose {
+    Idle,
+    Walk,
+    Run,
+    /// Rearing before a charge, or aiming before a volley.
+    Windup,
+    Attack,
+    Dead,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+pub struct RemoteCreature {
+    pub id: u32,
+    pub pos: [f32; 3],
+    pub yaw: u16,
+    pub pose: Pose,
+}
+
+pub const CREATURES_PER_SNAPSHOT: usize = 40;
+
 /// Remote players per snapshot datagram, keeping each under the ~1200-byte
 /// path MTU QUIC assumes even when every one of them has a grapple out.
-pub const PLAYERS_PER_SNAPSHOT: usize = 28;
+pub const PLAYERS_PER_SNAPSHOT: usize = 27;
 
 #[derive(Debug, thiserror::Error)]
 pub enum DecodeError {
@@ -611,9 +714,17 @@ mod tests {
                     regen_bonus: u16::MAX,
                     grapple_shot_bonus: 99.0,
                     grapple_range_bonus: 99.0,
+                    health_bonus: u32::MAX,
+                    falling_armour: u16::MAX,
+                    mending: true,
                 },
                 jump_held: true,
                 air_jumped: true,
+                hurt: u32::MAX,
+                calm: u16::MAX,
+                beat: u16::MAX,
+                loose: u16::MAX,
+                down: true,
                 hook: Some(bm_core::Hook {
                     pos: DVec3::new(1e6, 1e3, 1e6),
                     vel: DVec3::splat(-50.0),
@@ -632,6 +743,27 @@ mod tests {
                     light: u8::MAX,
                 };
                 PLAYERS_PER_SNAPSHOT
+            ],
+            creatures: Vec::new(),
+        };
+        let n = encode(&snap).len();
+        assert!(n <= 1150, "{n} bytes");
+        // Creatures go in snapshots of their own when players fill one.
+        let ServerDatagram::Snapshot { planet, tick, ack, you, .. } = snap;
+        let snap = ServerDatagram::Snapshot {
+            planet,
+            tick,
+            ack,
+            you,
+            others: Vec::new(),
+            creatures: vec![
+                RemoteCreature {
+                    id: u32::MAX,
+                    pos: [1e6; 3],
+                    yaw: u16::MAX,
+                    pose: Pose::Dead,
+                };
+                CREATURES_PER_SNAPSHOT
             ],
         };
         let n = encode(&snap).len();
@@ -710,6 +842,7 @@ mod tests {
                 plots: vec![PlotPos::new(0, 0, 0); 64],
             }],
             plot_allowance: 64,
+            creatures: bm_core::creatures::CreatureKinds::builtin().defs().to_vec(),
         }));
         let bytes = encode(&w);
         assert!(bytes.len() < MAX_FRAME / 8, "{} bytes", bytes.len());

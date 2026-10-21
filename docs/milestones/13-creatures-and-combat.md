@@ -221,6 +221,51 @@ Not published anywhere found; every one is a **guess** until measured:
 - PvP: Boundless had none.
 - Taming and mounts.
 
+## Build plan (part 1)
+
+**Foundation (done first, shared, `bm-core` and `bm-protocol`):**
+- `combat.rs`: the health curve, `taken` (armour and resistance), `dealt` (crits and creature armour), falls (`fall_damage`, `SOFT_LANDING`, the hook rule and `FALL_GRACE_TICKS`), regeneration (`CALM_REGEN` every 5 s after `CALM_TICKS`; `MENDING_REGEN`), `shot_step` (shots arc by `SHOT_GRAVITY` x fall-off), `charge_multiplier` (Draw).
+- Health lives in `PlayerState` (`hurt`, `calm`, `beat`, `loose`, `down`); falls and healing are stepped in `movement::step`. The server's hits use `PlayerState::take`, and a respawn uses `revive`.
+- `Body` gains `health_bonus`, `falling_armour` and `mending`. `PhysicsWorld::soft` (soft ground, `BlockFlags::soft`) is on both sides.
+- `creatures.rs` and `assets/creatures.toml`:
+  - kinds, tiers and drops;
+  - `tiers_on(world tier)`, `hostile_world`, `PROTECTED_BELOW_LEVEL`;
+  - `roll_drops` (luck scales the number of rolls, a guess);
+  - `CreatureDef::move_config`: creatures move by `movement::step`, the players' own physics.
+- `ItemKind::Sling(SlingStats)` and three slings.
+- Skills:
+  - `Effects` gains vitality, `defence()`, `skilled_sling`, `noticed_at` (Quiet Step), `threat` (Lure), `max_health`, and `crafting("weapon_crafting")`;
+  - `Character::debt`, `skills::defeat_debt`, and `add_xp` halving while in debt.
+- Protocol 18:
+  - client messages `Shoot`, `Strike`, `Loot`, `Return`;
+  - server messages `Creature`, `CreatureGone`, `Shot`, `ShotEnd`, `Hit`, `Defeated`;
+  - `Welcome::creatures`;
+  - snapshots carry `creatures` (27 players, or 40 creatures, per datagram; further snapshots of the same tick carry the rest).
+- Recipes: glue is 1 sap + 1 bone; slings; the tallow torch (new blocks appended at the end of `blocks.toml`); vital essence at the extractor.
+
+**Server (agent):**
+- **Creatures**, `game/creatures.rs`: spawning, despawning, AI, physics by `movement::step`, threat lists, and position history for rewinding hits.
+- **Combat:**
+  - `Shoot` and `Strike` on the input timeline, as swings are: cadence, energy, wear, server-side shots;
+  - hits judged against creatures rewound by the client's view delay;
+  - creature attacks on players: `take`, `Hit`, then defeat with `Defeated` and the debt;
+  - `Return`: safe ground nearby, `Teleport`, revive at half health (a guess);
+  - XP for every player who damaged the creature.
+- **Loot**: per-player rolls on a body.
+- **Saves**: `SAVE_VERSION` 6 (`hurt`, `debt`), with the upgrade check from `main`.
+- **Snapshots** and creature view sets.
+- **Tests**: end to end.
+- **Load**: the 50-bot run.
+
+**Client (agent):**
+- **Prediction**: health is server-led. A snapshot that disagrees only on health is adopted without counting a correction.
+- **HUD**: the health bar, damage flash and numbers; the defeat screen with Return and the XP debt.
+- **Creatures**: models (chunky boxes, Boundmore's own designs), animated by pose and interpolated like players. A health bar with armour pips and the name with its tier word.
+- **Fighting**: aim at creatures (strike with tools; shoot with slings, with Rapid Fire and Draw); your own shots drawn at once and others' arcs from `Shot`; looting bodies.
+- **Demo screens**: `--demo-ui creatures` and `--demo-ui defeat`.
+
+**Art (agent):** icons for every new item (slings, creature parts, essence, trophies) and the tallow torch's texture, in `tools/bm-texgen`.
+
 ## Status
 
 *Spec written and decided 2026-10-21.*
@@ -228,6 +273,7 @@ Not published anywhere found; every one is a **guess** until measured:
 - [x] Research: tuning 3.1 to 3.7 (existing), 3.8 added (recipes, healing, behaviour; boundlexx has no creature data)
 - [x] Spec
 - [x] Nathan's decisions (2026-10-21): Boundless's defeat debt; a regen stand-in; fall damage gentler with grapple safety; dashers drop wayshards, meteorites next
-- [ ] Part 1: health and damage rules; slings; creature system (spawning, AI, sync, models); grazer, pelter, dasher; drops and recipes; defeat; combat skills
+- [x] Part 1 foundation (2026-10-21): `bm-core` combat, creatures, slings, skills, debt; protocol 18; recipes and the tallow torch (Build plan above)
+- [ ] Part 1 server, client and art (agents)
 - [ ] Part 2: popper and bombs; drifter; exotics
 - [ ] Nathan's play-test

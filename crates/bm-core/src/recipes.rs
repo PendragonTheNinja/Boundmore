@@ -178,6 +178,12 @@ mod tests {
             have.extend(items.drop_of(id));
             have.extend(items.bonus_of(id).iter().map(|(i, _)| *i));
         }
+        // Creature drops (milestone 13): bone for glue, tallow for torches.
+        for (_, c) in crate::creatures::CreatureKinds::builtin().iter() {
+            for t in &c.tiers {
+                have.extend(t.drops.iter().map(|d| items.id(&d.item).unwrap()));
+            }
+        }
         loop {
             let before = have.len();
             for r in &book.recipes {
@@ -200,6 +206,8 @@ mod tests {
             "glue",
             "extractor",
             "torch",
+            "tallow_torch",
+            "iron_sling",
         ] {
             assert!(have.contains(&items.id(name).unwrap()), "{name}");
         }

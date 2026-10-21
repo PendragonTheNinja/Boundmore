@@ -269,3 +269,80 @@ name = "shadow_orb"
 
 [[item]]
 name = "shimmering_orb"
+
+# Creature parts (milestone 13; Boundless's drops in Boundmore's names,
+# tuning 3.2.4). Bone makes glue, tallow the better torch; the rest wait for
+# food, leather, brews and augments, and all give vital essence at the
+# extractor (tuning 3.8).
+[[item]]
+name = "raw_meat"
+
+[[item]]
+name = "lean_meat"
+
+[[item]]
+name = "bone"
+
+[[item]]
+name = "tallow"
+
+[[item]]
+name = "hide"
+
+[[item]]
+name = "fresh_blood"
+
+[[item]]
+name = "thick_blood"
+
+[[item]]
+name = "milk_gland"
+
+[[item]]
+name = "quick_gland"
+
+[[item]]
+name = "spark_sac"
+
+[[item]]
+name = "mantle"
+
+[[item]]
+name = "grazer_eye"
+
+[[item]]
+name = "pelter_eye"
+
+[[item]]
+name = "dasher_eye"
+
+[[item]]
+name = "horn_trophy"
+
+[[item]]
+name = "scale_trophy"
+
+[[item]]
+name = "feather_trophy"
+
+[[item]]
+name = "vital_essence"
+
+# Slings (Boundless's slingbows, tuning 3.1.1, exact). Energy a shot is
+# damage / 50.
+[[item]]
+name = "stone_sling"
+stack = 1
+sling = { damage = 300, action_speed = 10.0, shot_speed = 30.0, range = 15.0, falloff = 0.5, durability = 600 }
+
+[[item]]
+name = "copper_sling"
+display = "Quick Copper Sling"
+stack = 1
+sling = { damage = 300, action_speed = 30.0, shot_speed = 55.0, range = 15.0, falloff = 0.5, durability = 500 }
+
+[[item]]
+name = "iron_sling"
+display = "Heavy Iron Sling"
+stack = 1
+sling = { damage = 600, action_speed = 10.0, shot_speed = 35.0, range = 20.0, falloff = 0.6, crit_chance = 0.2, durability = 900 }

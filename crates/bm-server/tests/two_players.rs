@@ -270,6 +270,7 @@ impl TestClient {
             mut ack,
             mut you,
             mut others,
+            ..
         } = tokio::time::timeout(Duration::from_secs(5), self.snaps.recv())
             .await
             .unwrap()
@@ -280,6 +281,7 @@ impl TestClient {
             ack: a,
             you: y,
             others: o,
+            ..
         }) = self.snaps.try_recv()
         {
             (tick, ack, you, others) = (t, a, y, o);
@@ -3623,7 +3625,7 @@ async fn skills_are_spent_by_the_rules_and_change_swings_reach_and_chisels() {
 
     // Refusals change nothing and say why.
     alice
-        .skill_refused(SkillAction::Learn("vitality".into()), "That skill comes later")
+        .skill_refused(SkillAction::Learn("intelligence".into()), "That skill comes later")
         .await;
     alice
         .skill_refused(SkillAction::Learn("nonsense".into()), "There is no such skill")

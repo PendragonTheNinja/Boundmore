@@ -165,6 +165,24 @@ pub enum Effect {
     /// +1 to one crafting skill's level (tool, tech).
     ToolCraftingEpic,
     TechCraftingEpic,
+    /// Milestone 13: health, slings and defences.
+    Vitality,
+    SlingMastery,
+    WeaponCrafting,
+    HealthEpic,
+    SlingEpic,
+    RapidFireEpic,
+    ChargingEpic,
+    StealthEpic,
+    ThreatEpic,
+    KineticArmour,
+    KineticResistance,
+    ImpulseArmour,
+    ImpulseResistance,
+    FallingArmour,
+    HealthRegenEpic,
+    DeathEpic,
+    WeaponCraftingEpic,
     /// On the tree, not built yet ("Comes later"): cannot be bought.
     Later,
 }
@@ -286,6 +304,18 @@ pub struct Character {
     /// Plots bought with marks, added to the account's plot allowance.
     #[serde(default)]
     pub plots_bought: u32,
+    /// XP debt from defeats (milestone 13): while above 0, XP earned is
+    /// halved and pays it down.
+    #[serde(default)]
+    pub debt: u64,
+}
+
+/// A defeat's XP debt: 10% of the XP the next level needs (Boundless Release
+/// 195), halved by Second Chance.
+pub fn defeat_debt(xp: u64, death_epic: bool) -> u64 {
+    let (_, _, need) = level_of(xp);
+    let d = need / 10;
+    if death_epic { d / 2 } else { d }
 }
 
 impl Default for Character {
@@ -298,6 +328,7 @@ impl Default for Character {
             cleanses_used: 0,
             switched_at: 0,
             plots_bought: 0,
+            debt: 0,
         }
     }
 }
@@ -362,8 +393,16 @@ impl Character {
         cleanse_at(self.level()).saturating_sub(self.cleanses_used)
     }
 
-    /// Adds XP; returns the levels gained (marks are added for each).
+    /// Adds XP; returns the levels gained (marks are added for each). While
+    /// in debt from a defeat, half the XP is earned, and all of it pays the
+    /// debt down (Boundless Release 195).
     pub fn add_xp(&mut self, xp: u64) -> u32 {
+        let xp = if self.debt > 0 {
+            self.debt = self.debt.saturating_sub(xp);
+            xp / 2
+        } else {
+            xp
+        };
         let before = self.level();
         self.xp = self.xp.saturating_add(xp);
         let after = self.level();
@@ -518,6 +557,21 @@ pub struct Effects {
     pub tech_crafting: u8,
     pub machine_crafting: u8,
     pub decoration_crafting: u8,
+    /// Milestone 13.
+    pub vitality: f64,
+    pub sling_mastery: u8,
+    pub weapon_crafting: u8,
+    pub health_epic: bool,
+    pub sling_epic: bool,
+    pub rapid_fire: bool,
+    pub charging: bool,
+    pub stealth_epic: bool,
+    pub threat_epic: bool,
+    /// Ranks: kinetic armour, kinetic resistance, impulse armour, impulse
+    /// resistance, falling armour.
+    pub defence: [u8; 5],
+    pub health_regen_epic: bool,
+    pub death_epic: bool,
 }
 
 impl Effects {
@@ -559,6 +613,22 @@ impl Effects {
                 Effect::GearCraftingEpic => gear += r,
                 Effect::ToolCraftingEpic => e.tool_crafting += r,
                 Effect::TechCraftingEpic => e.tech_crafting += r,
+                Effect::Vitality => e.vitality += f,
+                Effect::SlingMastery => e.sling_mastery += r,
+                Effect::WeaponCrafting | Effect::WeaponCraftingEpic => e.weapon_crafting += r,
+                Effect::HealthEpic => e.health_epic |= on,
+                Effect::SlingEpic => e.sling_epic |= on,
+                Effect::RapidFireEpic => e.rapid_fire |= on,
+                Effect::ChargingEpic => e.charging |= on,
+                Effect::StealthEpic => e.stealth_epic |= on,
+                Effect::ThreatEpic => e.threat_epic |= on,
+                Effect::KineticArmour => e.defence[0] += r,
+                Effect::KineticResistance => e.defence[1] += r,
+                Effect::ImpulseArmour => e.defence[2] += r,
+                Effect::ImpulseResistance => e.defence[3] += r,
+                Effect::FallingArmour => e.defence[4] += r,
+                Effect::HealthRegenEpic => e.health_regen_epic |= on,
+                Effect::DeathEpic => e.death_epic |= on,
                 Effect::Later => {}
             }
         }
@@ -569,11 +639,13 @@ impl Effects {
             &mut e.control,
             &mut e.luck,
             &mut e.zeal,
+            &mut e.vitality,
         ] {
             *a += all;
         }
         e.tool_crafting += gear;
         e.tech_crafting += gear;
+        e.weapon_crafting += gear;
         e
     }
 
@@ -682,7 +754,56 @@ impl Effects {
             regen_bonus: self.regen_per_tick().saturating_sub(crate::energy::REGEN_PER_TICK),
             grapple_shot_bonus: self.grapple_shot_bonus(),
             grapple_range_bonus: self.grapple_range_bonus(),
+            health_bonus: self.max_health().saturating_sub(crate::combat::BASE_HEALTH),
+            falling_armour: self.defence().falling_armour as u16,
+            mending: self.health_regen_epic,
         }
+    }
+
+    /// Max health: the vitality curve, x3 with Iron Body (`combat::max_health`).
+    pub fn max_health(&self) -> u32 {
+        crate::combat::max_health(self.vitality, self.health_epic)
+    }
+
+    /// Armour and resistance from the endurance skills (Boundless's skill
+    /// text, tuning 5.4a): armour +10 a rank, resistance +5% a rank,
+    /// falling armour +20 a rank.
+    pub fn defence(&self) -> crate::combat::Defence {
+        let d = self.defence;
+        crate::combat::Defence {
+            kinetic_armour: 10 * d[0] as u32,
+            kinetic_resist: 0.05 * d[1] as f32,
+            impulse_armour: 10 * d[2] as u32,
+            impulse_resist: 0.05 * d[3] as f32,
+            falling_armour: 20 * d[4] as u32,
+        }
+    }
+
+    /// A sling with these skills [tuning 3.3.1]: damage x (1 + 0.05 power
+    /// (x3 with the damage epic) + 0.05 a Sling Skill rank + 0.25 with
+    /// Sharpshot), action speed + 2 a dexterity level + 2 a rank + 10 with
+    /// Sharpshot, crit chance plus agility's.
+    pub fn skilled_sling(&self, l: &crate::items::SlingStats) -> crate::items::SlingStats {
+        let power = 0.05 * self.power * if self.damage_epic { 3.0 } else { 1.0 };
+        let mult = 1.0 + power + 0.05 * self.sling_mastery as f64 + if self.sling_epic { 0.25 } else { 0.0 };
+        let speed = 2.0 * self.dexterity + 2.0 * self.sling_mastery as f64 + if self.sling_epic { 10.0 } else { 0.0 };
+        crate::items::SlingStats {
+            damage: (l.damage as f64 * mult - 1e-9).ceil().max(0.0) as u32,
+            action_speed: l.action_speed + speed as f32,
+            crit_chance: (l.crit_chance + self.crit_bonus() as f32).min(1.0),
+            ..*l
+        }
+    }
+
+    /// How far creatures notice you, as a multiple of their range: half
+    /// with Quiet Step (+50% stealth, tuning 5.4a).
+    pub fn noticed_at(&self) -> f64 {
+        if self.stealth_epic { 0.5 } else { 1.0 }
+    }
+
+    /// Threat you make, as a multiple: twice with Lure (+100%).
+    pub fn threat(&self) -> f64 {
+        if self.threat_epic { 2.0 } else { 1.0 }
     }
 
     /// Crafting level for a gate's skill name (`tool_crafting` ...).
@@ -692,6 +813,7 @@ impl Effects {
             "tech_crafting" => self.tech_crafting,
             "machine_crafting" => self.machine_crafting,
             "decoration_crafting" => self.decoration_crafting,
+            "weapon_crafting" => self.weapon_crafting,
             _ => 0,
         }
     }
@@ -701,6 +823,51 @@ impl Effects {
 mod tests {
     use super::*;
     use crate::items::ToolClass;
+
+    #[test]
+    fn combat_skills() {
+        let t = SkillTree::builtin();
+        let mut c = Character::default();
+        c.add_xp(xp_for_level(50));
+        for id in ["vitality", "vitality", "slingbow_mastery", "kinetic_armour", "kinetic_resistance", "falling_armour"] {
+            c.learn(&t, id).unwrap();
+        }
+        c.learn(&t, "slingbow_epic").unwrap();
+        c.learn(&t, "rapid_fire_epic").unwrap();
+        assert!(matches!(c.learn(&t, "charging_epic"), Err(Refused::Excluded(_))));
+        let e = c.effects(&t);
+        assert_eq!(e.max_health(), 960);
+        assert_eq!(e.body().health_bonus, 360);
+        assert_eq!(e.body().falling_armour, 20);
+        let d = e.defence();
+        assert_eq!((d.kinetic_armour, d.kinetic_resist), (10, 0.05));
+        let items = crate::items::ItemRegistry::builtin(&crate::block::BlockRegistry::builtin());
+        let stone = items.get(items.id("stone_sling").unwrap()).unwrap().sling().unwrap();
+        let skilled = e.skilled_sling(&stone);
+        // 300 x (1 + 0.05 + 0.25) = 390; action speed 10 + 2 + 10.
+        assert_eq!(skilled.damage, 390);
+        assert_eq!(skilled.action_speed, 22.0);
+        assert_eq!(skilled.energy, 6);
+    }
+
+    #[test]
+    fn defeat_debt_halves_xp_until_paid() {
+        let mut c = Character::default();
+        c.add_xp(xp_for_level(10));
+        // Level 10 needs 7500 for the next: a debt of 750.
+        c.debt = defeat_debt(c.xp, false);
+        assert_eq!(c.debt, 750);
+        assert_eq!(defeat_debt(c.xp, true), 375);
+        let before = c.xp;
+        c.add_xp(500);
+        assert_eq!(c.xp - before, 250, "half XP while in debt");
+        assert_eq!(c.debt, 250);
+        c.add_xp(500);
+        assert_eq!(c.debt, 0);
+        let before = c.xp;
+        c.add_xp(100);
+        assert_eq!(c.xp - before, 100, "full XP once paid");
+    }
 
     #[test]
     fn levels_match_boundless() {
@@ -747,7 +914,7 @@ mod tests {
         assert_eq!(c.learn(&t, "power"), Err(Refused::MaxRank));
         c.learn(&t, "hammer_epic").unwrap();
         assert!(matches!(c.learn(&t, "shovel_axe_epic"), Err(Refused::Excluded(_))));
-        assert_eq!(c.learn(&t, "vitality"), Err(Refused::ComesLater));
+        assert_eq!(c.learn(&t, "intelligence"), Err(Refused::ComesLater));
         assert_eq!(c.page().spent(&t), 13);
         // The page cap and the pool.
         let ids: Vec<String> = t

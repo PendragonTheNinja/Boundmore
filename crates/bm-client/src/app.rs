@@ -518,6 +518,7 @@ impl Session {
             ack,
             you,
             others,
+            creatures: _,
         } = d;
         if planet != self.planet.id {
             return false;
@@ -1174,6 +1175,13 @@ impl App {
         let now = self.now();
         let Some(s) = &mut self.session else { return };
         match m {
+            // Milestone 13: creatures, shots and defeat (client work to come).
+            ServerMsg::Creature(_)
+            | ServerMsg::CreatureGone { .. }
+            | ServerMsg::Shot(_)
+            | ServerMsg::ShotEnd { .. }
+            | ServerMsg::Hit { .. }
+            | ServerMsg::Defeated { .. } => {}
             ServerMsg::Chunk { pos, data } => match Chunk::decode(&data) {
                 Ok(c) => s.world.insert_chunk(pos, c),
                 Err(e) => tracing::warn!("bad chunk {pos:?} from server: {e}"),
@@ -2499,6 +2507,7 @@ mod tests {
                 hook: None,
                 light: 0,
             }],
+            creatures: Vec::new(),
         }
     }
 

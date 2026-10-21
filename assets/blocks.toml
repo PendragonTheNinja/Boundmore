@@ -1053,3 +1053,82 @@ bonus = [{ item = "glowing_lamella", per_tier = [1.25, 1.25, 1.25, 1.25, 1.25, 1
 light = 6
 mine_xp = 40
 build_xp = 2
+
+# Milestone 13: the better torch (Boundless's torch with tallow and sackcloth,
+# tuning 3.8). Brighter than the basic torch: light 13 is a guess.
+
+[[block]]
+name = "tallow_torch"
+colourable = false
+color = [246, 196, 96]
+solid = false
+opaque = false
+translucent = false
+breakable = true
+placeable = true
+health = "prop"
+light = 13
+textures = { all = "tallow_torch" }
+mount = "floor"
+mine_xp = 0
+build_xp = 8
+
+[[block]]
+name = "tallow_torch_north"
+colourable = false
+color = [246, 196, 96]
+solid = false
+opaque = false
+translucent = false
+breakable = true
+placeable = false
+health = "prop"
+light = 13
+textures = { all = "tallow_torch" }
+mount = "north"
+drops = "tallow_torch"
+
+[[block]]
+name = "tallow_torch_east"
+colourable = false
+color = [246, 196, 96]
+solid = false
+opaque = false
+translucent = false
+breakable = true
+placeable = false
+health = "prop"
+light = 13
+textures = { all = "tallow_torch" }
+mount = "east"
+drops = "tallow_torch"
+
+[[block]]
+name = "tallow_torch_south"
+colourable = false
+color = [246, 196, 96]
+solid = false
+opaque = false
+translucent = false
+breakable = true
+placeable = false
+health = "prop"
+light = 13
+textures = { all = "tallow_torch" }
+mount = "south"
+drops = "tallow_torch"
+
+[[block]]
+name = "tallow_torch_west"
+colourable = false
+color = [246, 196, 96]
+solid = false
+opaque = false
+translucent = false
+breakable = true
+placeable = false
+health = "prop"
+light = 13
+textures = { all = "tallow_torch" }
+mount = "west"
+drops = "tallow_torch"

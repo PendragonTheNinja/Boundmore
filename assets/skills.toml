@@ -19,7 +19,7 @@ category = "attributes"
 ranks = 8
 cost = 1
 effect = "power"
-text = "+5% damage to blocks (and later to creatures)"
+text = "+5% damage to blocks and creatures"
 
 [[skill]]
 id = "dexterity"
@@ -72,8 +72,8 @@ name = "Toughness"
 category = "attributes"
 ranks = 8
 cost = 1
-effect = "later"
-text = "More health (comes with health)"
+effect = "vitality"
+text = "More health: 730 at one rank, up to 4000 at nine"
 
 [[skill]]
 id = "intelligence"
@@ -131,12 +131,12 @@ text = "Grapple ropes reach 5 blocks further and fly 5 blocks a second faster"
 
 [[skill]]
 id = "slingbow_mastery"
-name = "Slingbow Skill"
+name = "Sling Skill"
 category = "mastery"
 ranks = 5
 cost = 1
-effect = "later"
-text = "Slingbows (comes with weapons)"
+effect = "sling_mastery"
+text = "+5% sling damage and +2 action speed"
 
 [[skill]]
 id = "bomb_mastery"
@@ -198,8 +198,8 @@ name = "Weaponsmithing"
 category = "crafting"
 ranks = 2
 cost = 1
-effect = "later"
-text = "Make weapons (comes with weapons)"
+effect = "weapon_crafting"
+text = "Make metal slings (one level)"
 
 [[skill]]
 id = "ingredient_crafting"
@@ -282,8 +282,8 @@ name = "Iron Body"
 category = "epic1"
 ranks = 1
 cost = 5
-effect = "later"
-text = "Three times the health (comes with health)"
+effect = "health_epic"
+text = "Three times the health"
 excludes = ["energy_epic"]
 
 [[skill]]
@@ -310,8 +310,8 @@ name = "Sharpshot"
 category = "epic1"
 ranks = 1
 cost = 5
-effect = "later"
-text = "Slingbows (comes with weapons)"
+effect = "sling_epic"
+text = "+25% sling damage and +10 action speed"
 
 [[skill]]
 id = "bomb_epic"
@@ -328,8 +328,8 @@ name = "Rapid Fire"
 category = "epic1"
 ranks = 1
 cost = 5
-effect = "later"
-text = "Slingbows fire while held (comes with weapons)"
+effect = "rapid_fire_epic"
+text = "Slings keep firing while the button is held"
 excludes = ["charging_epic"]
 
 [[skill]]
@@ -338,8 +338,8 @@ name = "Draw"
 category = "epic1"
 ranks = 1
 cost = 5
-effect = "later"
-text = "Slingbows charge for more damage (comes with weapons)"
+effect = "charging_epic"
+text = "Hold to draw a sling for up to double damage over 2 seconds"
 excludes = ["rapid_fire_epic"]
 
 [[skill]]
@@ -348,8 +348,8 @@ name = "Quiet Step"
 category = "epic1"
 ranks = 1
 cost = 5
-effect = "later"
-text = "Creatures notice you less (comes with creatures)"
+effect = "stealth_epic"
+text = "Creatures notice you at half the distance"
 excludes = ["threat_epic"]
 
 [[skill]]
@@ -358,8 +358,8 @@ name = "Lure"
 category = "epic1"
 ranks = 1
 cost = 5
-effect = "later"
-text = "Creatures come for you (comes with creatures)"
+effect = "threat_epic"
+text = "Creatures come for you first: twice the threat"
 excludes = ["stealth_epic"]
 
 [[skill]]
@@ -377,8 +377,8 @@ name = "Hard Skin"
 category = "endurance"
 ranks = 5
 cost = 1
-effect = "later"
-text = "Comes with combat"
+effect = "kinetic_armour"
+text = "+10 armour against shots, charges and swings"
 
 [[skill]]
 id = "kinetic_resistance"
@@ -386,8 +386,8 @@ name = "Steady"
 category = "endurance"
 ranks = 5
 cost = 1
-effect = "later"
-text = "Comes with combat"
+effect = "kinetic_resistance"
+text = "+5% chance to shrug off a shot, charge or swing"
 
 [[skill]]
 id = "impulse_armour"
@@ -395,8 +395,8 @@ name = "Blast Guard"
 category = "endurance"
 ranks = 5
 cost = 1
-effect = "later"
-text = "Comes with combat"
+effect = "impulse_armour"
+text = "+10 armour against blasts and beams"
 
 [[skill]]
 id = "impulse_resistance"
@@ -404,8 +404,8 @@ name = "Braced"
 category = "endurance"
 ranks = 5
 cost = 1
-effect = "later"
-text = "Comes with combat"
+effect = "impulse_resistance"
+text = "+5% chance to shrug off a blast or beam"
 
 [[skill]]
 id = "falling_armour"
@@ -413,8 +413,8 @@ name = "Soft Landing"
 category = "endurance"
 ranks = 5
 cost = 1
-effect = "later"
-text = "Comes with combat"
+effect = "falling_armour"
+text = "+20 off every fall"
 
 [[skill]]
 id = "double_jump_epic"
@@ -468,8 +468,8 @@ name = "Mending"
 category = "epic2"
 ranks = 1
 cost = 5
-effect = "later"
-text = "Health returns faster (comes with health)"
+effect = "health_regen_epic"
+text = "+25 health every 5 seconds, even in a fight"
 excludes = ["energy_regen_epic"]
 
 [[skill]]
@@ -516,8 +516,8 @@ name = "Second Chance"
 category = "epic2"
 ranks = 1
 cost = 5
-effect = "later"
-text = "Lose less when defeated (comes with combat)"
+effect = "death_epic"
+text = "Half the XP debt when defeated"
 
 [[skill]]
 id = "tax_epic"
@@ -617,8 +617,8 @@ name = "Master Weaponsmith"
 category = "epic3"
 ranks = 1
 cost = 5
-effect = "later"
-text = "+1 to Weaponsmithing (comes with weapons)"
+effect = "weapon_crafting_epic"
+text = "+1 to Weaponsmithing"
 excludes = ["tool_crafting_epic", "tech_crafting_epic"]
 
 [[skill]]

@@ -1,0 +1,288 @@
+# Creatures (milestone 13, docs/milestones/13-creatures-and-combat.md).
+# Boundless's creatures in Boundmore's own names and models. Health, armour,
+# XP and drops per tier are Boundless's (tuning 3.2.2 and 3.2.4; elemental
+# shards are left out until elemental creatures exist). Speeds, ranges,
+# attack timing and damage past what players measured are GUESSES, listed in
+# docs/feel.md for Nathan to check in game.
+#
+#   behaviour   herd (charges when hurt) | ranged (shoots) | flee (runs away)
+#   attack      what it fights with (bm-core creatures::Attack)
+#   half_width, height   body, in blocks
+#   walk_speed, run_speed   blocks a second
+#   notice      notices players this close
+#   give_up, forget   leaves a target this far away, or unseen this many s
+#   spawn_weight, group   how often a spawn picks it, and how many together
+#   [[creature.tiers]]   tier 1 up: health, armour, xp, damage (one hit),
+#               drops_min..drops_max rolls on the pool, each entry
+#               { item, weight, max } giving 1 to max
+
+# Boundless's wildstock. Charge numbers from Release 172 (speed 12, range 15,
+# radius 1.8); base hit 100, x2.5 at tier 2 (players, 2023). Damage above
+# tier 2, speeds and ranges: guesses.
+[[creature]]
+name = "grazer"
+behaviour = "herd"
+attack = { charge = { speed = 12.0, range = 15.0, radius = 1.8, windup = 0.8, knockback = 9.0, cooldown = 3.0 } }
+half_width = 0.6
+height = 1.4
+walk_speed = 1.4
+run_speed = 12.0
+notice = 16.0
+give_up = 32.0
+forget = 12.0
+spawn_weight = 50
+group = [3, 6]
+
+[[creature.tiers]]
+health = 1500
+armour = 0
+xp = 60
+damage = 100
+drops_min = 1
+drops_max = 5
+drops = [
+  { item = "raw_meat", weight = 10, max = 2 },
+  { item = "bone", weight = 7, max = 1 },
+  { item = "tallow", weight = 8, max = 2 },
+]
+
+[[creature.tiers]]
+health = 3500
+armour = 0
+xp = 140
+damage = 250
+drops_min = 1
+drops_max = 6
+drops = [
+  { item = "raw_meat", weight = 10, max = 2 },
+  { item = "bone", weight = 7, max = 1 },
+  { item = "tallow", weight = 8, max = 2 },
+  { item = "hide", weight = 6, max = 2 },
+  { item = "fresh_blood", weight = 5, max = 2 },
+  { item = "milk_gland", weight = 4, max = 1 },
+  { item = "grazer_eye", weight = 2, max = 1 },
+]
+
+[[creature.tiers]]
+health = 9000
+armour = 0
+xp = 240
+damage = 600
+drops_min = 2
+drops_max = 7
+drops = [
+  { item = "raw_meat", weight = 8, max = 4 },
+  { item = "bone", weight = 6, max = 2 },
+  { item = "tallow", weight = 8, max = 2 },
+  { item = "hide", weight = 6, max = 2 },
+  { item = "fresh_blood", weight = 5, max = 2 },
+  { item = "milk_gland", weight = 4, max = 1 },
+  { item = "grazer_eye", weight = 2, max = 1 },
+]
+
+[[creature.tiers]]
+health = 25000
+armour = 0
+xp = 360
+damage = 1500
+drops_min = 2
+drops_max = 8
+drops = [
+  { item = "raw_meat", weight = 8, max = 4 },
+  { item = "bone", weight = 6, max = 2 },
+  { item = "tallow", weight = 8, max = 2 },
+  { item = "hide", weight = 6, max = 2 },
+  { item = "fresh_blood", weight = 5, max = 4 },
+  { item = "milk_gland", weight = 4, max = 1 },
+  { item = "grazer_eye", weight = 3, max = 2 },
+  { item = "horn_trophy", weight = 1, max = 1 },
+]
+
+[[creature.tiers]]
+health = 60000
+armour = 0
+xp = 540
+damage = 3600
+drops_min = 3
+drops_max = 9
+drops = [
+  { item = "raw_meat", weight = 7, max = 6 },
+  { item = "bone", weight = 6, max = 3 },
+  { item = "tallow", weight = 8, max = 2 },
+  { item = "hide", weight = 6, max = 2 },
+  { item = "fresh_blood", weight = 5, max = 4 },
+  { item = "milk_gland", weight = 4, max = 1 },
+  { item = "grazer_eye", weight = 3, max = 2 },
+  { item = "horn_trophy", weight = 1, max = 1 },
+]
+
+# Boundless's spitter. Base hit 30, x3 at tier 2 (players, 2023); gives up
+# beyond 30 blocks (Release 156). Fire rate, shot speed, damage above tier 2
+# and speeds: guesses.
+[[creature]]
+name = "pelter"
+behaviour = "ranged"
+attack = { shot = { speed = 22.0, range = 24.0, cooldown = 2.0, burst = [1, 3, 5], spread = 8.0 } }
+half_width = 0.45
+height = 0.9
+walk_speed = 3.0
+run_speed = 5.5
+notice = 20.0
+give_up = 30.0
+forget = 10.0
+spawn_weight = 35
+group = [1, 3]
+
+[[creature.tiers]]
+health = 2000
+armour = 0
+xp = 140
+damage = 30
+drops_min = 1
+drops_max = 5
+drops = [
+  { item = "raw_meat", weight = 23, max = 2 },
+  { item = "tallow", weight = 19, max = 2 },
+  { item = "bone", weight = 19, max = 2 },
+  { item = "thick_blood", weight = 11, max = 2 },
+]
+
+[[creature.tiers]]
+health = 4000
+armour = 50
+xp = 240
+damage = 90
+drops_min = 2
+drops_max = 6
+drops = [
+  { item = "raw_meat", weight = 23, max = 2 },
+  { item = "tallow", weight = 19, max = 2 },
+  { item = "bone", weight = 19, max = 2 },
+  { item = "thick_blood", weight = 11, max = 2 },
+  { item = "hide", weight = 4, max = 2 },
+]
+
+[[creature.tiers]]
+health = 8000
+armour = 200
+xp = 360
+damage = 180
+drops_min = 2
+drops_max = 7
+drops = [
+  { item = "raw_meat", weight = 15, max = 4 },
+  { item = "tallow", weight = 12, max = 4 },
+  { item = "bone", weight = 12, max = 4 },
+  { item = "thick_blood", weight = 10, max = 4 },
+  { item = "hide", weight = 4, max = 2 },
+  { item = "mantle", weight = 8, max = 2 },
+  { item = "spark_sac", weight = 5, max = 1 },
+  { item = "pelter_eye", weight = 3, max = 1 },
+]
+
+[[creature.tiers]]
+health = 16000
+armour = 500
+xp = 540
+damage = 360
+drops_min = 3
+drops_max = 8
+drops = [
+  { item = "raw_meat", weight = 15, max = 4 },
+  { item = "tallow", weight = 12, max = 4 },
+  { item = "bone", weight = 12, max = 4 },
+  { item = "thick_blood", weight = 10, max = 4 },
+  { item = "hide", weight = 4, max = 4 },
+  { item = "mantle", weight = 8, max = 4 },
+  { item = "spark_sac", weight = 5, max = 2 },
+  { item = "pelter_eye", weight = 4, max = 2 },
+  { item = "scale_trophy", weight = 2, max = 1 },
+]
+
+[[creature.tiers]]
+health = 32000
+armour = 1000
+xp = 840
+damage = 720
+drops_min = 3
+drops_max = 9
+drops = [
+  { item = "raw_meat", weight = 15, max = 6 },
+  { item = "tallow", weight = 12, max = 6 },
+  { item = "bone", weight = 12, max = 6 },
+  { item = "thick_blood", weight = 10, max = 6 },
+  { item = "hide", weight = 4, max = 6 },
+  { item = "mantle", weight = 8, max = 6 },
+  { item = "spark_sac", weight = 5, max = 3 },
+  { item = "pelter_eye", weight = 4, max = 2 },
+  { item = "scale_trophy", weight = 2, max = 1 },
+]
+
+# Boundless's roadrunner: never attacks, flees, rare and alone, tiers 1 to 3.
+# Drops wayshards where Boundless's dropped its portal fuel (Nathan,
+# 2026-10-21). Speeds and ranges: guesses.
+[[creature]]
+name = "dasher"
+behaviour = "flee"
+attack = "none"
+half_width = 0.35
+height = 1.2
+walk_speed = 1.6
+run_speed = 9.0
+notice = 14.0
+give_up = 30.0
+forget = 6.0
+spawn_weight = 6
+group = [1, 1]
+
+[[creature.tiers]]
+health = 1000
+armour = 0
+xp = 180
+drops_min = 1
+drops_max = 5
+drops = [
+  { item = "lean_meat", weight = 11, max = 3 },
+  { item = "tallow", weight = 7, max = 1 },
+  { item = "bone", weight = 7, max = 1 },
+  { item = "hide", weight = 5, max = 1 },
+  { item = "quick_gland", weight = 5, max = 2 },
+  { item = "fresh_blood", weight = 4, max = 1 },
+  { item = "wayshard", weight = 2, max = 2 },
+]
+
+[[creature.tiers]]
+health = 2500
+armour = 0
+xp = 300
+drops_min = 2
+drops_max = 7
+drops = [
+  { item = "lean_meat", weight = 11, max = 3 },
+  { item = "tallow", weight = 7, max = 1 },
+  { item = "bone", weight = 7, max = 1 },
+  { item = "hide", weight = 5, max = 1 },
+  { item = "quick_gland", weight = 5, max = 2 },
+  { item = "fresh_blood", weight = 4, max = 1 },
+  { item = "dasher_eye", weight = 7, max = 2 },
+  { item = "feather_trophy", weight = 1, max = 1 },
+  { item = "wayshard", weight = 2, max = 4 },
+]
+
+[[creature.tiers]]
+health = 5000
+armour = 0
+xp = 480
+drops_min = 3
+drops_max = 9
+drops = [
+  { item = "lean_meat", weight = 11, max = 3 },
+  { item = "tallow", weight = 7, max = 1 },
+  { item = "bone", weight = 7, max = 1 },
+  { item = "hide", weight = 5, max = 1 },
+  { item = "quick_gland", weight = 5, max = 2 },
+  { item = "fresh_blood", weight = 4, max = 1 },
+  { item = "dasher_eye", weight = 7, max = 2 },
+  { item = "feather_trophy", weight = 1, max = 1 },
+  { item = "wayshard", weight = 3, max = 6 },
+]

@@ -382,6 +382,7 @@ impl Demo {
             reach: 4.0,
             claims: self.claims.clone(),
             plot_allowance: 64,
+            creatures: bm_core::creatures::CreatureKinds::builtin().defs().to_vec(),
         };
         self.events.push_back(NetEvent::Connected(Box::new(w)));
         let chunks = self.chunks_around_spawn();
@@ -2337,7 +2338,7 @@ mod tests {
         assert_eq!((c.page().rank("agility"), at), (1, 7));
         d.send(ClientMsg::Skill {
             at: 8,
-            action: learn("vitality"),
+            action: learn("intelligence"),
         });
         assert_eq!(notices(&d.poll()), vec!["That skill comes later".to_string()]);
         let marks = d.character.marks;

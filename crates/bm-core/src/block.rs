@@ -470,6 +470,7 @@ impl BlockRegistry {
             light: self.defs.iter().map(|d| d.light).collect(),
             mount: self.defs.iter().map(|d| d.mount).collect(),
             model: self.defs.iter().map(|d| d.model).collect(),
+            soft: self.defs.iter().map(|d| d.health == Health::Soft).collect(),
         }
     }
 }
@@ -483,9 +484,16 @@ pub struct BlockFlags {
     light: Vec<u8>,
     mount: Vec<Option<Mount>>,
     model: Vec<Model>,
+    soft: Vec<bool>,
 }
 
 impl BlockFlags {
+    /// Soft ground (soil, sand, snow, leaves: `Health::Soft`) softens falls.
+    #[inline]
+    pub fn soft(&self, id: BlockId) -> bool {
+        self.soft.get(id.0 as usize).copied().unwrap_or(false)
+    }
+
     #[inline]
     pub fn solid(&self, id: BlockId) -> bool {
         self.solid.get(id.0 as usize).copied().unwrap_or(false)

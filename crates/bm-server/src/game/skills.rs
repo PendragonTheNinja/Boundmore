@@ -244,7 +244,7 @@ mod tests {
         let mut page = Page::default();
         page.ranks.insert("power".into(), 50);
         page.ranks.insert("no_such_skill".into(), 1);
-        page.ranks.insert("vitality".into(), 1);
+        page.ranks.insert("intelligence".into(), 1);
         let c = Character {
             xp: xp_for_level(50),
             pages: vec![page],

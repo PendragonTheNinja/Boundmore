@@ -318,6 +318,11 @@ impl PhysicsWorld for World {
         self.block(p) == Some(self.water)
     }
 
+    /// Soft ground softens a fall (milestone 13). Unloaded reads as hard.
+    fn soft(&self, p: BlockPos) -> bool {
+        self.block(p).is_some_and(|b| self.flags.soft(b))
+    }
+
     /// Chiselled blocks collide on their kept octants (ADR-0008). Unloaded
     /// reads as full, matching `solid`.
     fn shape(&self, p: BlockPos) -> Shape {

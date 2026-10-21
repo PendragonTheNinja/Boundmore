@@ -362,6 +362,7 @@ impl From<SavedCharacter> for Character {
             cleanses_used: c.cleanses_used,
             switched_at: c.switched_at,
             plots_bought: c.plots_bought,
+            debt: 0,
         }
     }
 }

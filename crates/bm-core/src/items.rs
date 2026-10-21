@@ -136,6 +136,45 @@ pub enum ItemKind {
     /// Links two portals of the same size (ADR-0009): made at one, used up
     /// at the other. The stack's `tag` is the portal it was made at.
     PortalToken,
+    /// Shoots (milestone 13, Boundless's slingbows [tuning 3.1.1]). One use
+    /// per shot.
+    Sling(SlingStats),
+}
+
+/// What a sling does [tuning 3.1.1]: every shot is kinetic, breaks on what it
+/// hits, and needs no ammunition.
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+pub struct SlingStats {
+    pub damage: u32,
+    /// Sets the time between shots (`mining::seconds_per_hit`, the same curve).
+    pub action_speed: f32,
+    /// Blocks a second.
+    pub shot_speed: f32,
+    /// Blocks a shot flies before it is spent.
+    pub range: f32,
+    /// How much a shot drops: gravity on it is `falloff x combat::SHOT_GRAVITY`.
+    pub falloff: f32,
+    pub crit_chance: f32,
+    pub crit_effect: f32,
+    pub durability: u16,
+    /// Energy a shot costs: damage / 50 for every Boundless slingbow.
+    pub energy: u16,
+}
+
+impl SlingStats {
+    fn valid(&self) -> bool {
+        self.damage > 0
+            && self.durability > 0
+            && self.action_speed.is_finite()
+            && self.action_speed > 0.0
+            && self.shot_speed > 0.0
+            && self.shot_speed <= 200.0
+            && self.range > 0.0
+            && self.range <= 128.0
+            && (0.0..=4.0).contains(&self.falloff)
+            && (0.0..=1.0).contains(&self.crit_chance)
+            && self.crit_effect >= 0.0
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -169,6 +208,13 @@ impl ItemDef {
     pub fn tool(&self) -> Option<ToolStats> {
         match self.kind {
             ItemKind::Tool(t) => Some(t),
+            _ => None,
+        }
+    }
+
+    pub fn sling(&self) -> Option<SlingStats> {
+        match self.kind {
+            ItemKind::Sling(l) => Some(l),
             _ => None,
         }
     }
@@ -216,7 +262,8 @@ impl ItemDef {
         match self.kind {
             ItemKind::Tool(ToolStats { energy, .. })
             | ItemKind::Chisel { energy, .. }
-            | ItemKind::Grapple { energy, .. } => Some(energy),
+            | ItemKind::Grapple { energy, .. }
+            | ItemKind::Sling(SlingStats { energy, .. }) => Some(energy),
             _ => None,
         }
     }
@@ -226,7 +273,8 @@ impl ItemDef {
         match self.kind {
             ItemKind::Tool(ToolStats { durability, .. })
             | ItemKind::Chisel { durability, .. }
-            | ItemKind::Grapple { durability, .. } => Some(durability),
+            | ItemKind::Grapple { durability, .. }
+            | ItemKind::Sling(SlingStats { durability, .. }) => Some(durability),
             _ => None,
         }
     }
@@ -322,6 +370,8 @@ struct ItemEntry {
     grapple: Option<GrappleEntry>,
     #[serde(default)]
     portal_token: bool,
+    #[serde(default)]
+    sling: Option<SlingEntry>,
     icon: Option<String>,
     #[serde(default)]
     fuel: u16,
@@ -337,6 +387,20 @@ struct GrappleEntry {
     hookshot: bool,
     durability: u16,
     energy: u16,
+}
+
+#[derive(Deserialize)]
+struct SlingEntry {
+    damage: u32,
+    action_speed: f32,
+    shot_speed: f32,
+    range: f32,
+    falloff: f32,
+    #[serde(default)]
+    crit_chance: f32,
+    #[serde(default = "default_crit_effect")]
+    crit_effect: f32,
+    durability: u16,
 }
 
 #[derive(Deserialize)]
@@ -461,6 +525,20 @@ impl ItemRegistry {
                     durability: g.durability,
                     energy: g.energy,
                 },
+                (None, None, None) if e.sling.is_some() => {
+                    let l = e.sling.as_ref().expect("checked");
+                    ItemKind::Sling(SlingStats {
+                        damage: l.damage,
+                        action_speed: l.action_speed,
+                        shot_speed: l.shot_speed,
+                        range: l.range,
+                        falloff: l.falloff,
+                        crit_chance: l.crit_chance,
+                        crit_effect: l.crit_effect,
+                        durability: l.durability,
+                        energy: (l.damage / 50) as u16,
+                    })
+                }
                 (None, None, None) if e.portal_token => ItemKind::PortalToken,
                 (None, None, None) => ItemKind::Material,
                 _ => return Err(ItemError::BadTool(e.name)),
@@ -519,6 +597,7 @@ impl ItemRegistry {
                     return Err(ItemError::BadTool(d.name.clone()));
                 }
                 ItemKind::PortalToken if d.stack != 1 => return Err(ItemError::BadTool(d.name.clone())),
+                ItemKind::Sling(l) if d.stack != 1 || !l.valid() => return Err(ItemError::BadTool(d.name.clone())),
                 ItemKind::Block(b) if !blocks.contains(b) => return Err(ItemError::BadBlock(d.name.clone(), b.0)),
                 _ => {}
             }

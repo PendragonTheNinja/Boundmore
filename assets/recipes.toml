@@ -5,8 +5,9 @@
 # level it needs (Boundless's data; milestone 12).
 #
 # Milestone 11: Boundless's recipes up to iron, single craft, from the
-# decoded recipe data (docs/milestones/11-crafting-chain.md). Glue is 2 sap
-# until creatures bring bone (Nathan, 2026-10-20).
+# decoded recipe data (docs/milestones/11-crafting-chain.md). Glue was 2 sap
+# until creatures brought bone (milestone 13): now 1 sap + 1 bone, as in
+# Boundless.
 
 # By hand.
 [[recipe]]
@@ -163,7 +164,7 @@ xp = 5
 # Boundless: 1 sap + 1 bone. Stand-in until creatures (Nathan, 2026-10-20).
 [[recipe]]
 output = "glue"
-inputs = [["sap", 2]]
+inputs = [["sap", 1], ["bone", 1]]
 station = "furnace"
 seconds = 20.0
 heat = 100
@@ -323,3 +324,82 @@ inputs = [["fibrous_leaf", 2]]
 station = "extractor"
 seconds = 30.0
 xp = 2
+
+# Milestone 13: creatures and combat (tuning 3.8, Boundless's recipe data).
+[[recipe]]
+output = "stone_sling"
+inputs = [["stones", 4], ["stick", 4], ["foliage", 4]]
+station = "crafting_table"
+seconds = 10.0
+xp = 4
+
+[[recipe]]
+output = "copper_sling"
+inputs = [["copper_ingot", 3], ["stick", 4], ["sackcloth", 1], ["glue", 1]]
+station = "workbench"
+seconds = 60.0
+xp = 10
+skill = { name = "weapon_crafting", level = 1 }
+
+[[recipe]]
+output = "iron_sling"
+inputs = [["iron_ingot", 3], ["stick", 4], ["sackcloth", 1], ["glue", 1]]
+station = "workbench"
+seconds = 120.0
+xp = 14
+skill = { name = "weapon_crafting", level = 1 }
+
+[[recipe]]
+output = "tallow_torch"
+count = 4
+inputs = [["stick", 1], ["flint", 1], ["tallow", 1], ["sackcloth", 1]]
+station = "workbench"
+seconds = 20.0
+xp = 4
+skill = { name = "decoration_crafting", level = 1 }
+
+[[recipe]]
+output = "vital_essence"
+inputs = [["bone", 5]]
+station = "extractor"
+seconds = 30.0
+xp = 2
+
+[[recipe]]
+output = "vital_essence"
+inputs = [["tallow", 5]]
+station = "extractor"
+seconds = 30.0
+xp = 2
+
+[[recipe]]
+output = "vital_essence"
+count = 2
+inputs = [["raw_meat", 5]]
+station = "extractor"
+seconds = 30.0
+xp = 2
+
+[[recipe]]
+output = "vital_essence"
+count = 2
+inputs = [["hide", 3]]
+station = "extractor"
+seconds = 60.0
+xp = 4
+
+[[recipe]]
+output = "vital_essence"
+count = 3
+inputs = [["fresh_blood", 2]]
+station = "extractor"
+seconds = 60.0
+xp = 4
+
+[[recipe]]
+output = "vital_essence"
+count = 3
+inputs = [["thick_blood", 2]]
+station = "extractor"
+seconds = 60.0
+xp = 4

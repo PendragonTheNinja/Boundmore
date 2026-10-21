@@ -220,6 +220,20 @@ pub struct PlayerState {
     pub jump_held: bool,
     /// The double jump was used since last on the ground.
     pub air_jumped: bool,
+    /// Health lost, out of `max_health()` (0: unhurt; milestone 13,
+    /// `combat`). Saved with the character.
+    pub hurt: u32,
+    /// Ticks since last dealing or taking damage (saturating): regeneration
+    /// waits for `combat::CALM_TICKS`.
+    pub calm: u16,
+    /// Counts 0 to `combat::REGEN_PERIOD_TICKS`: healing comes in steps.
+    pub beat: u16,
+    /// Ticks since a grapple hook was let go (saturating; `u16::MAX` once a
+    /// landing has used the grace): falls inside `combat::FALL_GRACE_TICKS`
+    /// do no harm (Nathan, 2026-10-21).
+    pub loose: u16,
+    /// Defeated: lies still until the server brings them back.
+    pub down: bool,
 }
 
 /// What skills change about moving and energy (`skills::Effects::body`).
@@ -238,6 +252,12 @@ pub struct Body {
     /// Added to a grapple's shot speed and range (grapple mastery).
     pub grapple_shot_bonus: f64,
     pub grapple_range_bonus: f64,
+    /// Added to `combat::BASE_HEALTH` (Toughness, Iron Body).
+    pub health_bonus: u32,
+    /// Taken off every fall's damage (Soft Landing).
+    pub falling_armour: u16,
+    /// Mending: +25 health every 5 s, in combat too.
+    pub mending: bool,
 }
 
 /// Extra height the high-jump epic adds, in blocks (Boundless's skill text:
@@ -290,6 +310,11 @@ pub trait PhysicsWorld {
     fn shape(&self, _p: BlockPos) -> crate::block::Shape {
         crate::block::Shape::FULL
     }
+    /// A soft block (soil, sand, snow, leaves: `Health::Soft`) softens a
+    /// fall (`combat::SOFT_LANDING`). Client and server must agree.
+    fn soft(&self, _p: BlockPos) -> bool {
+        false
+    }
 }
 
 const SKIN: f64 = 1e-6;
@@ -332,6 +357,16 @@ pub fn step(
 ) -> StepEvents {
     let dt = TICK_DT;
     let mut events = StepEvents::default();
+    // Defeated: no control, the body only falls (and lets go of any rope).
+    let still = PlayerInput {
+        yaw: input.yaw,
+        pitch: input.pitch,
+        slot: input.slot,
+        ..Default::default()
+    };
+    let input = if s.down { &still } else { input };
+    let grapple = if s.down { None } else { grapple };
+    let had_hook = s.hook.is_some();
     // Whether the grapple was used this tick (energy: a use restarts the
     // pause; a tick without one rests).
     let mut used = false;
@@ -372,6 +407,13 @@ pub fn step(
     if let (Some(g), Some(h)) = (grapple, s.hook) {
         s.hook = hook_tick(h, g, s.hands(), input.reel, planet, world);
     }
+    if had_hook && s.hook.is_none() {
+        s.loose = 0;
+    } else if s.hook.is_none() {
+        s.loose = s.loose.saturating_add(1);
+    }
+    s.beat = (s.beat + 1) % crate::combat::REGEN_PERIOD_TICKS;
+    s.heal_tick(s.beat == 0);
     let hooked = s.anchor().is_some();
     let in_water = world.liquid(BlockPos::containing(s.pos.x, s.pos.y + cfg.height * 0.4, s.pos.z));
 
@@ -474,11 +516,14 @@ pub fn step(
     let travel = s.vel * dt;
     let steps = (travel.abs().max_element() / 0.45).ceil().max(1.0) as u32;
     let part = travel / steps as f64;
+    let was_on_ground = s.on_ground;
+    let mut impact = 0.0;
     s.on_ground = false;
     for _ in 0..steps {
         if move_axis(s, 1, part.y, cfg, world) {
             if part.y < 0.0 {
                 s.on_ground = true;
+                impact = -s.vel.y;
             }
             s.vel.y = 0.0;
         }
@@ -510,6 +555,10 @@ pub fn step(
         s.on_ground = intersects(&probe, cfg, world);
     }
     s.pos = planet.wrap_point(s.pos);
+    if s.on_ground && !was_on_ground && !in_water && impact > 0.0 {
+        let below = BlockPos::containing(s.pos.x, s.pos.y - 0.5, s.pos.z);
+        s.land(impact, world.soft(below));
+    }
     s.jump_held = input.jump;
     if s.on_ground {
         s.air_jumped = false;

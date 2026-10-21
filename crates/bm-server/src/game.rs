@@ -704,6 +704,8 @@ impl Game {
             }
             Event::Msg { id, msg } => match msg {
                 ClientMsg::Skill { at, action } => self.queue(id, at, Queued::Skill { at, action }),
+                // Milestone 13: combat (server work to come).
+                ClientMsg::Shoot { .. } | ClientMsg::Strike { .. } | ClientMsg::Loot { .. } | ClientMsg::Return => {}
                 ClientMsg::StationFuel { pos, slot, count, into } => self.station_fuel(id, pos, slot, count, into),
                 ClientMsg::Edit { seq, at, pos, action } => self.queue(id, at, Queued::Edit { seq, pos, action }),
                 ClientMsg::Swing { seq, at, pos, slot } => self.queue(id, at, Queued::Swing { seq, at, pos, slot }),
@@ -816,6 +818,7 @@ impl Game {
             claims: pl.claims.views(),
             // Plots bought with marks included (the client adds nothing).
             plot_allowance: self.cfg.plot_allowance.saturating_add(character.plots_bought),
+            creatures: bm_core::creatures::CreatureKinds::builtin().defs().to_vec(),
         })));
         for (oid, other) in self.players.iter().filter(|(_, o)| o.planet == planet) {
             out.send(&ServerMsg::PlayerJoined {
@@ -1227,6 +1230,7 @@ impl Game {
                 ack: p.last_seq,
                 you: p.state,
                 others,
+                creatures: Vec::new(),
             },
         );
     }
