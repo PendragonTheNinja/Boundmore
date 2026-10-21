@@ -263,8 +263,10 @@ mod tests {
 
     #[test]
     fn grapples_never_cause_a_fall_death() {
-        let mut s = PlayerState::default();
-        s.loose = 30;
+        let mut s = PlayerState {
+            loose: 30,
+            ..Default::default()
+        };
         assert_eq!(s.land(40.0, false), 0, "inside the grace after letting go");
         assert_eq!(s.land(40.0, false), 600, "the grace covers one landing");
         assert!(s.down);
@@ -334,8 +336,10 @@ mod tests {
 
     #[test]
     fn regeneration() {
-        let mut s = PlayerState::default();
-        s.loose = u16::MAX;
+        let mut s = PlayerState {
+            loose: u16::MAX,
+            ..Default::default()
+        };
         s.take(100);
         for t in 0..CALM_TICKS as u32 + REGEN_PERIOD_TICKS as u32 {
             s.heal_tick(t % REGEN_PERIOD_TICKS as u32 == 0);
