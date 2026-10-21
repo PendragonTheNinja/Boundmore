@@ -991,8 +991,19 @@ impl Game {
                             ..Default::default()
                         }
                     };
-                    let cfg = move_config(def, &self.creature_moves[c.kind as usize], &c.mind);
-                    movement::step(&mut c.state, &input, &cfg, None, ctx.shape, ctx.world);
+                    // Standing still on the ground: nothing to move (most
+                    // creatures, most ticks; their ground is re-checked
+                    // every second in case it went).
+                    let still = input.forward == 0
+                        && input.strafe == 0
+                        && !input.jump
+                        && c.state.on_ground
+                        && c.state.vel.length_squared() < 1e-9
+                        && (tick + c.id as u64) % 60 != 0;
+                    if !still {
+                        let cfg = move_config(def, &self.creature_moves[c.kind as usize], &c.mind);
+                        movement::step(&mut c.state, &input, &cfg, None, ctx.shape, ctx.world);
+                    }
                     // Falls: the share of a body's health the landing took,
                     // as a player would lose it (a dasher off a cliff).
                     if c.state.hurt > 0 {

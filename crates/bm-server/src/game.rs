@@ -350,6 +350,13 @@ struct Stats {
     edits: u64,
     refused_edits: u64,
     slow_ticks: u64,
+    /// Time spent on creatures and shots (stepping, AI, views) since the
+    /// last report, the longest tick of it, and the ticks counted.
+    creature_time: Duration,
+    creature_worst: Duration,
+    creature_ticks: u32,
+    /// Of which telling players what creatures they see.
+    view_time: Duration,
 }
 
 fn station_name(kind: Station) -> &'static str {
@@ -612,7 +619,8 @@ impl Game {
             })
             .collect();
         tracing::info!(
-            "tick {} | {} players | {} | sent {} chunks ({} KiB) | edits {} ok {} refused | {} slow ticks",
+            "tick {} | {} players | {} | sent {} chunks ({} KiB) | edits {} ok {} refused | {} slow ticks | \
+             {} creatures, {} shots: {:.0} us a tick ({:.0} us views), worst {:.1} ms",
             self.tick,
             self.players.len(),
             planets.join(", "),
@@ -620,8 +628,17 @@ impl Game {
             s.bytes_sent / 1024,
             s.edits,
             s.refused_edits,
-            s.slow_ticks
+            s.slow_ticks,
+            self.herds.iter().map(|h| h.list.len()).sum::<usize>(),
+            self.shots.len(),
+            s.creature_time.as_secs_f64() * 1e6 / s.creature_ticks.max(1) as f64,
+            s.view_time.as_secs_f64() * 1e6 / s.creature_ticks.max(1) as f64,
+            s.creature_worst.as_secs_f64() * 1e3,
         );
+        self.stats.creature_time = Duration::ZERO;
+        self.stats.creature_worst = Duration::ZERO;
+        self.stats.creature_ticks = 0;
+        self.stats.view_time = Duration::ZERO;
     }
 
     /// A handle on the per-planet load, refreshed every second.
@@ -656,8 +673,18 @@ impl Game {
         // Before streaming: a chunk is never sent with a portal's old look.
         self.sync_portals();
         self.simulate();
+        let creatures = Instant::now();
         self.step_creatures();
         self.step_shots();
+        let views = Instant::now();
+        if self.tick % SNAPSHOT_EVERY == 0 {
+            self.sync_creature_views();
+        }
+        self.stats.view_time += views.elapsed();
+        let took = creatures.elapsed();
+        self.stats.creature_time += took;
+        self.stats.creature_worst = self.stats.creature_worst.max(took);
+        self.stats.creature_ticks += 1;
         self.step_portals();
         self.step_stations();
         self.step_lapses();
@@ -677,7 +704,6 @@ impl Game {
             self.stream(*id);
         }
         if self.tick % SNAPSHOT_EVERY == 0 {
-            self.sync_creature_views();
             self.snapshots();
         }
         if self.tick % SAVE_EVERY == 0 {
