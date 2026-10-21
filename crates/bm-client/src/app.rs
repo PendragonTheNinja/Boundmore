@@ -133,6 +133,9 @@ struct Session {
     icons: ItemIcons,
     claims: Claims,
     plot_allowance: u32,
+    /// Plots bought with marks when the allowance above was said: plots
+    /// bought since add to it (milestone 12).
+    plots_bought_then: u32,
     /// Hotbar slot, 0 to 9.
     selected: usize,
     edit_seq: u32,
@@ -183,6 +186,7 @@ impl Session {
         let tree = bm_core::skills::SkillTree::from_defs(w.skills)
             .map_err(|e| format!("the server sent a bad skill tree: {e}"))?;
         let shape = w.planet.shape;
+        let bought = w.character.plots_bought;
         Ok(Self {
             account: w.account,
             player_id: w.player_id,
@@ -200,6 +204,7 @@ impl Session {
             items,
             icons,
             plot_allowance: w.plot_allowance,
+            plots_bought_then: bought,
             selected: 0,
             edit_seq: 0,
             place_cooldown: 0.0,
@@ -286,6 +291,13 @@ impl Session {
         };
         self.target = aim(false);
         self.use_target = aim(true);
+    }
+
+    /// Plots we may claim: the allowance the server said, plus plots bought
+    /// with marks since (milestone 12).
+    fn allowance(&self) -> u32 {
+        let bought = self.progress.character().plots_bought;
+        self.plot_allowance + bought.saturating_sub(self.plots_bought_then)
     }
 
     /// How far we reach: the server's base plus Grasp (milestone 12).
@@ -1235,8 +1247,8 @@ impl App {
             None if !add => Err("That plot is not yours to give up.".into()),
             None => match s.claims.adjacent_claim_of(&s.account, plot) {
                 Some(claim) => {
-                    if s.claims.plots_owned_by(&s.account) as u32 >= s.plot_allowance {
-                        Err(format!("You hold all {} plots you may claim.", s.plot_allowance))
+                    if s.claims.plots_owned_by(&s.account) as u32 >= s.allowance() {
+                        Err(format!("You hold all {} plots you may claim.", s.allowance()))
                     } else {
                         Ok(ClientMsg::ClaimPlot { claim, plot })
                     }
@@ -1548,7 +1560,7 @@ impl App {
                     "Left click a plot next to your claim to add it. Right click one of yours to give it up.\n\
                      {} of {} plots claimed. P to leave.",
                     s.claims.plots_owned_by(&s.account),
-                    s.plot_allowance
+                    s.allowance()
                 )
             });
             let aim_hint = if menu.is_some() || claim_mode {

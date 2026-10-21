@@ -76,6 +76,7 @@ pub fn apply(
         SkillAction::ResetPage => c.reset_page(),
         SkillAction::BuyPage => c.buy_page(),
         SkillAction::SwitchPage(i) => c.switch_page(*i, tick, at_home),
+        SkillAction::BuyPlots(n) => c.buy_plots(*n as u32),
     }
 }
 

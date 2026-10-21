@@ -288,6 +288,43 @@ mod tests {
         (b, i)
     }
 
+    #[test]
+    fn skills_change_damage_cadence_and_crits() {
+        let (b, i) = reg();
+        let copper = tool(&i, "copper_hammer");
+        let stone = b.get(b.id("stone").unwrap());
+        // The typical miner's page (tuning 2.7): x2.85, so 400 hits 1140.
+        let t = bm_core::skills::SkillTree::builtin();
+        let mut c = bm_core::skills::Character {
+            xp: bm_core::skills::xp_for_level(50),
+            ..Default::default()
+        };
+        for (id, n) in [
+            ("power", 8),
+            ("all_attributes", 5),
+            ("hammer_mastery", 5),
+            ("hammer_epic", 1),
+            ("damage_epic", 1),
+            ("agility", 8),
+            ("dexterity", 8),
+        ] {
+            for _ in 0..n {
+                c.learn(&t, id).unwrap();
+            }
+        }
+        let e = c.effects(&t);
+        let m = e.damage_multiplier(copper.class);
+        assert_eq!(skill_swing_damage(&copper, stone, 1, false, 1.0, m), 1140);
+        assert_eq!(
+            skill_swing_damage(&copper, stone, 1, false, 1.0, 1.0),
+            bm_core::mining::swing_damage(&copper, stone, 1, false, 1.0),
+            "untrained, the same as bm-core's"
+        );
+        let skilled = skilled_tool(&copper, &e);
+        assert!(swing_ticks(skilled.action_speed) < swing_ticks(copper.action_speed));
+        assert!((skilled.crit_chance - copper.crit_chance - 0.2).abs() < 1e-6);
+    }
+
     fn tool(i: &ItemRegistry, name: &str) -> ToolStats {
         i.swing_tool(Some(i.id(name).unwrap())).unwrap()
     }

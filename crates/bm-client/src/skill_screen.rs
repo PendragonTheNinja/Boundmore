@@ -6,7 +6,8 @@
 use crate::menus::{GOLD, GOLD_DIM, MUTED, SHORT, TEXT, UiAction, window};
 use crate::skills::{CATEGORIES, Look, Progress, SkillCard, cards, category_name, spent_in};
 use bm_core::skills::{
-    Category, FREE_RESET_BELOW, MAX_PAGES, PAGE_CAP, PAGE_PRICE, RESET_PRICE, cleanse_at, level_of, points_at,
+    Category, FREE_RESET_BELOW, MAX_PAGES, MAX_PLOTS_AT_ONCE, PAGE_CAP, PAGE_PRICE, PLOT_PRICE, RESET_PRICE,
+    cleanse_at, level_of, points_at,
 };
 use bm_protocol::SkillAction;
 use egui::{Align, Color32, CornerRadius, Layout, Rect, Sense, Stroke, StrokeKind, Ui, pos2, vec2};
@@ -17,6 +18,8 @@ pub struct SkillUi {
     pub tab: Category,
     /// "Reset page" was pressed and waits for a yes.
     pub confirm_reset: bool,
+    /// How many plots "Buy plots" buys (1 to 80).
+    pub plots: u16,
 }
 
 impl Default for SkillUi {
@@ -24,6 +27,7 @@ impl Default for SkillUi {
         Self {
             tab: Category::Attributes,
             confirm_reset: false,
+            plots: 1,
         }
     }
 }
@@ -61,6 +65,7 @@ pub fn skills(ctx: &egui::Context, v: &SkillView, state: &mut SkillUi, actions: 
     window("Skills").open(&mut open).show(ctx, |ui| {
         ui.set_width(880.0);
         header(ui, v);
+        plots(ui, v, state, actions);
         ui.add_space(4.0);
         pages(ui, v, state, actions);
         ui.add_space(6.0);
@@ -160,6 +165,55 @@ fn header(ui: &mut Ui, v: &SkillView) {
                 &format!("{} earned by level {level}, shared by every page.", points_at(level)),
             );
         });
+    });
+}
+
+/// Buying plots with marks (Nathan, 2026-10-21: as in Boundless, 30 marks a
+/// plot, 1 to 80 at once).
+fn plots(ui: &mut Ui, v: &SkillView, state: &mut SkillUi, actions: &mut Vec<UiAction>) {
+    let c = v.progress.character();
+    ui.horizontal(|ui| {
+        ui.label(egui::RichText::new("Plots").color(MUTED));
+        ui.label(
+            egui::RichText::new(format!("{} bought with marks", c.plots_bought))
+                .color(TEXT)
+                .small(),
+        );
+        ui.add_space(8.0);
+        state.plots = state.plots.clamp(1, MAX_PLOTS_AT_ONCE as u16);
+        if ui.add_enabled(state.plots > 1, egui::Button::new("-")).clicked() {
+            state.plots -= 1;
+        }
+        ui.add(
+            egui::DragValue::new(&mut state.plots)
+                .range(1..=MAX_PLOTS_AT_ONCE as u16)
+                .speed(0.2),
+        );
+        if ui
+            .add_enabled(state.plots < MAX_PLOTS_AT_ONCE as u16, egui::Button::new("+"))
+            .clicked()
+        {
+            state.plots += 1;
+        }
+        let n = state.plots as u32;
+        let price = n * PLOT_PRICE;
+        let label = if n == 1 {
+            format!("Buy 1 plot ({price} marks)")
+        } else {
+            format!("Buy {n} plots ({price} marks)")
+        };
+        let resp = ui.add_enabled(c.marks >= price, egui::Button::new(label));
+        if resp.clicked() {
+            actions.push(UiAction::Skill(SkillAction::BuyPlots(state.plots)));
+        }
+        resp.on_disabled_hover_text(format!("You need {price} marks"));
+        if c.marks < price {
+            ui.label(
+                egui::RichText::new(format!("You need {price} marks"))
+                    .color(SHORT)
+                    .small(),
+            );
+        }
     });
 }
 

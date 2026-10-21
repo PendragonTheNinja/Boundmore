@@ -2319,6 +2319,43 @@ mod tests {
     }
 
     #[test]
+    fn the_demo_answers_skill_changes_by_the_rules() {
+        let mut d = Demo::new("Tester");
+        d.poll();
+        d.show_skills();
+        d.poll();
+        let learn = |id: &str| bm_protocol::SkillAction::Learn(id.into());
+        d.send(ClientMsg::Skill {
+            at: 7,
+            action: learn("agility"),
+        });
+        let ev = d.poll();
+        let answered = ev.iter().find_map(|e| match e {
+            NetEvent::Msg(ServerMsg::Character { character, at }) => Some((character.clone(), *at)),
+            _ => None,
+        });
+        let (c, at) = answered.expect("a Character answers");
+        assert_eq!((c.page().rank("agility"), at), (1, 7));
+        d.send(ClientMsg::Skill {
+            at: 8,
+            action: learn("vitality"),
+        });
+        assert_eq!(notices(&d.poll()), vec!["That skill comes later".to_string()]);
+        let marks = d.character.marks;
+        d.send(ClientMsg::Skill {
+            at: 9,
+            action: bm_protocol::SkillAction::BuyPlots(2),
+        });
+        d.poll();
+        assert_eq!((d.character.plots_bought, d.character.marks), (2, marks - 60));
+        d.send(ClientMsg::Skill {
+            at: 10,
+            action: bm_protocol::SkillAction::BuyPlots(80),
+        });
+        assert_eq!(notices(&d.poll()), vec!["You need 2400 marks".to_string()]);
+    }
+
+    #[test]
     fn the_demo_portals_link_fuel_and_open_by_the_rules() {
         let mut d = Demo::new("Tester");
         d.show_portals();
