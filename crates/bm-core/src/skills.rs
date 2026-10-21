@@ -594,9 +594,8 @@ impl Effects {
     }
 
     /// Action speed added to a tool of `class`: 2 a dexterity level, 2 a
-    /// mastery rank, and 12 with the tool's epic (players count +22 from
-    /// tool skills, tuning 2.5 and its open question 3: the epic's 12 is a
-    /// **guess** at the split).
+    /// mastery rank, and 10 with the tool's epic (Boundless's skill text,
+    /// tuning 5.4a).
     pub fn action_speed_bonus(&self, class: Option<crate::items::ToolClass>) -> f64 {
         use crate::items::ToolClass;
         let (mastery, epic) = match class {
@@ -605,7 +604,7 @@ impl Effects {
             Some(ToolClass::Shovel) => (self.mastery[1], self.shovel_axe_epic),
             Some(ToolClass::Axe) => (self.mastery[2], self.shovel_axe_epic),
         };
-        2.0 * self.dexterity + 2.0 * mastery as f64 + if epic { 12.0 } else { 0.0 }
+        2.0 * self.dexterity + 2.0 * mastery as f64 + if epic { 10.0 } else { 0.0 }
     }
 
     /// Crit chance added: 0.2 x agility / 9 [tuning 2.3].
@@ -619,9 +618,15 @@ impl Effects {
         (3.0 + 0.3 * self.agility, 5.0 + 0.6 * self.agility)
     }
 
-    /// Reach: 4 m plus 1 a control level.
+    /// Reach: 4 m plus 0.75 a control level (Boundless's skill text,
+    /// tuning 5.4a).
     pub fn reach(&self) -> f64 {
-        4.0 + self.control
+        4.0 + self.reach_bonus()
+    }
+
+    /// Reach added to the server's base reach: 0.75 a control level.
+    pub fn reach_bonus(&self) -> f64 {
+        0.75 * self.control
     }
 
     /// Multiplier on every bonus-drop chance: 1 + luck / 9 x 1.8 [tuning
@@ -630,11 +635,15 @@ impl Effects {
         1.0 + self.luck / 9.0 * 1.8
     }
 
-    /// Max energy: 600, +150 a zeal level (**guess**), +4000 with the energy
-    /// epic (Testing 194 notes, unconfirmed).
+    /// Max energy: 600 + 1400 x (zeal / 9)^1.5, rounded to 10, the curve
+    /// that reproduces every rank of Boundless's Zeal text (+50, 100, 120,
+    /// 140, 170, 180, 200, 210; 2000 at 9), the same shape as its health
+    /// curve; then x3 with the energy epic (tuning 5.4a).
     pub fn max_energy(&self) -> u16 {
-        let e = 600.0 + 150.0 * self.zeal + if self.energy_epic { 4000.0 } else { 0.0 };
-        e.round().min(u16::MAX as f64) as u16
+        let z = (self.zeal / 9.0).clamp(0.0, 1.0);
+        let e = (600.0 + 1400.0 * z * libm::sqrt(z)) / 10.0;
+        let e = libm::round(e) * 10.0 * if self.energy_epic { 3.0 } else { 1.0 };
+        e.min(u16::MAX as f64) as u16
     }
 
     /// Refill per tick once the pause is over: 5 (300 a second, a guess)
@@ -648,8 +657,14 @@ impl Effects {
         5.0 * self.grapple_mastery as f64
     }
 
-    /// Chance a swing does not wear the tool: 30% with the durability epic
-    /// (low confidence, tuning 5.4).
+    /// Grapple range added: 5 a mastery rank (Boundless's skill text).
+    pub fn grapple_range_bonus(&self) -> f64 {
+        5.0 * self.grapple_mastery as f64
+    }
+
+    /// Wear saved: 30% with the durability epic (Boundless's skill text:
+    /// "reduces the amount of durability lost by 30%"), as a chance a swing
+    /// does not wear the tool.
     pub fn wear_saved(&self) -> f64 {
         if self.durability_epic { 0.3 } else { 0.0 }
     }
@@ -666,6 +681,7 @@ impl Effects {
             energy_bonus: self.max_energy().saturating_sub(crate::energy::MAX_ENERGY),
             regen_bonus: self.regen_per_tick().saturating_sub(crate::energy::REGEN_PER_TICK),
             grapple_shot_bonus: self.grapple_shot_bonus(),
+            grapple_range_bonus: self.grapple_range_bonus(),
         }
     }
 
@@ -802,6 +818,33 @@ mod tests {
             (e.run_sprint().0 - 3.3).abs() < 1e-9,
             "the bonus alone adds one agility level"
         );
-        assert!((e.reach() - 5.0).abs() < 1e-9);
+        assert!((e.reach() - 4.75).abs() < 1e-9);
+        assert!((e.action_speed_bonus(Some(ToolClass::Hammer)) - (2.0 + 10.0 + 10.0)).abs() < 1e-9);
+    }
+
+    #[test]
+    fn energy_follows_boundless_zeal_text() {
+        // Boundless's Zeal ranks add 50, 100, 120, 140, 170, 180, 200, 210.
+        let adds = [50u16, 100, 120, 140, 170, 180, 200, 210];
+        let mut want = 600;
+        for (rank, add) in adds.iter().enumerate() {
+            want += add;
+            let e = Effects {
+                zeal: rank as f64 + 1.0,
+                ..Default::default()
+            };
+            assert_eq!(e.max_energy(), want, "rank {}", rank + 1);
+        }
+        let full = Effects {
+            zeal: 9.0,
+            ..Default::default()
+        };
+        assert_eq!(full.max_energy(), 2000);
+        let epic = Effects {
+            energy_epic: true,
+            ..full
+        };
+        assert_eq!(epic.max_energy(), 6000, "the energy epic triples it");
+        assert_eq!(Effects::default().max_energy(), 600);
     }
 }

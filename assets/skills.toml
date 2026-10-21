@@ -46,7 +46,7 @@ category = "attributes"
 ranks = 8
 cost = 1
 effect = "control"
-text = "Reach 1 block further"
+text = "Reach three quarters of a block further"
 
 [[skill]]
 id = "luck"
@@ -127,7 +127,7 @@ category = "mastery"
 ranks = 5
 cost = 1
 effect = "grapple_mastery"
-text = "Grapple hooks fly 5 blocks a second faster"
+text = "Grapple ropes reach 5 blocks further and fly 5 blocks a second faster"
 
 [[skill]]
 id = "slingbow_mastery"
@@ -253,7 +253,7 @@ category = "epic1"
 ranks = 1
 cost = 5
 effect = "hammer_epic"
-text = "Hammers: +25% damage and faster swings"
+text = "Hammers: +25% damage and +10 action speed"
 excludes = ["shovel_axe_epic"]
 
 [[skill]]
@@ -263,7 +263,7 @@ category = "epic1"
 ranks = 1
 cost = 5
 effect = "shovel_axe_epic"
-text = "Shovels and axes: +25% damage and faster swings"
+text = "Shovels and axes: +25% damage and +10 action speed"
 excludes = ["hammer_epic"]
 
 [[skill]]
@@ -273,7 +273,7 @@ category = "epic1"
 ranks = 1
 cost = 5
 effect = "energy_epic"
-text = "Much more energy"
+text = "Three times the energy"
 excludes = ["health_epic"]
 
 [[skill]]
@@ -432,7 +432,7 @@ category = "epic2"
 ranks = 1
 cost = 5
 effect = "high_jump_epic"
-text = "Jump about two blocks higher"
+text = "Jump two blocks higher"
 
 [[skill]]
 id = "portal_epic"
@@ -450,7 +450,7 @@ category = "epic2"
 ranks = 1
 cost = 5
 effect = "durability_epic"
-text = "Tools wear less"
+text = "Tools wear 30% less"
 
 [[skill]]
 id = "energy_regen_epic"
@@ -459,7 +459,7 @@ category = "epic2"
 ranks = 1
 cost = 5
 effect = "energy_regen_epic"
-text = "Energy refills much faster"
+text = "Energy refills 900 a second faster"
 excludes = ["health_regen_epic"]
 
 [[skill]]

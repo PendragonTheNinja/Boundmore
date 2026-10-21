@@ -147,9 +147,15 @@ impl Game {
         blocks
             .iter()
             .all(|b| planet.claims.at_block(*b).is_some_and(|c| c.owner == p.account))
-            && blocks
-                .iter()
-                .any(|b| in_reach(shape, &self.movement, self.cfg.reach + p.effects.control, &p.state, *b))
+            && blocks.iter().any(|b| {
+                in_reach(
+                    shape,
+                    &self.movement,
+                    self.cfg.reach + p.effects.reach_bonus(),
+                    &p.state,
+                    *b,
+                )
+            })
     }
 
     /// Closes every portal window its watcher may no longer use.

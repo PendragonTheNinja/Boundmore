@@ -235,12 +235,13 @@ pub struct Body {
     /// Added to `energy::MAX_ENERGY` and `energy::REGEN_PER_TICK`.
     pub energy_bonus: u16,
     pub regen_bonus: u16,
-    /// Added to a grapple's shot speed (grapple mastery).
+    /// Added to a grapple's shot speed and range (grapple mastery).
     pub grapple_shot_bonus: f64,
+    pub grapple_range_bonus: f64,
 }
 
-/// Extra height the high-jump epic adds, in blocks (Boundless players:
-/// "jump 2 blocks higher", tuning 1.6).
+/// Extra height the high-jump epic adds, in blocks (Boundless's skill text:
+/// "Extends your Jump height by 2m", tuning 5.4a).
 pub const HIGH_JUMP_EXTRA: f64 = 2.0;
 /// A double jump's speed, as a fraction of a jump's: about half a block
 /// more (players, tuning 1.6; a **guess** at the impulse).
@@ -334,6 +335,13 @@ pub fn step(
     // Whether the grapple was used this tick (energy: a use restarts the
     // pause; a tick without one rests).
     let mut used = false;
+    // Grapple mastery lengthens the rope and speeds the shot.
+    let skilled = grapple.map(|g| GrappleSpec {
+        range: g.range + s.body.grapple_range_bonus,
+        shot_speed: g.shot_speed + s.body.grapple_shot_bonus,
+        ..*g
+    });
+    let grapple = skilled.as_ref();
     match grapple {
         // Nothing in hand holds the rope: putting the grapple away lets go.
         None => s.hook = None,
@@ -348,7 +356,7 @@ pub fn step(
             if s.try_spend(g.energy) {
                 s.hook = Some(Hook {
                     pos: s.eye(cfg),
-                    vel: look_dir(input.yaw, input.pitch) * (g.shot_speed + s.body.grapple_shot_bonus),
+                    vel: look_dir(input.yaw, input.pitch) * g.shot_speed,
                     rope: 0.0,
                     stuck: None,
                     reel: 0.0,
@@ -1239,6 +1247,34 @@ mod tests {
         // 26 blocks at 65 per second: gone within half a second.
         hold(&mut s, up(), 30, Some(&GRAPPLE), &w);
         assert_eq!(s.hook, None);
+    }
+
+    #[test]
+    fn grapple_mastery_lengthens_the_rope_and_a_faster_shot_flies_no_further() {
+        // A ceiling 28.8 blocks above the hands: past a 26-block grapple.
+        let mut w = world();
+        ceiling(&mut w, 40);
+        let shoot = |body: Body| {
+            let mut s = PlayerState {
+                body,
+                ..standing(5.5, 10.0)
+            };
+            hold(&mut s, fire(up()), 1, Some(&GRAPPLE), &w);
+            hold(&mut s, up(), 40, Some(&GRAPPLE), &w);
+            s.hook.and_then(|h| h.stuck)
+        };
+        // A faster shot alone still stops at the grapple's range.
+        let fast = Body {
+            grapple_shot_bonus: 25.0,
+            ..Default::default()
+        };
+        assert_eq!(shoot(fast), None);
+        // One rank of mastery: 5 blocks longer, and it reaches.
+        let longer = Body {
+            grapple_range_bonus: 5.0,
+            ..fast
+        };
+        assert_eq!(shoot(longer).map(|b| b.y), Some(40));
     }
 
     #[test]

@@ -1458,12 +1458,62 @@ Every attribute starts at 10. Each point of an "X Bonus" skill adds 10 (max 8 po
 |---|---|---|---|---|
 | Vitality | Max health; forge Stability | Health = 600 + ((V − 10)/90)^1.5 × 3,400, rounded to 10 → 600, 730, 960, 1250, 1610, 2010, 2450, 2930, 3450 (8 pts), 4000 (V 100). Health Epic ×3 (max 12,000). Stability 900 + 100 per point (wiki: 900..1,700; 1,800 at V 100 implied by MAYU max 1,800) | Pfiffel t/29895 (from game data); WIKI-Vitality Bonus; MAYU | H (health), M (stability) |
 | Power | Damage to creatures and blocks; forge Vigour | 1.0 launch: +5% general damage per point (was 10% pre-launch). Damage multiplier = 1 + (0.05 × PowerLvl + brew) × (3 if Damage Epic else 1) + 0.05 × Mastery + 0.25 × ToolEpic, PowerLvl 0..9. Vigour: 0 at base, +200 per point to 1,800 | PFF damageCalculator.js; Logandi t/14749 #46 (2018-08-18, "launch universe" changes); WIKI-Power Bonus (vigour, its 10% damage column is pre-launch) | H (formula), M (vigour) |
-| Control | Interaction (build/break) range; stealth | Range 4 m + 1 m per point (12 m at 8, 13 m at 100?); stealth modifier +6% per point (48% at 8) | WIKI-Control Bonus | M |
+| Control | Interaction (build/break) range; stealth | Range 4 m + 1 m per point (12 m at 8, 13 m at 100?) per the wiki, but the game's own skill text says **+0.75 m per level** (5.4a; used); stealth modifier +6% per point (48% at 8) | WIKI-Control Bonus; BLX skill text | M (base 4 m), H (0.75 a level) |
 | Dexterity | Action speed; block placement speed | Action speed +2 per point (16 at 8); placement speed +10% per point (80% at 8) | WIKI-Dexterity Bonus | M |
 | Agility | Run, sprint speed; crit chance | Base run 3.0 m/s, sprint 5.0 m/s; +0.3 m/s run, +0.6 m/s sprint per point; crit +2% per point (wiki) or 20% at level 9 (PFF: (lvl/9) × 0.2, so ~2.2%) | WIKI-Agility Bonus; PFF damageCalculator.js; Prome3us t/22943 (5 → 5.6 m/s sprint with 5/5 Attribute Bonus, 2018-12) | H (speeds), M (crit) |
 | Intelligence | Healing potency; forge Effectiveness | Healing +10% per point (bomb healing = base × (1 + 0.1 × IntLvl + 1.0 if Healing Epic)); forge effectiveness input (see 5.7) | WIKI-Intelligence Bonus; PFF damageCalculator.js | H |
 | Luck | Extra drops from blocks, plants, creatures | No published per-point number; wiki table only shows attribute 10..90. Player: Luck 50 (3 pts + 5 Attribute Bonus) gives "double drops fairly often" on titanium | WIKI-Luck Bonus; PendragonTheNinja t/9648 2017-09 | L |
-| Zeal | Max energy; buff duration (+), debuff duration (−) | Base energy 600; no per-point table found. Player: max Zeal at L50 = 1,933 energy (T194 era) | WIKI-Citizen; schasm t/14150 #248 2018-07 | L |
+| Zeal | Max energy; buff duration (+), debuff duration (−) | Base energy 600. Game text: +50, 100, 120, 140, 170, 180, 200, 210 per rank (5.4a). Those are exactly Energy = 600 + ((Z − 10)/90)^1.5 × 1,400, rounded to 10 (the health curve's shape): 650, 750, 870, 1010, 1180, 1360, 1560, 1770 (8 pts), 2000 (Z 100). Player: 1,933 at max Zeal (T194 era, before the final numbers) | BLX skill text; WIKI-Citizen; schasm t/14150 #248 2018-07 | H |
+
+### 5.4a The game's own skill text (BLX, fetched 2026-10-21)
+
+The boundlexx API serves every skill's in-game description, taken from the final game's files: `https://api.boundlexx.app/api/v1/skills/?format=json&limit=200` (76 skills; `description.strings[lang=english].plain_text`). This is the best source for skill numbers and overrides the wiki and player estimates below where they differ. High confidence. (Its `/items/` and `/blocks/` endpoints returned server errors on 2026-10-21.)
+
+| Skill (Boundless name) | Game text, numbers |
+|---|---|
+| Hammer Epic | +25% hammer damage, **+10 hammer action speed** |
+| Shovel And Axe Epic | +25% damage and +10 action speed for shovels and axes |
+| Slingbow Epic, Bomb Epic | +25% damage, +10 action speed |
+| Health Epic | max health x3 |
+| Stamina Epic | **max energy x3** |
+| Light Source Epic | "A permanent light emits from your body" (no radius) |
+| Volume Crafting Epic | mass crafting in machines, +20 queue length, less machine wear |
+| Durability Drain Epic | **durability lost when using gear -30%** |
+| Efficient Crafting Epic | -30% spark cost for food, brews and gear, and **-30% furnace heat** |
+| Gathering Epic | **+200% drop chance from plants, boulders and fungus**; a shovel collects them whole |
+| Health Regeneration Epic | +25 health per 5 s |
+| Stamina Regeneration Epic | **+900 energy a second** |
+| Jump Distance Epic | **jump height +2 m; hold jump to rise higher**; climbs small ledges while jumping or grappling |
+| Double Jump Epic | a second jump in the air (no height given) |
+| Damage Epic | general damage modifier x3 |
+| Warp And Portal Epic | opens portals between worlds |
+| Gear Crafting Epic | +1 tool, weapon and tech crafting |
+| Tool / Weapon / Tech / Food / Brew Crafting Epic | +1 level of that crafting and -20% spark for it |
+| Masteries (hammer, shovel, axe, slingbow, bomb) | +5% damage and +2 action speed a level |
+| Grapple Mastery | **+5 m grapple length and +5 m/s projectile speed a level**; +5% fist damage |
+| Spanner Mastery | +10% wear removed and +2 action speed a level |
+| Vitality | +10 a level: health +130/230/290/360/400/440/480/520 (the 5.3 curve exactly); stability +100 |
+| Power | +5% damage to creatures and blocks a level; vigour +200 |
+| Control | **interaction range +0.75 m a level**; stealth +6% |
+| Dexterity | +2 action speed and +10% block placement speed a level |
+| Agility | run +0.3 m/s, sprint +0.6 m/s, **crit chance +2% a level** |
+| Intelligence | healing +10% a level |
+| Luck | **rarer drops from blocks and creatures +20% a level** |
+| Energy (Zeal) | **max energy +50/100/120/140/170/180/200/210**; buff duration +6% a level |
+| All | +2 to every attribute a level |
+| Kinetic / Impulse Armour | +10/20/30/40/50 |
+| Kinetic / Impulse Resistance | +5% a level |
+| Falling Armour | +20/40/60/80/100 |
+| Atmosphere armours | +1/1/1/2/2 protection |
+| Warp Distance | warp +8/12/24 blinksecs, portal +4/6/12 |
+| Tax Epic | -25% seller tax |
+| Farming Epic | +2 sowing level, +20% crop yield, fertiliser x2 |
+| Death Penalty Epic | defeat penalty -50% |
+| Forging Epic | +25 flexibility, 4 more ingredient slots |
+| Threat / Stealth Epic | +100% threat / +50% stealth |
+| Revive epics | no revive cooldown / revived at full health and energy |
+
+Still not published anywhere found (2026-10-21): the light-source epic's radius, the base energy refill rate, the double jump's height, the torch's light level, how long a damaged block takes to heal. Crit: the game text says +2% a level, the damage calculator 0.2 x level / 9 (20% at 9); Boundmore keeps the calculator's (the two differ by 2% at level 9).
 
 ### 5.4 Skill tree, 1.0 to R248 (live)
 

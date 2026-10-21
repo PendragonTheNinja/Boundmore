@@ -360,8 +360,8 @@ mod tests {
         assert_eq!(skilled_tool(&hand_stone, &e).damage, 470);
         assert_eq!(hits_to_break(&skilled, stone, 1), Some(2));
         assert_eq!(hits_to_break(&skilled, stone, 6), Some(9));
-        // 9 dexterity, 5 mastery and the epic: +18 + 10 + 12 action speed.
-        assert!((skilled.action_speed - copper.action_speed - 40.0).abs() < 1e-4);
+        // 9 dexterity, 5 mastery and the epic: +18 + 10 + 10 action speed.
+        assert!((skilled.action_speed - copper.action_speed - 38.0).abs() < 1e-4);
         assert!(swing_ticks(skilled.action_speed) < swing_ticks(copper.action_speed));
         // 9 agility: +20% crit chance.
         assert!((skilled.crit_chance - copper.crit_chance - 0.2).abs() < 1e-6);

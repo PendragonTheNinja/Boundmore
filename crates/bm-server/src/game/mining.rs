@@ -178,7 +178,7 @@ impl Game {
         if !in_reach(
             shape,
             &self.movement,
-            self.cfg.reach + p.effects.control,
+            self.cfg.reach + p.effects.reach_bonus(),
             &p.state,
             canon,
         ) {

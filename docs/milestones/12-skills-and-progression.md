@@ -25,13 +25,13 @@ Everything you do earns XP. Levels give skill points and the per-level currency,
   - **Power**: +5% damage a level.
   - **Dexterity**: +2 action speed a level.
   - **Agility**: run +0.3 and sprint +0.6 m/s a level, and crit chance + 0.2 x level / 9.
-  - **Control**: reach +1 a level.
+  - **Control**: reach +0.75 a level (the game's skill text, tuning 5.4a; the wiki's +1 was wrong).
   - **Luck**: every bonus-drop chance multiplied by 1 + level / 9 x 1.8.
-  - **Zeal**: max energy; per-level value not published, **guess +150** (a player saw 1,933 at full Zeal, base 600).
+  - **Zeal**: max energy 600 + 1400 x (level / 9)^1.5, rounded to 10 (fits every rank of the game's text: +50, 100, 120, 140, 170, 180, 200, 210).
   - Vitality (health) and Intelligence (healing, forging) wait for their systems.
 - **Masteries** (5 ranks):
   - hammer, shovel, axe: +5% damage and +2 action speed per rank with that tool;
-  - grapple: +5 shot speed per rank.
+  - grapple: +5 shot speed and +5 blocks of rope per rank.
   - Slingbow, bomb and spanner masteries wait.
 - **Crafting skills** gate recipes. The data gives each gate:
   - **tool crafting 1** for copper and iron tools;
@@ -42,11 +42,11 @@ Everything you do earns XP. Levels give skill points and the per-level currency,
   
   Tool, tech and machine crafting have 2 or 3 direct ranks, and epics add more (tuning 5.4).
 - **Epics** (5 points each; some either/or):
-  - **Hammer** or **shovel and axe** (+25% damage with those tools; the pair is either/or).
+  - **Hammer** or **shovel and axe** (+25% damage and +10 action speed with those tools; the pair is either/or).
   - **Damage** (epic 3: triples Power's share).
-  - **Energy** (+4,000 max energy in the Testing 194 notes, **unconfirmed**) or Health (waits).
+  - **Energy** (max energy x3) or Health (waits).
   - **Energy regeneration** (+900 a second) or health regeneration (waits).
-  - **Durability drain** (about -30% tool wear, **low confidence**).
+  - **Durability drain** (-30% tool wear).
   - **Light source**: a personal light that switches off in bright places; radius not published, **guess 10 blocks**.
   - **Chisels**: precise cuts.
   - **Double jump** and **high jump** (jump 2 blocks higher).
@@ -118,7 +118,10 @@ Death XP debt (combat), Vitality and health, Intelligence, endurance and explora
   - Swing prediction uses the shared `skilled_tool`. Reach adds Control, Fine Hands works, Inner Light glows, and gated recipes are greyed.
   - A hairline XP bar sits under the hotbar; `--demo-ui skills`; screenshot `docs/media/m12-skills.png`.
 - [x] Integrated: 429 tests, fmt and clippy clean; upgrade check from `main` (characters start at level 1, players kept); a live run showed a new character's skill screen against a real server. The energy test now waits for a snapshot covering its inputs (it raced on a busy machine).
-- [ ] Nathan's play-test. To judge: levelling pace against Boundless; the guessed numbers in `docs/feel.md` (Stamina +150 a rank, Deep Reserves +4000, the hammer epic's +12 action speed, Careful Hands 30%, Inner Light 10, the double jump's height).
+- [x] Numbers checked against the game's own skill text (boundlexx, tuning 5.4a, 2026-10-21): Zeal's curve, the energy epic (x3), the tool epics' +10 action speed, Control's +0.75 reach, grapple mastery's +5 rope; protocol 17 (the body carries the rope bonus). A faster grapple shot no longer flies past the grapple's range.
+- [ ] Nathan's play-test. To judge: levelling pace against Boundless; the remaining guesses in `docs/feel.md` (base energy refill, Inner Light 10, the double jump's height).
 - Follow-ups:
   - Inner Light is not switched off in daylight on the client (others see the server's choice).
   - Station XP goes to whoever collects.
+  - Two epics have systems now and could work: Gathering (+200% drops from plants, boulders and fungi; a shovel collects them whole) and Efficient Crafting (-30% furnace heat). Both are still "Comes later".
+  - Spring: Boundless gives the extra 2 m only while jump is held; ours gives it on any jump.

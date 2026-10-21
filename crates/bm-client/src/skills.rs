@@ -314,7 +314,7 @@ pub fn carried_light(held: u8, effects: &Effects) -> u8 {
 /// Reach (milestone 12): the server's base plus what Control adds
 /// (`Effects::reach` counts from the untrained 4).
 pub fn reach(base: f64, effects: &Effects) -> f64 {
-    base + effects.reach() - 4.0
+    base + effects.reach_bonus()
 }
 
 #[cfg(test)]
@@ -465,7 +465,7 @@ mod tests {
         for _ in 0..3 {
             c.learn(&t, "control").unwrap();
         }
-        assert_eq!(reach(4.0, &c.effects(&t)), 7.0);
+        assert_eq!(reach(4.0, &c.effects(&t)), 6.25);
         assert_eq!(carried_light(0, &c.effects(&t)), 0);
         c.learn(&t, "light_epic").unwrap();
         assert_eq!(carried_light(0, &c.effects(&t)), INNER_LIGHT);

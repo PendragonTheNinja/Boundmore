@@ -3648,8 +3648,8 @@ async fn skills_are_spent_by_the_rules_and_change_swings_reach_and_chisels() {
         matches!(alice.swing(1, far, HAND).await, Swung::Refused(..)),
         "out of reach"
     );
-    alice.learn("control", 2).await;
-    assert_eq!(alice.character.effects(&tree).reach(), 6.0);
+    alice.learn("control", 3).await;
+    assert_eq!(alice.character.effects(&tree).reach(), 6.25);
     alice.ready();
     assert_eq!(alice.swing(2, far, HAND).await, Swung::Damaged(200), "in reach");
 

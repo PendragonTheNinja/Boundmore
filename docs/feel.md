@@ -100,20 +100,24 @@ Not built yet, from Boundless: the better torch (tallow and sackcloth, at a work
 
 ## Skills and progression (`bm-core/src/skills.rs`, `assets/skills.toml`; M12)
 
-Boundless's live tree and tables exactly (Nathan, 2026-10-20), in Boundmore's names. Guesses:
+Boundless's live tree and tables exactly (Nathan, 2026-10-20), in Boundmore's names. Since 2026-10-21 the skill numbers come from the game's own skill text (boundlexx, tuning 5.4a), which replaced most of the earlier guesses.
 
 | Value | Now | Source, or guess |
 |---|---|---|
 | Levels, points, marks, cleanses, pages (600), resets (800), plots (30) | Boundless's tables | Boundless, exact |
 | XP per block, per craft | Boundless's per-block and per-recipe data | exact; wayshard mining 64 and gathering objects scaled by tier are **guesses** |
-| Stamina (Zeal) | +150 max energy a rank | **Guess** (a player saw 1,933 at full Zeal) |
-| Deep Reserves (energy epic) | +4,000 max energy | Testing 194 notes, unconfirmed |
-| Second Wind (energy regeneration epic) | +900 a second | Boundless tooltip |
-| Hammer and shovel-and-axe epics' action speed | +12 | **Guess** at the split of players' "+22 from tool skills" |
-| Careful Hands (durability epic) | 30% of swings do not wear | low confidence |
-| Inner Light (light epic) | light 10 around you, off outdoors in daylight | **Guess** at the radius |
-| Spring (high jump) | 2 blocks higher | players, medium |
-| Second Leap (double jump) | 0.7 of a jump's speed in mid-air | **Guess** |
+| Stamina (Zeal) | max energy 600 + 1400 x (level / 9)^1.5: +50, 100, 120, 140, 170, 180, 200, 210 a rank, 2,000 at 9 | Boundless's skill text, exact (the curve fits every rank) |
+| Deep Reserves (energy epic) | max energy x3 | Boundless's skill text, exact |
+| Second Wind (energy regeneration epic) | +900 a second | Boundless's skill text, exact |
+| Hammer and shovel-and-axe epics | +25% damage, +10 action speed | Boundless's skill text, exact |
+| Grasp (Control) | reach +0.75 a level (4 to 10.75) | Boundless's skill text (the wiki said +1; the game's text wins). Does trained reach feel right? |
+| Grapple Skill (mastery) | +5 blocks of rope and +5 a second shot speed a rank | Boundless's skill text, exact |
+| Careful Hands (durability epic) | 30% less wear (as 30% of swings not wearing) | Boundless's skill text, exact |
+| Base energy refill | 300 a second after the 3.5 s pause | **Guess** (not in any data found) |
+| Inner Light (light epic) | light 10 around you, off outdoors in daylight | **Guess** at the radius (the text gives none) |
+| Spring (high jump) | 2 blocks higher | Boundless's skill text ("hold jump to rise higher": we give the full 2 on any jump) |
+| Second Leap (double jump) | 0.7 of a jump's speed in mid-air | **Guess** (the text gives no height) |
+| Swiftness crit | 0.2 x level / 9 (20% at 9) | Boundless's damage calculator; the skill text says 2% a level (18% at 9) |
 
 ## World (`bm-server/src/config.rs`, `bm-worldgen`)
 
