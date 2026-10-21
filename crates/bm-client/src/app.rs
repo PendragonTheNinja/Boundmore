@@ -2196,8 +2196,18 @@ impl App {
     }
 
     fn render(&mut self) {
-        let ui = self.run_ui();
-        let ui_frame = ui.as_ref().map(|(p, t, ppp)| EguiFrame {
+        let mut ui = self.run_ui();
+        self.render_frame(ui.as_ref());
+        // The renderer has applied (or, with no renderer, skipped) the
+        // texture changes; egui asserts in debug builds that none is dropped
+        // unhandled.
+        if let Some((_, textures, _)) = &mut ui {
+            textures.clear();
+        }
+    }
+
+    fn render_frame(&mut self, ui: Option<&(Vec<egui::ClippedPrimitive>, egui::TexturesDelta, f32)>) {
+        let ui_frame = ui.map(|(p, t, ppp)| EguiFrame {
             primitives: p,
             textures: t,
             pixels_per_point: *ppp,
