@@ -42,6 +42,18 @@ impl PlanetSpec {
     }
 }
 
+/// A creature the config places beside where players arrive on the start
+/// planet, once its first player is there (tests: a given creature at a
+/// given place, with natural spawning off).
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct PlacedCreature {
+    /// A kind in the creature catalogue.
+    pub kind: String,
+    pub tier: u8,
+    /// Feet position, from where players arrive.
+    pub offset: [f64; 3],
+}
+
 /// The default universe: one planet of each built-in kind, the gentle one
 /// first.
 pub fn default_planets() -> Vec<PlanetSpec> {
@@ -100,6 +112,20 @@ pub struct ServerConfig {
     /// (tests use one to try tools no recipe makes yet). Saves name items,
     /// so a catalogue may add items freely.
     pub items: Option<PathBuf>,
+    /// A creature catalogue to use instead of the built-in
+    /// `assets/creatures.toml` (tests use one with still creatures and fixed
+    /// drops). Creatures are never saved, so any catalogue will do.
+    pub creatures: Option<PathBuf>,
+    /// Creatures appear around players by themselves. Off for tests that
+    /// place their own (`placed_creatures`).
+    pub creature_spawning: bool,
+    /// No more spawn around a player who has this many within 48 blocks: a
+    /// **guess** (Boundless's counts are unpublished; Nathan may count them).
+    pub creatures_near_player: usize,
+    /// The most creatures one planet holds: a **guess**, a ceiling for load.
+    pub creatures_per_planet: usize,
+    /// Creatures placed at startup (tests).
+    pub placed_creatures: Vec<PlacedCreature>,
 
     /// Save version 2 settings, still read so an old `server.toml` keeps its
     /// planet: they apply to the first planet.
@@ -134,6 +160,11 @@ impl Default for ServerConfig {
             portal_charge_cooldown: 3600,
             portal_epic_required: true,
             items: None,
+            creatures: None,
+            creature_spawning: true,
+            creatures_near_player: 8,
+            creatures_per_planet: 600,
+            placed_creatures: Vec::new(),
             planet_name: None,
             seed: None,
             width_chunks: None,

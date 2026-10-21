@@ -158,6 +158,9 @@ impl Game {
     pub(super) fn swing(&mut self, id: u32, seq: u32, at: u32, pos: BlockPos, slot: u8) {
         let Some(p) = self.players.get(&id) else { return };
         let pi = p.planet;
+        if p.state.down {
+            return self.swing_refused(id, seq, pos, "defeated".into());
+        }
         // Cadence on the input timeline: no slack, no wall clock.
         if let Some((last, ticks)) = p.last_swing
             && (at as u64) < last as u64 + ticks as u64

@@ -8,8 +8,9 @@ use bm_core::{
 use bm_net::quinn::Connection;
 use bm_net::{read_msg, write_msg};
 use bm_protocol::{
-    Channel, ChatLine, ClaimView, ClientDatagram, ClientMsg, EditAction, PROTOCOL_VERSION, PortalAction, PortalView,
-    ServerDatagram, ServerMsg, SkillAction, SlotRef, StationView, StorageView, Welcome,
+    Channel, ChatLine, ClaimView, ClientDatagram, ClientMsg, CreatureView, EditAction, PROTOCOL_VERSION, PortalAction,
+    PortalView, RemoteCreature, ServerDatagram, ServerMsg, ShotView, SkillAction, SlotRef, StationView, StorageView,
+    Target, Welcome,
 };
 use bm_server::config::{PlanetSpec, ServerConfig};
 use bm_server::store::{PlayerData, SavedBody, SavedStack, SavedStation, Store, UNIVERSE_FILE, WriteBatch};
@@ -51,6 +52,13 @@ struct TestClient {
     spawn: PlayerState,
     /// The character as last heard of (milestone 12).
     character: Character,
+    /// Milestone 13: creatures as last told, shots of others heard, shots
+    /// heard to end, hits heard, and the last defeat.
+    creatures: HashMap<u32, CreatureView>,
+    shots: Vec<ShotView>,
+    shot_ends: Vec<u32>,
+    hits: Vec<(Target, u32, bool)>,
+    defeated: Option<(u64, String)>,
 }
 
 /// Opens a connection and says hello; the welcome, or the refusal's reason.
@@ -121,6 +129,11 @@ async fn hello(
         chunks: HashMap::new(),
         seq: 0,
         last_swing: None,
+        creatures: HashMap::new(),
+        shots: Vec::new(),
+        shot_ends: Vec::new(),
+        hits: Vec::new(),
+        defeated: None,
     })
 }
 
@@ -220,6 +233,16 @@ impl TestClient {
             ServerMsg::Claim(c) => self.claim = Some(c.clone()),
             ServerMsg::TokenNames { names } => self.token_names.extend(names.iter().cloned()),
             ServerMsg::Character { character, .. } => self.character = character.clone(),
+            ServerMsg::Creature(v) => {
+                self.creatures.insert(v.id, v.clone());
+            }
+            ServerMsg::CreatureGone { id } => {
+                self.creatures.remove(id);
+            }
+            ServerMsg::Shot(v) => self.shots.push(*v),
+            ServerMsg::ShotEnd { id } => self.shot_ends.push(*id),
+            ServerMsg::Hit { target, amount, crit } => self.hits.push((*target, *amount, *crit)),
+            ServerMsg::Defeated { debt, by } => self.defeated = Some((*debt, by.clone())),
             // Everything of the old planet goes, as in the game.
             ServerMsg::Travel(t) => {
                 self.chunks.clear();
@@ -535,6 +558,11 @@ fn seed(dir: &Path, name: &str, stacks: &[(usize, &str, u16, u16)]) {
 
 /// `seed`, with this character's progression.
 fn seed_character(dir: &Path, name: &str, stacks: &[(usize, &str, u16, u16)], character: Character) {
+    seed_hurt(dir, name, stacks, character, 0);
+}
+
+/// `seed_character`, with this much health lost.
+fn seed_hurt(dir: &Path, name: &str, stacks: &[(usize, &str, u16, u16)], character: Character, hurt: u32) {
     let store = Store::open(&planet_file(dir)).unwrap();
     let account = bm_server::accounts::register(&store, name, PASSWORD).unwrap();
     let mut inventory = vec![None; bm_core::INVENTORY_SLOTS];
@@ -560,6 +588,7 @@ fn seed_character(dir: &Path, name: &str, stacks: &[(usize, &str, u16, u16)], ch
                     inventory,
                     last_seen: 0,
                     character: character.into(),
+                    hurt,
                 },
             )],
             ..Default::default()
@@ -4026,4 +4055,420 @@ async fn snapshot_after(c: &mut TestClient) -> PlayerState {
         }
     }
     panic!("no snapshot acknowledged input {want}");
+}
+
+// Milestone 13: creatures and combat.
+
+/// Test creatures: a target that barely moves and never attacks, and a
+/// charger that charges at once; each drops one bone.
+const TEST_CREATURES: &str = r#"
+[[creature]]
+name = "target"
+behaviour = "herd"
+attack = "none"
+half_width = 0.6
+height = 1.4
+walk_speed = 0.01
+run_speed = 0.01
+notice = 16.0
+give_up = 64.0
+forget = 120.0
+spawn_weight = 1
+group = [1, 1]
+
+[[creature.tiers]]
+health = 1500
+armour = 0
+xp = 60
+drops_min = 1
+drops_max = 1
+drops = [{ item = "bone", weight = 1, max = 1 }]
+
+[[creature]]
+name = "charger"
+behaviour = "herd"
+attack = { charge = { speed = 12.0, range = 15.0, radius = 1.8, windup = 0.2, knockback = 9.0, cooldown = 3.0 } }
+half_width = 0.6
+height = 1.4
+walk_speed = 1.4
+run_speed = 12.0
+notice = 16.0
+give_up = 64.0
+forget = 120.0
+spawn_weight = 1
+group = [1, 1]
+
+[[creature.tiers]]
+health = 1500
+armour = 0
+xp = 60
+damage = 100
+drops_min = 1
+drops_max = 1
+drops = [{ item = "bone", weight = 1, max = 1 }]
+"#;
+
+/// `config` with the test creatures placed beside the arrival point (`kind`,
+/// offset along +X) and no natural spawning.
+fn creature_config(dir: &Path, placed: &[(&str, f64)]) -> ServerConfig {
+    let path = dir.join("test-creatures.toml");
+    std::fs::write(&path, TEST_CREATURES).unwrap();
+    ServerConfig {
+        creatures: Some(path),
+        creature_spawning: false,
+        placed_creatures: placed
+            .iter()
+            .map(|(kind, dx)| bm_server::config::PlacedCreature {
+                kind: kind.to_string(),
+                tier: 1,
+                offset: [*dx, 0.0, 0.0],
+            })
+            .collect(),
+        ..config(dir)
+    }
+}
+
+impl TestClient {
+    /// Waits until a creature of `kind` has come into view; its id.
+    async fn creature_of(&mut self, kind: &str) -> u32 {
+        let k = self.welcome.creatures.iter().position(|d| d.name == kind).unwrap() as u16;
+        loop {
+            if let Some(v) = self.creatures.values().find(|v| v.kind == k) {
+                return v.id;
+            }
+            self.until(|m| matches!(m, ServerMsg::Creature(_))).await;
+        }
+    }
+
+    /// Waits until creature `id`'s view matches `pred`.
+    async fn creature_until(&mut self, id: u32, mut pred: impl FnMut(&CreatureView) -> bool) -> CreatureView {
+        loop {
+            if let Some(v) = self.creatures.get(&id).filter(|v| pred(v)) {
+                return v.clone();
+            }
+            self.until(|m| matches!(m, ServerMsg::Creature(v) if v.id == id)).await;
+        }
+    }
+
+    /// The next snapshot carrying creature `id`, with the player's state.
+    async fn snapshot_with(&mut self, id: u32) -> (RemoteCreature, PlayerState) {
+        for _ in 0..600 {
+            let snap = tokio::time::timeout(Duration::from_secs(5), self.snaps.recv())
+                .await
+                .unwrap()
+                .unwrap();
+            let ServerDatagram::Snapshot { you, creatures, .. } = snap;
+            if let Some(c) = creatures.iter().find(|c| c.id == id) {
+                return (*c, you);
+            }
+        }
+        panic!("no snapshot carried creature {id}");
+    }
+
+    /// Fires the sling in `slot` along `yaw` and `pitch` at the sling's
+    /// cadence, following the last input sent.
+    async fn shoot(&mut self, slot: u8, yaw: u16, pitch: i16) {
+        self.ready();
+        if self.seq == 0 {
+            self.send_inputs(1, PlayerInput::default());
+        }
+        let at = self.seq;
+        let sling = self
+            .inv
+            .get(slot as usize)
+            .and_then(|s| self.items.get(s.item))
+            .and_then(|d| d.sling());
+        let ticks = sling.map_or(1, |l| bm_core::mining::swing_ticks(l.action_speed));
+        self.last_swing = Some((at, ticks));
+        self.send(ClientMsg::Shoot {
+            at,
+            slot,
+            yaw,
+            pitch,
+            charge: 0,
+        })
+        .await;
+    }
+
+    /// Hits heard on `target`.
+    fn hits_on(&self, target: Target) -> Vec<u32> {
+        self.hits.iter().filter(|h| h.0 == target).map(|h| h.1).collect()
+    }
+}
+
+/// Yaw and pitch from `eye` at `at`, lifted for a shot's drop at `speed`.
+fn aim(shape: bm_core::PlanetShape, eye: glam::DVec3, at: glam::DVec3, speed: f64, falloff: f64) -> (u16, i16) {
+    let d = shape.delta(eye, at);
+    let flat = (d.x * d.x + d.z * d.z).sqrt();
+    let t = flat / speed;
+    let lift = 0.5 * bm_core::combat::SHOT_GRAVITY * falloff * t * t;
+    PlayerInput::from_angles(d.x.atan2(-d.z), (d.y + lift).atan2(flat))
+}
+
+/// Milestone 13, acceptance 3, 5, 8: a stone sling kills a tier 1 creature
+/// (the server flies every shot and judges the hit), every snapshot carries
+/// it, the kill gives its XP, its body gives this player's drops once, and
+/// the bone makes real glue at a furnace (1 sap + 1 bone).
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn a_sling_kills_a_creature_for_xp_and_bone_and_bone_makes_glue() {
+    let dir = tempfile::tempdir().unwrap();
+    seed(
+        dir.path(),
+        "Alice",
+        &[
+            (0, "stone_sling", 1, 0),
+            (1, "sap", 1, 0),
+            (2, "furnace", 1, 0),
+            (3, "furnace_crucible", 1, 0),
+            (4, "coal", 1, 0),
+        ],
+    );
+    let server = bm_server::start(creature_config(dir.path(), &[("target", 5.0)])).unwrap();
+    let mut alice = TestClient::login(&server, "Alice").await;
+    let shape = alice.shape();
+    let feet = alice.feet();
+    alice.wait_for_chunk(feet.chunk()).await;
+    assert!(
+        alice.welcome.creatures.iter().any(|d| d.name == "target"),
+        "the catalogue arrives in the welcome"
+    );
+    let id = alice.creature_of("target").await;
+    let view = alice.creatures[&id].clone();
+    assert_eq!((view.tier, view.damage, view.dead, view.angry), (1, 0, false, false));
+
+    // Snapshots carry it, beside where it was placed.
+    let (c, you) = alice.snapshot_with(id).await;
+    let at = glam::DVec3::new(c.pos[0] as f64, c.pos[1] as f64, c.pos[2] as f64);
+    let d = shape.delta(you.pos, at);
+    assert!(
+        (d.x - 5.0).abs() < 1.0 && d.z.abs() < 1.0,
+        "placed 5 blocks along +X: {d}"
+    );
+
+    // Five stone sling shots of 300 kill its 1500.
+    let stone = alice.items.get(alice.item("stone_sling")).unwrap().sling().unwrap();
+    let eye = you.pos + glam::DVec3::new(0.0, alice.welcome.movement.eye_height, 0.0);
+    let (yaw, pitch) = aim(
+        shape,
+        eye,
+        at + glam::DVec3::new(0.0, 0.7, 0.0),
+        stone.shot_speed as f64,
+        stone.falloff as f64,
+    );
+    for k in 1..=5 {
+        alice.shoot(0, yaw, pitch).await;
+        alice
+            .until(|m| matches!(m, ServerMsg::Hit { target: Target::Creature(c), .. } if *c == id))
+            .await;
+        assert_eq!(alice.hits_on(Target::Creature(id)), vec![300; k], "shot {k}");
+    }
+    assert!(alice.shots.is_empty(), "never told of your own shots");
+    let dead = alice.creature_until(id, |v| v.dead).await;
+    assert_eq!(dead.damage, 1500);
+    alice.until_xp(60).await;
+    alice.settle().await;
+    assert_eq!(alice.inv.get(0).unwrap().wear, 5, "one durability a shot");
+
+    // The body: this player's drops, once.
+    alice.send(ClientMsg::Loot { creature: id }).await;
+    let looted = alice.creature_until(id, |v| v.looted).await;
+    assert!(looted.dead);
+    alice.settle().await;
+    assert_eq!(alice.count("bone"), 1);
+    alice.send(ClientMsg::Loot { creature: id }).await;
+    alice.settle().await;
+    assert_eq!(alice.count("bone"), 1, "a body gives each player one roll");
+
+    // Real glue: 1 sap and 1 bone at a furnace, with one coal of heat.
+    let base = shape.wrap_block(feet.offset(-1, 1, 1));
+    let top = shape.wrap_block(feet.offset(-1, 2, 1));
+    alice.wait_for_chunk(top.chunk()).await;
+    assert!(place(&mut alice, 1, base, 2, None).await.0);
+    assert!(place(&mut alice, 2, top, 3, None).await.0);
+    let glue = alice.recipe("glue");
+    let r = &alice.welcome.recipes[glue as usize];
+    assert_eq!(r.inputs, vec![(alice.item("sap"), 1), (alice.item("bone"), 1)]);
+    look_at_station(&mut alice, base, |v| v.idle.is_none()).await;
+    craft_at(&mut alice, glue, 1, Some(base)).await;
+    alice.station(|v| !v.jobs.is_empty()).await;
+    fuel(&mut alice, base, 4, 1, true).await;
+    // The craft takes 20 s once the coal burns.
+    alice
+        .station(|v| v.jobs.first().is_some_and(|j| j.progress > 0.0))
+        .await;
+    tokio::time::sleep(Duration::from_secs(15)).await;
+    let done = look_at_station(&mut alice, base, |v| !v.output.is_empty()).await;
+    assert_eq!((done.output[0].item, done.output[0].count), (alice.item("glue"), 1));
+    alice.send(ClientMsg::CollectStation { pos: base }).await;
+    alice.station(|v| v.output.is_empty()).await;
+    alice.settle().await;
+    assert_eq!(
+        (alice.count("glue"), alice.count("bone"), alice.count("sap")),
+        (1, 0, 0)
+    );
+    server.stop();
+}
+
+/// Milestone 13, acceptance 1 and 7: saved health loads; a creature's hit
+/// at 0 health defeats the player, who gets Boundless's XP debt and
+/// `Defeated`; Return brings them back on safe ground nearby at half health.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn a_defeated_player_owes_xp_and_returns_on_safe_ground_at_half_health() {
+    let dir = tempfile::tempdir().unwrap();
+    seed_hurt(dir.path(), "Alice", &[(0, "stone_sling", 1, 0)], at_level(10, 0), 550);
+    let server = bm_server::start(creature_config(dir.path(), &[("charger", 6.0)])).unwrap();
+    let mut alice = TestClient::login(&server, "Alice").await;
+    assert_eq!(alice.spawn.hurt, 550, "health lost is saved");
+    let me = alice.welcome.player_id;
+    let feet = alice.feet();
+    alice.wait_for_chunk(feet.chunk()).await;
+    let id = alice.creature_of("charger").await;
+
+    // A sling fired near a herd beast angers it; it rears and charges.
+    alice.shoot(0, 0, bm_core::movement::PITCH_LIMIT).await;
+    alice.creature_until(id, |v| v.angry).await;
+    alice.until(|m| matches!(m, ServerMsg::Defeated { .. })).await;
+    let want = bm_core::skills::defeat_debt(xp_for_level(10), false);
+    assert_eq!(want, 750, "10% of what level 11 needs");
+    assert_eq!(alice.defeated, Some((want, "Charger".to_string())));
+    assert_eq!(alice.hits_on(Target::Player(me)), vec![100]);
+    alice
+        .until(|m| matches!(m, ServerMsg::Character { character, .. } if character.debt == 750))
+        .await;
+    // It stops attacking a defeated player.
+    alice.creature_until(id, |v| !v.angry).await;
+
+    // Lying where they fell (inputs move nothing).
+    alice.send_inputs(
+        60,
+        PlayerInput {
+            forward: 1,
+            ..Default::default()
+        },
+    );
+    tokio::time::sleep(Duration::from_millis(1500)).await;
+    let down = snapshot_after(&mut alice).await;
+    assert!(down.down);
+    assert_eq!(down.health(), 0);
+
+    alice.send(ClientMsg::Return).await;
+    let spawn = match alice.until(|m| matches!(m, ServerMsg::Teleport { .. })).await {
+        ServerMsg::Teleport { spawn, .. } => spawn,
+        _ => unreachable!(),
+    };
+    assert!(!spawn.down);
+    assert_eq!(spawn.health(), 300, "half health");
+    let shape = alice.shape();
+    let d = shape.delta(down.pos, spawn.pos);
+    let flat = (d.x * d.x + d.z * d.z).sqrt();
+    assert!((7.0..=25.5).contains(&flat), "near where they fell: {flat}");
+    // On safe ground: solid below, room (not water) where they stand.
+    let at = BlockPos::containing(spawn.pos.x, spawn.pos.y, spawn.pos.z);
+    for dy in [-1, 0, 1] {
+        alice
+            .wait_for_chunk(shape.wrap_block(at.offset(0, dy, 0)).chunk())
+            .await;
+    }
+    let block = |c: &TestClient, p: BlockPos| {
+        let p = shape.wrap_block(p);
+        c.chunks[&p.chunk()].get(p.local())
+    };
+    let defs = &alice.welcome.blocks;
+    assert!(
+        defs[block(&alice, at.offset(0, -1, 0)).0 as usize].solid,
+        "solid underfoot"
+    );
+    for y in 0..2 {
+        let b = &defs[block(&alice, at.offset(0, y, 0)).0 as usize];
+        assert!(!b.solid && b.name != "water", "room to stand");
+    }
+    // Moving again from there, at half health or more.
+    alice.send_inputs(30, PlayerInput::default());
+    let up = snapshot_after(&mut alice).await;
+    assert!(!up.down);
+    assert!(up.health() >= 300);
+    server.stop();
+}
+
+/// Milestone 13, the agreed rules: a shot costs the sling's energy at its
+/// input and one durability; one sooner than the cadence, or too tired,
+/// fires nothing and wears nothing; others nearby are told the shot flies
+/// and ends, the shooter is not.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn shots_cost_energy_and_wear_and_others_see_them_fly() {
+    let dir = tempfile::tempdir().unwrap();
+    // A sling no recipe makes: 15000 damage, so 300 energy a shot (damage /
+    // 50) and two shots a full bar.
+    let items = dir.path().join("test-items.toml");
+    std::fs::write(
+        &items,
+        format!(
+            "{}\n[[item]]\nname = \"test_sling\"\nstack = 1\nsling = {{ damage = 15000, action_speed = 30.0, shot_speed = 30.0, range = 15.0, falloff = 0.5, durability = 10 }}\n",
+            include_str!("../../../assets/items.toml")
+        ),
+    )
+    .unwrap();
+    seed(dir.path(), "Alice", &[(0, "test_sling", 1, 0)]);
+    let server = bm_server::start(ServerConfig {
+        items: Some(items),
+        creature_spawning: false,
+        ..config(dir.path())
+    })
+    .unwrap();
+    let mut alice = TestClient::login(&server, "Alice").await;
+    let mut bob = TestClient::register(&server, "Bob").await;
+    let me = alice.welcome.player_id;
+    let feet = alice.feet();
+    alice.wait_for_chunk(feet.chunk()).await;
+    bob.wait_for_chunk(feet.chunk()).await;
+    let up = bm_core::movement::PITCH_LIMIT;
+    let wear = |c: &TestClient| c.inv.get(0).unwrap().wear;
+
+    alice.shoot(0, 0, up).await;
+    let s = snapshot_after(&mut alice).await;
+    assert_eq!(s.energy(), bm_core::energy::MAX_ENERGY - 300);
+    let first = match bob.until(|m| matches!(m, ServerMsg::Shot(_))).await {
+        ServerMsg::Shot(v) => v,
+        _ => unreachable!(),
+    };
+    assert_eq!(first.from, Target::Player(me));
+    assert_eq!((first.range, first.falloff), (15.0, 0.5));
+    bob.until(|m| matches!(m, ServerMsg::ShotEnd { id } if *id == first.id))
+        .await;
+    alice.settle().await;
+    assert_eq!(wear(&alice), 1);
+
+    // Sooner than the cadence: nothing.
+    let at = alice.seq;
+    alice
+        .send(ClientMsg::Shoot {
+            at,
+            slot: 0,
+            yaw: 0,
+            pitch: up,
+            charge: 0,
+        })
+        .await;
+    alice.settle().await;
+    assert_eq!(wear(&alice), 1, "too soon: no wear");
+
+    alice.shoot(0, 0, up).await;
+    let s = snapshot_after(&mut alice).await;
+    assert_eq!(s.energy(), 0);
+    alice.settle().await;
+    assert_eq!(wear(&alice), 2);
+    // Too tired: nothing fires, nothing wears.
+    alice.shoot(0, 0, up).await;
+    snapshot_after(&mut alice).await;
+    alice.settle().await;
+    assert_eq!(wear(&alice), 2, "too tired: no wear");
+    bob.settle().await;
+    assert_eq!(bob.shots.len(), 2, "two shots flew");
+    assert!(alice.shots.is_empty(), "never told of your own shots");
+    // An empty hand shoots nothing.
+    alice.shoot(5, 0, up).await;
+    snapshot_after(&mut alice).await;
+    bob.settle().await;
+    assert_eq!(bob.shots.len(), 2);
+    server.stop();
 }

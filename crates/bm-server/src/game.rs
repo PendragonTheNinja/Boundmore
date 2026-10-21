@@ -24,11 +24,14 @@ use crate::reclaim::Reclaims;
 use crate::storage::move_stack;
 use crate::store::{PlayerData, Store, WriteBatch, load_slots, save_slots};
 
+mod combat;
+mod creatures;
 mod mining;
 mod portal;
 mod skills;
 mod stations;
 use anyhow::{Context, Result};
+use bm_core::creatures::CreatureKinds;
 use bm_core::movement::{self, MoveConfig, PlayerInput, PlayerState};
 use bm_core::skills::{Character, Effects, SkillTree};
 use bm_core::{
@@ -37,8 +40,9 @@ use bm_core::{
 };
 use bm_net::quinn::Connection;
 use bm_protocol::{
-    Channel, ChatLine, ClientMsg, EditAction, LOCAL_CHAT_RANGE, MAX_NAME_LEN, PLAYERS_PER_SNAPSHOT, PlanetSummary,
-    RemotePlayer, ServerDatagram, ServerMsg, SkillAction, SlotRef, StorageView, Travel, Welcome,
+    CREATURES_PER_SNAPSHOT, Channel, ChatLine, ClientMsg, CreatureView, EditAction, LOCAL_CHAT_RANGE, MAX_NAME_LEN,
+    PLAYERS_PER_SNAPSHOT, PlanetSummary, RemoteCreature, RemotePlayer, ServerDatagram, ServerMsg, SkillAction, SlotRef,
+    StorageView, Travel, Welcome,
 };
 use crossbeam_channel::{Receiver, Sender, TryRecvError};
 use glam::DVec3;
@@ -110,16 +114,35 @@ enum Queued {
         at: u32,
         action: SkillAction,
     },
+    /// A sling shot (milestone 13).
+    Shoot {
+        at: u32,
+        slot: u8,
+        yaw: u16,
+        pitch: i16,
+        charge: u16,
+    },
+    /// A tool swung at a creature (milestone 13).
+    Strike {
+        at: u32,
+        creature: u32,
+        slot: u8,
+    },
 }
 
 impl Queued {
     /// The answer to an edit or swing refused before it was looked at (None
-    /// for a skill change).
+    /// for a skill change or an attack).
     fn seq_pos(&self) -> Option<(u32, BlockPos)> {
         match *self {
             Queued::Edit { seq, pos, .. } | Queued::Swing { seq, pos, .. } => Some((seq, pos)),
-            Queued::Skill { .. } => None,
+            Queued::Skill { .. } | Queued::Shoot { .. } | Queued::Strike { .. } => None,
         }
+    }
+
+    /// An attack: about the planet it was sent on, refused quietly.
+    fn attack(&self) -> bool {
+        matches!(self, Queued::Shoot { .. } | Queued::Strike { .. })
     }
 }
 
@@ -173,6 +196,15 @@ struct Player {
     character_dirty: bool,
     /// The light-source epic shines now (not in daylight under open sky).
     inner_light: bool,
+    /// Creatures this player has been told of (milestone 13), as last told.
+    known: HashMap<u32, CreatureView>,
+    /// The creatures the next snapshots carry, nearest first.
+    in_view: Vec<RemoteCreature>,
+    /// Scratch for finding them (kept to spare an allocation a snapshot).
+    near_creatures: Vec<(f64, usize)>,
+    /// Their defeat has been dealt with (debt, `Defeated`); cleared on
+    /// returning.
+    defeated: bool,
 }
 
 /// A player who left, held in memory until the save holding their last state
@@ -283,6 +315,19 @@ pub struct Game {
     rng: u64,
     /// The skill tree (`assets/skills.toml`), sent in every welcome.
     skills: SkillTree,
+    /// The creature catalogue (`assets/creatures.toml`), sent in every
+    /// welcome, and how each kind moves.
+    creature_kinds: CreatureKinds,
+    creature_moves: Vec<MoveConfig>,
+    /// Creatures by planet index (never saved).
+    herds: Vec<creatures::Herds>,
+    next_creature: u32,
+    /// Shots in flight, on every planet.
+    shots: Vec<combat::Shot>,
+    next_shot: u32,
+    /// Scratch the creature step reuses.
+    seen_buf: Vec<creatures::Seen>,
+    acts_buf: Vec<creatures::Act>,
 }
 
 /// One planet's load, as the report shows it.
@@ -441,6 +486,7 @@ impl Game {
         next_claim: u32,
         items: ItemRegistry,
         recipes: RecipeBook,
+        creature_kinds: CreatureKinds,
         store: Store,
         writer: Sender<WriteBatch>,
         events: Receiver<Event>,
@@ -465,6 +511,7 @@ impl Game {
         let reclaims = Reclaims::load(store.reclaims()?, &items);
         let last_seen = claim_owners_last_seen(&store, &planets, planets[start].id);
         let planet_count = planets.len();
+        let creature_moves = creature_kinds.defs().iter().map(|d| d.move_config()).collect();
         Ok(Self {
             cfg,
             planets,
@@ -504,6 +551,14 @@ impl Game {
                 .duration_since(std::time::UNIX_EPOCH)
                 .map_or(0x2545_f491, |d| d.as_nanos() as u64),
             skills: SkillTree::builtin(),
+            creature_kinds,
+            creature_moves,
+            herds: (0..planet_count).map(|_| creatures::Herds::default()).collect(),
+            next_creature: 1,
+            shots: Vec::new(),
+            next_shot: 1,
+            seen_buf: Vec::new(),
+            acts_buf: Vec::new(),
         })
     }
 
@@ -601,6 +656,8 @@ impl Game {
         // Before streaming: a chunk is never sent with a portal's old look.
         self.sync_portals();
         self.simulate();
+        self.step_creatures();
+        self.step_shots();
         self.step_portals();
         self.step_stations();
         self.step_lapses();
@@ -620,6 +677,7 @@ impl Game {
             self.stream(*id);
         }
         if self.tick % SNAPSHOT_EVERY == 0 {
+            self.sync_creature_views();
             self.snapshots();
         }
         if self.tick % SAVE_EVERY == 0 {
@@ -704,8 +762,26 @@ impl Game {
             }
             Event::Msg { id, msg } => match msg {
                 ClientMsg::Skill { at, action } => self.queue(id, at, Queued::Skill { at, action }),
-                // Milestone 13: combat (server work to come).
-                ClientMsg::Shoot { .. } | ClientMsg::Strike { .. } | ClientMsg::Loot { .. } | ClientMsg::Return => {}
+                ClientMsg::Shoot {
+                    at,
+                    slot,
+                    yaw,
+                    pitch,
+                    charge,
+                } => self.queue(
+                    id,
+                    at,
+                    Queued::Shoot {
+                        at,
+                        slot,
+                        yaw,
+                        pitch,
+                        charge,
+                    },
+                ),
+                ClientMsg::Strike { at, creature, slot } => self.queue(id, at, Queued::Strike { at, creature, slot }),
+                ClientMsg::Loot { creature } => self.loot(id, creature),
+                ClientMsg::Return => self.return_player(id),
                 ClientMsg::StationFuel { pos, slot, count, into } => self.station_fuel(id, pos, slot, count, into),
                 ClientMsg::Edit { seq, at, pos, action } => self.queue(id, at, Queued::Edit { seq, pos, action }),
                 ClientMsg::Swing { seq, at, pos, slot } => self.queue(id, at, Queued::Swing { seq, at, pos, slot }),
@@ -755,8 +831,8 @@ impl Game {
             out.close("this server is full");
             return;
         }
-        let (planet, saved, mut inventory, character) = match self.departed.remove(&account) {
-            Some(d) => (d.planet, Some(d.state), d.inventory, d.character),
+        let (planet, saved, mut inventory, character, hurt) = match self.departed.remove(&account) {
+            Some(d) => (d.planet, Some(d.state), d.inventory, d.character, d.state.hurt),
             None => match self.store.player(&account) {
                 Ok(Some(data)) => (
                     data.planet as usize,
@@ -765,8 +841,9 @@ impl Game {
                         slots: load_slots(&self.items, &data.inventory, &name),
                     },
                     skills::sanitize(data.character.into(), &self.skills),
+                    data.hurt,
                 ),
-                Ok(None) => (self.start, None, self.starting_inventory(), Character::default()),
+                Ok(None) => (self.start, None, self.starting_inventory(), Character::default(), 0),
                 Err(e) => {
                     // Never start them afresh: the empty inventory would be
                     // saved over the real one.
@@ -794,10 +871,18 @@ impl Game {
             .unwrap_or_else(|| pl.arrival());
         // What the character's skills do to the body, from the first input.
         let effects = character.effects(&self.skills);
-        let state = PlayerState {
+        let mut state = PlayerState {
             body: effects.body(),
+            // Health lost goes with the character, wherever they start.
+            hurt,
+            // Never left lying defeated: one who left down comes back up.
+            down: false,
             ..state
         };
+        if state.hurt >= state.max_health() {
+            let back = (state.max_health() as f64 * combat::RETURN_HEALTH_SHARE).round() as u32;
+            state.hurt = state.max_health() - back.max(1);
+        }
         out.send(&ServerMsg::Welcome(Box::new(Welcome {
             player_id: id,
             account: name.clone(),
@@ -818,7 +903,7 @@ impl Game {
             claims: pl.claims.views(),
             // Plots bought with marks included (the client adds nothing).
             plot_allowance: self.cfg.plot_allowance.saturating_add(character.plots_bought),
-            creatures: bm_core::creatures::CreatureKinds::builtin().defs().to_vec(),
+            creatures: self.creature_kinds.defs().to_vec(),
         })));
         for (oid, other) in self.players.iter().filter(|(_, o)| o.planet == planet) {
             out.send(&ServerMsg::PlayerJoined {
@@ -885,6 +970,10 @@ impl Game {
                 effects,
                 character_dirty: false,
                 inner_light: false,
+                known: HashMap::new(),
+                in_view: Vec::new(),
+                near_creatures: Vec::new(),
+                defeated: false,
             },
         );
         self.tell_tokens(id);
@@ -999,6 +1088,7 @@ impl Game {
                 p.last_seq += 1;
                 p.last_input = input;
                 p.bank -= 1.0;
+                let fell = p.state.down && !p.defeated;
                 if (events.fired || events.released) && mining::roll(&mut self.rng) >= p.effects.wear_saved() {
                     let before = p.inventory.clone();
                     let mut broke = None;
@@ -1016,6 +1106,9 @@ impl Game {
                         p.out.send(&ServerMsg::Notice { text });
                     }
                 }
+                if fell {
+                    self.check_defeat(id, combat::BY_A_FALL);
+                }
             }
         }
     }
@@ -1025,6 +1118,19 @@ impl Game {
     /// overtake the break of the one before it.
     fn queue(&mut self, id: u32, at: u32, queued: Queued) {
         let Some(p) = self.players.get_mut(&id) else { return };
+        if queued.attack() {
+            // Sent about the planet they left, or too far ahead: dropped
+            // (the client hears nothing of its own attacks).
+            if p.travel_guard.is_some_and(|g| at <= g) {
+                return;
+            }
+            if at <= p.last_seq && p.edits.is_empty() {
+                self.apply_queued(id, queued);
+            } else if at <= p.last_seq + MAX_EDIT_LEAD && p.edits.len() < MAX_QUEUED_EDITS {
+                p.edits.push_back((at, queued));
+            }
+            return;
+        }
         let Some((seq, pos)) = queued.seq_pos() else {
             // A skill change belongs to no planet: travel does not void it.
             if at <= p.last_seq && p.edits.is_empty() {
@@ -1061,6 +1167,14 @@ impl Game {
             Queued::Edit { seq, pos, action } => self.edit(id, seq, pos, action),
             Queued::Swing { seq, at, pos, slot } => self.swing(id, seq, at, pos, slot),
             Queued::Skill { at, action } => self.skill(id, at, action),
+            Queued::Shoot {
+                at,
+                slot,
+                yaw,
+                pitch,
+                charge,
+            } => self.shoot(id, at, slot, yaw, pitch, charge),
+            Queued::Strike { at, creature, slot } => self.strike(id, at, creature, slot),
         }
     }
 
@@ -1210,18 +1324,29 @@ impl Game {
                 near.sort_by(|a, b| a.0.total_cmp(&b.0));
                 near.truncate(MAX_SEEN_PLAYERS);
                 let others: Vec<RemotePlayer> = near.into_iter().map(|(_, r)| r).collect();
-                let mut parts = others.chunks(PLAYERS_PER_SNAPSHOT).peekable();
-                if parts.peek().is_none() {
-                    self.send_snapshot(p, Vec::new());
+                // Players first; creatures fill what room is left, then go
+                // in snapshots of their own (`others` empty).
+                let mut creatures = &p.in_view[..];
+                let mut sent = false;
+                for part in others.chunks(PLAYERS_PER_SNAPSHOT) {
+                    let room = CREATURES_PER_SNAPSHOT * (PLAYERS_PER_SNAPSHOT - part.len()) / PLAYERS_PER_SNAPSHOT;
+                    let (now, rest) = creatures.split_at(room.min(creatures.len()));
+                    creatures = rest;
+                    self.send_snapshot(p, part.to_vec(), now.to_vec());
+                    sent = true;
                 }
-                for part in parts {
-                    self.send_snapshot(p, part.to_vec());
+                for part in creatures.chunks(CREATURES_PER_SNAPSHOT) {
+                    self.send_snapshot(p, Vec::new(), part.to_vec());
+                    sent = true;
+                }
+                if !sent {
+                    self.send_snapshot(p, Vec::new(), Vec::new());
                 }
             }
         }
     }
 
-    fn send_snapshot(&self, p: &Player, others: Vec<RemotePlayer>) {
+    fn send_snapshot(&self, p: &Player, others: Vec<RemotePlayer>, creatures: Vec<RemoteCreature>) {
         bm_net::send_datagram(
             &p.conn,
             &ServerDatagram::Snapshot {
@@ -1230,7 +1355,7 @@ impl Game {
                 ack: p.last_seq,
                 you: p.state,
                 others,
-                creatures: Vec::new(),
+                creatures,
             },
         );
     }
@@ -1451,6 +1576,9 @@ impl Game {
         let world = &planet.world;
         let shape = world.shape;
         let p = self.players.get_mut(&id).ok_or("no such player")?;
+        if p.state.down {
+            return Err("defeated".into());
+        }
         if p.edit_tokens < 1.0 {
             return Err("editing too fast".into());
         }
@@ -1704,6 +1832,9 @@ impl Game {
         p.sent.clear();
         p.wanted.clear();
         p.center = None;
+        // The client drops the old planet's creatures on `Travel`.
+        p.known.clear();
+        p.in_view.clear();
         let name = p.name.clone();
         let planet = &self.planets[to];
         p.out.send(&ServerMsg::Travel(Box::new(Travel {
@@ -2348,6 +2479,7 @@ impl Game {
             inventory: save_slots(items, inv),
             last_seen: now,
             character: c.clone().into(),
+            hurt: state.hurt,
         };
         let mut players: Vec<(String, PlayerData)> = self
             .players

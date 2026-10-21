@@ -80,7 +80,11 @@ const V2_STATIONS: TableDefinition<&[u8], &[u8]> = TableDefinition::new("station
 /// ([`SavedCharacter`]: XP, marks, skill pages); a station saves the craft
 /// XP its finished output holds for whoever collects it. Version 3 and 4
 /// players become level 1 with no XP, and their stations hold none.
-pub const SAVE_VERSION: u32 = 5;
+///
+/// 6 (M13): player data saves the health lost ([`PlayerData::hurt`]) and the
+/// character's XP debt from defeats ([`SavedCharacter::debt`]). Older players
+/// start unhurt with no debt.
+pub const SAVE_VERSION: u32 = 6;
 
 /// The universe file in the data directory.
 pub const UNIVERSE_FILE: &str = "universe.redb";
@@ -302,6 +306,8 @@ pub struct PlayerData {
     pub last_seen: u64,
     /// Levels, XP, marks and skill pages (save version 5).
     pub character: SavedCharacter,
+    /// Health lost (milestone 13, save version 6; 0: unhurt).
+    pub hurt: u32,
 }
 
 /// A character's progression as saved (`bm_core::skills::Character`).
@@ -318,6 +324,8 @@ pub struct SavedCharacter {
     pub switched_at: u64,
     /// Plots bought with marks.
     pub plots_bought: u32,
+    /// XP debt from defeats (save version 6).
+    pub debt: u64,
 }
 
 impl Default for SavedCharacter {
@@ -336,6 +344,7 @@ impl From<Character> for SavedCharacter {
             cleanses_used: c.cleanses_used,
             switched_at: c.switched_at,
             plots_bought: c.plots_bought,
+            debt: c.debt,
         }
     }
 }
@@ -362,7 +371,7 @@ impl From<SavedCharacter> for Character {
             cleanses_used: c.cleanses_used,
             switched_at: c.switched_at,
             plots_bought: c.plots_bought,
-            debt: 0,
+            debt: c.debt,
         }
     }
 }
@@ -482,12 +491,66 @@ mod v4 {
                 last_seen: p.last_seen,
                 // An untrained character: level 1, no XP.
                 character: SavedCharacter::default(),
+                hurt: 0,
             }
         }
     }
 }
 
 pub use v4::{PlayerData as V4PlayerData, SavedStation as V4SavedStation};
+
+/// The layouts save version 5 wrote for players, kept only to read them for
+/// the upgrade.
+mod v5 {
+    use super::*;
+
+    #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+    pub struct SavedCharacter {
+        pub xp: u64,
+        pub marks: u32,
+        pub pages: Vec<Vec<(String, u8)>>,
+        pub active: u8,
+        pub cleanses_used: u32,
+        pub switched_at: u64,
+        pub plots_bought: u32,
+    }
+
+    #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+    pub struct PlayerData {
+        pub planet: u16,
+        pub state: Option<SavedBody>,
+        pub inventory: Vec<Option<SavedStack>>,
+        pub last_seen: u64,
+        pub character: SavedCharacter,
+    }
+
+    impl From<PlayerData> for super::PlayerData {
+        fn from(p: PlayerData) -> Self {
+            let c = p.character;
+            Self {
+                planet: p.planet,
+                state: p.state,
+                inventory: p.inventory,
+                last_seen: p.last_seen,
+                character: super::SavedCharacter {
+                    xp: c.xp,
+                    marks: c.marks,
+                    pages: c.pages,
+                    active: c.active,
+                    cleanses_used: c.cleanses_used,
+                    switched_at: c.switched_at,
+                    plots_bought: c.plots_bought,
+                    // No defeats before creatures.
+                    debt: 0,
+                },
+                // Unhurt: there was no health before.
+                hurt: 0,
+            }
+        }
+    }
+}
+
+pub use v5::{PlayerData as V5PlayerData, SavedCharacter as V5SavedCharacter};
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct SavedClaim {
@@ -739,12 +802,16 @@ impl Store {
                 let u = if u.save_version < SAVE_VERSION {
                     let from = u.save_version;
                     let tx = self.db.begin_write()?;
-                    let stations = if from == 3 {
-                        upgrade_3_to_4(&tx)?
-                    } else {
-                        upgrade_stations_4_to_5(&tx)?
+                    let stations = match from {
+                        3 => upgrade_3_to_4(&tx)?,
+                        4 => upgrade_stations_4_to_5(&tx)?,
+                        _ => 0,
                     };
-                    let players = upgrade_players_4_to_5(&tx)?;
+                    let players = if from <= 4 {
+                        upgrade_players(&tx, from, |b| postcard::from_bytes::<v4::PlayerData>(b).map(Into::into))?
+                    } else {
+                        upgrade_players(&tx, from, |b| postcard::from_bytes::<v5::PlayerData>(b).map(Into::into))?
+                    };
                     let u = UniverseMeta {
                         save_version: SAVE_VERSION,
                         ..u
@@ -752,9 +819,14 @@ impl Store {
                     tx.open_table(META)?
                         .insert("universe", postcard::to_stdvec(&u)?.as_slice())?;
                     tx.commit()?;
+                    let characters = if from <= 4 {
+                        "start at level 1"
+                    } else {
+                        "keep their progress"
+                    };
                     tracing::info!(
                         "upgraded the universe from save version {from} to {SAVE_VERSION} ({stations} stations, \
-                         {players} characters start at level 1)"
+                         {players} characters {characters}, unhurt and with no XP debt)"
                     );
                     u
                 } else {
@@ -1160,11 +1232,18 @@ fn upgrade_stations_4_to_5(tx: &WriteTransaction) -> Result<usize> {
     Ok(n)
 }
 
-/// Version 5 saves each character's progression: every version 3 or 4
-/// player (the same layout) becomes level 1 with no XP, keeping everything
-/// else. A row that does not read is left untouched and reported (its login
-/// then fails cleanly rather than starting afresh over it).
-fn upgrade_players_4_to_5(tx: &WriteTransaction) -> Result<usize> {
+/// Rewrites every player row in the current layout: `read` decodes one in
+/// the layout of save version `from`. Version 5 saved each character's
+/// progression (a version 3 or 4 player, the same layout, becomes level 1
+/// with no XP, keeping everything else); version 6 adds health lost and XP
+/// debt (older players start unhurt with no debt). A row that does not read
+/// is left untouched and reported (its login then fails cleanly rather than
+/// starting afresh over it).
+fn upgrade_players(
+    tx: &WriteTransaction,
+    from: u32,
+    read: impl Fn(&[u8]) -> Result<PlayerData, postcard::Error>,
+) -> Result<usize> {
     let mut t = tx.open_table(PLAYER_DATA)?;
     let old: Vec<(String, Vec<u8>)> = t
         .iter()?
@@ -1172,13 +1251,12 @@ fn upgrade_players_4_to_5(tx: &WriteTransaction) -> Result<usize> {
         .collect::<Result<_, _>>()?;
     let mut n = 0;
     for (key, v) in old {
-        match postcard::from_bytes::<v4::PlayerData>(&v) {
-            Ok(p) => {
-                let new: PlayerData = p.into();
+        match read(&v) {
+            Ok(new) => {
                 t.insert(key.as_str(), postcard::to_stdvec(&new)?.as_slice())?;
                 n += 1;
             }
-            Err(e) => tracing::error!("version 4 player data of `{key}` is corrupt ({e}); left as it was"),
+            Err(e) => tracing::error!("version {from} player data of `{key}` is corrupt ({e}); left as it was"),
         }
     }
     Ok(n)
@@ -1306,6 +1384,7 @@ fn upgrade_2_to_3(tx: &WriteTransaction, meta: &v2::PlanetMeta, kinds: &PlanetKi
                         inventory: p.inventory,
                         last_seen: p.last_seen,
                         character: SavedCharacter::default(),
+                        hurt: 0,
                     };
                     t.insert(key.as_str(), postcard::to_stdvec(&new)?.as_slice())?;
                     report.players += 1;
@@ -1604,7 +1683,9 @@ mod tests {
                             cleanses_used: 2,
                             switched_at: 99,
                             plots_bought: 4,
+                            debt: 321,
                         },
+                        hurt: 77,
                     },
                 )],
                 stations: vec![(2, spot, Some(station.clone()))],
@@ -1926,6 +2007,118 @@ mod tests {
             "reopens without upgrading again"
         );
         assert_eq!(s.player("alice").unwrap().unwrap(), want);
+    }
+
+    /// A version 5 universe (M12) opens: every character keeps its level,
+    /// marks and pages, and starts unhurt with no XP debt; stations are as
+    /// they were; it is marked version 6 and reopens as it is.
+    #[test]
+    fn a_version_5_universe_keeps_progress_and_starts_unhurt() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("u.redb");
+        let stack = SavedStack {
+            item: "stone".into(),
+            count: 3,
+            wear: 0,
+        };
+        let old_player = V5PlayerData {
+            planet: 1,
+            state: Some(SavedBody {
+                pos: DVec3::new(4.0, 5.0, 6.0),
+                vel: DVec3::ZERO,
+                on_ground: true,
+            }),
+            inventory: vec![Some(stack.clone()), None],
+            last_seen: 1_700_000_123,
+            character: V5SavedCharacter {
+                xp: 54_321,
+                marks: 90,
+                pages: vec![vec![("power".into(), 2)]],
+                active: 0,
+                cleanses_used: 1,
+                switched_at: 7,
+                plots_bought: 3,
+            },
+        };
+        let station = SavedStation {
+            kind: Station::Furnace,
+            jobs: vec![],
+            started: 5,
+            output: vec![Some(stack.clone())],
+            fuel: None,
+            heat: 40,
+            waiting: false,
+            xp: 9,
+        };
+        let spot = BlockPos::new(3, -4, 5);
+        {
+            let s = Store::open(&path).unwrap();
+            let tx = s.db.begin_write().unwrap();
+            tx.open_table(META)
+                .unwrap()
+                .insert(
+                    "universe",
+                    postcard::to_stdvec(&UniverseMeta {
+                        save_version: 5,
+                        chunk_format: CHUNK_FORMAT_VERSION,
+                    })
+                    .unwrap()
+                    .as_slice(),
+                )
+                .unwrap();
+            {
+                let mut t = tx.open_table(PLAYER_DATA).unwrap();
+                t.insert("alice", postcard::to_stdvec(&old_player).unwrap().as_slice())
+                    .unwrap();
+                t.insert("broken", [0xffu8; 2].as_slice()).unwrap();
+                let mut t = tx.open_table(STATIONS).unwrap();
+                t.insert(
+                    block_key(1, spot).as_slice(),
+                    postcard::to_stdvec(&station).unwrap().as_slice(),
+                )
+                .unwrap();
+            }
+            tx.commit().unwrap();
+        }
+        let s = Store::open(&path).unwrap();
+        assert!(s.universe(&kinds()).unwrap().is_none());
+        let p = s.player("alice").unwrap().unwrap();
+        assert_eq!(
+            (p.planet, p.state, p.inventory.clone()),
+            (1, old_player.state, old_player.inventory.clone())
+        );
+        assert_eq!(p.hurt, 0, "unhurt");
+        let c: Character = p.character.clone().into();
+        assert_eq!((c.xp, c.marks, c.cleanses_used, c.plots_bought), (54_321, 90, 1, 3));
+        assert_eq!(c.pages[0].rank("power"), 2);
+        assert_eq!(c.debt, 0, "no debt");
+        assert!(s.player("broken").is_err(), "left as it was");
+        assert_eq!(s.stations(1).unwrap(), vec![(spot, station)], "stations unchanged");
+        drop(s);
+        let s = Store::open(&path).unwrap();
+        assert!(
+            s.universe(&kinds()).unwrap().is_none(),
+            "reopens without upgrading again"
+        );
+        assert_eq!(s.player("alice").unwrap().unwrap(), p);
+        // Health and debt are kept from now on.
+        s.write(&WriteBatch {
+            players: vec![(
+                "alice".into(),
+                PlayerData {
+                    hurt: 250,
+                    character: SavedCharacter {
+                        debt: 75,
+                        ..p.character.clone()
+                    },
+                    ..p.clone()
+                },
+            )],
+            ..Default::default()
+        })
+        .unwrap();
+        let p = s.player("alice").unwrap().unwrap();
+        assert_eq!((p.hurt, p.character.debt), (250, 75));
     }
 
     /// A universe saved before chunk format 2 opens (old chunks still decode)

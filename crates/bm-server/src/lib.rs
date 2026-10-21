@@ -19,6 +19,7 @@ pub mod store;
 pub mod world;
 
 use anyhow::{Context, Result};
+use bm_core::creatures::CreatureKinds;
 use bm_core::{BlockRegistry, ItemRegistry, RecipeBook};
 use bm_net::quinn::Endpoint;
 use bm_worldgen::PlanetKinds;
@@ -118,6 +119,21 @@ pub fn start(cfg: ServerConfig) -> Result<RunningServer> {
         None => ItemRegistry::builtin(&registry),
     };
     let recipes = RecipeBook::builtin(&items);
+    // Creatures are data (milestone 13): every drop must be an item, and
+    // every placed creature a kind, or the server does not start.
+    let creatures = match &cfg.creatures {
+        Some(path) => {
+            let toml = std::fs::read_to_string(path).with_context(|| format!("reading {}", path.display()))?;
+            CreatureKinds::from_toml(&toml).with_context(|| format!("creature catalogue {}", path.display()))?
+        }
+        None => CreatureKinds::builtin(),
+    };
+    creatures.check_items(|n| items.id(n).is_ok())?;
+    for c in &cfg.placed_creatures {
+        if creatures.id(&c.kind).is_none() {
+            anyhow::bail!("placed creature `{}` is not in the creature catalogue", c.kind);
+        }
+    }
     let kinds = PlanetKinds::builtin(&registry);
     for spec in &cfg.planets {
         if kinds.get(&spec.kind).is_none() {
@@ -181,7 +197,7 @@ pub fn start(cfg: ServerConfig) -> Result<RunningServer> {
     let held = store.clone();
     let start = cfg.start_planet;
     let game = game::Game::new(
-        cfg, planets, start, next_claim, items, recipes, store, writer_tx, events_rx,
+        cfg, planets, start, next_claim, items, recipes, creatures, store, writer_tx, events_rx,
     )?;
     let load = game.load_handle();
     let running = Arc::new(AtomicBool::new(true));

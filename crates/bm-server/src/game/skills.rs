@@ -151,6 +151,10 @@ impl Game {
             Ok(()) => {
                 p.effects = c.effects(tree);
                 p.state.body = p.effects.body();
+                // Less max health (a page without Toughness): never below 1.
+                if !p.state.down {
+                    p.state.hurt = p.state.hurt.min(p.state.max_health() - 1);
+                }
                 p.character = c;
                 p.character_dirty = false;
                 tracing::debug!("{} skill action {action:?} at input {at}", p.name);
