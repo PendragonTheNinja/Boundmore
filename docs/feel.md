@@ -98,6 +98,23 @@ Not built yet, from Boundless: the better torch (tallow and sackcloth, at a work
 | Relic seam | as common as copper about 0.7 to 1 | **Guess** |
 | A plant whose ground breaks | falls, its drops to the breaker | **Guess** |
 
+## Skills and progression (`bm-core/src/skills.rs`, `assets/skills.toml`; M12)
+
+Boundless's live tree and tables exactly (Nathan, 2026-10-20), in Boundmore's names. Guesses:
+
+| Value | Now | Source, or guess |
+|---|---|---|
+| Levels, points, marks, cleanses, pages (600), resets (800), plots (30) | Boundless's tables | Boundless, exact |
+| XP per block, per craft | Boundless's per-block and per-recipe data | exact; wayshard mining 64 and gathering objects scaled by tier are **guesses** |
+| Stamina (Zeal) | +150 max energy a rank | **Guess** (a player saw 1,933 at full Zeal) |
+| Deep Reserves (energy epic) | +4,000 max energy | Testing 194 notes, unconfirmed |
+| Second Wind (energy regeneration epic) | +900 a second | Boundless tooltip |
+| Hammer and shovel-and-axe epics' action speed | +12 | **Guess** at the split of players' "+22 from tool skills" |
+| Careful Hands (durability epic) | 30% of swings do not wear | low confidence |
+| Inner Light (light epic) | light 10 around you, off outdoors in daylight | **Guess** at the radius |
+| Spring (high jump) | 2 blocks higher | players, medium |
+| Second Leap (double jump) | 0.7 of a jump's speed in mid-air | **Guess** |
+
 ## World (`bm-server/src/config.rs`, `bm-worldgen`)
 
 | Value | Now | Check |

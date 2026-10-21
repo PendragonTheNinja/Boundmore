@@ -103,7 +103,22 @@ Death XP debt (combat), Vitality and health, Intelligence, endurance and explora
 
 ## Status
 
-- [x] Spec (this file)
-- [x] Contract and data (2026-10-21)
-- [ ] Core rules, server, client
-- [ ] Integrated, tested, Nathan's play-test
+*Built 2026-10-21 on branch `claude/amazing-pascal-lwttor`; awaiting merge and Nathan's play-test.*
+
+- [x] Spec, contract and data (protocol 16); Nathan's answers (marks only by levelling, plots for 30 marks, the portal epic required)
+- [x] Server (`crates/bm-server/src/game/skills.rs`, `store.rs`):
+  - **Characters** are saved per account in the same batch as everything else; `SAVE_VERSION` 5 (version 3 and 4 universes upgrade, every character starting at level 1). Saved characters are cleaned on load: unknown skills dropped, ranks capped, overspent pages cleared.
+  - **XP** comes from breaking (gathering objects times the tier's health multiplier), from placing inside your own claim, and from hand crafts at once. Station crafts bank their XP in the station for whoever collects.
+  - **Updates**: character updates go out at most 4 a second, and a level-up sends a notice.
+  - **Skill actions** run on the input timeline and set the body right after their input.
+  - **Effects**: the shared `mining::skilled_tool` (damage, action speed, crit), reach (`cfg.reach` + Control), luck on bonus chances, wear saved with Careful Hands, crafting gates ("Needs Toolmaking 1"), Fine Hands precise cuts, Inner Light (off outdoors in daylight), the portal epic (`portal_epic_required`, default true), plot allowance + plots bought.
+- [x] Client (`skills.rs`, `skill_screen.rs`):
+  - Predicted character changes are checked by the same rules, the body is applied per input in the predictor, and the snapshot check includes the body.
+  - The skill screen (K) shows level, XP, points, cleanses, marks, plot buying, pages, reset, the categories in Boundless's order and skill cards (either/or and "Comes later" greyed).
+  - Swing prediction uses the shared `skilled_tool`. Reach adds Control, Fine Hands works, Inner Light glows, and gated recipes are greyed.
+  - A hairline XP bar sits under the hotbar; `--demo-ui skills`; screenshot `docs/media/m12-skills.png`.
+- [x] Integrated: 429 tests, fmt and clippy clean; upgrade check from `main` (characters start at level 1, players kept); a live run showed a new character's skill screen against a real server. The energy test now waits for a snapshot covering its inputs (it raced on a busy machine).
+- [ ] Nathan's play-test. To judge: levelling pace against Boundless; the guessed numbers in `docs/feel.md` (Stamina +150 a rank, Deep Reserves +4000, the hammer epic's +12 action speed, Careful Hands 30%, Inner Light 10, the double jump's height).
+- Follow-ups:
+  - Inner Light is not switched off in daylight on the client (others see the server's choice).
+  - Station XP goes to whoever collects.
