@@ -177,6 +177,9 @@ pub enum SkillAction {
     /// Make this page active (free inside your own claim, else once per 15
     /// minutes).
     SwitchPage(u8),
+    /// Buy this many plots (1 to 80) for 30 marks each; they add to the
+    /// account's plot allowance (Nathan, 2026-10-21).
+    BuyPlots(u16),
 }
 
 /// A slot in the inventory or in an open storage block.
