@@ -3,7 +3,7 @@
 
 use crate::chat::{ChatAction, ChatBox};
 use crate::claims::{Claims, outline};
-use crate::combat::{Anchor, Defeat, FireMode, Floaters, Losses, Shots, Trigger};
+use crate::combat::{Anchor, Defeat, FireMode, Floaters, Fuse, Losses, Shots, Trigger};
 use crate::creatures::{Creatures, Seen};
 use crate::icons::icon_for;
 use crate::items::Items;
@@ -48,6 +48,10 @@ const NEED_A_TOOL: &str = "You need a tool to break blocks. A hand stone needs n
 
 /// Said when attacking a creature with nothing to fight with.
 const NEED_A_WEAPON: &str = "Hold a tool or a sling to fight";
+/// `--demo-ui bombs` holds the attack button this long out of every
+/// `DEMO_BOMB_CYCLE` seconds: a bomb lit, held, thrown, and the blast.
+const DEMO_BOMB_HOLD: f64 = 2.4;
+const DEMO_BOMB_CYCLE: f64 = 4.2;
 /// Creatures are aimed at this far (when nearer than the terrain behind).
 const CREATURE_AIM: f64 = 40.0;
 /// Where the eye sits above the feet while down (defeated).
@@ -184,6 +188,10 @@ struct Session {
     aim_creature: Option<(u32, f64)>,
     /// The sling's trigger, on the swing cooldown (`swinger`).
     trigger: Trigger,
+    /// A bag of bombs' trigger, on the same cooldown.
+    fuse: Fuse,
+    /// Blasts and beams being drawn.
+    fx: crate::effects::Effects,
     /// Shots in the air, ours and others'.
     shots: Shots,
     /// Damage numbers floating up.
@@ -235,6 +243,8 @@ impl Session {
             seen: Vec::new(),
             aim_creature: None,
             trigger: Trigger::default(),
+            fuse: Fuse::default(),
+            fx: crate::effects::Effects::default(),
             shots: Shots::default(),
             floaters: Floaters::default(),
             losses,
@@ -298,6 +308,8 @@ impl Session {
         self.seen.clear();
         self.aim_creature = None;
         self.shots.clear();
+        self.fuse.reset();
+        self.fx.clear();
         self.losses.reset(t.spawn.hurt);
         self.last_hurt = t.spawn.hurt;
         self.me.teleport(t.spawn);
@@ -723,7 +735,11 @@ impl Session {
             let t = k.tier(c.tier);
             out.push(crate::fight_hud::Plate {
                 at,
-                title: k.title(c.tier),
+                title: if c.exotic != 0 {
+                    format!("Exotic {}", k.title(c.tier))
+                } else {
+                    k.title(c.tier)
+                },
                 angry: c.angry,
                 left: 1.0 - c.damage.min(t.health) as f32 / t.health.max(1) as f32,
                 shields: t.armour / 100,
@@ -819,6 +835,10 @@ pub struct App {
     /// A left click not yet seen by the attack code (a sling's click must
     /// count however short).
     attack_pending: bool,
+    /// `--demo-ui bombs`: the attack button is held on a cycle, and whether
+    /// it was last frame.
+    demo_bombs: bool,
+    demo_was_held: bool,
     /// `--demo-ui`: where to put us once the block its hook holds exists.
     demo_pose: Option<bm_core::PlayerState>,
     grabbed: bool,
@@ -873,6 +893,8 @@ impl App {
             mouse: [false; 2],
             fire_pending: false,
             attack_pending: false,
+            demo_bombs: false,
+            demo_was_held: false,
             demo_pose: None,
             grabbed: false,
             yaw: 0.0,
@@ -1360,8 +1382,12 @@ impl App {
         let Some(s) = &mut self.session else { return };
         match m {
             ServerMsg::Creature(v) => s.creatures.view(v),
-            // Milestone 13 part 2 (client work to come).
-            ServerMsg::Blast { .. } | ServerMsg::Beam { .. } => {}
+            ServerMsg::Blast { pos, radius } => {
+                let pos = DVec3::from_array(pos.map(|v| v as f64));
+                s.shots.blast(pos, radius as f64, s.world.shape);
+                s.fx.blast(pos, radius, now);
+            }
+            ServerMsg::Beam { from, to, ticks } => s.fx.beam(from, DVec3::from_array(to.map(|v| v as f64)), ticks, now),
             ServerMsg::CreatureGone { id } => s.creatures.gone(id),
             ServerMsg::Shot(v) => s.shots.server(&v),
             ServerMsg::ShotEnd { id } => s.shots.end(id),
@@ -1500,9 +1526,13 @@ impl App {
         };
         let claim_mode = self.claim_mode;
         // A press of the attack button, however short (a sling's click).
-        let pressed = std::mem::take(&mut self.attack_pending) && playing && !claim_mode;
+        let mut pressed = std::mem::take(&mut self.attack_pending) && playing && !claim_mode;
         let (yaw, pitch) = (self.yaw, self.pitch);
         let now_s = self.now();
+        // `--demo-ui bombs`: a hand on the button, on a cycle.
+        let demo_held = self.demo_bombs && now_s % DEMO_BOMB_CYCLE < DEMO_BOMB_HOLD;
+        pressed |= demo_held && !self.demo_was_held;
+        self.demo_was_held = demo_held;
         let Some(s) = &mut self.session else { return };
         let Some(link) = &mut self.link else { return };
         s.update_journey(now_s);
@@ -1568,6 +1598,23 @@ impl App {
         {
             let (world, creatures, seen) = (&s.world, &s.creatures, &s.seen);
             let solid = |p: BlockPos| world.block(p).is_some_and(|b| world.flags.solid(b));
+            // Where a homing bolt steers: its target's chest. Ours is where
+            // we are now; everyone else is where we draw them.
+            let chest = s.movement.eye_height - 0.6;
+            let me = (s.player_id, s.me.state.pos + DVec3::new(0.0, chest, 0.0));
+            let remotes = s.remotes.sample(local, shape);
+            let target = |t: Target| match t {
+                Target::Player(id) if id == me.0 => Some(me.1),
+                Target::Player(id) => remotes
+                    .iter()
+                    .find(|r| r.0 == id)
+                    .map(|r| r.1.pos + DVec3::new(0.0, chest, 0.0)),
+                Target::Creature(id) => seen.iter().find(|c| c.id == id).and_then(|c| {
+                    creatures
+                        .kind(c.kind)
+                        .map(|k| c.pos + DVec3::new(0.0, k.height as f64 * 0.5, 0.0))
+                }),
+            };
             let creature = |a: DVec3, b: DVec3| {
                 seen.iter().filter(|c| !c.dead).any(|c| {
                     creatures
@@ -1576,10 +1623,11 @@ impl App {
                 })
             };
             for _ in 0..ticks {
-                s.shots.tick(shape, solid, creature);
+                s.shots.tick(shape, solid, creature, target);
             }
         }
         s.floaters.update(now_s);
+        s.fx.update(now_s);
         if let Some(fall) = s.losses.observe(s.me.state.hurt, now_s) {
             s.floaters.add(Anchor::Me, fall, false, true, now_s);
         }
@@ -1701,9 +1749,43 @@ impl App {
         })
         .map_or(CREATURE_AIM, |h| h.distance);
         s.aim_creature = s.creatures.pick(&s.seen, eye, dir, terrain, s.world.shape, false);
-        let attack_held = mouse[0];
-        if let Some(l) = sling.filter(|_| !s.me.state.down && !s.travelling() && !claim_mode) {
+        let attack_held = mouse[0] || demo_held;
+        let bomb = held.and_then(|h| s.items.def(&h)).and_then(|d| d.bomb());
+        if let Some(b) = bomb.filter(|_| !s.me.state.down && !s.travelling() && !claim_mode) {
+            // A bag of bombs: hold to light, let go to throw (a fuse run out
+            // in hand throws it too), on the shared cooldown.
             mouse[0] = false;
+            s.trigger.reset();
+            let skilled = effects.skilled_bomb(&b);
+            if let Some(toss) = s
+                .fuse
+                .update(pressed, attack_held, s.swinger.ready_at(), first_seq, s.me.seq)
+            {
+                s.swinger.swung(toss.at, swing_ticks(skilled.action_speed));
+                // Spent at the throw, as the server will; too tired, it is
+                // still sent (the server restarts the pause too) but nothing
+                // is thrown.
+                let spent =
+                    s.me.spend(toss.at, skilled.energy, &s.movement, s.world.shape, &s.world);
+                link.send(ClientMsg::Throw {
+                    at: toss.at,
+                    slot: slot as u8,
+                    yaw: input.yaw,
+                    pitch: input.pitch,
+                    hold: toss.hold,
+                });
+                if spent {
+                    s.shots.throw(
+                        s.me.state.eye(&s.movement),
+                        bm_core::movement::look_dir(input.yaw, input.pitch),
+                        bm_core::combat::throw_speed(toss.hold as u32, skilled.throw_speed),
+                        bm_core::combat::BOMB_FUSE_TICKS.saturating_sub(toss.hold as u32),
+                    );
+                }
+            }
+        } else if let Some(l) = sling.filter(|_| !s.me.state.down && !s.travelling() && !claim_mode) {
+            mouse[0] = false;
+            s.fuse.reset();
             let skilled = effects.skilled_sling(&l);
             let mode = FireMode::of(&effects);
             if let Some(fire) = s
@@ -1735,6 +1817,7 @@ impl App {
             }
         } else {
             s.trigger.reset();
+            s.fuse.reset();
             if attack_held
                 && let Some((id, distance)) = s.aim_creature
                 && distance <= s.reach()
@@ -1943,6 +2026,12 @@ impl App {
                         plates: &plates,
                         numbers: &numbers,
                         charge: s.trigger.charge(s.me.seq),
+                        fuse: s.fuse.burned(s.me.seq).map(|burned| {
+                            let held = s.fuse.held_for(s.me.seq).unwrap_or(0);
+                            let power = held.min(bm_core::combat::THROW_FULL_TICKS) as f32
+                                / bm_core::combat::THROW_FULL_TICKS as f32;
+                            (burned, power)
+                        }),
                         defeat: s.defeat.details(),
                     },
                 );
@@ -2116,6 +2205,7 @@ impl App {
         let alpha = self.accumulator / TICK_DT;
         let local = self.local_ticks();
         let time = self.start.elapsed().as_secs_f32();
+        let now = self.now();
         let (yaw, pitch) = (self.yaw, self.pitch);
         let Some(s) = &self.session else {
             // Nothing to draw yet: an empty sky behind the login screen.
@@ -2147,6 +2237,8 @@ impl App {
         let sky = Sky::at(&s.planet.day, &s.planet.look, s.sky_tick(local));
         let planets = sky.planets(&s.universe, s.planet.id);
         let eye = s.render_eye(alpha);
+        // A blast nearby shakes the camera.
+        let eye = shape.wrap_point(eye + s.fx.shake(eye, shape, now));
         let camera = Camera {
             eye,
             yaw,
@@ -2176,29 +2268,39 @@ impl App {
         // Creatures, lit where they stand, coats leaning to the planet's colour.
         let light = |p: DVec3| BoxInstance::light_of(s.world.light_at(p));
         boxes.extend(s.creatures.boxes(&s.seen, eye, shape, s.planet.look.color, light));
-        // Shots: small glowing pellets with a short trail. Ours start at the
-        // eye, so they show once clear of it.
-        for (pos, dir, mine) in s.shots.drawn(alpha) {
-            let rel = shape.nearest_lap(eye, pos) - eye;
-            if mine && rel.length() < 0.9 {
+        // Shots by their kind: pellets with a short trail, bolts, homing
+        // orbs and bombs. Ours start at the eye, so they show once clear of it.
+        for shot in s.shots.drawn(alpha) {
+            let rel = shape.nearest_lap(eye, shot.pos) - eye;
+            if shot.mine && rel.length() < 0.9 {
                 continue;
             }
-            let colour = if mine { SHOT_OURS } else { SHOT_THEIRS };
-            for i in 0..4 {
-                let fade = 1.0 - i as f32 * 0.24;
-                let c = [colour[0] * fade, colour[1] * fade, colour[2] * fade, 1.0];
-                let at = (rel - dir * (i as f64 * 0.16)).as_vec3();
-                boxes.push(BoxInstance::new(at, Vec3::splat(0.065 * fade), c, [1.0, 0.0, 1.0, 1.0]));
-            }
+            crate::effects::shot_boxes(&mut boxes, rel.as_vec3(), &shot, time, light(shot.pos));
         }
-        // The sling in hand, low and to the right.
+        // Blasts and beams; a beam shines from its drifter's face.
+        boxes.extend(s.fx.boxes(eye, shape, now, |id| {
+            let c = s.seen.iter().find(|c| c.id == id)?;
+            let k = s.creatures.kind(c.kind)?;
+            Some(c.pos + DVec3::new(0.0, k.height as f64 * 0.45, 0.0))
+        }));
+        // The sling or the bag of bombs in hand, low and to the right.
         if let Some(def) = s.items.slot(s.selected).and_then(|h| s.items.def(&h))
-            && def.sling().is_some()
             && !s.me.state.down
         {
             let turn = glam::Quat::from_rotation_y(-yaw as f32) * glam::Quat::from_rotation_x(pitch as f32);
             let hand = turn * Vec3::new(0.3, -0.3, -0.55);
-            boxes.extend(held_sling(&def.name, turn, hand, light(eye)));
+            if def.sling().is_some() {
+                boxes.extend(held_sling(&def.name, turn, hand, light(eye)));
+            } else if def.bomb().is_some() {
+                boxes.extend(crate::effects::held_bombs(
+                    &def.name,
+                    s.fuse.burned(s.me.seq),
+                    time,
+                    turn,
+                    hand,
+                    light(eye),
+                ));
+            }
         }
         let (mut lines, xray) = self.claim_lines(eye);
         // Grapple ropes: ours from just below and right of the eye (where a
@@ -2254,7 +2356,9 @@ impl App {
             ));
         }
         if let Some(r) = &mut self.renderer {
-            r.set_point_lights(&s.held_lights(&remotes, &camera));
+            let mut lights = s.held_lights(&remotes, &camera);
+            lights.extend(s.fx.lights(now));
+            r.set_point_lights(&lights);
         }
         let highlight = if self.claim_mode || s.chisel.is_some() {
             None
@@ -2398,16 +2502,22 @@ impl App {
                 (self.yaw, self.pitch) = (0.0, -0.45);
             }
             // One of each creature on level ground, a stone sling in hand;
-            // or just defeated by a Hardy Grazer, the defeat screen up.
-            "creatures" | "defeat" => {
+            // or just defeated by a Hardy Grazer, the defeat screen up; or
+            // a bag of bombs in hand, lit and thrown on a cycle, with blasts
+            // going off among the creatures.
+            "creatures" | "defeat" | "bombs" => {
                 let down = screen == "defeat";
+                let bombs = screen == "bombs";
                 if let Some(Link::Demo(d)) = &mut self.link {
                     if down {
                         d.show_defeat();
+                    } else if bombs {
+                        d.show_bombs();
                     } else {
                         d.show_creatures();
                     }
                 }
+                self.demo_bombs = bombs;
                 if let Some(s) = &mut self.session {
                     let mut at = bm_core::PlayerState {
                         pos: DVec3::from_array(crate::demo::FIGHT_VIEW),
@@ -2421,7 +2531,7 @@ impl App {
                     s.me.teleport(at);
                     s.losses.reset(at.hurt);
                     s.last_hurt = at.hurt;
-                    s.selected = 8;
+                    s.selected = if bombs { 7 } else { 8 };
                 }
                 (self.yaw, self.pitch) = (0.0, -0.16);
             }
@@ -2617,10 +2727,6 @@ impl App {
         }
     }
 }
-
-/// Shot colours (linear): ours a pale gold, everyone else's ember.
-const SHOT_OURS: [f32; 4] = [1.0, 0.78, 0.36, 1.0];
-const SHOT_THEIRS: [f32; 4] = [1.0, 0.32, 0.08, 1.0];
 
 /// A sling held in hand: a forked frame, its band and pouch, in the
 /// material the sling is made of; `turn` is the camera's, `hand` where it

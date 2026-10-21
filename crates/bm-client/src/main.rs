@@ -10,6 +10,7 @@ mod colour;
 mod combat;
 mod creatures;
 mod demo;
+mod effects;
 mod fight_hud;
 mod icons;
 mod items;

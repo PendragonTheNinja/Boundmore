@@ -182,11 +182,27 @@ impl Items {
                 }
             }
             ItemKind::Bomb(b) => {
+                lines.push("Hold to light, let go to throw".into());
                 lines.push(format!(
-                    "Hold to light, let go to throw: {} damage within {} blocks",
+                    "{} damage within {} blocks, half at the edge",
                     b.damage,
                     trim_float(b.radius)
                 ));
+                // The true cadence, as thrown: whole ticks between throws.
+                let per_second = bm_core::TICK_HZ as f32 / bm_core::mining::swing_ticks(b.action_speed) as f32;
+                lines.push(format!("{} throws a second", trim_float(per_second)));
+                lines.push(format!(
+                    "A tap drops it at your feet; the fuse burns {} seconds",
+                    trim_float(bm_core::combat::BOMB_FUSE_TICKS as f32 / bm_core::TICK_HZ as f32)
+                ));
+                if b.crit_chance > 0.0 {
+                    lines.push(format!(
+                        "{}% chance of a critical hit, {} times the damage",
+                        trim_float(b.crit_chance * 100.0),
+                        trim_float(1.0 + b.crit_effect)
+                    ));
+                }
+                lines.push(format!("{} energy a throw", b.energy));
                 if let Some((left, total)) = self.durability(stack) {
                     lines.push(format!("{left} of {total} throws left"));
                 }
@@ -482,7 +498,20 @@ mod tests {
             stone.contains("6 energy a shot") && !stone.contains("critical"),
             "{stone}"
         );
-        for t in [iron, hand, torch, sling, stone] {
+        let mut bag = stack(&i, "copper_bombs", 1).unwrap();
+        bag.wear = 10;
+        let bombs = i.tooltip(&bag);
+        let per_second = bm_core::TICK_HZ as f32 / bm_core::mining::swing_ticks(50.0) as f32;
+        assert!(
+            bombs.starts_with("Bag of Copper Bombs\nHold to light, let go to throw\n")
+                && bombs.contains("900 damage within 3 blocks")
+                && bombs.contains(&format!("{} throws a second", trim_float(per_second)))
+                && bombs.contains("the fuse burns 3 seconds")
+                && bombs.contains("90 energy a throw")
+                && bombs.contains("190 of 200 throws left"),
+            "{bombs}"
+        );
+        for t in [iron, hand, torch, sling, stone, bombs] {
             assert!(!t.contains('\u{2014}'));
         }
     }

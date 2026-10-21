@@ -16,11 +16,19 @@
 //! - the **pelter**, a low lizard on splayed legs with ember spines, a jaw that
 //!   opens and a banded rattle tail that shakes as it takes aim;
 //! - the **dasher**, a tall bird on long amber legs with a slender neck, tail
-//!   plumes and a three-feather crest.
+//!   plumes and a three-feather crest;
+//! - the **popper** (part 2), a round, bouncy lump of soot cracked with
+//!   embers, on stubby legs, with a wick for a tuft: it hops as it walks,
+//!   tucks into an armoured ball when curled, and when lit glows and pulses
+//!   faster and faster with an O-mouthed whistle and a sparking wick;
+//! - the **drifter** (part 2), a floating bronze-rimmed bell with a glowing
+//!   lantern face and six jointed tentacles that splay on the ground at rest
+//!   and sway beneath it in flight.
 //!
 //! Each wears grey armour plates by tier (one more a tier, up to four), and
 //! its coat leans a little towards the planet's colour, as Boundless tinted
-//! its creatures from the biome.
+//! its creatures from the biome. Exotics wear glowing violet markings and a
+//! ring of motes (`EXOTIC`).
 
 use crate::predict::{INTERP_DELAY_TICKS, lerp_angle};
 use crate::render::BoxInstance;
@@ -64,6 +72,8 @@ pub struct Seen {
     pub angry: bool,
     /// Health lost.
     pub damage: u32,
+    /// Exotic buffs (`creatures::Exotic` bits; 0 ordinary).
+    pub exotic: u8,
 }
 
 /// Easing state for one creature's animation.
@@ -85,8 +95,24 @@ pub struct Anim {
     pub flash: f32,
     /// Seconds since it appeared, for idle motion and the rattle.
     pub time: f32,
+    /// Curled into a ball (a popper), 0 to 1.
+    pub curl: f32,
+    /// How far a curled ball has rolled, radians.
+    pub roll: f32,
+    /// Lit and whistling (a popper), 0 to 1; seconds lit; the glow's pulse
+    /// phase, quickening the longer it is lit.
+    pub heat: f32,
+    pub lit: f32,
+    pub pulse: f32,
+    /// Stunned (a popper), 0 to 1.
+    pub stun: f32,
+    /// Flying (a drifter), 0 resting to 1 aloft.
+    pub fly: f32,
     last: Option<DVec3>,
 }
+
+/// A popper ball's radius, for rolling.
+const BALL_RADIUS: f32 = 0.3;
 
 impl Anim {
     /// One frame of `dt` seconds for a creature now at `pos` doing `pose`.
@@ -109,6 +135,17 @@ impl Anim {
         ease(&mut self.lean, (pose == Pose::Run && !dead) as u8 as f32, 6.0);
         ease(&mut self.rear, (pose == Pose::Windup && !dead) as u8 as f32, 9.0);
         ease(&mut self.lunge, (pose == Pose::Attack && !dead) as u8 as f32, 12.0);
+        let alive = |p: Pose| (pose == p && !dead) as u8 as f32;
+        ease(&mut self.curl, alive(Pose::Curled), 10.0);
+        if pose == Pose::Curled {
+            self.roll = (self.roll + speed * dt / BALL_RADIUS) % TAU;
+        }
+        ease(&mut self.heat, alive(Pose::Lit), 6.0);
+        self.lit = if alive(Pose::Lit) > 0.0 { self.lit + dt } else { 0.0 };
+        // Faster and faster: 1.5 beats a second, quickening by 4 a second.
+        self.pulse = (self.pulse + dt * TAU * (1.5 + 4.0 * self.lit.min(4.0))) % TAU;
+        ease(&mut self.stun, alive(Pose::Stunned), 8.0);
+        ease(&mut self.fly, alive(Pose::Flying), 3.0);
         if dead || pose == Pose::Dead {
             ease(&mut self.fall, 1.0, 4.0);
         } else {
@@ -232,6 +269,7 @@ impl Creatures {
                 looted: v.looted,
                 angry: v.angry,
                 damage: v.damage,
+                exotic: v.exotic,
             });
         }
         out.sort_by_key(|s| s.id);
@@ -299,7 +337,7 @@ impl Creatures {
                 // A looted body is spent: drawn dim until it goes.
                 l[2] *= 0.4;
             }
-            let parts = model(k, s.tier, &anim, planet);
+            let parts = model(k, s.tier, s.exotic, &anim, planet);
             let turn = Quat::from_rotation_y(-bm_core::movement::yaw_radians(s.yaw) as f32);
             let base = (pos - eye).as_vec3();
             for p in parts {
@@ -444,6 +482,8 @@ fn luma(c: Vec3) -> f32 {
 }
 
 const PLATE: u32 = 0x8d939b;
+/// Exotics' markings and motes: a glowing violet no coat has.
+pub const EXOTIC: u32 = 0xd25cff;
 const PLATE_EDGE: u32 = 0x5d636c;
 
 /// Armour plates a creature of `tier` wears: none at tier 1, one more a tier
@@ -457,6 +497,8 @@ enum Model {
     Grazer,
     Pelter,
     Dasher,
+    Popper,
+    Drifter,
     /// A kind this client has no model for: a plain box of its size.
     Plain,
 }
@@ -467,6 +509,8 @@ impl Model {
             Model::Grazer => 1.3,
             Model::Pelter => 0.7,
             Model::Dasher => 1.1,
+            Model::Popper => 0.9,
+            Model::Drifter => 1.5,
             Model::Plain => 1.0,
         }
     }
@@ -477,21 +521,26 @@ fn model_of(k: &CreatureDef) -> Model {
         "grazer" => Model::Grazer,
         "pelter" => Model::Pelter,
         "dasher" => Model::Dasher,
+        "popper" => Model::Popper,
+        "drifter" => Model::Drifter,
         _ => Model::Plain,
     }
 }
 
-/// A creature's boxes for its kind, tier and animation, its coat tinted
-/// towards `planet` (linear RGB).
-pub fn model(k: &CreatureDef, tier: u8, a: &Anim, planet: [f32; 3]) -> Vec<Part> {
+/// A creature's boxes for its kind, tier, exotic buffs and animation, its
+/// coat tinted towards `planet` (linear RGB).
+pub fn model(k: &CreatureDef, tier: u8, exotic: u8, a: &Anim, planet: [f32; 3]) -> Vec<Part> {
     let paint = Paint {
         planet: Vec3::from(planet),
     };
+    let ex = exotic != 0;
     let mut out = Vec::new();
     match model_of(k) {
-        Model::Grazer => grazer(&mut out, tier, a, &paint),
-        Model::Pelter => pelter(&mut out, tier, a, &paint),
-        Model::Dasher => dasher(&mut out, tier, a, &paint),
+        Model::Grazer => grazer(&mut out, tier, ex, a, &paint),
+        Model::Pelter => pelter(&mut out, tier, ex, a, &paint),
+        Model::Dasher => dasher(&mut out, tier, ex, a, &paint),
+        Model::Popper => popper(&mut out, tier, ex, a, &paint),
+        Model::Drifter => drifter(&mut out, tier, ex, a, &paint),
         Model::Plain => {
             let hw = k.half_width;
             out.push(Frame::ROOT.part(
@@ -501,7 +550,36 @@ pub fn model(k: &CreatureDef, tier: u8, a: &Anim, planet: [f32; 3]) -> Vec<Part>
             ));
         }
     }
+    if ex && a.fall < 0.5 {
+        aura(&mut out, k, a, &paint);
+    }
     out
+}
+
+/// A marking on an exotic: glowing violet.
+fn mark(f: &Frame, offset: Vec3, half: Vec3, p: &Paint) -> Part {
+    Part {
+        glow: 0.7,
+        ..f.part(offset, half, p.raw(EXOTIC))
+    }
+}
+
+/// An exotic's aura: motes circling it slowly, rising and falling.
+fn aura(out: &mut Vec<Part>, k: &CreatureDef, a: &Anim, p: &Paint) {
+    let r = k.half_width * 1.25;
+    for i in 0..6 {
+        let f = i as f32 / 6.0;
+        let ang = a.time * 0.8 + f * TAU;
+        let y = k.height * (0.25 + 0.6 * (0.5 + 0.5 * (a.time * 1.1 + f * 9.0).sin()));
+        let rot = ry(a.time * 2.0 + f * 3.0) * rx(0.6);
+        out.push(Part {
+            pos: v(ang.cos() * r, y, ang.sin() * r),
+            half: Vec3::splat(0.035),
+            rot,
+            colour: p.raw(EXOTIC).lerp(Vec3::ONE, 0.25),
+            glow: 1.0,
+        });
+    }
 }
 
 /// Ease in and out, 0 to 1.
@@ -533,7 +611,7 @@ fn body_frame(a: &Anim, side: f32, back: f32, belly_up: bool) -> Frame {
 }
 
 /// The grazer: a shaggy herd beast about 1.4 tall and 1.2 wide.
-fn grazer(out: &mut Vec<Part>, tier: u8, a: &Anim, p: &Paint) {
+fn grazer(out: &mut Vec<Part>, tier: u8, exotic: bool, a: &Anim, p: &Paint) {
     let hide = p.coat(0x8a5a34);
     let mane = p.coat(0x4a2e1c);
     let shag = p.coat(0x5e3b22);
@@ -570,6 +648,14 @@ fn grazer(out: &mut Vec<Part>, tier: u8, a: &Anim, p: &Paint) {
         let z = -0.05 + (i / 2) as f32 * 0.32;
         out.push(torso.part(v(side * 0.44, 0.28, z), v(0.03, 0.2, 0.13), p.raw(PLATE)));
         out.push(torso.part(v(side * 0.46, 0.28, z), v(0.015, 0.16, 0.09), p.raw(PLATE_EDGE)));
+    }
+    // Exotic: bold stripes down the flanks.
+    if exotic {
+        for side in [-1.0, 1.0] {
+            for z in [0.12, 0.3, 0.48] {
+                out.push(mark(&torso, v(side * 0.425, 0.3, z), v(0.012, 0.24, 0.045), p));
+            }
+        }
     }
     // Head, from the neck: dropped low in a charge, nodding as it walks.
     let nod = (a.stride * 2.0).sin() * 0.05 * a.gait;
@@ -620,7 +706,7 @@ fn grazer(out: &mut Vec<Part>, tier: u8, a: &Anim, p: &Paint) {
 }
 
 /// The pelter: a low lizard about 0.9 tall on splayed legs.
-fn pelter(out: &mut Vec<Part>, tier: u8, a: &Anim, p: &Paint) {
+fn pelter(out: &mut Vec<Part>, tier: u8, exotic: bool, a: &Anim, p: &Paint) {
     let scales = p.coat(0x2f7a6c);
     let back_scales = p.coat(0x245e57);
     let belly = p.raw(0xe8d7a0);
@@ -658,6 +744,14 @@ fn pelter(out: &mut Vec<Part>, tier: u8, a: &Anim, p: &Paint) {
         let z = if i < 2 { -0.25 } else { 0.28 };
         out.push(torso.part(v(side * 0.3, 0.06, z), v(0.04, 0.1, 0.13), p.raw(PLATE)));
         out.push(torso.part(v(side * 0.32, 0.06, z), v(0.02, 0.07, 0.09), p.raw(PLATE_EDGE)));
+    }
+    // Exotic: glowing spots along both flanks.
+    if exotic {
+        for side in [-1.0, 1.0] {
+            for z in [-0.12, 0.06, 0.24, 0.42] {
+                out.push(mark(&torso, v(side * 0.305, 0.0, z), v(0.012, 0.055, 0.055), p));
+            }
+        }
     }
     // Head and jaw: the jaw drops as it aims and snaps as it shoots.
     let head = torso.child(v(0.0, 0.05, -0.5), rx(-a.lean * 0.1 + smooth(a.rear) * 0.15));
@@ -707,7 +801,7 @@ fn pelter(out: &mut Vec<Part>, tier: u8, a: &Anim, p: &Paint) {
 }
 
 /// The dasher: a tall bird about 1.2 tall on long amber legs.
-fn dasher(out: &mut Vec<Part>, tier: u8, a: &Anim, p: &Paint) {
+fn dasher(out: &mut Vec<Part>, tier: u8, exotic: bool, a: &Anim, p: &Paint) {
     let plumage = p.coat(0x5b6fd6);
     let wing = p.coat(0x37489a);
     let breast = p.raw(0xf2ead2);
@@ -728,6 +822,12 @@ fn dasher(out: &mut Vec<Part>, tier: u8, a: &Anim, p: &Paint) {
         let w = torso.child(v(s * 0.22, 0.08, 0.0), rz(s * (0.1 + a.lean * 0.5)));
         out.push(w.part(v(s * 0.03, -0.06, 0.06), v(0.04, 0.14, 0.24), wing));
         out.push(w.part(v(s * 0.035, -0.17, 0.22), v(0.03, 0.05, 0.1), p.coat(0x2a3778)));
+        // Exotic: bars across the wings.
+        if exotic {
+            for z in [-0.06, 0.06, 0.18] {
+                out.push(mark(&w, v(s * 0.072, -0.06, z), v(0.012, 0.12, 0.028), p));
+            }
+        }
     }
     // Armour plates on the shoulders and back.
     for i in 0..plates(tier) {
@@ -769,10 +869,358 @@ fn dasher(out: &mut Vec<Part>, tier: u8, a: &Anim, p: &Paint) {
     }
 }
 
+/// The popper: a round, bouncy lump of soot and ember about 0.8 tall on
+/// stubby legs, with a wick for a tuft. It hops as it walks; curled, it is a
+/// tight armoured ball that rolls; lit, it glows and pulses faster and
+/// faster, whistles with an O mouth and its wick throws sparks; stunned, it
+/// wobbles in a daze under circling stars.
+fn popper(out: &mut Vec<Part>, tier: u8, exotic: bool, a: &Anim, p: &Paint) {
+    let soot = p.coat(0x3d3537);
+    let soot_hi = p.coat(0x5a4d4e);
+    let ash = p.raw(0xb8ab9c);
+    let ember = p.raw(0xff6a1a);
+    let ember_hot = p.raw(0xffc04a);
+    let eye = p.raw(0xfff0b0);
+    let dark = p.raw(0x161112);
+    let wick = p.raw(0x8a6a44);
+    let star = p.raw(0xffe45a);
+    let curl = smooth(a.curl);
+    let heat = smooth(a.heat);
+    let stun = smooth(a.stun);
+    let dead = smooth(a.fall);
+    let beat = heat * (0.5 + 0.5 * a.pulse.sin());
+    let body = body_frame(a, 0.34, 0.76, false);
+    // Hops: up with each stride, squashing as it lands.
+    let land = a.stride.sin().abs();
+    let open = 1.0 - curl;
+    let hop = land * 0.2 * a.gait * open;
+    let squash = (1.0 - land) * 0.1 * a.gait * open;
+    let swell = 1.0 + 0.08 * beat;
+    let (sx, sy) = ((1.0 + squash) * swell, (1.0 - squash) * swell);
+    // Lit: a shiver; stunned: a slow dazed circle; curled: rolling.
+    let shiver = (a.time * 31.0).sin() * 0.07 * heat;
+    let daze = (a.time * 2.6).cos() * 0.16 * stun;
+    let daze2 = (a.time * 2.6).sin() * 0.2 * stun;
+    let r = 0.32 - 0.03 * curl;
+    let torso = body.child(
+        v(0.0, 0.44 - (0.44 - r) * curl + hop, 0.0),
+        rz(shiver + daze) * rx(daze2 - a.roll * curl),
+    );
+    let k = v(sx, sy, sx);
+    let blob = |f: &Frame, off: Vec3, half: Vec3, c: Vec3| f.part(off * k, half * k, c);
+    // Heat flushes the soot red.
+    let coat = |c: Vec3| c.lerp(p.raw(0x8a2a14), beat * 0.45);
+    out.push(blob(&torso, v(0.0, 0.0, 0.0), v(r, r * 0.78, r), coat(soot)));
+    out.push(blob(&torso, v(0.0, 0.02, 0.0), v(r * 0.8, r, r * 0.8), coat(soot)));
+    out.push(blob(
+        &torso,
+        v(0.0, -0.02, 0.0),
+        v(r * 1.06, r * 0.62, r * 0.8),
+        coat(soot),
+    ));
+    out.push(blob(
+        &torso,
+        v(0.0, -0.02, 0.0),
+        v(r * 0.8, r * 0.62, r * 1.06),
+        coat(soot),
+    ));
+    out.push(blob(
+        &torso,
+        v(0.0, r * 0.92, 0.03),
+        v(r * 0.55, r * 0.14, r * 0.55),
+        coat(soot_hi),
+    ));
+    // Ember cracks in the soot, brighter as it heats.
+    let crack = ember.lerp(ember_hot, beat);
+    let crack_glow = if dead > 0.5 { 0.1 } else { 0.45 + 0.55 * beat };
+    for (off, half, turn) in [
+        (v(r * 1.07, 0.03, 0.08), v(0.012, 0.1, 0.022), rx(0.35)),
+        (v(r * 1.07, -0.09, -0.07), v(0.012, 0.06, 0.02), rx(-0.4)),
+        (v(-r * 1.07, 0.0, 0.1), v(0.012, 0.09, 0.022), rx(-0.3)),
+        (v(-r * 1.07, -0.07, -0.08), v(0.012, 0.07, 0.02), rx(0.5)),
+        (v(0.06, 0.04, r * 1.07), v(0.022, 0.11, 0.012), rz(0.3)),
+        (v(-0.07, -0.06, r * 1.07), v(0.02, 0.07, 0.012), rz(-0.4)),
+        (v(0.09, r * 1.0, -0.08), v(0.07, 0.012, 0.02), ry(0.5)),
+        (v(-0.08, r * 1.0, 0.12), v(0.06, 0.012, 0.02), ry(-0.6)),
+    ] {
+        let f = torso.child(off * k, turn);
+        out.push(Part {
+            glow: crack_glow,
+            ..f.part(Vec3::ZERO, half, crack)
+        });
+    }
+    // The face, hidden once curled.
+    if curl < 0.6 {
+        let front = -r * 1.0;
+        out.push(blob(&torso, v(0.0, -0.11, front), v(0.17, 0.12, 0.02), ash));
+        for s in [-1.0, 1.0] {
+            let eye_glow = if dead > 0.5 { 0.0 } else { 0.6 };
+            out.push(Part {
+                glow: eye_glow,
+                ..blob(&torso, v(s * 0.12, 0.07, front - 0.005), v(0.075, 0.08, 0.02), eye)
+            });
+            // Pupils roll about when dazed.
+            let (dx, dy) = (
+                (a.time * 8.0 + s).cos() * 0.03 * stun,
+                (a.time * 8.0 + s).sin() * 0.03 * stun,
+            );
+            out.push(blob(
+                &torso,
+                v(s * 0.11 + dx, 0.06 + dy, front - 0.025),
+                v(0.035, 0.045, 0.01),
+                dark,
+            ));
+            // Brows, knitted when lit.
+            let brow = torso.child(v(s * 0.12, 0.17, front - 0.01) * k, rz(s * 0.4 * heat));
+            out.push(brow.part(Vec3::ZERO, v(0.08, 0.02, 0.02), dark));
+        }
+        // The mouth: a slit, an O while it whistles.
+        out.push(blob(
+            &torso,
+            v(0.0, -0.08, front - 0.02),
+            v(0.07 - 0.03 * heat, 0.015 + 0.03 * heat, 0.012),
+            dark,
+        ));
+        if heat > 0.05 {
+            out.push(Part {
+                glow: 1.0,
+                ..blob(
+                    &torso,
+                    v(0.0, -0.08, front - 0.028),
+                    v(0.025 * heat, 0.025 * heat, 0.01),
+                    ember_hot,
+                )
+            });
+        }
+    }
+    // Armour plates on its back.
+    for i in 0..plates(tier) {
+        let side = if i % 2 == 0 { 1.0 } else { -1.0 };
+        let z = 0.06 + (i / 2) as f32 * 0.17;
+        let f = torso.child(v(side * 0.15, r * 0.85, z) * k, rz(-side * 0.55) * rx(0.25));
+        out.push(f.part(Vec3::ZERO, v(0.11, 0.025, 0.075), p.raw(PLATE)));
+        out.push(f.part(v(0.0, 0.02, 0.0), v(0.08, 0.012, 0.05), p.raw(PLATE_EDGE)));
+    }
+    // Curled: shell bands close over it like an armoured ball.
+    if curl > 0.05 {
+        for j in 0..6 {
+            let band = torso.child(Vec3::ZERO, rx(-1.25 + j as f32 * 0.5));
+            out.push(band.part(v(0.0, r * 1.04, 0.0), v(r * 0.92, 0.04, 0.12) * curl, soot_hi));
+            out.push(Part {
+                glow: crack_glow,
+                ..band.part(v(0.0, r * 1.06, 0.125), v(r * 0.86, 0.01, 0.012) * curl, crack)
+            });
+        }
+        for s in [-1.0, 1.0] {
+            out.push(torso.part(v(s * r * 1.05, 0.0, 0.0), v(0.035, r * 0.72, r * 0.72) * curl, soot_hi));
+        }
+    }
+    // Stubby legs, tucked away when curled.
+    if curl < 0.9 {
+        for (x, z, phase) in [
+            (-0.17, -0.13, 0.0),
+            (0.17, -0.13, PI),
+            (-0.17, 0.14, PI),
+            (0.17, 0.14, 0.0),
+        ] {
+            let kick = (a.stride + phase).sin() * 0.45 * a.gait;
+            let leg = torso.child(v(x, -0.26 * open - 0.1 * curl, z), rx(kick));
+            out.push(leg.part(v(0.0, -0.06, 0.0), v(0.07, 0.08, 0.075) * open, soot));
+            out.push(leg.part(v(0.0, -0.145, -0.03), v(0.08, 0.025, 0.09) * open, ash));
+        }
+        // The wick on top: two twisted lengths and a smouldering tip.
+        let sway = (a.time * 2.3).sin() * 0.12 + hop * 1.5;
+        let w0 = torso.child(v(0.0, r * 0.95 * sy, 0.05), rx(-0.25 + sway) * rz(0.15));
+        out.push(w0.part(v(0.0, 0.065, 0.0), v(0.028, 0.07, 0.028) * open, wick));
+        let w1 = w0.child(v(0.0, 0.13 * open, 0.0), rz(-0.5) * rx(0.2));
+        out.push(w1.part(v(0.0, 0.05, 0.0), v(0.022, 0.055, 0.022) * open, wick));
+        let tip = w1.child(v(0.0, 0.11 * open, 0.0), Quat::IDENTITY);
+        let flick = 0.8 + 0.2 * (a.time * (9.0 + 20.0 * heat)).sin();
+        out.push(Part {
+            glow: if dead > 0.5 { 0.0 } else { 0.35 + 0.65 * heat },
+            ..tip.part(
+                Vec3::ZERO,
+                Vec3::splat(0.04 * flick * (1.0 + 0.4 * heat)) * open,
+                ember_hot,
+            )
+        });
+        // Lit: sparks spit from the wick.
+        if heat > 0.05 {
+            for i in 0..5 {
+                let t = (a.time * 2.5 + i as f32 * 0.2) % 1.0;
+                let ang = i as f32 * 2.4 + (a.time * 2.5 + i as f32 * 0.2).floor() * 1.7;
+                let off = v(
+                    ang.cos() * 0.18 * t,
+                    0.04 + 0.22 * t - 0.25 * t * t,
+                    ang.sin() * 0.18 * t,
+                );
+                out.push(Part {
+                    glow: 1.0,
+                    ..tip.part(off, Vec3::splat(0.022 * (1.0 - t) * heat), ember_hot)
+                });
+            }
+        }
+    }
+    // Exotic: glowing spots on its flanks and crown.
+    if exotic {
+        for s in [-1.0, 1.0] {
+            out.push(mark(&torso, v(s * r * 1.09, 0.1, -0.08) * k, v(0.012, 0.045, 0.045), p));
+            out.push(mark(&torso, v(s * r * 1.09, -0.05, 0.12) * k, v(0.012, 0.04, 0.04), p));
+            out.push(mark(
+                &torso,
+                v(s * 0.12, r * 1.03, -0.14) * k,
+                v(0.045, 0.012, 0.045),
+                p,
+            ));
+        }
+    }
+    // Stunned: stars circling over it.
+    if stun > 0.05 {
+        for i in 0..3 {
+            let ang = a.time * 3.0 + i as f32 * TAU / 3.0;
+            let f = body.child(
+                v(
+                    ang.cos() * 0.28,
+                    0.98 + (a.time * 5.0 + i as f32).sin() * 0.03,
+                    ang.sin() * 0.28,
+                ),
+                rz(a.time * 4.0),
+            );
+            for half in [v(0.055, 0.016, 0.016), v(0.016, 0.055, 0.016)] {
+                out.push(Part {
+                    glow: 0.9,
+                    ..f.part(Vec3::ZERO, half * stun, star)
+                });
+            }
+        }
+    }
+}
+
+/// The drifter: a bronze-rimmed bell about 1.3 tall with a glowing lantern
+/// face, floating on six jointed tentacles. At rest it sits low with its
+/// tentacles splayed on the ground; flying, it rises, bobs and the
+/// tentacles sway beneath it in a wave; dead, it tips over and they go limp.
+fn drifter(out: &mut Vec<Part>, tier: u8, exotic: bool, a: &Anim, p: &Paint) {
+    let shell = p.coat(0x4a3a7a);
+    let shell_hi = p.coat(0x6650a0);
+    let rib = p.coat(0x30244f);
+    let bronze = p.raw(0xc89b4e);
+    let dark = p.raw(0x12101c);
+    let flesh = p.coat(0x8a64a8);
+    let flesh_dark = p.coat(0x6a4a88);
+    let tip = p.raw(0xeccbff);
+    let lantern = p.raw(0x9ff0ff);
+    let fly = smooth(a.fly);
+    let dead = smooth(a.fall);
+    let alive = 1.0 - dead;
+    let bob = (a.time * 1.3).sin() * 0.06 * fly;
+    let rim_y = (0.2 + 0.36 * fly + bob) * alive + 0.05 * dead;
+    // Tipped over as it dies, about the rim's edge.
+    let pivot = v(0.5, 0.0, 0.0);
+    let topple = rz(-0.3 * dead);
+    let base = Frame {
+        at: pivot - topple * pivot,
+        rot: topple,
+    };
+    let sway = (a.time * 0.9).sin() * 0.05 * fly;
+    let bell = base.child(v(0.0, rim_y, 0.0), rz(sway) * rx(a.lean * 0.15 * fly));
+    out.push(bell.part(v(0.0, 0.2, 0.0), v(0.44, 0.16, 0.44), shell));
+    out.push(bell.part(v(0.0, 0.03, 0.0), v(0.5, 0.045, 0.5), bronze));
+    out.push(bell.part(v(0.0, 0.36, 0.0), v(0.4, 0.04, 0.4), shell_hi));
+    out.push(bell.part(v(0.0, 0.43, 0.0), v(0.35, 0.09, 0.35), shell));
+    out.push(bell.part(v(0.0, 0.57, 0.0), v(0.25, 0.07, 0.25), shell));
+    out.push(bell.part(v(0.0, 0.67, 0.0), v(0.13, 0.04, 0.13), bronze));
+    let glow = |g: f32| g * alive;
+    out.push(Part {
+        glow: glow(0.8),
+        ..bell.part(v(0.0, 0.75, 0.0), v(0.045, 0.05, 0.045), lantern)
+    });
+    // The lantern's light spilling from under the rim.
+    out.push(Part {
+        glow: glow(0.9),
+        ..bell.part(v(0.0, -0.02, 0.0), v(0.36, 0.025, 0.36), lantern)
+    });
+    // Ribs down the bell, all round but the face.
+    for i in 0..8 {
+        if i == 4 {
+            continue;
+        }
+        let phi = i as f32 * TAU / 8.0;
+        let f = bell.child(v(phi.sin() * 0.445, 0.2, phi.cos() * 0.445), ry(phi));
+        out.push(f.part(Vec3::ZERO, v(0.035, 0.15, 0.02), rib));
+    }
+    // The face-plate: a pane of light in a bronze frame, slit eyes.
+    let face = bell.child(v(0.0, 0.21, -0.45), Quat::IDENTITY);
+    let shine = 0.7 + 0.3 * (a.time * 2.0).sin();
+    out.push(face.part(Vec3::ZERO, v(0.25, 0.15, 0.015), bronze));
+    out.push(Part {
+        glow: glow(shine),
+        ..face.part(
+            v(0.0, 0.0, -0.01),
+            v(0.21, 0.115, 0.012),
+            lantern.lerp(dark, dead * 0.6),
+        )
+    });
+    for s in [-1.0, 1.0] {
+        let e = face.child(v(s * 0.09, 0.03, -0.024), rz(-s * 0.25));
+        out.push(e.part(Vec3::ZERO, v(0.06, 0.022, 0.006), dark));
+    }
+    out.push(face.part(v(0.0, -0.06, -0.024), v(0.018, 0.035, 0.006), dark));
+    // Armour plates round its middle.
+    for i in 0..plates(tier) {
+        let phi = [FRAC_PI_2, -FRAC_PI_2, 0.0, PI][i];
+        let f = bell.child(v(phi.sin() * 0.36, 0.43, phi.cos() * 0.36), ry(phi));
+        out.push(f.part(Vec3::ZERO, v(0.13, 0.075, 0.025), p.raw(PLATE)));
+        out.push(f.part(v(0.0, 0.0, 0.02), v(0.09, 0.05, 0.012), p.raw(PLATE_EDGE)));
+    }
+    // Exotic: glowing spots round the dome.
+    if exotic {
+        for i in 0..6 {
+            let phi = i as f32 * TAU / 6.0 + 0.3;
+            let f = bell.child(v(phi.sin() * 0.255, 0.57, phi.cos() * 0.255), ry(phi));
+            out.push(mark(&f, Vec3::ZERO, v(0.04, 0.04, 0.012), p));
+        }
+    }
+    // Tentacles: six, between the ribs, each four joints and a pale tip.
+    // Each joint tilts outward from straight down: splayed and curling up at
+    // rest, a wave swaying down them in flight, flat and limp when dead.
+    const SEG: f32 = 0.15;
+    for i in 0..6 {
+        let phi = i as f32 * TAU / 6.0 + TAU / 12.0;
+        let mut joint = bell.child(v(phi.sin() * 0.38, 0.0, phi.cos() * 0.38), ry(phi));
+        for j in 0..4 {
+            let breathe = (a.time * 0.8 + i as f32).sin() * 0.05;
+            let rest = if j == 0 { 1.0 + breathe } else { 0.25 };
+            let wave = (a.time * 1.8 + i as f32 * 1.3 - j as f32 * 0.9).sin() * 0.28;
+            let flying = wave + if j == 0 { 0.15 } else { 0.0 };
+            let limp = if j == 0 { 1.4 } else { 0.06 };
+            let tilt = (rest + (flying - rest) * fly) * alive + limp * dead;
+            joint = joint.child(Vec3::ZERO, rx(-tilt));
+            let th = 0.06 - j as f32 * 0.008;
+            let colour = if exotic && j == 1 {
+                p.raw(EXOTIC)
+            } else if j % 2 == 0 {
+                flesh
+            } else {
+                flesh_dark
+            };
+            out.push(Part {
+                glow: if exotic && j == 1 { 0.6 } else { 0.0 },
+                ..joint.part(v(0.0, -SEG * 0.5, 0.0), v(th, SEG * 0.5 + 0.01, th), colour)
+            });
+            joint = joint.child(v(0.0, -SEG, 0.0), Quat::IDENTITY);
+        }
+        out.push(Part {
+            glow: glow(0.5),
+            ..joint.part(v(0.0, -0.025, 0.0), v(0.03, 0.035, 0.03), tip)
+        });
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
-    use bm_core::creatures::CreatureKinds;
+    use bm_core::creatures::{CreatureKinds, Exotic};
 
     fn kinds() -> Vec<CreatureDef> {
         CreatureKinds::builtin().defs().to_vec()
@@ -904,9 +1352,9 @@ mod tests {
 
     #[test]
     fn models_are_the_size_of_their_kind() {
-        // Kinds without a model yet draw as a plain box (not tested here).
-        for k in kinds().into_iter().filter(|k| !matches!(model_of(k), Model::Plain)) {
-            let parts = model(&k, 1, &Anim::default(), [0.3, 0.55, 0.35]);
+        for k in kinds() {
+            assert_ne!(model_of(&k), Model::Plain, "{} has a model", k.name);
+            let parts = model(&k, 1, 0, &Anim::default(), [0.3, 0.55, 0.35]);
             let (lo, hi) = bounds(&parts);
             let height = hi.y - lo.y;
             assert!(lo.y.abs() < 0.08, "{} stands on the ground: {}", k.name, lo.y);
@@ -930,10 +1378,9 @@ mod tests {
     fn plates_come_with_tier_and_bodies_lie_down() {
         assert_eq!((1..=6).map(plates).collect::<Vec<_>>(), [0, 1, 2, 3, 4, 4]);
         let plate = Paint { planet: Vec3::ONE }.raw(PLATE);
-        // Kinds without a model yet draw as a plain box (not tested here).
-        for k in kinds().into_iter().filter(|k| !matches!(model_of(k), Model::Plain)) {
+        for k in kinds() {
             let count = |tier| {
-                model(&k, tier, &Anim::default(), [0.3, 0.55, 0.35])
+                model(&k, tier, 0, &Anim::default(), [0.3, 0.55, 0.35])
                     .iter()
                     .filter(|p| p.colour == plate)
                     .count()
@@ -941,21 +1388,25 @@ mod tests {
             assert_eq!(count(1), 0, "{}", k.name);
             assert_eq!(count(3), 2, "{}", k.name);
             assert_eq!(count(5), 4, "{}", k.name);
-            // Dead: grazers and dashers on their side, pelters belly up;
-            // each lies on the ground, lower than it stood.
+            // Dead: grazers, dashers and poppers on their side, pelters
+            // belly up, drifters tipped and limp; each lies on the ground,
+            // lower than it stood.
             let dead = Anim {
                 fall: 1.0,
                 ..Default::default()
             };
-            let parts = model(&k, 1, &dead, [0.3, 0.55, 0.35]);
+            let parts = model(&k, 1, 0, &dead, [0.3, 0.55, 0.35]);
             let (lo, hi) = bounds(&parts);
             assert!(lo.y > -0.25 && lo.y < 0.2, "{} lies on the ground: {}", k.name, lo.y);
             assert!(hi.y < k.height * 1.05, "{} lies low: {}", k.name, hi.y);
             let up = parts[0].rot * Vec3::Y;
-            if k.name == "pelter" {
-                assert!(up.y < -0.9, "the pelter is belly up: {up}");
-            } else {
-                assert!(up.y.abs() < 0.1, "the {} is on its side: {up}", k.name);
+            match k.name.as_str() {
+                "pelter" => assert!(up.y < -0.9, "the pelter is belly up: {up}"),
+                "drifter" => {
+                    assert!(up.y > 0.5 && up.y < 0.99, "the drifter has tipped: {up}");
+                    assert!(parts.iter().all(|p| p.glow == 0.0), "its lantern is out");
+                }
+                _ => assert!(up.y.abs() < 0.1, "the {} is on its side: {up}", k.name),
             }
         }
     }
@@ -974,7 +1425,7 @@ mod tests {
         }
         assert!(a.gait > 0.5 && a.stride > 0.0);
         let grazer = &k[0];
-        assert_ne!(model(grazer, 1, &a, [0.3; 3]), model(grazer, 1, &still, [0.3; 3]));
+        assert_ne!(model(grazer, 1, 0, &a, [0.3; 3]), model(grazer, 1, 0, &still, [0.3; 3]));
         // A windup rears the grazer (its head rises) and shakes the
         // pelter's rattle.
         let mut w = Anim::default();
@@ -983,9 +1434,9 @@ mod tests {
         }
         assert!(w.rear > 0.9);
         let top = |parts: Vec<Part>| bounds(&parts).1.y;
-        assert!(top(model(grazer, 1, &w, [0.3; 3])) > top(model(grazer, 1, &still, [0.3; 3])) + 0.1);
+        assert!(top(model(grazer, 1, 0, &w, [0.3; 3])) > top(model(grazer, 1, 0, &still, [0.3; 3])) + 0.1);
         let pelter = &k[1];
-        let tail_end = |a: &Anim| *model(pelter, 1, a, [0.3; 3]).last().unwrap();
+        let tail_end = |a: &Anim| *model(pelter, 1, 0, a, [0.3; 3]).last().unwrap();
         let mut w2 = w;
         w2.time += 0.013;
         assert_ne!(tail_end(&w).rot, tail_end(&w2).rot, "the rattle shakes");
@@ -1001,6 +1452,103 @@ mod tests {
         }
         assert_eq!(h.flash, 0.0);
         assert!(h.fall > 0.95);
+    }
+
+    fn kind_named(name: &str) -> CreatureDef {
+        kinds().into_iter().find(|k| k.name == name).expect("builtin kind")
+    }
+
+    /// An animation after `secs` seconds standing in `pose`.
+    fn held(pose: Pose, secs: f32) -> Anim {
+        let shape = PlanetShape::new(8, 4);
+        let mut a = Anim::default();
+        let pos = DVec3::new(10.0, 44.0, 10.0);
+        for _ in 0..(secs * 60.0) as usize {
+            a.step(pos, pose, false, 1.0, 1.0 / 60.0, shape);
+        }
+        a
+    }
+
+    fn glow(parts: &[Part]) -> f32 {
+        parts.iter().map(|p| p.glow).sum()
+    }
+
+    #[test]
+    fn the_popper_curls_glows_and_reels() {
+        let k = kind_named("popper");
+        let planet = [0.3, 0.55, 0.35];
+        let idle = model(&k, 1, 0, &Anim::default(), planet);
+        // Curled: a ball, no taller than it is wide, legs and wick tucked.
+        let curled = model(&k, 1, 0, &held(Pose::Curled, 1.0), planet);
+        let (lo, hi) = bounds(&curled);
+        assert!(lo.y.abs() < 0.08, "the ball sits on the ground: {}", lo.y);
+        assert!(hi.y - lo.y < bounds(&idle).1.y - 0.2, "lower than standing");
+        assert!((hi.y - lo.y) < (hi.x - lo.x) * 1.15, "round");
+        // Lit: hotter the longer, and its pulse quickens.
+        let early = held(Pose::Lit, 0.3);
+        let late = held(Pose::Lit, 2.0);
+        assert!(glow(&model(&k, 1, 0, &late, planet)) > glow(&idle) + 2.0, "it glows");
+        assert!(late.heat > 0.95 && late.lit > early.lit);
+        let rate = |a: &Anim| {
+            let mut b = *a;
+            b.step(
+                DVec3::new(10.0, 44.0, 10.0),
+                Pose::Lit,
+                false,
+                1.0,
+                0.01,
+                PlanetShape::new(8, 4),
+            );
+            (b.pulse - a.pulse).rem_euclid(TAU)
+        };
+        assert!(rate(&late) > rate(&early) * 1.5, "faster and faster");
+        // Stunned: stars over its head.
+        let stunned = model(&k, 1, 0, &held(Pose::Stunned, 1.0), planet);
+        assert!(bounds(&stunned).1.y > 0.9, "stars circle above it");
+        assert!(stunned.len() >= idle.len() + 6);
+        // Walking, it hops: its body leaves the ground.
+        let shape = PlanetShape::new(8, 4);
+        let mut a = Anim::default();
+        let mut pos = DVec3::new(10.0, 44.0, 10.0);
+        let mut highest = 0.0f32;
+        for _ in 0..60 {
+            pos.z -= 0.04;
+            a.step(pos, Pose::Walk, false, model_of(&k).stride_len(), 1.0 / 60.0, shape);
+            highest = highest.max(bounds(&model(&k, 1, 0, &a, planet)).0.y);
+        }
+        assert!(highest > 0.1, "hops: {highest}");
+    }
+
+    #[test]
+    fn the_drifter_rises_to_fly_and_its_tentacles_sway() {
+        let k = kind_named("drifter");
+        let planet = [0.3, 0.55, 0.35];
+        let rest = model(&k, 1, 0, &Anim::default(), planet);
+        let flying = held(Pose::Flying, 3.0);
+        let aloft = model(&k, 1, 0, &flying, planet);
+        let (rlo, rhi) = bounds(&rest);
+        let (flo, fhi) = bounds(&aloft);
+        assert!(fhi.y > rhi.y + 0.25, "the bell rises: {} {}", fhi.y, rhi.y);
+        assert!(flo.y < 0.05 && flo.y > -0.3, "tentacles hang to its feet: {}", flo.y);
+        assert!(fhi.x - flo.x < rhi.x - rlo.x - 0.4, "they hang, not splay");
+        let mut later = flying;
+        later.time += 0.4;
+        assert_ne!(model(&k, 1, 0, &later, planet), aloft, "they sway");
+        assert!(glow(&rest) > 1.0, "its lantern face glows");
+    }
+
+    #[test]
+    fn exotics_wear_markings_and_motes() {
+        let planet = [0.3, 0.55, 0.35];
+        let mark = Paint { planet: Vec3::ONE }.raw(EXOTIC);
+        for k in kinds() {
+            let plain = model(&k, 2, 0, &Anim::default(), planet);
+            let exotic = model(&k, 2, Exotic::HEALTH, &Anim::default(), planet);
+            assert!(plain.iter().all(|p| p.colour != mark), "{}", k.name);
+            let marks = exotic.iter().filter(|p| p.colour == mark && p.glow > 0.0).count();
+            assert!(marks >= 6, "{} wears markings: {marks}", k.name);
+            assert!(exotic.len() >= plain.len() + 12, "{} has its motes", k.name);
+        }
     }
 
     #[test]

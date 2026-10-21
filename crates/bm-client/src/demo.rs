@@ -208,6 +208,20 @@ struct DemoCreature {
     /// Someone else keeps hitting it (a stand-in for another player), so
     /// its numbers keep floating up for a screenshot.
     beaten: bool,
+    /// Exotic buffs (`creatures::Exotic` bits).
+    exotic: u8,
+}
+
+/// A thrown bomb waiting for its fuse.
+#[derive(Clone, Copy, Debug)]
+struct DemoBomb {
+    /// Demo seconds it goes off at.
+    at: f64,
+    pos: DVec3,
+    radius: f32,
+    damage: u32,
+    crit_chance: f32,
+    crit_effect: f32,
 }
 
 #[derive(Default)]
@@ -219,7 +233,18 @@ struct DemoFight {
     beat_timer: f64,
     beats: u32,
     rng: u64,
+    /// Seconds the fight has run.
+    clock: f64,
+    bombs: Vec<DemoBomb>,
+    /// `--demo-ui bombs`: blasts going off here in turn, every
+    /// `SHOWCASE_SECONDS`, and when the next one is.
+    showcase: Vec<DVec3>,
+    next_showcase: f64,
+    showcased: usize,
 }
+
+/// `--demo-ui bombs`: seconds between the blasts going off in view.
+const SHOWCASE_SECONDS: f64 = 1.6;
 
 impl DemoFight {
     /// A number in 0..1 (xorshift; the demo's own dice).
@@ -1260,6 +1285,13 @@ impl Demo {
                 charge,
             } => self.shoot(at, slot, yaw, pitch, charge),
             ClientMsg::Strike { at, creature, slot } => self.strike(at, creature, slot),
+            ClientMsg::Throw {
+                at,
+                slot,
+                yaw,
+                pitch,
+                hold,
+            } => self.throw(at, slot, yaw, pitch, hold),
             ClientMsg::Loot { creature } => self.loot(creature),
             ClientMsg::Return => self.come_back(),
             ClientMsg::Hello { .. } => {}
@@ -1823,15 +1855,17 @@ impl Demo {
             angry: c.angry,
             dead: c.dead,
             looted: c.looted,
-            exotic: 0,
+            exotic: c.exotic,
         };
         self.events.push_back(NetEvent::Msg(ServerMsg::Creature(v)));
     }
 
     /// `--demo-ui creatures`: level ground with one of each creature in
     /// view: a grazer, a Tough pelter someone keeps hitting (taking aim), a
-    /// dasher, a grazer's body, and a Hardy grazer walking past; a stone
-    /// and an iron sling in the hotbar.
+    /// dasher, a grazer's body, a Hardy grazer walking past, a Grim popper
+    /// whistling, a popper curled into a ball, a drifter flying, and an
+    /// exotic pelter; a bag of copper bombs, a stone and an iron sling in
+    /// the hotbar.
     pub fn show_creatures(&mut self) {
         use bm_protocol::Pose;
         let b = |n: &str| self.blocks.id(n).expect("builtin block");
@@ -1860,6 +1894,7 @@ impl Demo {
             looted: false,
             pace: None,
             beaten: false,
+            exotic: 0,
         };
         let deg = |d: f64| ((d / 360.0).rem_euclid(1.0) * 65536.0) as u16;
         self.fight.creatures = vec![
@@ -1880,17 +1915,48 @@ impl Demo {
                 pace: Some((119.0, 128.0, 1.4)),
                 ..creature(5, kind("grazer"), 2, at(121.0, 115.5), deg(90.0), Pose::Walk)
             },
+            DemoCreature {
+                angry: true,
+                ..creature(6, kind("popper"), 4, at(131.0, 124.5), deg(200.0), Pose::Lit)
+            },
+            creature(7, kind("popper"), 1, at(126.8, 123.6), deg(20.0), Pose::Curled),
+            DemoCreature {
+                angry: true,
+                ..creature(
+                    8,
+                    kind("drifter"),
+                    2,
+                    at(124.5, 117.5) + DVec3::new(0.0, 2.2, 0.0),
+                    deg(-20.0),
+                    Pose::Flying,
+                )
+            },
+            DemoCreature {
+                damage: 300,
+                exotic: bm_core::creatures::Exotic::HEALTH | bm_core::creatures::Exotic::ARMOUR,
+                ..creature(9, kind("pelter"), 1, at(134.5, 120.0), deg(220.0), Pose::Idle)
+            },
         ];
         for i in 0..self.fight.creatures.len() {
             self.push_creature(i);
         }
         // Slings in the last two hotbar slots.
         let before = self.inv.clone();
-        for (slot, name) in [(8, "stone_sling"), (9, "iron_sling")] {
+        for (slot, name) in [(7, "copper_bombs"), (8, "stone_sling"), (9, "iron_sling")] {
             let id = self.items.id(name).expect("builtin item");
             self.inv.slots[slot] = Some(ItemStack::new(id, 1));
         }
         self.slots_since(&before);
+    }
+
+    /// `--demo-ui bombs`: the creatures' ground with blasts going off among
+    /// them in turn (as from other players' bombs), the bag of bombs in
+    /// hand (the client holds and lets go of the button on a cycle).
+    pub fn show_bombs(&mut self) {
+        self.show_creatures();
+        let y = (GROUND + 1) as f64 + crate::combat::BOMB_REST;
+        self.fight.showcase = vec![DVec3::new(126.0, y, 118.5), DVec3::new(131.5, y, 117.0)];
+        self.fight.next_showcase = self.fight.clock + 0.5;
     }
 
     /// `--demo-ui defeat`: a level 10 character just defeated by a Hardy
@@ -1920,6 +1986,24 @@ impl Demo {
     fn run_fight(&mut self, dt: f64) {
         if self.fight.creatures.is_empty() {
             return;
+        }
+        self.fight.clock += dt;
+        let clock = self.fight.clock;
+        let (due, waiting): (Vec<DemoBomb>, Vec<DemoBomb>) = std::mem::take(&mut self.fight.bombs)
+            .into_iter()
+            .partition(|b| b.at <= clock);
+        self.fight.bombs = waiting;
+        for b in due {
+            self.blast(b);
+        }
+        if !self.fight.showcase.is_empty() && clock >= self.fight.next_showcase {
+            self.fight.next_showcase = clock + SHOWCASE_SECONDS;
+            let pos = self.fight.showcase[self.fight.showcased % self.fight.showcase.len()];
+            self.fight.showcased += 1;
+            self.events.push_back(NetEvent::Msg(ServerMsg::Blast {
+                pos: pos.as_vec3().to_array(),
+                radius: 2.5,
+            }));
         }
         self.fight.snap_timer += dt;
         while self.fight.snap_timer >= 0.05 {
@@ -2061,6 +2145,69 @@ impl Demo {
                 return self.damage_creature(i, damage, l.crit_chance, l.crit_effect);
             }
             (pos, vel) = (next, v);
+        }
+    }
+
+    /// A bomb thrown, by the server's rules: the shared cadence on the bag's
+    /// skilled action speed and one wear; flown from `FIGHT_VIEW`'s eye at
+    /// `combat::throw_speed` for its hold, falling at `BOMB_GRAVITY` onto
+    /// the demo's level ground, it goes off when the fuse lit `hold` ticks
+    /// ago ends. Like `shoot`, it spends no energy (the client predicts
+    /// that) and flies through blocks.
+    fn throw(&mut self, at: u32, slot: u8, yaw: u16, pitch: i16, hold: u16) {
+        let Some(bag) = self
+            .inv
+            .get(slot as usize)
+            .and_then(|s| self.items.get(s.item))
+            .and_then(|d| d.bomb())
+        else {
+            return;
+        };
+        let b = self.character.effects(&self.tree).skilled_bomb(&bag);
+        if !self.cadence(at, bm_core::mining::swing_ticks(b.action_speed)) {
+            return;
+        }
+        self.wear(slot as usize);
+        let fuse_ticks = bm_core::combat::BOMB_FUSE_TICKS;
+        let hold = (hold as u32).min(fuse_ticks);
+        let mut pos = DVec3::from_array(FIGHT_VIEW) + DVec3::new(0.0, MoveConfig::default().eye_height, 0.0);
+        let mut vel = bm_core::movement::look_dir(yaw, pitch) * bm_core::combat::throw_speed(hold, b.throw_speed);
+        let rest = (GROUND + 1) as f64 + crate::combat::BOMB_REST;
+        for _ in hold..fuse_ticks {
+            let (next, v) = bm_core::combat::shot_step(pos, vel, crate::combat::BOMB_FALLOFF);
+            if next.y <= rest {
+                pos = DVec3::new(next.x, rest, next.z);
+                break;
+            }
+            (pos, vel) = (next, v);
+        }
+        self.fight.bombs.push(DemoBomb {
+            at: self.fight.clock + (fuse_ticks - hold) as f64 / bm_core::TICK_HZ as f64,
+            pos,
+            radius: b.radius,
+            damage: b.damage,
+            crit_chance: b.crit_chance,
+            crit_effect: b.crit_effect,
+        });
+    }
+
+    /// A bomb goes off: the blast for everyone to see, and impulse damage to
+    /// every living creature within its radius (`combat::blast_damage`,
+    /// half at the edge), less its armour.
+    fn blast(&mut self, b: DemoBomb) {
+        self.events.push_back(NetEvent::Msg(ServerMsg::Blast {
+            pos: b.pos.as_vec3().to_array(),
+            radius: b.radius,
+        }));
+        let k = self.kinds();
+        for i in 0..self.fight.creatures.len() {
+            let c = &self.fight.creatures[i];
+            let height = k.get(c.kind).map_or(1.0, |d| d.height as f64);
+            let dist = (c.pos + DVec3::new(0.0, height * 0.5, 0.0) - b.pos).length();
+            let damage = bm_core::combat::blast_damage(b.damage, dist, b.radius as f64);
+            if !c.dead && damage > 0 {
+                self.damage_creature(i, damage, b.crit_chance, b.crit_effect);
+            }
         }
     }
 
@@ -2745,6 +2892,79 @@ mod tests {
         // A living creature has nothing to loot.
         d.send(ClientMsg::Loot { creature: 3 });
         assert!(fight_news(&d.poll()).1.is_empty());
+    }
+
+    fn blasts(ev: &[NetEvent]) -> Vec<([f32; 3], f32)> {
+        ev.iter()
+            .filter_map(|e| match e {
+                NetEvent::Msg(ServerMsg::Blast { pos, radius }) => Some((*pos, *radius)),
+                _ => None,
+            })
+            .collect()
+    }
+
+    #[test]
+    fn the_demo_throws_bombs_by_the_rules() {
+        use bm_core::combat::BOMB_FUSE_TICKS;
+        let mut d = Demo::new("Tester");
+        d.show_creatures();
+        // A grazer at our feet, where a tapped bomb drops.
+        let feet = DVec3::from_array(FIGHT_VIEW);
+        d.fight.creatures[0].pos = feet + DVec3::new(1.0, 0.0, 0.0);
+        d.poll();
+        let throw = |d: &mut Demo, at, hold| {
+            d.send(ClientMsg::Throw {
+                at,
+                slot: 7,
+                yaw: 0,
+                pitch: 0,
+                hold,
+            })
+        };
+        // A tap: dropped at our feet, going off when the whole fuse has
+        // burned, its blast the bag's radius.
+        throw(&mut d, 10, 0);
+        throw(&mut d, 11, 0);
+        assert_eq!(d.fight.bombs.len(), 1, "the second waits for the cooldown");
+        assert_eq!(d.inv.get(7).unwrap().wear, 1);
+        let fuse = BOMB_FUSE_TICKS as f64 / 60.0;
+        d.run_fight(fuse - 0.1);
+        assert!(blasts(&d.poll()).is_empty(), "not yet");
+        d.run_fight(0.2);
+        let ev = d.poll();
+        let b = blasts(&ev);
+        assert_eq!(b.len(), 1);
+        assert!((b[0].0[1] as f64 - (GROUND + 1) as f64).abs() < 0.3, "on the ground");
+        assert!((b[0].0[0] as f64 - feet.x).abs() < 0.1 && (b[0].0[2] as f64 - feet.z).abs() < 0.1);
+        assert_eq!(b[0].1, 3.0);
+        // The grazer a block away took the blast (900 near the middle, less
+        // nothing: tier 1 has no armour).
+        let (hits, _) = fight_news(&ev);
+        assert!(hits.iter().any(|h| h.0 == 1 && h.1 > 450 && h.1 <= 900), "{hits:?}");
+        // Held a second: thrown well away, and goes off sooner.
+        let ticks = bm_core::mining::swing_ticks(50.0);
+        throw(&mut d, 10 + ticks, 60);
+        let bomb = d.fight.bombs[0];
+        assert!((bomb.pos - feet).length() > 5.0, "thrown: {}", bomb.pos);
+        assert!((bomb.at - d.fight.clock - (BOMB_FUSE_TICKS - 60) as f64 / 60.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn the_bombs_screen_keeps_blasts_going_off() {
+        let mut d = Demo::new("Tester");
+        d.show_bombs();
+        d.poll();
+        let mut seen = 0;
+        for _ in 0..80 {
+            d.run_fight(0.05);
+            seen += blasts(&d.poll()).len();
+        }
+        assert!(seen >= 2, "a blast every {SHOWCASE_SECONDS} s: {seen}");
+        assert!(
+            d.inv
+                .get(7)
+                .is_some_and(|s| d.items.get(s.item).and_then(|d| d.bomb()).is_some())
+        );
     }
 
     #[test]

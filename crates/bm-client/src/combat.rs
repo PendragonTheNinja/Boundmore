@@ -10,10 +10,20 @@
 //! does (`Predictor::spend`). Shots are only drawn here: ours at once, from
 //! our eye, others' from `ServerMsg::Shot`, all flown by `combat::shot_step`
 //! exactly as the server flies them.
+//!
+//! Bombs (milestone 13 part 2) light while the attack button is held
+//! (`Fuse`) and are thrown when it is let go, or by themselves when the fuse
+//! runs out in hand. Ours are drawn at once, falling at `BOMB_GRAVITY` and
+//! resting where they land until their fuse ends; the blast itself is drawn
+//! only when the server's `Blast` comes (`crate::effects`). Homing bolts turn
+//! toward their target by `combat::homing_step`, as the server turns them.
 
 use crate::creatures::ray_box;
-use bm_core::combat::{CHARGE_TICKS, shot_step};
+use bm_core::combat::{
+    BOMB_FUSE_TICKS, BOMB_GRAVITY, CHARGE_TICKS, HOMING_TURN_PER_TICK, SHOT_GRAVITY, homing_step, shot_step,
+};
 use bm_core::{BlockPos, PlanetShape, raycast};
+use bm_protocol::{ShotKind, Target};
 use glam::DVec3;
 
 /// How a sling fires while the button is down (the sling epics, M12).
@@ -138,6 +148,112 @@ impl Trigger {
     }
 }
 
+/// A bomb to throw: right after input `at`, held `hold` ticks since it was
+/// lit (`ClientMsg::Throw`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Toss {
+    pub at: u32,
+    pub hold: u16,
+}
+
+/// A bag of bombs' trigger: holding the attack button lights a bomb once the
+/// shared cooldown allows; letting go throws it, harder the longer it was
+/// held (`combat::throw_speed`); a fuse that runs out in hand throws it by
+/// itself, and the next bomb waits for a new press.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct Fuse {
+    /// The input the bomb in hand was lit at.
+    lit: Option<u32>,
+    /// The fuse ran out in hand: nothing lights until the button is let go.
+    spent: bool,
+}
+
+impl Fuse {
+    /// One frame, as `Trigger::update`: `pressed` if the button went down
+    /// since the last frame, `held` if it is down now, this frame's inputs
+    /// `first..=latest`, and the input the cooldown allows. Returns the
+    /// throw, if any; the caller starts the cooldown at its `at`.
+    pub fn update(&mut self, pressed: bool, held: bool, ready: u32, first: u32, latest: u32) -> Option<Toss> {
+        if !held {
+            self.spent = false;
+        }
+        match self.lit {
+            None => {
+                if self.spent || !(held || pressed) || ready > latest {
+                    // A tap let go before the cooldown allowed lights nothing.
+                    return None;
+                }
+                let at = ready.max(first.min(latest));
+                if held {
+                    self.lit = Some(at);
+                    None
+                } else {
+                    // A click shorter than a frame: lit and let go at once,
+                    // dropped at our feet.
+                    Some(Toss { at, hold: 0 })
+                }
+            }
+            Some(lit) if held => {
+                let end = lit + BOMB_FUSE_TICKS;
+                (end <= latest).then(|| {
+                    self.lit = None;
+                    self.spent = true;
+                    Toss {
+                        at: end,
+                        hold: BOMB_FUSE_TICKS as u16,
+                    }
+                })
+            }
+            Some(lit) => {
+                // Let go somewhere in this frame: on its first input.
+                self.lit = None;
+                let at = first.min(latest).max(lit);
+                Some(Toss {
+                    at,
+                    hold: (at - lit).min(BOMB_FUSE_TICKS) as u16,
+                })
+            }
+        }
+    }
+
+    /// How much of the lit bomb's fuse has burned at input `now`, 0 to 1
+    /// (None with no bomb lit), for the ring on screen and the bomb in hand.
+    pub fn burned(&self, now: u32) -> Option<f32> {
+        self.lit
+            .map(|l| now.saturating_sub(l).min(BOMB_FUSE_TICKS) as f32 / BOMB_FUSE_TICKS as f32)
+    }
+
+    /// Ticks the lit bomb has been held at input `now`.
+    pub fn held_for(&self, now: u32) -> Option<u32> {
+        self.lit.map(|l| now.saturating_sub(l))
+    }
+
+    /// Forgets a lit bomb (the bag was put away: nothing was sent, so
+    /// nothing happened).
+    pub fn reset(&mut self) {
+        self.lit = None;
+    }
+}
+
+/// Fall-off that makes `shot_step` fall at `BOMB_GRAVITY`.
+pub const BOMB_FALLOFF: f32 = (BOMB_GRAVITY / SHOT_GRAVITY) as f32;
+
+/// Others' bombs are drawn at most this long (ticks) when no `ShotEnd`
+/// comes: a safety net, longer than any fuse.
+const OTHERS_BOMB_TICKS: u32 = 10 * bm_core::TICK_HZ;
+
+/// A shot drawn this frame.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Drawn {
+    pub pos: DVec3,
+    /// The way it flies (unit; zero for a bomb at rest).
+    pub dir: DVec3,
+    pub mine: bool,
+    pub kind: ShotKind,
+    /// A bomb's fuse burned, 0 to 1 (ours; others' are unknown: None).
+    pub burned: Option<f32>,
+}
+
 /// A shot drawn in the air.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Shot {
@@ -155,8 +271,16 @@ pub struct Shot {
     pub wait: u32,
     /// Ticks it flies on after `ShotEnd` (others' shots), then it goes.
     pub ending: Option<u32>,
-    /// Ours: stops at a living creature's box.
+    /// Ours: stops at a living creature's box (bombs do not).
     pub mine: bool,
+    pub kind: ShotKind,
+    /// What a homing bolt turns toward.
+    pub homing: Option<Target>,
+    /// A bomb's ticks left: ours its fuse (it goes when it ends: the blast
+    /// is the server's to say), others' a safety net.
+    pub fuse: Option<u32>,
+    /// A bomb lying where it landed.
+    pub resting: bool,
 }
 
 /// Others' shots are held back this many ticks: we draw everyone else
@@ -181,7 +305,38 @@ impl Shots {
             wait: 0,
             ending: None,
             mine: true,
+            kind: ShotKind::Pellet,
+            homing: None,
+            fuse: None,
+            resting: false,
         });
+    }
+
+    /// Our own bomb, thrown from `from` along `dir` (unit) at `speed`, its
+    /// fuse `fuse` ticks from going off.
+    pub fn throw(&mut self, from: DVec3, dir: DVec3, speed: f64, fuse: u32) {
+        self.list.push(Shot {
+            id: None,
+            pos: from,
+            prev: from,
+            vel: dir * speed,
+            falloff: BOMB_FALLOFF,
+            left: f64::INFINITY,
+            wait: 0,
+            ending: None,
+            mine: true,
+            kind: ShotKind::Bomb,
+            homing: None,
+            fuse: Some(fuse),
+            resting: false,
+        });
+    }
+
+    /// A blast at `pos` of `radius`: our own bombs within it are what went
+    /// off (the server's word came before our fuse ended).
+    pub fn blast(&mut self, pos: DVec3, radius: f64, shape: PlanetShape) {
+        self.list
+            .retain(|s| !(s.mine && s.kind == ShotKind::Bomb && shape.delta(pos, s.pos).length() <= radius.max(1.5)));
     }
 
     /// `ServerMsg::Shot`: someone else's (or a creature's) shot.
@@ -198,6 +353,10 @@ impl Shots {
             wait: SERVER_SHOT_DELAY,
             ending: None,
             mine: false,
+            kind: s.kind,
+            homing: s.homing.filter(|_| s.kind == ShotKind::Homing),
+            fuse: (s.kind == ShotKind::Bomb).then_some(OTHERS_BOMB_TICKS),
+            resting: false,
         });
     }
 
@@ -211,12 +370,14 @@ impl Shots {
 
     /// One tick of every shot. `solid` says what stops a shot; `creature`
     /// whether a segment (from, to) enters a living creature's box (our own
-    /// shots only: the server decides others').
+    /// shots only: the server decides others'); `target` where a homing
+    /// bolt's target is now (its chest), if known.
     pub fn tick(
         &mut self,
         shape: PlanetShape,
         solid: impl Fn(BlockPos) -> bool,
         creature: impl Fn(DVec3, DVec3) -> bool,
+        target: impl Fn(Target) -> Option<DVec3>,
     ) {
         self.list.retain_mut(|s| {
             s.prev = s.pos;
@@ -230,7 +391,23 @@ impl Shots {
                 }
                 *n -= 1;
             }
-            let (pos, vel) = shot_step(s.pos, s.vel, s.falloff);
+            if let Some(n) = &mut s.fuse {
+                if *n == 0 {
+                    return false;
+                }
+                *n -= 1;
+            }
+            if s.kind == ShotKind::Bomb {
+                return bomb_tick(s, shape, &solid);
+            }
+            let (pos, vel) = match (s.kind, s.homing.and_then(&target)) {
+                (ShotKind::Homing, Some(t)) => {
+                    homing_step(s.pos, s.vel, shape.nearest_lap(s.pos, t), HOMING_TURN_PER_TICK)
+                }
+                // A homing bolt with nothing to turn to flies straight.
+                (ShotKind::Homing, None) => (s.pos + s.vel * bm_core::movement::TICK_DT, s.vel),
+                _ => shot_step(s.pos, s.vel, s.falloff),
+            };
             let step = pos - s.pos;
             let len = step.length();
             if len <= 0.0 || s.left <= 0.0 {
@@ -252,20 +429,66 @@ impl Shots {
         });
     }
 
-    /// Shots to draw this frame, `alpha` of the way through the tick: their
-    /// position, the way they fly (unit), and whether they are ours.
+    /// Shots to draw this frame, `alpha` of the way through the tick.
     /// Waiting shots are not drawn.
-    pub fn drawn(&self, alpha: f64) -> Vec<(DVec3, DVec3, bool)> {
+    pub fn drawn(&self, alpha: f64) -> Vec<Drawn> {
         self.list
             .iter()
             .filter(|s| s.wait == 0)
-            .map(|s| (s.prev + (s.pos - s.prev) * alpha, s.vel.normalize_or_zero(), s.mine))
+            .map(|s| Drawn {
+                pos: s.prev + (s.pos - s.prev) * alpha,
+                dir: s.vel.normalize_or_zero(),
+                mine: s.mine,
+                kind: s.kind,
+                burned: s
+                    .fuse
+                    .filter(|_| s.mine)
+                    .map(|n| 1.0 - n as f32 / BOMB_FUSE_TICKS as f32),
+            })
             .collect()
     }
 
     pub fn clear(&mut self) {
         self.list.clear();
     }
+}
+
+/// How far above the ground a resting bomb's middle lies.
+pub const BOMB_REST: f64 = 0.15;
+
+/// One tick of a bomb: it falls at `BOMB_GRAVITY` until it meets a block.
+/// Landing on a floor it rests there; striking a wall or a ceiling it stops
+/// short and drops. Returns whether it is still drawn.
+fn bomb_tick(s: &mut Shot, shape: PlanetShape, solid: &impl Fn(BlockPos) -> bool) -> bool {
+    if s.resting {
+        return true;
+    }
+    let (pos, vel) = shot_step(s.pos, s.vel, s.falloff);
+    let step = pos - s.pos;
+    let len = step.length();
+    if len <= 0.0 {
+        return true;
+    }
+    let dir = step / len;
+    match raycast(s.pos, dir, len, solid) {
+        Some(hit) if hit.normal == [0, 1, 0] || hit.normal == [0, 0, 0] => {
+            s.pos = shape.wrap_point(hit.point + DVec3::new(0.0, BOMB_REST, 0.0));
+            s.vel = DVec3::ZERO;
+            s.resting = true;
+        }
+        Some(hit) => {
+            // Off a wall: stop just short of it, and fall from there.
+            let n = DVec3::new(hit.normal[0] as f64, hit.normal[1] as f64, hit.normal[2] as f64);
+            s.pos = shape.wrap_point(hit.point + n * 0.1);
+            s.vel = DVec3::ZERO;
+        }
+        None => {
+            s.pos = shape.wrap_point(pos);
+            s.vel = vel;
+        }
+    }
+    s.prev = shape.nearest_lap(s.pos, s.prev);
+    true
 }
 
 /// Whether the segment from `a` to `b` passes through the box.
@@ -586,7 +809,7 @@ mod tests {
         let fly = |shots: &mut Shots, solid: &dyn Fn(BlockPos) -> bool, hit: &dyn Fn(DVec3, DVec3) -> bool| {
             let mut n = 0;
             while !shots.list.is_empty() && n < 200 {
-                shots.tick(shape, solid, hit);
+                shots.tick(shape, solid, hit, |_| None);
                 n += 1;
             }
             n
@@ -603,7 +826,7 @@ mod tests {
         let mut last = from;
         while let Some(shot) = s.list.first().copied() {
             last = shot.pos;
-            s.tick(shape, wall, |_, _| false);
+            s.tick(shape, wall, |_, _| false, |_| None);
             ticks += 1;
         }
         assert!(ticks <= 11 && last.x < 15.0, "{ticks} {last}");
@@ -646,19 +869,179 @@ mod tests {
         s.server(&view);
         for _ in 0..SERVER_SHOT_DELAY {
             assert!(s.drawn(0.5).is_empty(), "held back");
-            s.tick(shape, open, |_, _| false);
+            s.tick(shape, open, |_, _| false, |_| None);
         }
         assert_eq!(s.drawn(0.0).len(), 1);
-        s.tick(shape, open, |_, _| false);
+        s.tick(shape, open, |_, _| false, |_| None);
         assert!(s.list[0].pos.z < 10.0, "flying");
         // The server ends it: drawn on for the delay, then gone.
         s.end(7);
         for _ in 0..SERVER_SHOT_DELAY {
-            s.tick(shape, open, |_, _| false);
+            s.tick(shape, open, |_, _| false, |_| None);
             assert_eq!(s.list.len(), 1);
         }
-        s.tick(shape, open, |_, _| false);
+        s.tick(shape, open, |_, _| false, |_| None);
         assert!(s.list.is_empty());
+    }
+
+    /// Runs a bomb trigger over `frames` frames of 3 inputs each, the button
+    /// held as `held(frame)` says, on the shared cooldown with a bag
+    /// throwing every `ticks`. Returns the throws.
+    fn run_fuse(ticks: u32, frames: u32, held: impl Fn(u32) -> bool) -> Vec<Toss> {
+        let mut f = Fuse::default();
+        let mut s = crate::mining::Swinger::default();
+        let mut was = false;
+        let mut out = Vec::new();
+        for frame in 0..frames {
+            let (first, latest) = (frame * 3 + 1, frame * 3 + 3);
+            let h = held(frame);
+            if let Some(t) = f.update(h && !was, h, s.ready_at(), first, latest) {
+                s.swung(t.at, ticks);
+                out.push(t);
+            }
+            was = h;
+        }
+        out
+    }
+
+    #[test]
+    fn bombs_light_on_hold_and_throw_on_release() {
+        let ticks = bm_core::mining::swing_ticks(50.0);
+        // Held 20 frames (60 inputs) from input 1, let go: thrown on the
+        // first input after, held 60 ticks.
+        assert_eq!(run_fuse(ticks, 40, |f| f < 20), vec![Toss { at: 61, hold: 60 }]);
+        // A click shorter than a frame drops one at our feet.
+        let mut f = Fuse::default();
+        assert_eq!(f.update(true, false, 0, 4, 6), Some(Toss { at: 4, hold: 0 }));
+        // Held through the whole fuse: thrown by itself the moment it runs
+        // out, and nothing more lights until the button is let go.
+        let fuse = BOMB_FUSE_TICKS;
+        let tosses = run_fuse(ticks, 200, |f| f < 150);
+        assert_eq!(
+            tosses,
+            vec![Toss {
+                at: 1 + fuse,
+                hold: fuse as u16
+            }]
+        );
+        // Let go and pressed again: the next lights once the cooldown allows.
+        let tosses = run_fuse(ticks, 300, |f| !(150..152).contains(&f));
+        assert_eq!(tosses.len(), 2);
+        assert!(tosses[1].at >= tosses[0].at + ticks);
+        // Pressed during the cooldown: lit only once ready, and the hold
+        // counts from then.
+        let mut f = Fuse::default();
+        assert_eq!(f.update(true, true, 50, 10, 12), None);
+        assert_eq!(f.burned(12), None, "not ready: not lit");
+        assert_eq!(f.update(false, true, 50, 49, 51), None);
+        assert_eq!(f.held_for(60), Some(10));
+        assert!((f.burned(50 + fuse / 2).unwrap() - 0.5).abs() < 1e-6);
+        assert_eq!(f.update(false, false, 50, 70, 72), Some(Toss { at: 70, hold: 20 }));
+        // A tap let go before the cooldown allowed throws nothing.
+        let mut f = Fuse::default();
+        assert_eq!(f.update(true, false, 50, 10, 12), None);
+        assert_eq!(f.update(false, false, 50, 49, 51), None);
+        // Put away while lit: forgotten.
+        let mut f = Fuse::default();
+        f.update(true, true, 0, 1, 3);
+        f.reset();
+        assert_eq!(f.update(false, false, 0, 4, 6), None);
+    }
+
+    #[test]
+    fn throws_cost_energy_and_tire_you_out() {
+        // A copper bag (900 damage: 90 energy a throw), thrown as fast as
+        // the cooldown allows: a full bar is six throws.
+        let mut p = PlayerState::default();
+        let tosses = run_fuse(bm_core::mining::swing_ticks(50.0), 4000, |f| f % 4 == 0);
+        assert!(tosses.len() > 20);
+        let thrown = tosses.iter().filter(|_| p.try_spend(90)).count();
+        assert_eq!(thrown, 600 / 90);
+    }
+
+    #[test]
+    fn bombs_fall_and_rest_on_the_ground_until_their_fuse_ends() {
+        let shape = PlanetShape::new(8, 4);
+        let floor = |p: BlockPos| p.y < 44;
+        let mut s = Shots::default();
+        // Thrown level from 1.6 above the floor at 10 a second, 60 ticks of
+        // fuse left.
+        s.throw(DVec3::new(10.5, 45.6, 10.5), DVec3::X, 10.0, 60);
+        let mut landed = None;
+        for t in 0..60 {
+            s.tick(shape, floor, |_, _| true, |_| None);
+            let b = s.list[0];
+            if b.resting && landed.is_none() {
+                landed = Some((t, b.pos));
+            }
+        }
+        let (t, pos) = landed.expect("it lands");
+        assert!(t < 40);
+        assert!((pos.y - (44.0 + BOMB_REST)).abs() < 1e-9, "on the floor: {pos}");
+        assert!(pos.x > 11.5, "ahead of us: {pos}");
+        // It stays put (creatures do not stop it) until the fuse ends.
+        assert_eq!(s.list[0].pos, pos);
+        let d = s.drawn(0.5);
+        assert_eq!((d[0].kind, d[0].dir), (ShotKind::Bomb, DVec3::ZERO));
+        assert!(d[0].burned.unwrap() > 0.9);
+        s.tick(shape, floor, |_, _| true, |_| None);
+        assert!(s.list.is_empty(), "gone at fuse end");
+        // A wall stops it; it drops at the wall's foot.
+        let mut s = Shots::default();
+        let wall = |p: BlockPos| p.y < 44 || p.x == 13;
+        s.throw(DVec3::new(10.5, 45.6, 10.5), DVec3::X, 20.0, 120);
+        for _ in 0..100 {
+            s.tick(shape, wall, |_, _| false, |_| None);
+        }
+        let b = s.list[0];
+        assert!(b.resting && b.pos.x < 13.0 && b.pos.x > 12.5, "{}", b.pos);
+        // A blast where it lies takes it away.
+        s.blast(b.pos + DVec3::new(0.5, 0.0, 0.0), 3.0, shape);
+        assert!(s.list.is_empty());
+    }
+
+    #[test]
+    fn shots_fly_by_their_kind() {
+        let shape = PlanetShape::new(8, 4);
+        let view = |id, kind, homing| bm_protocol::ShotView {
+            id,
+            from: Target::Creature(3),
+            pos: [10.0, 60.0, 10.0],
+            vel: [0.0, 0.0, -20.0],
+            falloff: 0.5,
+            range: 40.0,
+            kind,
+            homing,
+        };
+        let mut s = Shots::default();
+        s.server(&view(1, ShotKind::Homing, Some(Target::Player(4))));
+        s.server(&view(2, ShotKind::Bolt, None));
+        // A homing bolt with no target to turn to flies straight, no gravity.
+        s.server(&view(3, ShotKind::Homing, Some(Target::Creature(99))));
+        s.server(&view(4, ShotKind::Bomb, None));
+        let me = DVec3::new(30.0, 60.0, 0.0);
+        let target = |t: Target| (t == Target::Player(4)).then_some(me);
+        for _ in 0..SERVER_SHOT_DELAY + 30 {
+            s.tick(shape, open, |_, _| false, target);
+        }
+        let get = |id| s.list.iter().find(|x| x.id == Some(id)).copied().unwrap();
+        let homing = get(1);
+        assert!(homing.vel.x > 0.0, "turned toward us: {}", homing.vel);
+        assert!((homing.vel.length() - 20.0).abs() < 1e-6, "keeping its speed");
+        assert_eq!(homing.pos.y, 60.0, "no gravity");
+        assert!(get(2).pos.y < 60.0, "a bolt arcs like a pellet");
+        let straight = get(3);
+        assert_eq!((straight.vel, straight.pos.y), (DVec3::new(0.0, 0.0, -20.0), 60.0));
+        assert!(get(4).vel.y < 0.0, "a bomb falls");
+        let kinds: Vec<ShotKind> = s.drawn(0.0).iter().map(|d| d.kind).collect();
+        assert_eq!(
+            kinds,
+            [ShotKind::Homing, ShotKind::Bolt, ShotKind::Homing, ShotKind::Bomb]
+        );
+        assert!(
+            s.drawn(0.0).iter().all(|d| d.burned.is_none()),
+            "others' fuses are not known"
+        );
     }
 
     #[test]

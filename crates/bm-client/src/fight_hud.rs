@@ -51,6 +51,9 @@ pub struct FightView<'a> {
     pub numbers: &'a [Number],
     /// Draw's charge, 0 to 1, while charging.
     pub charge: Option<f32>,
+    /// A lit bomb in hand: how much of its fuse has burned and how hard it
+    /// would be thrown now, each 0 to 1.
+    pub fuse: Option<(f32, f32)>,
     /// Defeated: by whom (empty if not yet told), the XP debt, and whether
     /// Return was pressed.
     pub defeat: Option<(&'a str, u64, bool)>,
@@ -78,7 +81,7 @@ pub fn show(ctx: &egui::Context, v: &FightView) -> bool {
     if v.flash > 0.0 {
         flash(ctx, screen, v.flash);
     }
-    if !v.plates.is_empty() || !v.numbers.is_empty() || v.charge.is_some() {
+    if !v.plates.is_empty() || !v.numbers.is_empty() || v.charge.is_some() || v.fuse.is_some() {
         egui::Area::new(Id::unique("fight-overlay"))
             .fixed_pos(screen.min)
             .interactable(false)
@@ -93,6 +96,9 @@ pub fn show(ctx: &egui::Context, v: &FightView) -> bool {
                 }
                 if let Some(c) = v.charge {
                     paint_charge(p, screen.center(), c);
+                }
+                if let Some((burned, power)) = v.fuse {
+                    paint_fuse(p, screen.center(), burned, power);
                 }
             });
     }
@@ -210,6 +216,63 @@ fn paint_charge(p: &egui::Painter, centre: Pos2, charge: f32) {
     }
 }
 
+/// Points along an arc of radius `r` about `centre`, from the top clockwise,
+/// `from` to `to` of the way round (0 to 1).
+fn arc(centre: Pos2, r: f32, from: f32, to: f32) -> Vec<Pos2> {
+    let n = 64;
+    let (a, b) = ((from * n as f32) as usize, (to.clamp(0.0, 1.0) * n as f32) as usize);
+    (a..=b)
+        .map(|i| {
+            let t = -std::f32::consts::FRAC_PI_2 + i as f32 / n as f32 * std::f32::consts::TAU;
+            centre + vec2(t.cos(), t.sin()) * r
+        })
+        .collect()
+}
+
+/// The colour of a fuse with `left` of it to burn (1 just lit): straw
+/// yellow, through orange, to red as it runs out.
+pub fn fuse_colour(left: f32) -> Color32 {
+    let l = left.clamp(0.0, 1.0);
+    let (a, b, t) = if l > 0.5 {
+        ([255.0, 150.0, 40.0], [255.0, 226.0, 120.0], (l - 0.5) * 2.0)
+    } else {
+        ([230.0, 40.0, 24.0], [255.0, 150.0, 40.0], l * 2.0)
+    };
+    let mix = |i: usize| (a[i] + (b[i] - a[i]) * t) as u8;
+    Color32::from_rgb(mix(0), mix(1), mix(2))
+}
+
+/// A lit bomb around the crosshair: an outer fuse burning down from the
+/// top, a spark where it burns and quicker flicker as it runs out, and an
+/// inner ring filling as the throw gains strength (full at
+/// `combat::THROW_FULL_TICKS`).
+fn paint_fuse(p: &egui::Painter, centre: Pos2, burned: f32, power: f32) {
+    let r = 24.0;
+    let left = 1.0 - burned.clamp(0.0, 1.0);
+    p.circle_stroke(centre, r, Stroke::new(5.0, Color32::from_black_alpha(120)));
+    let colour = fuse_colour(left);
+    let cord = arc(centre, r, burned, 1.0);
+    if cord.len() > 1 {
+        p.add(egui::Shape::line(cord, Stroke::new(3.5, colour)));
+    }
+    // The spark at the burning end.
+    let at = arc(centre, r, burned, burned)[0];
+    p.circle_filled(at, 5.5, Color32::from_rgba_unmultiplied(255, 140, 40, 110));
+    p.circle_filled(at, 3.0, Color32::from_rgb(255, 244, 200));
+    // Strength of the throw, inside.
+    let inner = 15.0;
+    p.circle_stroke(centre, inner, Stroke::new(2.5, Color32::from_black_alpha(90)));
+    let fill = arc(centre, inner, 0.0, power);
+    if fill.len() > 1 {
+        let c = if power >= 1.0 {
+            GOLD
+        } else {
+            Color32::from_rgb(250, 236, 200)
+        };
+        p.add(egui::Shape::line(fill, Stroke::new(2.0, c)));
+    }
+}
+
 /// The text the defeat screen shows.
 pub fn defeat_lines(by: &str, debt: u64) -> (String, Option<String>) {
     let title = if by.is_empty() {
@@ -283,6 +346,16 @@ mod tests {
         let right = to_screen(Vec3::new(2.0, 0.0, -10.0), fwd, fov, screen).unwrap();
         assert!(right.x > centre.x);
         assert_eq!(to_screen(Vec3::new(0.0, 0.0, 10.0), fwd, fov, screen), None);
+    }
+
+    #[test]
+    fn the_fuse_reddens_as_it_burns() {
+        let fresh = fuse_colour(1.0);
+        let late = fuse_colour(0.05);
+        assert!(fresh.g() > 200 && late.g() < 60, "{fresh:?} {late:?}");
+        let top = arc(Pos2::ZERO, 10.0, 0.0, 0.0)[0];
+        assert!((top - pos2(0.0, -10.0)).length() < 1e-4, "from the top: {top:?}");
+        assert_eq!(arc(Pos2::ZERO, 10.0, 0.0, 1.0).len(), 65);
     }
 
     #[test]
