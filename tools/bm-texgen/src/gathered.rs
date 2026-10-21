@@ -16,7 +16,7 @@ use crate::materials::stone_ramp;
 use crate::noise::{hash2, seed, unit, value};
 use crate::tex::{Tex, c};
 
-fn ramp(rgb: u32, dark: f32, light: f32) -> Ramp {
+pub(crate) fn ramp(rgb: u32, dark: f32, light: f32) -> Ramp {
     RampSpec::new(Rgba::hex(rgb), 7, dark, light)
         .cool(HUE_PURPLE, 0.3)
         .warm(HUE_GOLD, 0.25)
@@ -26,7 +26,7 @@ fn ramp(rgb: u32, dark: f32, light: f32) -> Ramp {
 /// A shaded ellipse turned by `turn`, lit from the top left, with a small
 /// highlight. `bump` roughens its outline (tubers), `gloss` adds a sheen.
 #[allow(clippy::too_many_arguments)]
-fn blob(icon: &mut Icon, centre: P, r: P, turn: f32, ramp: &Ramp, bump: f32, gloss: bool, salt: u32) {
+pub(crate) fn blob(icon: &mut Icon, centre: P, r: P, turn: f32, ramp: &Ramp, bump: f32, gloss: bool, salt: u32) {
     let (s, co) = turn.sin_cos();
     icon.layer(true, |x, y| {
         let (dx, dy) = (c(x) - centre.0, c(y) - centre.1);

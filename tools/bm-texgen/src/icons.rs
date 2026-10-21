@@ -36,7 +36,7 @@ pub(crate) fn flint_ramp() -> Ramp {
     Ramp::from_hex(&[0x0e0c1c, 0x1a1830, 0x2a2848, 0x3c3c62, 0x55587e, 0x7c80a2, 0xb4b8d0])
 }
 
-fn leather_ramp() -> Ramp {
+pub(crate) fn leather_ramp() -> Ramp {
     Ramp::from_hex(&[0x2a1220, 0x4a2026, 0x6c322c, 0x8c4a36, 0xa86642])
 }
 
@@ -731,7 +731,17 @@ fn hand_stone() -> Tex {
 /// The torch: a stick standing a little tilted, its top charred, under a
 /// flame of red, orange and gold with a pale heart.
 fn torch() -> Tex {
-    let salt = seed("torch_icon");
+    torch_icon(false)
+}
+
+/// The tallow torch: the torch with a fat head of cloth soaked in pale
+/// tallow and bound with cord, under a bigger, hotter flame.
+fn tallow_torch() -> Tex {
+    torch_icon(true)
+}
+
+fn torch_icon(tallow: bool) -> Tex {
+    let salt = seed(if tallow { "tallow_torch_icon" } else { "torch_icon" });
     let f = Frame { ox: 9.5, oy: 27.5 };
     let wood = plank_ramp();
     let fire = flame_ramp();
@@ -750,19 +760,48 @@ fn torch() -> Tex {
         let clump = unit(hash2(salt, (u * 0.5).floor() as i32 as u32)) - 0.5;
         Some(wood.pick(0.5 + side * 0.3 + clump * 0.14, x, y))
     });
+    if tallow {
+        // The head: turns of tallow-soaked cloth, fatter than the stick,
+        // each turn lit on its top-left side, bound with cord at its foot.
+        let cloth = crate::materials::tallow_cloth_ramp();
+        let cord = cord_ramp();
+        icon.layer(true, |x, y| {
+            let (u, v) = f.uv(x, y);
+            if !(10.0..=17.5).contains(&u) || v.abs() > 3.0 {
+                return None;
+            }
+            let side = -v / 3.0;
+            if u < 11.8 {
+                let turn = (x + y) % 2 == 0;
+                return Some(cord.pick(0.5 + side * 0.25 + if turn { 0.15 } else { -0.15 }, x, y));
+            }
+            let band = ((u - 11.8) / 1.9).floor() as i32 % 2 == 0;
+            let t = 0.58 + side * 0.3 + if band { 0.1 } else { -0.12 };
+            Some(cloth.pick(t, x, y))
+        });
+    }
     // The flame: a teardrop pointing up, centred on the stick's top.
-    let (tx, ty) = (21.5f32, 12.0f32);
+    let (tx, ty) = if tallow { (21.0f32, 11.5f32) } else { (21.5f32, 12.0f32) };
+    let (size, height, hot) = if tallow {
+        (6.4f32, 11.0f32, 0.1f32)
+    } else {
+        (5.2, 9.5, 0.0)
+    };
     icon.layer(true, |x, y| {
         let (dx, dy) = (c(x) - tx, c(y) - ty);
         // Round below, drawn up into a tip; a lick to one side.
-        let r = if dy > 0.0 { 5.2 } else { 5.2 * (1.0 + dy / 9.5).max(0.0) };
+        let r = if dy > 0.0 {
+            size
+        } else {
+            size * (1.0 + dy / height).max(0.0)
+        };
         let lean = dx + dy * 0.18;
-        if lean.hypot(dy.max(0.0) * 1.1) > r || dy < -9.5 {
+        if lean.hypot(dy.max(0.0) * 1.1) > r || dy < -height {
             return None;
         }
-        let heat = 1.0 - lean.hypot(dy - 1.5) / 5.5;
+        let heat = 1.0 - lean.hypot(dy - 1.5) / (size + 0.3);
         let wave = (unit(hash2(salt, (y / 2) as u32)) - 0.5) * 0.08;
-        Some(fire.pick(0.12 + heat.max(0.0) * 0.95 + wave, x, y))
+        Some(fire.pick(0.12 + hot + heat.max(0.0) * 0.95 + wave, x, y))
     });
     icon.finish()
 }
@@ -1167,6 +1206,7 @@ pub fn paint_icon(name: &str) -> Option<Tex> {
         "stick" => stick(),
         "flint" => flint(),
         "torch" => torch(),
+        "tallow_torch" => tallow_torch(),
         "stone_hammer" => hammer(Metal::Stone),
         "stone_shovel" => shovel(Metal::Stone),
         "stone_axe" => axe(Metal::Stone),
@@ -1186,6 +1226,6 @@ pub fn paint_icon(name: &str) -> Option<Tex> {
         "iron_grapple" => grapple(Metal::Iron, false),
         "wayshard" => wayshard(),
         "portal_token" => portal_token(),
-        other => return crate::gathered::paint(other),
+        other => return crate::gathered::paint(other).or_else(|| crate::creatures::paint(other)),
     })
 }

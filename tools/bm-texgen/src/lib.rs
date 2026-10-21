@@ -8,6 +8,7 @@
 
 pub mod canvas;
 pub mod color;
+pub mod creatures;
 pub mod flora;
 pub mod gathered;
 pub mod icons;

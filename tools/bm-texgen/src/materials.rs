@@ -1162,11 +1162,34 @@ pub(crate) fn flame_ramp() -> Ramp {
 /// columns 14..18 of rows 14..32, the flame's sides on columns 13..19 of rows
 /// 6..12. A hand-made replacement keeps those places.
 pub fn torch(_ctx: Ctx) -> Tex {
-    let salt = seed("torch");
+    torch_picture(false)
+}
+
+/// The tallow torch: the torch's layout, its head wrapped in sackcloth
+/// soaked in pale tallow and bound with cord, under a bigger, warmer flame.
+pub fn tallow_torch(_ctx: Ctx) -> Tex {
+    torch_picture(true)
+}
+
+/// Pale tallow-soaked cloth, cream in the light, tan in the folds.
+pub(crate) fn tallow_cloth_ramp() -> Ramp {
+    Ramp::from_hex(&[0x5a3c32, 0x86644a, 0xb09068, 0xd2b88a, 0xead6a8, 0xf8eccc, 0xfffbec])
+}
+
+fn torch_picture(tallow: bool) -> Tex {
+    let salt = seed(if tallow { "tallow_torch" } else { "torch" });
     let wood = plank_ramp();
     let fire = flame_ramp();
-    let soot = Ramp::from_hex(&[0x140c16, 0x1e1420, 0x2a1a24, 0x3a2228]);
+    let cloth = tallow_cloth_ramp();
+    let cord = Ramp::from_hex(&[0x3a2220, 0x5a3626, 0x7a5232, 0xa8804e]);
+    let soot = if tallow {
+        Ramp::from_hex(&[0x1a0e14, 0x26141c, 0x3a1e20, 0x4e2a22])
+    } else {
+        Ramp::from_hex(&[0x140c16, 0x1e1420, 0x2a1a24, 0x3a2228])
+    };
     let ember = Rgba::hex(0xff8a2a);
+    // A tallow flame burns hotter and taller.
+    let (heat, lick, wide) = if tallow { (0.12, 2.6, 5.0) } else { (0.0, 0.0, 4.2) };
     Tex::from_fn(|x, y| {
         let (fx, fy) = (c(x), c(y));
         // The flame's own box: fully painted, brightest in the middle and
@@ -1175,16 +1198,46 @@ pub fn torch(_ctx: Ctx) -> Tex {
             let across = 1.0 - ((fx - 16.0).abs() / 3.0);
             let up = (12.0 - fy) / 6.0;
             let flicker = (unit(hash2(salt, (x * 7 + y / 2) as u32)) - 0.5) * 0.1;
-            return fire.pick(0.28 + across * 0.42 + up * 0.32 + flicker, x, y);
+            return fire.pick(0.28 + heat + across * 0.42 + up * 0.32 + flicker, x, y);
+        }
+        let side = match x {
+            13 | 14 => 0.2,
+            15 => 0.08,
+            16 => -0.04,
+            _ => -0.2,
+        };
+        // The tallow head: a fat wrap of cloth, a little wider than the
+        // stick, in turns that catch the light, bound with cord at its foot.
+        if tallow && (13..19).contains(&x) && (12..20).contains(&y) {
+            if y == 12 {
+                // Its top, scorched and dripping with molten tallow.
+                return if (x + y) % 2 == 0 {
+                    fire.at(6)
+                } else {
+                    soot.pick(0.6 + side, x, y)
+                };
+            }
+            if y >= 18 {
+                let turn = (x + y) % 2 == 0;
+                return cord.pick(0.55 + side + if turn { 0.15 } else { -0.15 }, x, y);
+            }
+            // Turns of cloth, each lit on its upper edge.
+            let turn = (y - 13) % 3;
+            let t = 0.55
+                + side
+                + if turn == 0 {
+                    0.2
+                } else if turn == 2 {
+                    -0.18
+                } else {
+                    0.0
+                };
+            // Beads of tallow on the cloth.
+            let bead = unit(hash2(salt ^ 0x77, (x * 32 + y) as u32)) > 0.8;
+            return cloth.pick(if bead { 0.98 } else { t }, x, y);
         }
         // The stick.
         if (14..18).contains(&x) && y >= 12 {
-            let side = match x {
-                14 => 0.2,
-                15 => 0.08,
-                16 => -0.04,
-                _ => -0.2,
-            };
             if y < 18 {
                 // Charred where the flame sits, embers in the char.
                 let glow = unit(hash2(salt ^ 0x5a5a, (x * 32 + y) as u32));
@@ -1207,15 +1260,15 @@ pub fn torch(_ctx: Ctx) -> Tex {
         }
         // Flame tongues licking above and beside the box, fading into soot.
         let dx = (fx - 16.0).abs();
-        let reach = 5.0 + 1.6 * (fx * 0.9 + salt as f32 * 1e-9).sin();
+        let reach = 5.0 + lick + 1.6 * (fx * 0.9 + salt as f32 * 1e-9).sin();
         let tongue = 12.0 - fy;
-        if (0.0..reach + 2.0).contains(&tongue) && dx < 4.2 - tongue * 0.38 {
-            let t = 0.15 + (1.0 - dx / 4.2) * 0.5 + (1.0 - tongue / (reach + 2.0)) * 0.2;
+        if (0.0..reach + 2.0).contains(&tongue) && dx < wide - tongue * 0.38 {
+            let t = 0.15 + heat + (1.0 - dx / wide) * 0.5 + (1.0 - tongue / (reach + 2.0)) * 0.2;
             return fire.pick(t, x, y);
         }
         // Soot, warmed by the glow near the flame.
         let d = ((fx - 16.0).powi(2) + (fy - 10.0).powi(2)).sqrt();
-        let warm = (1.0 - d / 14.0).max(0.0);
+        let warm = (1.0 - d / (14.0 + lick * 1.5)).max(0.0);
         soot.pick(0.1 + warm * 0.9, x, y)
     })
 }
@@ -1636,6 +1689,7 @@ pub fn paint_named(name: &str, variant: u32) -> Option<Tex> {
         "ice" => ice,
         "glow_crystal" => glow_crystal,
         "torch" => torch,
+        "tallow_torch" => tallow_torch,
         "timber" => timber,
         "brick" => brick,
         "glass" => glass,
