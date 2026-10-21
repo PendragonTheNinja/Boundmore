@@ -1084,6 +1084,8 @@ impl App {
                 }
             }
             ServerMsg::BlockChanged { pos, block } => s.block_changed(pos, block),
+            // Milestone 12: the client agent shows the character.
+            ServerMsg::Character { .. } => {}
             ServerMsg::BlockHealth { pos, damage } => s.block_health(pos, damage),
             ServerMsg::EditResult { seq, pos, block, .. } => s.edit_result(seq, pos, block),
             ServerMsg::PlayerJoined { id, name } => s.remotes.joined(id, name),

@@ -142,6 +142,13 @@ pub struct BlockDef {
     /// Heat it gives burnt in a furnace (its item; 0: not fuel).
     #[serde(default)]
     pub fuel: u16,
+    /// XP for breaking one (milestone 12; gathering objects scale with the
+    /// tier's health multiplier).
+    #[serde(default)]
+    pub mine_xp: u16,
+    /// XP for placing one inside your own claim.
+    #[serde(default)]
+    pub build_xp: u16,
 }
 
 /// A block's health category [tuning 2.2]: soft 800 (soil, sand, foliage),

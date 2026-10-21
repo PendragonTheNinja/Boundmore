@@ -1,0 +1,687 @@
+# The skill tree (milestone 12): Boundless's live tree (1.0 to Release 248,
+# docs/research/boundless-tuning.md 5.4), in Boundmore's own names. Saves keep
+# spent ranks by `id`, so ids never change.
+#
+#   id        unique and stable
+#   name      what players see
+#   category  attributes (level 1) | mastery (2) | crafting (4) | epic1 (6) |
+#             endurance (8) | epic2 (10) | exploration (12) | epic3 (14)
+#   ranks     most ranks; cost: points per rank (epics 5)
+#   effect    what it does (bm-core `skills::Effect`); "later": on the tree
+#             but not built yet, cannot be bought
+#   text      one rank's effect in plain words
+#   excludes  skills that cannot share its page (Boundless's either/or)
+
+[[skill]]
+id = "power"
+name = "Might"
+category = "attributes"
+ranks = 8
+cost = 1
+effect = "power"
+text = "+5% damage to blocks (and later to creatures)"
+
+[[skill]]
+id = "dexterity"
+name = "Deftness"
+category = "attributes"
+ranks = 8
+cost = 1
+effect = "dexterity"
+text = "+2 action speed: faster swings"
+
+[[skill]]
+id = "agility"
+name = "Swiftness"
+category = "attributes"
+ranks = 8
+cost = 1
+effect = "agility"
+text = "Run 0.3 and sprint 0.6 blocks a second faster; about +2% critical chance"
+
+[[skill]]
+id = "control"
+name = "Grasp"
+category = "attributes"
+ranks = 8
+cost = 1
+effect = "control"
+text = "Reach 1 block further"
+
+[[skill]]
+id = "luck"
+name = "Fortune"
+category = "attributes"
+ranks = 8
+cost = 1
+effect = "luck"
+text = "Bonus drops more often"
+
+[[skill]]
+id = "zeal"
+name = "Stamina"
+category = "attributes"
+ranks = 8
+cost = 1
+effect = "zeal"
+text = "More energy"
+
+[[skill]]
+id = "vitality"
+name = "Toughness"
+category = "attributes"
+ranks = 8
+cost = 1
+effect = "later"
+text = "More health (comes with health)"
+
+[[skill]]
+id = "intelligence"
+name = "Insight"
+category = "attributes"
+ranks = 8
+cost = 1
+effect = "later"
+text = "Stronger healing and forging (comes with them)"
+
+[[skill]]
+id = "all_attributes"
+name = "Wholeness"
+category = "attributes"
+ranks = 5
+cost = 1
+effect = "all_attributes"
+text = "A fifth of a rank in every attribute"
+
+[[skill]]
+id = "hammer_mastery"
+name = "Hammer Skill"
+category = "mastery"
+ranks = 5
+cost = 1
+effect = "hammer_mastery"
+text = "Hammers: +5% damage and +2 action speed"
+
+[[skill]]
+id = "shovel_mastery"
+name = "Shovel Skill"
+category = "mastery"
+ranks = 5
+cost = 1
+effect = "shovel_mastery"
+text = "Shovels: +5% damage and +2 action speed"
+
+[[skill]]
+id = "axe_mastery"
+name = "Axe Skill"
+category = "mastery"
+ranks = 5
+cost = 1
+effect = "axe_mastery"
+text = "Axes: +5% damage and +2 action speed"
+
+[[skill]]
+id = "grapple_mastery"
+name = "Grapple Skill"
+category = "mastery"
+ranks = 5
+cost = 1
+effect = "grapple_mastery"
+text = "Grapple hooks fly 5 blocks a second faster"
+
+[[skill]]
+id = "slingbow_mastery"
+name = "Slingbow Skill"
+category = "mastery"
+ranks = 5
+cost = 1
+effect = "later"
+text = "Slingbows (comes with weapons)"
+
+[[skill]]
+id = "bomb_mastery"
+name = "Bomb Skill"
+category = "mastery"
+ranks = 5
+cost = 1
+effect = "later"
+text = "Bombs (comes with bombs)"
+
+[[skill]]
+id = "spanner_mastery"
+name = "Spanner Skill"
+category = "mastery"
+ranks = 5
+cost = 1
+effect = "later"
+text = "Spanners (comes with machine wear)"
+
+[[skill]]
+id = "tool_crafting"
+name = "Toolmaking"
+category = "crafting"
+ranks = 2
+cost = 1
+effect = "tool_crafting"
+text = "Make better tools: rank 1 for copper and iron"
+
+[[skill]]
+id = "tech_crafting"
+name = "Gadgetry"
+category = "crafting"
+ranks = 2
+cost = 1
+effect = "tech_crafting"
+text = "Make grapples and chisels: rank 1 for copper and iron"
+
+[[skill]]
+id = "machine_crafting"
+name = "Machinery"
+category = "crafting"
+ranks = 3
+cost = 1
+effect = "machine_crafting"
+text = "Make better machines"
+
+[[skill]]
+id = "decoration_crafting"
+name = "Decorating"
+category = "crafting"
+ranks = 3
+cost = 1
+effect = "decoration_crafting"
+text = "Make finer building blocks and lights"
+
+[[skill]]
+id = "weapon_crafting"
+name = "Weaponsmithing"
+category = "crafting"
+ranks = 2
+cost = 1
+effect = "later"
+text = "Make weapons (comes with weapons)"
+
+[[skill]]
+id = "ingredient_crafting"
+name = "Forge Stocks"
+category = "crafting"
+ranks = 3
+cost = 1
+effect = "later"
+text = "Make forging ingredients (comes with forging)"
+
+[[skill]]
+id = "augment_crafting"
+name = "Augments"
+category = "crafting"
+ranks = 3
+cost = 1
+effect = "later"
+text = "Make augments (comes later)"
+
+[[skill]]
+id = "food_crafting"
+name = "Cooking"
+category = "crafting"
+ranks = 3
+cost = 1
+effect = "later"
+text = "Cook food (comes with food)"
+
+[[skill]]
+id = "brew_crafting"
+name = "Brewing"
+category = "crafting"
+ranks = 3
+cost = 1
+effect = "later"
+text = "Make brews (comes with brews)"
+
+[[skill]]
+id = "farming"
+name = "Farming"
+category = "crafting"
+ranks = 3
+cost = 1
+effect = "later"
+text = "Grow crops (comes with farming)"
+
+[[skill]]
+id = "hammer_epic"
+name = "Rockbreaker"
+category = "epic1"
+ranks = 1
+cost = 5
+effect = "hammer_epic"
+text = "Hammers: +25% damage and faster swings"
+excludes = ["shovel_axe_epic"]
+
+[[skill]]
+id = "shovel_axe_epic"
+name = "Groundbreaker"
+category = "epic1"
+ranks = 1
+cost = 5
+effect = "shovel_axe_epic"
+text = "Shovels and axes: +25% damage and faster swings"
+excludes = ["hammer_epic"]
+
+[[skill]]
+id = "energy_epic"
+name = "Deep Reserves"
+category = "epic1"
+ranks = 1
+cost = 5
+effect = "energy_epic"
+text = "Much more energy"
+excludes = ["health_epic"]
+
+[[skill]]
+id = "health_epic"
+name = "Iron Body"
+category = "epic1"
+ranks = 1
+cost = 5
+effect = "later"
+text = "Three times the health (comes with health)"
+excludes = ["energy_epic"]
+
+[[skill]]
+id = "light_epic"
+name = "Inner Light"
+category = "epic1"
+ranks = 1
+cost = 5
+effect = "light_epic"
+text = "You glow, lighting the dark around you"
+
+[[skill]]
+id = "chisel_epic"
+name = "Fine Hands"
+category = "epic1"
+ranks = 1
+cost = 5
+effect = "chisel_epic"
+text = "Any chisel cuts precisely, one corner at a time"
+
+[[skill]]
+id = "slingbow_epic"
+name = "Sharpshot"
+category = "epic1"
+ranks = 1
+cost = 5
+effect = "later"
+text = "Slingbows (comes with weapons)"
+
+[[skill]]
+id = "bomb_epic"
+name = "Blaster"
+category = "epic1"
+ranks = 1
+cost = 5
+effect = "later"
+text = "Bombs (comes with bombs)"
+
+[[skill]]
+id = "rapid_fire_epic"
+name = "Rapid Fire"
+category = "epic1"
+ranks = 1
+cost = 5
+effect = "later"
+text = "Slingbows fire while held (comes with weapons)"
+excludes = ["charging_epic"]
+
+[[skill]]
+id = "charging_epic"
+name = "Draw"
+category = "epic1"
+ranks = 1
+cost = 5
+effect = "later"
+text = "Slingbows charge for more damage (comes with weapons)"
+excludes = ["rapid_fire_epic"]
+
+[[skill]]
+id = "stealth_epic"
+name = "Quiet Step"
+category = "epic1"
+ranks = 1
+cost = 5
+effect = "later"
+text = "Creatures notice you less (comes with creatures)"
+excludes = ["threat_epic"]
+
+[[skill]]
+id = "threat_epic"
+name = "Lure"
+category = "epic1"
+ranks = 1
+cost = 5
+effect = "later"
+text = "Creatures come for you (comes with creatures)"
+excludes = ["stealth_epic"]
+
+[[skill]]
+id = "volume_epic"
+name = "Mass Production"
+category = "epic1"
+ranks = 1
+cost = 5
+effect = "later"
+text = "Larger crafts and less machine wear (comes later)"
+
+[[skill]]
+id = "kinetic_armour"
+name = "Hard Skin"
+category = "endurance"
+ranks = 5
+cost = 1
+effect = "later"
+text = "Comes with combat"
+
+[[skill]]
+id = "kinetic_resistance"
+name = "Steady"
+category = "endurance"
+ranks = 5
+cost = 1
+effect = "later"
+text = "Comes with combat"
+
+[[skill]]
+id = "impulse_armour"
+name = "Blast Guard"
+category = "endurance"
+ranks = 5
+cost = 1
+effect = "later"
+text = "Comes with combat"
+
+[[skill]]
+id = "impulse_resistance"
+name = "Braced"
+category = "endurance"
+ranks = 5
+cost = 1
+effect = "later"
+text = "Comes with combat"
+
+[[skill]]
+id = "falling_armour"
+name = "Soft Landing"
+category = "endurance"
+ranks = 5
+cost = 1
+effect = "later"
+text = "Comes with combat"
+
+[[skill]]
+id = "double_jump_epic"
+name = "Second Leap"
+category = "epic2"
+ranks = 1
+cost = 5
+effect = "double_jump_epic"
+text = "Jump once more in mid-air"
+
+[[skill]]
+id = "high_jump_epic"
+name = "Spring"
+category = "epic2"
+ranks = 1
+cost = 5
+effect = "high_jump_epic"
+text = "Jump about two blocks higher"
+
+[[skill]]
+id = "portal_epic"
+name = "Waywise"
+category = "epic2"
+ranks = 1
+cost = 5
+effect = "portal_epic"
+text = "Open portals"
+
+[[skill]]
+id = "durability_epic"
+name = "Careful Hands"
+category = "epic2"
+ranks = 1
+cost = 5
+effect = "durability_epic"
+text = "Tools wear less"
+
+[[skill]]
+id = "energy_regen_epic"
+name = "Second Wind"
+category = "epic2"
+ranks = 1
+cost = 5
+effect = "energy_regen_epic"
+text = "Energy refills much faster"
+excludes = ["health_regen_epic"]
+
+[[skill]]
+id = "health_regen_epic"
+name = "Mending"
+category = "epic2"
+ranks = 1
+cost = 5
+effect = "later"
+text = "Health returns faster (comes with health)"
+excludes = ["energy_regen_epic"]
+
+[[skill]]
+id = "gear_crafting_epic"
+name = "Gearsmith"
+category = "epic2"
+ranks = 1
+cost = 5
+effect = "gear_crafting_epic"
+text = "+1 to Toolmaking and Gadgetry (and Weaponsmithing later)"
+excludes = ["consumable_crafting_epic"]
+
+[[skill]]
+id = "consumable_crafting_epic"
+name = "Provisioner"
+category = "epic2"
+ranks = 1
+cost = 5
+effect = "later"
+text = "+1 to Cooking and Brewing (comes with them)"
+excludes = ["gear_crafting_epic"]
+
+[[skill]]
+id = "gathering_epic"
+name = "Forager"
+category = "epic2"
+ranks = 1
+cost = 5
+effect = "later"
+text = "Dig up plants and boulders to replant (comes later)"
+
+[[skill]]
+id = "efficient_crafting_epic"
+name = "Thrift"
+category = "epic2"
+ranks = 1
+cost = 5
+effect = "later"
+text = "Machines use less fuel (comes with power)"
+
+[[skill]]
+id = "death_epic"
+name = "Second Chance"
+category = "epic2"
+ranks = 1
+cost = 5
+effect = "later"
+text = "Lose less when defeated (comes with combat)"
+
+[[skill]]
+id = "tax_epic"
+name = "Merchant"
+category = "epic2"
+ranks = 1
+cost = 5
+effect = "later"
+text = "Lower shop tax (comes with shops)"
+
+[[skill]]
+id = "forging_epic"
+name = "Forgemaster"
+category = "epic2"
+ranks = 1
+cost = 5
+effect = "later"
+text = "More forging ingredients at once (comes with forging)"
+
+[[skill]]
+id = "farming_epic"
+name = "Green Thumb"
+category = "epic2"
+ranks = 1
+cost = 5
+effect = "later"
+text = "More from crops (comes with farming)"
+
+[[skill]]
+id = "volatile_protection"
+name = "Fire Ward"
+category = "exploration"
+ranks = 5
+cost = 1
+effect = "later"
+text = "Comes with world hazards"
+
+[[skill]]
+id = "potent_protection"
+name = "Spark Ward"
+category = "exploration"
+ranks = 5
+cost = 1
+effect = "later"
+text = "Comes with world hazards"
+
+[[skill]]
+id = "caustic_protection"
+name = "Acid Ward"
+category = "exploration"
+ranks = 5
+cost = 1
+effect = "later"
+text = "Comes with world hazards"
+
+[[skill]]
+id = "warp_distance"
+name = "Far Warp"
+category = "exploration"
+ranks = 3
+cost = 1
+effect = "later"
+text = "Comes with warps"
+
+[[skill]]
+id = "damage_epic"
+name = "Overpower"
+category = "epic3"
+ranks = 1
+cost = 5
+effect = "damage_epic"
+text = "Triples what Might adds"
+
+[[skill]]
+id = "tool_crafting_epic"
+name = "Master Toolmaker"
+category = "epic3"
+ranks = 1
+cost = 5
+effect = "tool_crafting_epic"
+text = "+1 to Toolmaking"
+excludes = ["tech_crafting_epic", "weapon_crafting_epic"]
+
+[[skill]]
+id = "tech_crafting_epic"
+name = "Master Tinkerer"
+category = "epic3"
+ranks = 1
+cost = 5
+effect = "tech_crafting_epic"
+text = "+1 to Gadgetry"
+excludes = ["tool_crafting_epic", "weapon_crafting_epic"]
+
+[[skill]]
+id = "weapon_crafting_epic"
+name = "Master Weaponsmith"
+category = "epic3"
+ranks = 1
+cost = 5
+effect = "later"
+text = "+1 to Weaponsmithing (comes with weapons)"
+excludes = ["tool_crafting_epic", "tech_crafting_epic"]
+
+[[skill]]
+id = "healing_epic"
+name = "Healer"
+category = "epic3"
+ranks = 1
+cost = 5
+effect = "later"
+text = "Comes with healing"
+
+[[skill]]
+id = "protection_epic"
+name = "Bulwark"
+category = "epic3"
+ranks = 1
+cost = 5
+effect = "later"
+text = "Comes with combat"
+
+[[skill]]
+id = "rage_epic"
+name = "Fury"
+category = "epic3"
+ranks = 1
+cost = 5
+effect = "later"
+text = "Comes with combat"
+excludes = ["focus_epic"]
+
+[[skill]]
+id = "focus_epic"
+name = "Calm"
+category = "epic3"
+ranks = 1
+cost = 5
+effect = "later"
+text = "Comes with combat"
+excludes = ["rage_epic"]
+
+[[skill]]
+id = "revive_epic"
+name = "Lifeline"
+category = "epic3"
+ranks = 1
+cost = 5
+effect = "later"
+text = "Comes with combat"
+
+[[skill]]
+id = "food_crafting_epic"
+name = "Master Cook"
+category = "epic3"
+ranks = 1
+cost = 5
+effect = "later"
+text = "Comes with food"
+
+[[skill]]
+id = "brew_crafting_epic"
+name = "Master Brewer"
+category = "epic3"
+ranks = 1
+cost = 5
+effect = "later"
+text = "Comes with brews"

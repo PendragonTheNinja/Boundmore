@@ -22,9 +22,14 @@ pub const PAUSE_TICKS: u16 = (TICK_HZ * 7 / 2) as u16;
 pub const REGEN_PER_TICK: u16 = 5;
 
 impl PlayerState {
+    /// The bar's size: 600 plus what skills add (`Body::energy_bonus`).
+    pub fn max_energy(&self) -> u16 {
+        MAX_ENERGY.saturating_add(self.body.energy_bonus)
+    }
+
     /// Energy left.
     pub fn energy(&self) -> u16 {
-        MAX_ENERGY.saturating_sub(self.spent)
+        self.max_energy().saturating_sub(self.spent)
     }
 
     /// Spends `cost` if there is that much left (and restarts the pause
@@ -44,7 +49,9 @@ impl PlayerState {
         if self.rest > 0 {
             self.rest -= 1;
         } else {
-            self.spent = self.spent.saturating_sub(REGEN_PER_TICK);
+            self.spent = self
+                .spent
+                .saturating_sub(REGEN_PER_TICK.saturating_add(self.body.regen_bonus));
         }
     }
 }

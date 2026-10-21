@@ -359,6 +359,8 @@ impl Demo {
             items: self.items.defs().to_vec(),
             colours: self.colours.clone(),
             recipes: self.book.recipes.clone(),
+            skills: bm_core::skills::SkillTree::builtin().skills,
+            character: bm_core::skills::Character::default(),
             inventory: self.inv.clone(),
             movement: MoveConfig::default(),
             spawn: PlayerState {

@@ -1,7 +1,8 @@
 # Recipes. Items by name. `station` is hand (instant, the default; a crafting
 # table offers these too), crafting_table, workbench, extractor or furnace
 # (queued there, `seconds` per craft). Furnace recipes burn `heat` from the
-# furnace's fuel.
+# furnace's fuel. `xp` is the craft XP per craft and `skill` the crafting
+# level it needs (Boundless's data; milestone 12).
 #
 # Milestone 11: Boundless's recipes up to iron, single craft, from the
 # decoded recipe data (docs/milestones/11-crafting-chain.md). Glue is 2 sap
@@ -63,24 +64,28 @@ output = "stone_hammer"
 inputs = [["stones", 4], ["stick", 4], ["foliage", 4]]
 station = "crafting_table"
 seconds = 10.0
+xp = 4
 
 [[recipe]]
 output = "stone_shovel"
 inputs = [["stones", 4], ["stick", 4], ["foliage", 4]]
 station = "crafting_table"
 seconds = 10.0
+xp = 4
 
 [[recipe]]
 output = "stone_axe"
 inputs = [["stones", 4], ["stick", 4], ["foliage", 4]]
 station = "crafting_table"
 seconds = 10.0
+xp = 4
 
 [[recipe]]
 output = "square_chisel"
 inputs = [["stones", 4], ["stick", 4], ["foliage", 4]]
 station = "crafting_table"
 seconds = 10.0
+xp = 4
 
 # The stone furnace: a crucible on a base.
 [[recipe]]
@@ -88,12 +93,14 @@ output = "furnace"
 inputs = [["stones", 10], ["flint", 1]]
 station = "crafting_table"
 seconds = 15.0
+xp = 4
 
 [[recipe]]
 output = "furnace_crucible"
 inputs = [["stones", 10]]
 station = "crafting_table"
 seconds = 15.0
+xp = 4
 
 # Four blocks touching make one workbench (any base metal bar).
 [[recipe]]
@@ -102,6 +109,7 @@ count = 4
 inputs = [["timber", 10], ["copper_ingot", 3], ["relic_fragment", 1]]
 station = "crafting_table"
 seconds = 60.0
+xp = 6
 
 [[recipe]]
 output = "workbench"
@@ -109,12 +117,14 @@ count = 4
 inputs = [["timber", 10], ["iron_ingot", 3], ["relic_fragment", 1]]
 station = "crafting_table"
 seconds = 60.0
+xp = 6
 
 [[recipe]]
 output = "storage_chest"
 inputs = [["timber", 6], ["glue", 1]]
 station = "crafting_table"
 seconds = 60.0
+xp = 6
 
 # Boundmore's own.
 [[recipe]]
@@ -123,6 +133,7 @@ count = 4
 inputs = [["sand", 4]]
 station = "crafting_table"
 seconds = 2.0
+xp = 2
 
 # At the furnace.
 [[recipe]]
@@ -131,6 +142,7 @@ inputs = [["copper_ore", 1]]
 station = "furnace"
 seconds = 30.0
 heat = 100
+xp = 6
 
 [[recipe]]
 output = "iron_ingot"
@@ -138,6 +150,7 @@ inputs = [["iron_ore", 1]]
 station = "furnace"
 seconds = 60.0
 heat = 150
+xp = 8
 
 [[recipe]]
 output = "glass"
@@ -145,6 +158,7 @@ inputs = [["sand", 2], ["soil", 2]]
 station = "furnace"
 seconds = 30.0
 heat = 100
+xp = 5
 
 # Boundless: 1 sap + 1 bone. Stand-in until creatures (Nathan, 2026-10-20).
 [[recipe]]
@@ -153,6 +167,7 @@ inputs = [["sap", 2]]
 station = "furnace"
 seconds = 20.0
 heat = 100
+xp = 5
 
 [[recipe]]
 output = "brick"
@@ -161,6 +176,7 @@ inputs = [["soil", 2], ["sand", 2]]
 station = "furnace"
 seconds = 30.0
 heat = 200
+xp = 6
 
 # At the workbench. Four extractor blocks touching make one extractor.
 [[recipe]]
@@ -169,6 +185,7 @@ count = 4
 inputs = [["stones", 10], ["copper_ingot", 3], ["relic_fragment", 3]]
 station = "workbench"
 seconds = 180.0
+xp = 12
 
 [[recipe]]
 output = "extractor"
@@ -176,72 +193,95 @@ count = 4
 inputs = [["stones", 10], ["iron_ingot", 3], ["relic_fragment", 3]]
 station = "workbench"
 seconds = 180.0
+xp = 12
 
 [[recipe]]
 output = "copper_hammer"
 inputs = [["copper_ingot", 3], ["stick", 4], ["sackcloth", 1], ["glue", 1]]
 station = "workbench"
 seconds = 60.0
+xp = 10
+skill = { name = "tool_crafting", level = 1 }
 
 [[recipe]]
 output = "copper_shovel"
 inputs = [["copper_ingot", 3], ["stick", 4], ["sackcloth", 1], ["glue", 1]]
 station = "workbench"
 seconds = 60.0
+xp = 10
+skill = { name = "tool_crafting", level = 1 }
 
 [[recipe]]
 output = "copper_axe"
 inputs = [["copper_ingot", 3], ["stick", 4], ["sackcloth", 1], ["glue", 1]]
 station = "workbench"
 seconds = 60.0
+xp = 10
+skill = { name = "tool_crafting", level = 1 }
 
 [[recipe]]
 output = "copper_grapple"
 inputs = [["copper_ingot", 3], ["sackcloth", 1], ["glue", 1], ["relic_fragment", 3]]
 station = "workbench"
 seconds = 60.0
+xp = 10
+skill = { name = "tech_crafting", level = 1 }
 
 [[recipe]]
 output = "iron_hammer"
 inputs = [["iron_ingot", 3], ["stick", 4], ["sackcloth", 1], ["glue", 1]]
 station = "workbench"
 seconds = 120.0
+xp = 14
+skill = { name = "tool_crafting", level = 1 }
 
 [[recipe]]
 output = "iron_shovel"
 inputs = [["iron_ingot", 3], ["stick", 4], ["sackcloth", 1], ["glue", 1]]
 station = "workbench"
 seconds = 120.0
+xp = 14
+skill = { name = "tool_crafting", level = 1 }
 
 [[recipe]]
 output = "iron_axe"
 inputs = [["iron_ingot", 3], ["stick", 4], ["sackcloth", 1], ["glue", 1]]
 station = "workbench"
 seconds = 120.0
+xp = 14
+skill = { name = "tool_crafting", level = 1 }
 
 [[recipe]]
 output = "iron_grapple"
 inputs = [["iron_ingot", 3], ["sackcloth", 1], ["glue", 1], ["relic_fragment", 3]]
 station = "workbench"
 seconds = 120.0
+xp = 14
+skill = { name = "tech_crafting", level = 1 }
 
 [[recipe]]
 output = "slope_chisel"
 inputs = [["copper_ingot", 3], ["stick", 4], ["sackcloth", 1], ["glue", 1]]
 station = "workbench"
 seconds = 60.0
+xp = 10
+skill = { name = "tech_crafting", level = 1 }
 
 [[recipe]]
 output = "bevel_chisel"
 inputs = [["iron_ingot", 3], ["stick", 4], ["sackcloth", 1], ["glue", 1]]
 station = "workbench"
 seconds = 120.0
+xp = 14
+skill = { name = "tech_crafting", level = 1 }
 
 [[recipe]]
 output = "round_chisel"
 inputs = [["iron_ingot", 3], ["stick", 4], ["sackcloth", 1], ["glue", 1]]
 station = "workbench"
 seconds = 120.0
+xp = 14
+skill = { name = "tech_crafting", level = 1 }
 
 # Precise cuts are a skill in Boundless; these stay until skills exist.
 [[recipe]]
@@ -249,12 +289,16 @@ output = "precise_square_chisel"
 inputs = [["iron_ingot", 2], ["square_chisel", 1]]
 station = "workbench"
 seconds = 6.0
+xp = 14
+skill = { name = "tech_crafting", level = 1 }
 
 [[recipe]]
 output = "precise_slope_chisel"
 inputs = [["iron_ingot", 2], ["slope_chisel", 1]]
 station = "workbench"
 seconds = 6.0
+xp = 14
+skill = { name = "tech_crafting", level = 1 }
 
 # Boundmore's own (ADR-0009 and M3).
 [[recipe]]
@@ -262,6 +306,7 @@ output = "claim_stone"
 inputs = [["stones", 6], ["glow_crystal", 1]]
 station = "workbench"
 seconds = 5.0
+xp = 4
 
 [[recipe]]
 output = "portal_conduit"
@@ -269,6 +314,7 @@ count = 2
 inputs = [["stones", 4], ["copper_ingot", 1], ["wayshard", 1]]
 station = "workbench"
 seconds = 4.0
+xp = 50
 
 # At the extractor.
 [[recipe]]
@@ -276,3 +322,4 @@ output = "sackcloth"
 inputs = [["fibrous_leaf", 2]]
 station = "extractor"
 seconds = 30.0
+xp = 2

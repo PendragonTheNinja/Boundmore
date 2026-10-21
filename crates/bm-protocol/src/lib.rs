@@ -18,12 +18,13 @@
 use bm_core::{
     BlockDef, BlockPos, BlockState, ChunkPos, ColourPalette, DayCycle, Inventory, ItemDef, ItemStack, Mount,
     MoveConfig, PlanetLook, PlanetShape, PlayerInput, PlayerState, PlotPos, Recipe, Station,
+    skills::{Character, SkillDef},
 };
 use glam::DVec3;
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
 
 /// Bump on any change to a message below. Client and server must match.
-pub const PROTOCOL_VERSION: u32 = 15;
+pub const PROTOCOL_VERSION: u32 = 16;
 
 /// QUIC application protocol name; also refuses non-Boundmore peers early.
 pub const ALPN: &[u8] = b"boundmore/1";
@@ -107,6 +108,11 @@ pub enum ClientMsg {
         count: u16,
         into: bool,
     },
+    /// A change to the character's skills (milestone 12), following input
+    /// `at` (queued with the edits): what the active page does changes from
+    /// that input on, on both sides (movement, reach, energy). Answered with
+    /// `Character`, or a `Notice` saying why not.
+    Skill { at: u32, action: SkillAction },
     /// Add a plot to one of your claims; it must touch the claim by a face
     /// and be unclaimed, within your allowance.
     ClaimPlot { claim: u32, plot: PlotPos },
@@ -155,6 +161,22 @@ pub enum PortalAction {
     AddFuel { slot: u8, count: u16 },
     /// Up to `count` wayshards from the tank into the pack.
     TakeFuel { count: u16 },
+}
+
+/// What `ClientMsg::Skill` does (`bm_core::skills::Character`).
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub enum SkillAction {
+    /// One rank of this skill on the active page.
+    Learn(String),
+    /// Take back one rank (a cleanse point, free below level 20).
+    Cleanse(String),
+    /// Clear the active page (free below level 20, else 800 marks).
+    ResetPage,
+    /// A new page for 600 marks.
+    BuyPage,
+    /// Make this page active (free inside your own claim, else once per 15
+    /// minutes).
+    SwitchPage(u8),
 }
 
 /// A slot in the inventory or in an open storage block.
@@ -210,6 +232,10 @@ pub struct Welcome {
     /// The colour palette (ADR-0007): ids 1 to 255, 0 is natural.
     pub colours: ColourPalette,
     pub recipes: Vec<Recipe>,
+    /// The skill tree (`assets/skills.toml`, milestone 12).
+    pub skills: Vec<SkillDef>,
+    /// This account's progression.
+    pub character: Character,
     pub inventory: Inventory,
     pub movement: MoveConfig,
     pub spawn: PlayerState,
@@ -312,6 +338,13 @@ pub enum ServerMsg {
     BlockChanged {
         pos: BlockPos,
         block: BlockState,
+    },
+    /// The character's progression after any change (milestone 12): XP,
+    /// level, marks, pages and ranks. `at` is the input from which a skill
+    /// change counts (0 for XP and marks alone).
+    Character {
+        character: Character,
+        at: u32,
     },
     /// Damage a block has taken so far (milestone 9), sent to everyone who
     /// has its chunk whenever a swing changes it; 0 when it is reset (the
@@ -566,6 +599,17 @@ mod tests {
                 on_ground: true,
                 spent: u16::MAX,
                 rest: u16::MAX,
+                body: bm_core::Body {
+                    run_bonus: 99.0,
+                    sprint_bonus: 99.0,
+                    high_jump: true,
+                    double_jump: true,
+                    energy_bonus: u16::MAX,
+                    regen_bonus: u16::MAX,
+                    grapple_shot_bonus: 99.0,
+                },
+                jump_held: true,
+                air_jumped: true,
                 hook: Some(bm_core::Hook {
                     pos: DVec3::new(1e6, 1e3, 1e6),
                     vel: DVec3::splat(-50.0),
@@ -647,6 +691,8 @@ mod tests {
             items: items.defs().to_vec(),
             colours: ColourPalette::builtin(),
             recipes: recipes.recipes.clone(),
+            skills: bm_core::skills::SkillTree::builtin().skills,
+            character: Character::default(),
             inventory: Inventory::default(),
             movement: MoveConfig::default(),
             spawn: PlayerState::default(),

@@ -212,7 +212,39 @@ pub struct PlayerState {
     /// Ticks until the bar starts refilling (`energy::PAUSE_TICKS` after
     /// each use).
     pub rest: u16,
+    /// What the character's skills do to the body (milestone 12). Set by
+    /// the server at an input both sides agree on (`ClientMsg::Skill`), so
+    /// prediction never disagrees. Default: untrained.
+    pub body: Body,
+    /// Jump was held on the last tick (a double jump needs a fresh press).
+    pub jump_held: bool,
+    /// The double jump was used since last on the ground.
+    pub air_jumped: bool,
 }
+
+/// What skills change about moving and energy (`skills::Effects::body`).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Serialize, Deserialize)]
+pub struct Body {
+    /// Added to `MoveConfig::walk_speed` and `sprint_speed` (Swiftness).
+    pub run_bonus: f64,
+    pub sprint_bonus: f64,
+    /// Jumps about two blocks higher (the high-jump epic).
+    pub high_jump: bool,
+    /// One more jump in mid-air (the double-jump epic).
+    pub double_jump: bool,
+    /// Added to `energy::MAX_ENERGY` and `energy::REGEN_PER_TICK`.
+    pub energy_bonus: u16,
+    pub regen_bonus: u16,
+    /// Added to a grapple's shot speed (grapple mastery).
+    pub grapple_shot_bonus: f64,
+}
+
+/// Extra height the high-jump epic adds, in blocks (Boundless players:
+/// "jump 2 blocks higher", tuning 1.6).
+pub const HIGH_JUMP_EXTRA: f64 = 2.0;
+/// A double jump's speed, as a fraction of a jump's: about half a block
+/// more (players, tuning 1.6; a **guess** at the impulse).
+pub const DOUBLE_JUMP_FRACTION: f64 = 0.7;
 
 /// What happened in a tick that the caller acts on.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -316,7 +348,7 @@ pub fn step(
             if s.try_spend(g.energy) {
                 s.hook = Some(Hook {
                     pos: s.eye(cfg),
-                    vel: look_dir(input.yaw, input.pitch) * g.shot_speed,
+                    vel: look_dir(input.yaw, input.pitch) * (g.shot_speed + s.body.grapple_shot_bonus),
                     rope: 0.0,
                     stuck: None,
                     reel: 0.0,
@@ -346,9 +378,9 @@ pub fn step(
     let speed = if in_water {
         cfg.swim_speed
     } else if input.sprint && f > 0.0 {
-        cfg.sprint_speed
+        cfg.sprint_speed + s.body.sprint_bonus
     } else {
-        cfg.walk_speed
+        cfg.walk_speed + s.body.run_bonus
     };
     let flat = DVec3::new(s.vel.x, 0.0, s.vel.z);
     let horiz = if s.on_ground || in_water {
@@ -357,7 +389,7 @@ pub fn step(
     } else if hooked {
         // Hanging on the rope: leaning pumps the swing, nothing brakes it.
         flat + wish * cfg.swing_accel * dt
-    } else if flat.length() > cfg.sprint_speed {
+    } else if flat.length() > cfg.sprint_speed + s.body.sprint_bonus {
         // Flung by a grapple: steer, but keep the speed, which fades slowly.
         let speed = flat.length() * (1.0 - cfg.fling_drag * dt);
         let steered = flat + wish * cfg.air_accel * dt;
@@ -390,8 +422,17 @@ pub fn step(
         s.vel.y *= drag;
         s.vel.y = s.vel.y.clamp(-cfg.swim_speed, cfg.swim_speed);
     } else {
+        let fresh = input.jump && !s.jump_held;
         if input.jump && s.on_ground {
-            s.vel.y = cfg.jump_velocity;
+            s.vel.y = if s.body.high_jump {
+                // v^2 = v0^2 + 2 g h: the same jump, two blocks higher.
+                (cfg.jump_velocity * cfg.jump_velocity + 2.0 * cfg.gravity * HIGH_JUMP_EXTRA).sqrt()
+            } else {
+                cfg.jump_velocity
+            };
+        } else if fresh && s.body.double_jump && !s.air_jumped && s.hook.is_none() {
+            s.vel.y = cfg.jump_velocity * DOUBLE_JUMP_FRACTION;
+            s.air_jumped = true;
         }
         s.vel.y = (s.vel.y - cfg.gravity * dt).max(-cfg.max_fall_speed);
     }
@@ -461,6 +502,10 @@ pub fn step(
         s.on_ground = intersects(&probe, cfg, world);
     }
     s.pos = planet.wrap_point(s.pos);
+    s.jump_held = input.jump;
+    if s.on_ground {
+        s.air_jumped = false;
+    }
     events
 }
 
@@ -930,6 +975,53 @@ mod tests {
         };
         assert!(walk_into(12) > 12.0, "a 2-block tunnel is passable");
         assert!(walk_into(11) < 8.0, "a 1-block tunnel is not");
+    }
+
+    #[test]
+    fn skills_change_jumps_and_speed() {
+        let w = world();
+        let peak = |body: Body, presses: &[u32]| {
+            let mut s = PlayerState {
+                body,
+                ..standing(5.5, 10.0)
+            };
+            let mut top = s.pos.y;
+            for i in 0..120u32 {
+                let input = PlayerInput {
+                    jump: presses.contains(&i),
+                    ..Default::default()
+                };
+                run(&mut s, input, 1, &w);
+                top = top.max(s.pos.y);
+            }
+            top - 10.0
+        };
+        let plain = peak(Body::default(), &[0]);
+        let high = peak(
+            Body {
+                high_jump: true,
+                ..Default::default()
+            },
+            &[0],
+        );
+        assert!((high - plain - HIGH_JUMP_EXTRA).abs() < 0.1, "{plain} {high}");
+        // A second press in the air jumps again only with the epic.
+        let double = Body {
+            double_jump: true,
+            ..Default::default()
+        };
+        assert!((peak(Body::default(), &[0, 20]) - plain).abs() < 1e-9);
+        assert!(peak(double, &[0, 20]) > plain + 0.4);
+        // Swiftness adds speed.
+        let mut s = PlayerState {
+            body: Body {
+                run_bonus: 0.3 * 9.0,
+                ..Default::default()
+            },
+            ..standing(5.5, 10.0)
+        };
+        run(&mut s, east(), 120, &w);
+        assert!(s.pos.x - 5.5 > 2.0 * 5.0, "{:?}", s.pos);
     }
 
     #[test]

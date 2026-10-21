@@ -676,6 +676,8 @@ impl Game {
                 }
             }
             Event::Msg { id, msg } => match msg {
+                // Milestone 12: skills (server agent).
+                ClientMsg::Skill { .. } => {}
                 ClientMsg::StationFuel { pos, slot, count, into } => self.station_fuel(id, pos, slot, count, into),
                 ClientMsg::Edit { seq, at, pos, action } => self.queue(id, at, Queued::Edit { seq, pos, action }),
                 ClientMsg::Swing { seq, at, pos, slot } => self.queue(id, at, Queued::Swing { seq, at, pos, slot }),
@@ -770,6 +772,8 @@ impl Game {
             items: self.items.defs().to_vec(),
             colours: self.colours.clone(),
             recipes: self.recipes.recipes.clone(),
+            skills: bm_core::skills::SkillTree::builtin().skills,
+            character: bm_core::skills::Character::default(),
             inventory: inventory.clone(),
             movement: self.movement,
             spawn: state,

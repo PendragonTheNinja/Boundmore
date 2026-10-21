@@ -20,6 +20,7 @@ pub mod portal;
 pub mod raycast;
 pub mod recipes;
 pub mod shape;
+pub mod skills;
 pub mod time;
 
 pub use block::{
@@ -34,7 +35,7 @@ pub use items::{Aoe, ItemDef, ItemError, ItemId, ItemKind, ItemRegistry, ItemSta
 pub use light::{BlockSource, ChunkLight, Light, LightMap, MAX_LIGHT};
 pub use look::{NO_TINT, PlanetLook};
 pub use movement::{
-    GrappleSpec, Hook, MoveConfig, PhysicsWorld, PlayerInput, PlayerState, StepEvents, TICK_DT, TICK_HZ,
+    Body, GrappleSpec, Hook, MoveConfig, PhysicsWorld, PlayerInput, PlayerState, StepEvents, TICK_DT, TICK_HZ,
 };
 pub use planet::PlanetShape;
 pub use plots::{PLOT_SIZE, PlotPos};

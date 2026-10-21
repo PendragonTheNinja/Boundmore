@@ -16,6 +16,19 @@ pub struct Recipe {
     /// Heat one craft burns at a furnace (milestone 11; 0 elsewhere).
     #[serde(default)]
     pub heat: u16,
+    /// XP each craft gives (milestone 12).
+    #[serde(default)]
+    pub xp: u16,
+    /// The crafting skill and level it needs (`skills::Effects::crafting`).
+    #[serde(default)]
+    pub skill: Option<SkillGate>,
+}
+
+/// A recipe's crafting-skill requirement.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SkillGate {
+    pub name: String,
+    pub level: u8,
 }
 
 impl Recipe {
@@ -55,6 +68,10 @@ struct RecipeEntry {
     seconds: f32,
     #[serde(default)]
     heat: u16,
+    #[serde(default)]
+    xp: u16,
+    #[serde(default)]
+    skill: Option<SkillGate>,
 }
 
 fn one() -> u16 {
@@ -99,6 +116,8 @@ impl RecipeBook {
                     e.seconds.max(0.0)
                 },
                 heat: if e.station == Station::Furnace { e.heat } else { 0 },
+                xp: e.xp,
+                skill: e.skill.clone(),
             });
         }
         Ok(Self { recipes })
