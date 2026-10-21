@@ -1,5 +1,6 @@
 //! End to end: real server, real QUIC, headless players.
 
+use bm_core::skills::Character;
 use bm_core::{
     BlockId, BlockPos, BlockRegistry, BlockState, Chiselling, Chunk, ChunkPos, Colour, Inventory, ItemRegistry,
     ItemStack, PlayerInput, PlayerState, PlotPos, ShapeFamily, Station,
@@ -440,6 +441,9 @@ fn config(dir: &Path) -> ServerConfig {
         // these layouts were built for 7 and the reach rule has its own
         // checks, so the test worlds keep 7.
         reach: 7.0,
+        // Portal tests open windows with untrained characters; the epic's
+        // rule has its own test.
+        portal_epic_required: false,
         ..Default::default()
     }
 }
@@ -468,6 +472,11 @@ fn old_planet_file(dir: &Path) -> std::path::PathBuf {
 /// Registers an account before the server starts, holding these stacks
 /// (slot, item, count, wear).
 fn seed(dir: &Path, name: &str, stacks: &[(usize, &str, u16, u16)]) {
+    seed_character(dir, name, stacks, Character::default());
+}
+
+/// `seed`, with this character's progression.
+fn seed_character(dir: &Path, name: &str, stacks: &[(usize, &str, u16, u16)], character: Character) {
     let store = Store::open(&planet_file(dir)).unwrap();
     let account = bm_server::accounts::register(&store, name, PASSWORD).unwrap();
     let mut inventory = vec![None; bm_core::INVENTORY_SLOTS];
@@ -492,6 +501,7 @@ fn seed(dir: &Path, name: &str, stacks: &[(usize, &str, u16, u16)]) {
                     state: None,
                     inventory,
                     last_seen: 0,
+                    character: character.into(),
                 },
             )],
             ..Default::default()
@@ -1179,6 +1189,7 @@ async fn a_workbench_saved_at_one_block_joins_its_machine() {
                         fuel: None,
                         heat: 0,
                         waiting: false,
+                        xp: 0,
                     }),
                 )],
                 ..Default::default()

@@ -7,7 +7,9 @@ use super::{Game, Refusal, in_reach, send_slots, wear_slot};
 use crate::claims::ClaimError;
 use crate::world::World;
 use bm_core::items::title_case;
-use bm_core::mining::{MAX_TIER, aoe_blocks, block_health, bonus_count, is_crit, swing_damage, swing_ticks};
+use bm_core::mining::{
+    MAX_TIER, aoe_blocks, block_health, bonus_count, is_crit, skilled_tool, swing_damage, swing_ticks,
+};
 use bm_core::movement::look_dir;
 use bm_core::{BlockId, BlockPos, BlockState, Colour, HOTBAR_SLOTS, ItemId, ItemRegistry, Mount, Shape};
 use bm_protocol::ServerMsg;
@@ -56,15 +58,31 @@ pub(super) fn roll(state: &mut u64) -> f64 {
 }
 
 /// What breaking `block` on a planet of `tier` yields beyond its drop: each
-/// bonus that rolled at least one, with its count.
-pub(super) fn bonus_yield(items: &ItemRegistry, block: BlockId, tier: u8, rng: &mut u64) -> Vec<(ItemId, u16)> {
+/// bonus that rolled at least one, with its count. `luck` (the breaker's
+/// `Effects::luck_multiplier`, 1 untrained) multiplies the chance part of
+/// each bonus, capped at 1 [tuning 2.8]; the whole part is always given.
+pub(super) fn bonus_yield(
+    items: &ItemRegistry,
+    block: BlockId,
+    tier: u8,
+    luck: f64,
+    rng: &mut u64,
+) -> Vec<(ItemId, u16)> {
     let t = (tier.clamp(1, MAX_TIER) - 1) as usize;
     items
         .bonus_of(block)
         .iter()
-        .map(|(item, per_tier)| (*item, bonus_count(per_tier[t], roll(rng))))
+        .map(|(item, per_tier)| (*item, bonus_count(lucky(per_tier[t], luck), roll(rng))))
         .filter(|&(_, n)| n > 0)
         .collect()
+}
+
+/// An expected bonus count with its chance part multiplied by `luck`,
+/// capped at a certainty.
+fn lucky(expected: f32, luck: f64) -> f32 {
+    let e = expected.max(0.0) as f64;
+    let whole = e.floor();
+    (whole + ((e - whole) * luck).min(1.0)) as f32
 }
 
 impl Game {
@@ -157,9 +175,16 @@ impl Game {
         if !p.sent.contains(&canon.chunk()) {
             return self.swing_refused(id, seq, pos, "chunk not loaded for this player".into());
         }
-        if !in_reach(shape, &self.movement, self.cfg.reach, &p.state, canon) {
+        if !in_reach(
+            shape,
+            &self.movement,
+            self.cfg.reach + p.effects.control,
+            &p.state,
+            canon,
+        ) {
             return self.swing_refused(id, seq, pos, "out of reach".into());
         }
+        let effects = p.effects;
         if let Err(r) = self.may_damage(id, pi, canon) {
             return self.swing_refused(id, seq, pos, r);
         }
@@ -169,6 +194,8 @@ impl Game {
         let Some(tool) = self.items.swing_tool(item) else {
             return self.swing_refused(id, seq, pos, Refusal::Told(NEED_A_TOOL.into()));
         };
+        // The tool as this character swings it: damage, cadence and crits.
+        let tool = skilled_tool(&tool, &effects);
         let look = look_dir(p.last_input.yaw, p.last_input.pitch);
         let p = self.players.get_mut(&id).expect("present");
         p.last_swing = Some((at, swing_ticks(tool.action_speed)));
@@ -225,7 +252,11 @@ impl Game {
         if full {
             self.notice(id, "Your inventory is full");
         }
-        // One durability per swing, whatever it hit.
+        // One durability per swing, whatever it hit, unless the durability
+        // epic spares it.
+        if roll(&mut self.rng) < effects.wear_saved() {
+            return;
+        }
         let p = self.players.get_mut(&id).expect("present");
         let before = p.inventory.clone();
         let broke = wear_slot(&self.items, &mut p.inventory, slot as usize);
@@ -282,12 +313,16 @@ impl Game {
             // Checked to fit.
             p.inventory.add_coloured(&self.items, item, colour, 1);
         }
-        for (item, n) in bonus_yield(&self.items, state.id, self.planets[pi].tier, &mut self.rng) {
+        let tier = self.planets[pi].tier;
+        let luck = p.effects.luck_multiplier();
+        for (item, n) in bonus_yield(&self.items, state.id, tier, luck, &mut self.rng) {
             // What does not fit is not given.
             p.inventory.add(&self.items, item, n);
         }
         send_slots(p, &before);
+        let xp = super::skills::break_xp(self.planets[pi].world.registry.get(state.id), tier);
         self.block_gone(pi, canon, state.id, Some(id));
+        self.add_xp(id, xp);
         true
     }
 
@@ -346,7 +381,10 @@ impl Game {
             // A gathering object (a plant on the floor) gives what gathering
             // it would: its bonus yield (a guess; Boundless's rule for a
             // plant whose ground goes is not recorded).
-            let bonus = bonus_yield(&self.items, s.id, self.planets[pi].tier, &mut self.rng);
+            let luck = by
+                .and_then(|id| self.players.get(&id))
+                .map_or(1.0, |p| p.effects.luck_multiplier());
+            let bonus = bonus_yield(&self.items, s.id, self.planets[pi].tier, luck, &mut self.rng);
             let drop = drop_of(self, pi, s);
             if let Some(id) = by
                 && let Some(p) = self.players.get_mut(&id)
@@ -383,7 +421,7 @@ mod tests {
         let mut rng = 12345;
         let mut total = 0u32;
         for _ in 0..n {
-            for (i, c) in bonus_yield(items, block, tier, &mut rng) {
+            for (i, c) in bonus_yield(items, block, tier, 1.0, &mut rng) {
                 assert_eq!(i, item);
                 total += c as u32;
             }
@@ -408,7 +446,7 @@ mod tests {
         // One or two extra on tier 5, never none.
         let mut rng = 9;
         for _ in 0..200 {
-            let y = bonus_yield(&items, vein, 5, &mut rng);
+            let y = bonus_yield(&items, vein, 5, 1.0, &mut rng);
             assert!(matches!(y.as_slice(), [(i, 1 | 2)] if *i == ore), "{y:?}");
         }
         let gravel = mean(&items, b.id("gravel").unwrap(), 1, flint, 20_000);
@@ -420,7 +458,33 @@ mod tests {
             0.0,
             "no flint above tier 4"
         );
-        assert!(bonus_yield(&items, b.id("soil").unwrap(), 8, &mut rng).is_empty());
+        assert!(bonus_yield(&items, b.id("soil").unwrap(), 8, 1.0, &mut rng).is_empty());
+    }
+
+    #[test]
+    fn luck_multiplies_bonus_chances_up_to_a_certainty() {
+        // Tuning 2.8: a gem seam's +0.5 at max luck (x2.8) is one more, never
+        // more than certain; the whole part is untouched.
+        assert_eq!(lucky(0.5, 2.8), 1.0);
+        assert!((lucky(0.05, 2.8) - 0.14).abs() < 1e-6);
+        assert!((lucky(1.05, 2.8) - 1.14).abs() < 1e-6);
+        assert_eq!(lucky(2.0, 2.8), 2.0);
+        assert_eq!(lucky(0.3, 1.0), 0.3);
+        let b = BlockRegistry::builtin();
+        let items = ItemRegistry::builtin(&b);
+        let flint = items.id("flint").unwrap();
+        let gravel = b.id("gravel").unwrap();
+        let mut rng = 7;
+        let n = 20_000;
+        let found: u32 = (0..n)
+            .flat_map(|_| bonus_yield(&items, gravel, 1, 2.8, &mut rng))
+            .map(|(i, c)| {
+                assert_eq!(i, flint);
+                c as u32
+            })
+            .sum();
+        let mean = found as f64 / n as f64;
+        assert!((0.125..0.155).contains(&mean), "5% x 2.8: {mean}");
     }
 
     #[test]

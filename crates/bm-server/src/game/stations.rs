@@ -72,12 +72,17 @@ impl Game {
         if count == 0 || count > MAX_CRAFT_COUNT {
             return self.notice(id, &CraftError::TooMany.to_string());
         }
-        // In the hands, or at any station: instant into the pack.
+        // Crafting skills gate some recipes (milestone 12).
+        if let Some(why) = self.craft_gate(id, &recipe) {
+            return self.notice(id, &why);
+        }
+        // In the hands, or at any station: instant into the pack, and its
+        // craft XP at once.
         if recipe.station == Station::Hand {
-            if let Some(Err(e)) =
-                self.change_inventory(id, |inv, items| crafting::craft_by_hand(inv, items, &recipe, count))
-            {
-                self.notice(id, &e.to_string());
+            match self.change_inventory(id, |inv, items| crafting::craft_by_hand(inv, items, &recipe, count)) {
+                Some(Err(e)) => self.notice(id, &e.to_string()),
+                Some(Ok(())) => self.add_xp(id, recipe.xp as u64 * count as u64),
+                None => {}
             }
             return;
         }
@@ -142,10 +147,12 @@ impl Game {
         let Some(p) = self.players.get_mut(&id) else { return };
         let stations = &mut self.planets[pi].stations;
         let before = p.inventory.clone();
-        let moved = stations.collect(key, &mut p.inventory, &self.items);
+        // Station crafts give their XP to whoever collects them.
+        let collected = stations.collect_xp(key, &mut p.inventory, &self.items);
         send_slots(p, &before);
-        if moved {
+        if let Some(xp) = collected {
             self.push_station(pi, key);
+            self.add_xp(id, xp as u64);
         } else if stations
             .get(key)
             .is_some_and(|s| s.output.slots.iter().any(Option::is_some))

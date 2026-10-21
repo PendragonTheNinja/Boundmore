@@ -110,6 +110,9 @@ pub struct StationData {
     /// The head job's current craft is waiting for heat: it has not started
     /// (no progress) and starts when fuel arrives.
     pub waiting: bool,
+    /// Craft XP of the finished output (milestone 12): each finished craft
+    /// adds its recipe's `xp`, and whoever next collects output gets it all.
+    pub xp: u32,
 }
 
 impl StationData {
@@ -124,6 +127,7 @@ impl StationData {
             fuel: None,
             heat: 0,
             waiting: false,
+            xp: 0,
         }
     }
 
@@ -197,6 +201,7 @@ impl Stations {
             let mut st = StationData::new(saved.kind);
             st.started = saved.started;
             st.heat = saved.heat;
+            st.xp = saved.xp;
             let what = format!("station at {pos:?}");
             let valid = |s: &ItemStack| s.count > 0 && items.get(s.item).is_some_and(|d| s.count <= d.stack);
             for (slot, stack) in st.output.slots.iter_mut().zip(load_slots(items, &saved.output, &what)) {
@@ -398,6 +403,7 @@ impl Stations {
                 continue;
             }
             job.remaining -= 1;
+            st.xp = st.xp.saturating_add(recipe.xp as u32);
             if job.remaining == 0 {
                 st.jobs.pop_front();
             }
@@ -415,7 +421,14 @@ impl Stations {
 
     /// Moves as much output as fits into `inv`. Returns whether anything moved.
     pub fn collect(&mut self, pos: BlockPos, inv: &mut Inventory, items: &ItemRegistry) -> bool {
-        let Some(st) = self.map.get_mut(&pos) else { return false };
+        self.collect_xp(pos, inv, items).is_some()
+    }
+
+    /// [`Stations::collect`], returning the craft XP the collector earns
+    /// (all the station holds, once anything moves), or None if nothing
+    /// moved.
+    pub fn collect_xp(&mut self, pos: BlockPos, inv: &mut Inventory, items: &ItemRegistry) -> Option<u32> {
+        let st = self.map.get_mut(&pos)?;
         let mut moved = false;
         for slot in st.output.slots.iter_mut() {
             let Some(s) = slot else { continue };
@@ -435,11 +448,13 @@ impl Stations {
             if !st.jobs.is_empty() && !st.waiting {
                 self.active.insert(pos);
             }
+            let xp = std::mem::take(&mut st.xp);
             if st.is_empty() {
                 self.map.remove(&pos);
             }
+            return Some(xp);
         }
-        moved
+        None
     }
 
     /// Removes a station's data, returning everything in it: its output, its
@@ -574,6 +589,7 @@ fn save_station(st: &StationData, items: &ItemRegistry, recipes: &RecipeBook) ->
         fuel: st.fuel.as_ref().and_then(|f| SavedStack::new(items, f)),
         heat: st.heat,
         waiting: st.waiting,
+        xp: st.xp,
     }
 }
 

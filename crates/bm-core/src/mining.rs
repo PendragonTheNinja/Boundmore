@@ -42,6 +42,12 @@ fn tier_index(tier: u8) -> usize {
     (tier.clamp(1, MAX_TIER) - 1) as usize
 }
 
+/// The health multiplier of a planet of `tier` [2.2] (milestone 12 also
+/// scales a gathering object's XP by it).
+pub fn tier_health(tier: u8) -> f64 {
+    TIER_HEALTH[tier_index(tier)]
+}
+
 /// Armour a block on a planet of `tier` takes off every hit.
 pub fn armour(tier: u8) -> u32 {
     TIER_ARMOUR[tier_index(tier)]
