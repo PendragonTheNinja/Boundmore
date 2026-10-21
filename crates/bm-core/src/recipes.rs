@@ -208,6 +208,7 @@ mod tests {
             "torch",
             "tallow_torch",
             "iron_sling",
+            "copper_bombs",
         ] {
             assert!(have.contains(&items.id(name).unwrap()), "{name}");
         }

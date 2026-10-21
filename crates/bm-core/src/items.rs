@@ -139,6 +139,44 @@ pub enum ItemKind {
     /// Shoots (milestone 13, Boundless's slingbows [tuning 3.1.1]). One use
     /// per shot.
     Sling(SlingStats),
+    /// A bag of bombs (milestone 13 part 2, tuning 3.1.3): hold to light,
+    /// release to throw; one use per throw.
+    Bomb(BombStats),
+}
+
+/// What a bag of bombs does [tuning 3.1.3]: area (impulse) damage within
+/// `radius`, knockback, 200 throws a bag.
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+pub struct BombStats {
+    pub damage: u32,
+    /// Blast radius in blocks.
+    pub radius: f32,
+    /// Blocks a second the blast pushes creatures away.
+    pub knockback: f32,
+    /// Sets the time between throws (the swing curve).
+    pub action_speed: f32,
+    /// Speed of a full throw, blocks a second (25 for every bag).
+    pub throw_speed: f32,
+    pub crit_chance: f32,
+    pub crit_effect: f32,
+    pub durability: u16,
+    /// Energy a throw costs: damage / 10 for every Boundless bag.
+    pub energy: u16,
+}
+
+impl BombStats {
+    fn valid(&self) -> bool {
+        self.damage > 0
+            && self.durability > 0
+            && self.radius > 0.0
+            && self.radius <= 16.0
+            && self.action_speed.is_finite()
+            && self.action_speed > 0.0
+            && self.throw_speed > 0.0
+            && self.throw_speed <= 100.0
+            && (0.0..=1.0).contains(&self.crit_chance)
+            && self.crit_effect >= 0.0
+    }
 }
 
 /// What a sling does [tuning 3.1.1]: every shot is kinetic, breaks on what it
@@ -212,6 +250,13 @@ impl ItemDef {
         }
     }
 
+    pub fn bomb(&self) -> Option<BombStats> {
+        match self.kind {
+            ItemKind::Bomb(b) => Some(b),
+            _ => None,
+        }
+    }
+
     pub fn sling(&self) -> Option<SlingStats> {
         match self.kind {
             ItemKind::Sling(l) => Some(l),
@@ -263,7 +308,8 @@ impl ItemDef {
             ItemKind::Tool(ToolStats { energy, .. })
             | ItemKind::Chisel { energy, .. }
             | ItemKind::Grapple { energy, .. }
-            | ItemKind::Sling(SlingStats { energy, .. }) => Some(energy),
+            | ItemKind::Sling(SlingStats { energy, .. })
+            | ItemKind::Bomb(BombStats { energy, .. }) => Some(energy),
             _ => None,
         }
     }
@@ -274,7 +320,8 @@ impl ItemDef {
             ItemKind::Tool(ToolStats { durability, .. })
             | ItemKind::Chisel { durability, .. }
             | ItemKind::Grapple { durability, .. }
-            | ItemKind::Sling(SlingStats { durability, .. }) => Some(durability),
+            | ItemKind::Sling(SlingStats { durability, .. })
+            | ItemKind::Bomb(BombStats { durability, .. }) => Some(durability),
             _ => None,
         }
     }
@@ -372,6 +419,8 @@ struct ItemEntry {
     portal_token: bool,
     #[serde(default)]
     sling: Option<SlingEntry>,
+    #[serde(default)]
+    bomb: Option<BombEntry>,
     icon: Option<String>,
     #[serde(default)]
     fuel: u16,
@@ -401,6 +450,36 @@ struct SlingEntry {
     #[serde(default = "default_crit_effect")]
     crit_effect: f32,
     durability: u16,
+}
+
+#[derive(Deserialize)]
+struct BombEntry {
+    damage: u32,
+    radius: f32,
+    knockback: f32,
+    #[serde(default = "bomb_action_speed")]
+    action_speed: f32,
+    #[serde(default = "bomb_throw_speed")]
+    throw_speed: f32,
+    #[serde(default = "bomb_crit")]
+    crit_chance: f32,
+    #[serde(default = "default_crit_effect")]
+    crit_effect: f32,
+    #[serde(default = "bomb_durability")]
+    durability: u16,
+}
+
+fn bomb_action_speed() -> f32 {
+    50.0
+}
+fn bomb_throw_speed() -> f32 {
+    25.0
+}
+fn bomb_crit() -> f32 {
+    0.1
+}
+fn bomb_durability() -> u16 {
+    200
 }
 
 #[derive(Deserialize)]
@@ -539,6 +618,20 @@ impl ItemRegistry {
                         energy: (l.damage / 50) as u16,
                     })
                 }
+                (None, None, None) if e.bomb.is_some() => {
+                    let b = e.bomb.as_ref().expect("checked");
+                    ItemKind::Bomb(BombStats {
+                        damage: b.damage,
+                        radius: b.radius,
+                        knockback: b.knockback,
+                        action_speed: b.action_speed,
+                        throw_speed: b.throw_speed,
+                        crit_chance: b.crit_chance,
+                        crit_effect: b.crit_effect,
+                        durability: b.durability,
+                        energy: (b.damage / 10) as u16,
+                    })
+                }
                 (None, None, None) if e.portal_token => ItemKind::PortalToken,
                 (None, None, None) => ItemKind::Material,
                 _ => return Err(ItemError::BadTool(e.name)),
@@ -598,6 +691,7 @@ impl ItemRegistry {
                 }
                 ItemKind::PortalToken if d.stack != 1 => return Err(ItemError::BadTool(d.name.clone())),
                 ItemKind::Sling(l) if d.stack != 1 || !l.valid() => return Err(ItemError::BadTool(d.name.clone())),
+                ItemKind::Bomb(b) if d.stack != 1 || !b.valid() => return Err(ItemError::BadTool(d.name.clone())),
                 ItemKind::Block(b) if !blocks.contains(b) => return Err(ItemError::BadBlock(d.name.clone(), b.0)),
                 _ => {}
             }

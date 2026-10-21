@@ -403,3 +403,36 @@ inputs = [["thick_blood", 2]]
 station = "extractor"
 seconds = 60.0
 xp = 4
+
+# Milestone 13 part 2: bombs (tuning 3.8).
+[[recipe]]
+output = "bomb_charge"
+inputs = [["saltpetre", 2], ["flint", 5], ["volatile_blood", 1]]
+station = "workbench"
+seconds = 90.0
+xp = 12
+skill = { name = "weapon_crafting", level = 1 }
+
+[[recipe]]
+output = "copper_bombs"
+inputs = [["copper_ingot", 3], ["bomb_charge", 1], ["sackcloth", 1]]
+station = "workbench"
+seconds = 60.0
+xp = 10
+skill = { name = "weapon_crafting", level = 1 }
+
+[[recipe]]
+output = "iron_bombs"
+inputs = [["iron_ingot", 3], ["bomb_charge", 1], ["sackcloth", 1]]
+station = "workbench"
+seconds = 120.0
+xp = 14
+skill = { name = "weapon_crafting", level = 1 }
+
+[[recipe]]
+output = "vital_essence"
+count = 3
+inputs = [["volatile_blood", 2]]
+station = "extractor"
+seconds = 120.0
+xp = 8

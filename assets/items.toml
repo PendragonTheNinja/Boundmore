@@ -346,3 +346,42 @@ name = "iron_sling"
 display = "Heavy Iron Sling"
 stack = 1
 sling = { damage = 600, action_speed = 10.0, shot_speed = 35.0, range = 20.0, falloff = 0.6, crit_chance = 0.2, durability = 900 }
+
+# Milestone 13 part 2: the popper's and drifter's parts, bombs.
+[[item]]
+name = "prime_meat"
+
+[[item]]
+name = "volatile_blood"
+
+[[item]]
+name = "heat_sac"
+
+[[item]]
+name = "float_sac"
+
+[[item]]
+name = "popper_eye"
+
+[[item]]
+name = "core_trophy"
+
+[[item]]
+name = "tentacle_trophy"
+
+[[item]]
+name = "bomb_charge"
+
+# Bags of bombs (tuning 3.1.3, exact): 200 throws, action speed 50, crit 10%,
+# energy damage / 10.
+[[item]]
+name = "copper_bombs"
+display = "Bag of Copper Bombs"
+stack = 1
+bomb = { damage = 900, radius = 3.0, knockback = 10.0 }
+
+[[item]]
+name = "iron_bombs"
+display = "Bag of Iron Bombs"
+stack = 1
+bomb = { damage = 1500, radius = 2.0, knockback = 10.0 }

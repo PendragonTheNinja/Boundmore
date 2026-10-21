@@ -283,6 +283,7 @@ impl Creature {
             angry: self.angry() && self.alive(),
             dead: !self.alive(),
             looted: self.looted.iter().any(|a| a == account),
+            exotic: 0,
         }
     }
 
@@ -864,7 +865,8 @@ fn fight_tick(
                 i
             }
         },
-        Attack::None => {
+        // Milestone 13 part 2 (server work to come): close in, no attack yet.
+        Attack::None | Attack::Explode { .. } | Attack::Barrage { .. } => {
             if dist > 3.0 {
                 run(c, ctx, flat, true)
             } else {
@@ -887,6 +889,8 @@ fn charge_input(c: &Creature, ctx: &Ctx<impl Terrain>, dir: DVec3) -> PlayerInpu
 fn attack_cooldown(def: &CreatureDef) -> u64 {
     let s = match def.attack {
         Attack::Charge { cooldown, .. } | Attack::Shot { cooldown, .. } => cooldown,
+        Attack::Explode { fuse, .. } => fuse,
+        Attack::Barrage { cooldown, .. } => cooldown,
         Attack::None => 1.0,
     };
     (s as f64 * TICK_HZ as f64) as u64
@@ -1315,7 +1319,13 @@ mod tests {
             let id = pick_kind(&k, 1, i as f64 / 1000.0).unwrap();
             *count.entry(id).or_insert(0) += 1;
         }
-        let total: u32 = k.defs().iter().map(|d| d.spawn_weight as u32).sum();
+        // Only kinds that live on tier 1 worlds share the weight there.
+        let total: u32 = k
+            .defs()
+            .iter()
+            .filter(|d| d.min_world_tier <= 1)
+            .map(|d| d.spawn_weight as u32)
+            .sum();
         let want = |id: u16| 1000.0 * k.get(id).unwrap().spawn_weight as f64 / total as f64;
         assert!((count[&grazer] as f64 - want(grazer)).abs() <= 2.0);
         assert!((count[&dasher] as f64 - want(dasher)).abs() <= 2.0);

@@ -1360,6 +1360,8 @@ impl App {
         let Some(s) = &mut self.session else { return };
         match m {
             ServerMsg::Creature(v) => s.creatures.view(v),
+            // Milestone 13 part 2 (client work to come).
+            ServerMsg::Blast { .. } | ServerMsg::Beam { .. } => {}
             ServerMsg::CreatureGone { id } => s.creatures.gone(id),
             ServerMsg::Shot(v) => s.shots.server(&v),
             ServerMsg::ShotEnd { id } => s.shots.end(id),

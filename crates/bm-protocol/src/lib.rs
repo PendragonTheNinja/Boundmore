@@ -25,7 +25,7 @@ use glam::DVec3;
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
 
 /// Bump on any change to a message below. Client and server must match.
-pub const PROTOCOL_VERSION: u32 = 18;
+pub const PROTOCOL_VERSION: u32 = 19;
 
 /// QUIC application protocol name; also refuses non-Boundmore peers early.
 pub const ALPN: &[u8] = b"boundmore/1";
@@ -163,6 +163,17 @@ pub enum ClientMsg {
     Loot { creature: u32 },
     /// Defeated: come back on safe ground near where you fell.
     Return,
+    /// Throws a bomb from the bag in `slot` right after input `at`, along
+    /// `yaw` and `pitch`, held `hold` ticks since it was lit (the server
+    /// clamps it; a short hold drops it at your feet, `combat::throw_speed`;
+    /// its fuse ran from the light). Energy and one use are spent at `at`.
+    Throw {
+        at: u32,
+        slot: u8,
+        yaw: u16,
+        pitch: i16,
+        hold: u16,
+    },
 }
 
 /// What the portal window's buttons do.
@@ -471,6 +482,31 @@ pub enum ServerMsg {
         debt: u64,
         by: String,
     },
+    /// Something exploded here (a bomb, a popper, a drifter's bomb): draw it.
+    Blast {
+        pos: [f32; 3],
+        radius: f32,
+    },
+    /// A drifter's beam from creature `from` to `to`, lasting `ticks`.
+    Beam {
+        from: u32,
+        to: [f32; 3],
+        ticks: u16,
+    },
+}
+
+/// What a flying shot is, for drawing it (and flying it: bombs fall at
+/// `combat::BOMB_GRAVITY`, homing bolts turn by `combat::homing_step`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub enum ShotKind {
+    /// A sling's pellet or a pelter's spit.
+    Pellet,
+    /// A drifter's bolt.
+    Bolt,
+    /// A thrown or lobbed bomb.
+    Bomb,
+    /// A homing bolt, turning toward `ShotView::homing`.
+    Homing,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -492,6 +528,9 @@ pub struct CreatureView {
     pub dead: bool,
     /// You have taken your drops from this body.
     pub looted: bool,
+    /// Exotic buffs (`creatures::Exotic` bits; 0: ordinary). Exotics wear
+    /// markings.
+    pub exotic: u8,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
@@ -502,6 +541,9 @@ pub struct ShotView {
     pub vel: [f32; 3],
     pub falloff: f32,
     pub range: f32,
+    pub kind: ShotKind,
+    /// What a homing bolt turns toward.
+    pub homing: Option<Target>,
 }
 
 /// A portal as its window shows it.
@@ -615,6 +657,14 @@ pub enum Pose {
     Windup,
     Attack,
     Dead,
+    /// Curled into a ball (a popper): cannot be hurt.
+    Curled,
+    /// Whistling before it explodes (a popper).
+    Lit,
+    /// Stunned by a hammer (a popper).
+    Stunned,
+    /// Airborne (a drifter in flight).
+    Flying,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]

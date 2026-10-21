@@ -266,6 +266,40 @@ Not published anywhere found; every one is a **guess** until measured:
 
 **Art (agent):** icons for every new item (slings, creature parts, essence, trophies) and the tallow torch's texture, in `tools/bm-texgen`.
 
+## Build plan (part 2)
+
+**Foundation (done first, shared):**
+- `creatures.rs`:
+  - two new behaviours: `Exploder` (popper) and `Flyer` (drifter);
+  - two new attacks: `Attack::Explode` (fuse, radius, knockback, curl) and `Attack::Barrage` (bolts, bombs below 80% health, homing below 60%, beams from a tier, lifts from a tier, the lift cooldown);
+  - `Exotic` buff bits, with `exotic_chance` and `roll_exotic` (1 or 2 buffs up to world tier 4; the damage and speed buffs and the XP and drop bonuses are guesses).
+- `combat.rs`: `blast_damage` (half at the edge), the bomb fuse and throw (`BOMB_FUSE_TICKS`, `THROW_FULL_TICKS`, `throw_speed`, `BOMB_GRAVITY`), and `homing_step`.
+- Bombs: `ItemKind::Bomb(BombStats)`, copper and iron bags, `Effects::skilled_bomb`, Bomb Skill and Blaster.
+- Data: the popper's and drifter's catalogue entries (Boundless's health, armour, XP and drops), their parts, the bomb charge and bags, and essence from volatile blood.
+- Protocol 19:
+  - `ClientMsg::Throw`;
+  - `ServerMsg::Blast` and `Beam`;
+  - `ShotView::kind` and `homing`;
+  - `CreatureView::exotic`;
+  - poses `Curled`, `Lit`, `Stunned`, `Flying`.
+
+**Server (agent):**
+- The popper's AI: hop, trigger, whistle, leap, explode (walls block the blast), curl into a ball (it cannot be hurt; a hard landing sets it off), hammer stuns.
+- The drifter's flight and kit: bolts, lobbed bombs, homing bolts, the beam, the lift.
+- Bombs:
+  - `Throw` on the shared cadence, with energy and wear;
+  - a fuse;
+  - blasts that hurt creatures, never players;
+  - blocks broken outside other players' claims drop nothing.
+- Exotics on spawn: their buffs applied, with the extra XP and drop rolls.
+
+**Client (agent):**
+- Models for the popper (including curled and whistling) and the drifter (flying, tentacles); markings on exotics.
+- Bombs: hold to light, release to throw, the fuse shown.
+- Drawing blasts, beams, bolts, homing bolts and bombs in flight.
+
+**Art (agent):** icons for the new parts and the bags of bombs.
+
 ## Status
 
 *Spec written and decided 2026-10-21. Part 1 built 2026-10-21; awaiting Nathan's play-test.*
@@ -295,5 +329,6 @@ Not published anywhere found; every one is a **guess** until measured:
   - no hit effect where a shot lands;
   - grapple hooks do not stick in creatures;
   - no end-to-end test of a defeat by a fall (it shares the defeat path with creature hits, which is tested).
-- [ ] Part 2: popper and bombs; drifter; exotics
+- [x] Part 2 foundation (2026-10-21): creatures, combat, bombs, exotics, data, protocol 19 (Build plan (part 2))
+- [ ] Part 2 server, client and art (agents)
 - [ ] Nathan's play-test

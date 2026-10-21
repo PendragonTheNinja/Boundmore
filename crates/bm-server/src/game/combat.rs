@@ -179,6 +179,8 @@ impl Game {
             vel: shot.vel.as_vec3().to_array(),
             falloff: shot.falloff,
             range: shot.range,
+            kind: bm_protocol::ShotKind::Pellet,
+            homing: None,
         });
         let shooter = match shot.from {
             Shooter::Player { id, .. } => Some(id),

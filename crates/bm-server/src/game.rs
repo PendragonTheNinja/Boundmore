@@ -788,6 +788,8 @@ impl Game {
             }
             Event::Msg { id, msg } => match msg {
                 ClientMsg::Skill { at, action } => self.queue(id, at, Queued::Skill { at, action }),
+                // Milestone 13 part 2: bombs (server work to come).
+                ClientMsg::Throw { .. } => {}
                 ClientMsg::Shoot {
                     at,
                     slot,

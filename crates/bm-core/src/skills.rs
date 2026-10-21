@@ -183,6 +183,9 @@ pub enum Effect {
     HealthRegenEpic,
     DeathEpic,
     WeaponCraftingEpic,
+    /// Milestone 13 part 2: bombs.
+    BombMastery,
+    BombEpic,
     /// On the tree, not built yet ("Comes later"): cannot be bought.
     Later,
 }
@@ -572,6 +575,8 @@ pub struct Effects {
     pub defence: [u8; 5],
     pub health_regen_epic: bool,
     pub death_epic: bool,
+    pub bomb_mastery: u8,
+    pub bomb_epic: bool,
 }
 
 impl Effects {
@@ -629,6 +634,8 @@ impl Effects {
                 Effect::FallingArmour => e.defence[4] += r,
                 Effect::HealthRegenEpic => e.health_regen_epic |= on,
                 Effect::DeathEpic => e.death_epic |= on,
+                Effect::BombMastery => e.bomb_mastery += r,
+                Effect::BombEpic => e.bomb_epic |= on,
                 Effect::Later => {}
             }
         }
@@ -795,6 +802,20 @@ impl Effects {
         }
     }
 
+    /// A bag of bombs with these skills, as `skilled_sling` with Bomb Skill
+    /// (+5% damage, +2 action speed a rank) and Blaster (+25%, +10).
+    pub fn skilled_bomb(&self, b: &crate::items::BombStats) -> crate::items::BombStats {
+        let power = 0.05 * self.power * if self.damage_epic { 3.0 } else { 1.0 };
+        let mult = 1.0 + power + 0.05 * self.bomb_mastery as f64 + if self.bomb_epic { 0.25 } else { 0.0 };
+        let speed = 2.0 * self.dexterity + 2.0 * self.bomb_mastery as f64 + if self.bomb_epic { 10.0 } else { 0.0 };
+        crate::items::BombStats {
+            damage: (b.damage as f64 * mult - 1e-9).ceil().max(0.0) as u32,
+            action_speed: b.action_speed + speed as f32,
+            crit_chance: (b.crit_chance + self.crit_bonus() as f32).min(1.0),
+            ..*b
+        }
+    }
+
     /// How far creatures notice you, as a multiple of their range: half
     /// with Quiet Step (+50% stealth, tuning 5.4a).
     pub fn noticed_at(&self) -> f64 {
@@ -855,6 +876,21 @@ mod tests {
         assert_eq!(skilled.damage, 390);
         assert_eq!(skilled.action_speed, 22.0);
         assert_eq!(skilled.energy, 6);
+    }
+
+    #[test]
+    fn bomb_skills() {
+        let t = SkillTree::builtin();
+        let mut c = Character::default();
+        c.add_xp(xp_for_level(50));
+        c.learn(&t, "bomb_mastery").unwrap();
+        c.learn(&t, "bomb_epic").unwrap();
+        let items = crate::items::ItemRegistry::builtin(&crate::block::BlockRegistry::builtin());
+        let bag = items.get(items.id("copper_bombs").unwrap()).unwrap().bomb().unwrap();
+        assert_eq!((bag.durability, bag.energy, bag.radius), (200, 90, 3.0));
+        let b = c.effects(&t).skilled_bomb(&bag);
+        // 900 x (1 + 0.05 + 0.25) = 1170; action speed 50 + 2 + 10.
+        assert_eq!((b.damage, b.action_speed), (1170, 62.0));
     }
 
     #[test]

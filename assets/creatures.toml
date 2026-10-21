@@ -286,3 +286,211 @@ drops = [
   { item = "feather_trophy", weight = 1, max = 1 },
   { item = "wayshard", weight = 3, max = 6 },
 ]
+
+# Milestone 13 part 2.
+
+# Boundless's hopper: tier 3 worlds and up; passive until triggered, then
+# whistles at least 1.5 s and explodes on impact (impulse); can curl into a
+# ball that cannot be hurt; hammers stun it (Release 188). Explosion 400,
+# x2.5 at tier 2, x5 at tier 3 (players, 2023); tiers 4 and 5, radius,
+# knockback, curl chance and speeds: guesses.
+[[creature]]
+name = "popper"
+behaviour = "exploder"
+attack = { explode = { fuse = 1.5, radius = 3.0, knockback = 10.0, curl = 4.0, curl_chance = 0.5 } }
+half_width = 0.4
+height = 0.8
+walk_speed = 2.0
+run_speed = 7.0
+notice = 12.0
+give_up = 24.0
+forget = 8.0
+min_world_tier = 3
+spawn_weight = 25
+group = [1, 3]
+
+[[creature.tiers]]
+health = 1000
+armour = 0
+xp = 140
+damage = 400
+drops_min = 1
+drops_max = 5
+drops = [
+  { item = "prime_meat", weight = 10, max = 2 },
+  { item = "tallow", weight = 8, max = 2 },
+  { item = "bone", weight = 7, max = 1 },
+  { item = "volatile_blood", weight = 8, max = 2 },
+]
+
+[[creature.tiers]]
+health = 2500
+armour = 100
+xp = 240
+damage = 1000
+drops_min = 2
+drops_max = 6
+drops = [
+  { item = "prime_meat", weight = 10, max = 2 },
+  { item = "tallow", weight = 8, max = 2 },
+  { item = "bone", weight = 7, max = 1 },
+  { item = "volatile_blood", weight = 8, max = 2 },
+  { item = "hide", weight = 4, max = 1 },
+  { item = "mantle", weight = 1, max = 1 },
+]
+
+[[creature.tiers]]
+health = 4500
+armour = 200
+xp = 360
+damage = 2000
+drops_min = 2
+drops_max = 7
+drops = [
+  { item = "prime_meat", weight = 10, max = 2 },
+  { item = "tallow", weight = 8, max = 2 },
+  { item = "bone", weight = 7, max = 1 },
+  { item = "volatile_blood", weight = 8, max = 2 },
+  { item = "hide", weight = 4, max = 1 },
+  { item = "mantle", weight = 1, max = 1 },
+  { item = "heat_sac", weight = 3, max = 1 },
+  { item = "popper_eye", weight = 1, max = 1 },
+]
+
+[[creature.tiers]]
+health = 7000
+armour = 300
+xp = 540
+damage = 3000
+drops_min = 3
+drops_max = 8
+drops = [
+  { item = "prime_meat", weight = 10, max = 2 },
+  { item = "tallow", weight = 8, max = 2 },
+  { item = "bone", weight = 7, max = 1 },
+  { item = "volatile_blood", weight = 8, max = 2 },
+  { item = "hide", weight = 4, max = 1 },
+  { item = "mantle", weight = 1, max = 1 },
+  { item = "heat_sac", weight = 3, max = 1 },
+  { item = "popper_eye", weight = 1, max = 1 },
+  { item = "core_trophy", weight = 1, max = 1 },
+]
+
+[[creature.tiers]]
+health = 10000
+armour = 400
+xp = 840
+damage = 4000
+drops_min = 3
+drops_max = 9
+drops = [
+  { item = "prime_meat", weight = 10, max = 6 },
+  { item = "tallow", weight = 8, max = 6 },
+  { item = "bone", weight = 7, max = 3 },
+  { item = "volatile_blood", weight = 8, max = 6 },
+  { item = "hide", weight = 4, max = 3 },
+  { item = "mantle", weight = 1, max = 2 },
+  { item = "heat_sac", weight = 3, max = 2 },
+  { item = "popper_eye", weight = 1, max = 1 },
+  { item = "core_trophy", weight = 1, max = 1 },
+]
+
+# Boundless's cuttletrunk: flies; middle and high threat worlds; high armour.
+# Bolts, then bombs below 80% health and homing bolts below 60% (players,
+# 2019); lifts players from higher tiers, 30 s apart (Release 188). Base hit
+# 100, up to x6 at tier 3 (players, 2023). Everything else: guesses.
+[[creature]]
+name = "drifter"
+behaviour = "flyer"
+attack = { barrage = { bolt_speed = 18.0, range = 28.0, cooldown = 2.5, hover = 6.0, bomb_below = 0.8, bomb_radius = 3.0, homing_below = 0.6, beam_tier = 3, lift_tier = 4, lift_cooldown = 30.0 } }
+half_width = 0.7
+height = 1.3
+walk_speed = 2.0
+run_speed = 6.0
+notice = 24.0
+give_up = 36.0
+forget = 12.0
+min_world_tier = 3
+spawn_weight = 15
+group = [1, 2]
+
+[[creature.tiers]]
+health = 1500
+armour = 100
+xp = 240
+damage = 100
+drops_min = 1
+drops_max = 5
+drops = [
+  { item = "prime_meat", weight = 23, max = 2 },
+  { item = "tallow", weight = 19, max = 2 },
+  { item = "bone", weight = 19, max = 1 },
+]
+
+[[creature.tiers]]
+health = 3000
+armour = 350
+xp = 360
+damage = 250
+drops_min = 2
+drops_max = 6
+drops = [
+  { item = "prime_meat", weight = 23, max = 2 },
+  { item = "tallow", weight = 19, max = 2 },
+  { item = "bone", weight = 19, max = 1 },
+  { item = "hide", weight = 11, max = 2 },
+  { item = "thick_blood", weight = 4, max = 2 },
+]
+
+[[creature.tiers]]
+health = 5000
+armour = 750
+xp = 540
+damage = 600
+drops_min = 2
+drops_max = 7
+drops = [
+  { item = "prime_meat", weight = 23, max = 2 },
+  { item = "tallow", weight = 19, max = 2 },
+  { item = "bone", weight = 19, max = 1 },
+  { item = "hide", weight = 11, max = 2 },
+  { item = "thick_blood", weight = 4, max = 2 },
+  { item = "mantle", weight = 5, max = 1 },
+  { item = "float_sac", weight = 4, max = 1 },
+]
+
+[[creature.tiers]]
+health = 10000
+armour = 1300
+xp = 840
+damage = 1200
+drops_min = 3
+drops_max = 8
+drops = [
+  { item = "prime_meat", weight = 23, max = 2 },
+  { item = "tallow", weight = 19, max = 2 },
+  { item = "bone", weight = 19, max = 1 },
+  { item = "hide", weight = 11, max = 2 },
+  { item = "thick_blood", weight = 4, max = 2 },
+  { item = "mantle", weight = 5, max = 1 },
+  { item = "float_sac", weight = 4, max = 1 },
+  { item = "tentacle_trophy", weight = 2, max = 1 },
+]
+
+[[creature.tiers]]
+health = 20000
+armour = 2000
+xp = 1200
+damage = 2400
+drops_min = 3
+drops_max = 9
+drops = [
+  { item = "prime_meat", weight = 23, max = 7 },
+  { item = "tallow", weight = 19, max = 6 },
+  { item = "bone", weight = 19, max = 4 },
+  { item = "hide", weight = 11, max = 5 },
+  { item = "thick_blood", weight = 4, max = 4 },
+  { item = "mantle", weight = 5, max = 3 },
+  { item = "float_sac", weight = 4, max = 3 },
+  { item = "tentacle_trophy", weight = 2, max = 1 },
+]

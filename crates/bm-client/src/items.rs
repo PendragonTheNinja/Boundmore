@@ -181,6 +181,16 @@ impl Items {
                     lines.push(format!("{left} of {total} uses left"));
                 }
             }
+            ItemKind::Bomb(b) => {
+                lines.push(format!(
+                    "Hold to light, let go to throw: {} damage within {} blocks",
+                    b.damage,
+                    trim_float(b.radius)
+                ));
+                if let Some((left, total)) = self.durability(stack) {
+                    lines.push(format!("{left} of {total} throws left"));
+                }
+            }
             ItemKind::Sling(l) => {
                 lines.push(format!(
                     "Shoots {} damage up to {} blocks with left click",

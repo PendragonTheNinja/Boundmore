@@ -623,6 +623,8 @@ mod tests {
             vel: [30.0, 0.0, 0.0],
             falloff: 0.5,
             range: 15.0,
+            kind: bm_protocol::ShotKind::Pellet,
+            homing: None,
         });
         assert_eq!(fly(&mut s, &open, &creature), 30 + SERVER_SHOT_DELAY as usize);
     }
@@ -638,6 +640,8 @@ mod tests {
             vel: [0.0, 0.0, -30.0],
             falloff: 0.5,
             range: 30.0,
+            kind: bm_protocol::ShotKind::Pellet,
+            homing: None,
         };
         s.server(&view);
         for _ in 0..SERVER_SHOT_DELAY {

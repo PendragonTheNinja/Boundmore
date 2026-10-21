@@ -73,6 +73,62 @@ pub fn shot_step(pos: glam::DVec3, vel: glam::DVec3, falloff: f32) -> (glam::DVe
     (pos + vel * dt, vel)
 }
 
+/// A blast of `damage` reaches `radius` blocks, falling off linearly to half
+/// at the edge (a **guess**: Boundless's bombs list a fall-off of 0.5).
+/// `dist` beyond the radius takes nothing.
+pub fn blast_damage(damage: u32, dist: f64, radius: f64) -> u32 {
+    if dist > radius || radius <= 0.0 {
+        return 0;
+    }
+    libm::round(damage as f64 * (1.0 - 0.5 * dist / radius)) as u32
+}
+
+/// A bomb's fuse, from lighting it: 3 s (Boundless's decoded bomb data; the
+/// bag lists 3.85 s of "charge time"). A bomb still in hand when it runs out
+/// is thrown first, as in Boundless.
+pub const BOMB_FUSE_TICKS: u32 = 3 * TICK_HZ;
+
+/// Holding a lit bomb this long throws it at full speed; a tap drops it at
+/// your feet (Boundless Release 188). 1 s is a **guess**.
+pub const THROW_FULL_TICKS: u32 = TICK_HZ;
+
+/// Throw speed for a bomb held `hold` ticks, out of `full` (the bag's
+/// projectile speed, 25 for every Boundless bag).
+pub fn throw_speed(hold: u32, full: f32) -> f64 {
+    full as f64 * (hold.min(THROW_FULL_TICKS) as f64 / THROW_FULL_TICKS as f64)
+}
+
+/// Gravity on a thrown bomb, blocks a second squared: its fall-off 0.5 times
+/// [`SHOT_GRAVITY`] (a **guess**, as for shots).
+pub const BOMB_GRAVITY: f64 = SHOT_GRAVITY * 0.5;
+
+/// One tick of a homing bolt: turns its velocity toward `target` by at most
+/// `turn` radians, keeping its speed, then moves. No gravity. Deterministic
+/// (client and server fly it alike).
+pub fn homing_step(pos: glam::DVec3, vel: glam::DVec3, target: glam::DVec3, turn: f64) -> (glam::DVec3, glam::DVec3) {
+    let speed = vel.length();
+    let want = (target - pos).normalize_or_zero();
+    let have = vel.normalize_or_zero();
+    let new = if want == glam::DVec3::ZERO || have == glam::DVec3::ZERO {
+        vel
+    } else {
+        let cos = have.dot(want).clamp(-1.0, 1.0);
+        let angle = libm::acos(cos);
+        if angle <= turn {
+            want * speed
+        } else {
+            // Rotate `have` toward `want` by `turn` within their plane.
+            let ortho = (want - have * cos).normalize_or_zero();
+            (have * libm::cos(turn) + ortho * libm::sin(turn)) * speed
+        }
+    };
+    (pos + new * crate::movement::TICK_DT, new)
+}
+
+/// How fast a homing bolt turns: 1.5 radians a second (a **guess**: dodgeable
+/// at a sprint).
+pub const HOMING_TURN_PER_TICK: f64 = 1.5 / TICK_HZ as f64;
+
 /// A character's health and defences from their skills.
 #[derive(Clone, Copy, Debug, Default, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct Defence {
@@ -332,6 +388,23 @@ mod tests {
         let s = fall(40.0, false, u16::MAX);
         assert!(s.down, "forty blocks onto rock is a defeat");
         assert_eq!(fall(40.0, false, 0).hurt, 0, "just let go of a grapple: no harm");
+    }
+
+    #[test]
+    fn blasts_and_homing() {
+        assert_eq!(blast_damage(900, 0.0, 3.0), 900);
+        assert_eq!(blast_damage(900, 3.0, 3.0), 450);
+        assert_eq!(blast_damage(900, 3.1, 3.0), 0);
+        assert_eq!(throw_speed(0, 25.0), 0.0);
+        assert_eq!(throw_speed(THROW_FULL_TICKS * 3, 25.0), 25.0);
+        // A bolt fired sideways turns toward its target and keeps its speed.
+        let (mut p, mut v) = (glam::DVec3::ZERO, glam::DVec3::new(0.0, 0.0, 10.0));
+        let target = glam::DVec3::new(10.0, 0.0, 0.0);
+        for _ in 0..120 {
+            (p, v) = homing_step(p, v, target, HOMING_TURN_PER_TICK);
+        }
+        assert!((v.length() - 10.0).abs() < 1e-9);
+        assert!(v.x > 0.0, "it has turned toward the target: {v:?}");
     }
 
     #[test]

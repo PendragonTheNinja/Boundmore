@@ -33,7 +33,9 @@ pub use chunk::{CHUNK_FORMAT_VERSION, Chunk, ChunkDecodeError};
 pub use colours::{ColourDef, ColourError, ColourPalette};
 pub use coords::{BlockPos, CHUNK_SIZE, CHUNK_VOLUME, ChunkPos, LocalPos};
 pub use inventory::{HOTBAR_SLOTS, INVENTORY_SLOTS, Inventory};
-pub use items::{Aoe, ItemDef, ItemError, ItemId, ItemKind, ItemRegistry, ItemStack, SlingStats, ToolClass, ToolStats};
+pub use items::{
+    Aoe, BombStats, ItemDef, ItemError, ItemId, ItemKind, ItemRegistry, ItemStack, SlingStats, ToolClass, ToolStats,
+};
 pub use light::{BlockSource, ChunkLight, Light, LightMap, MAX_LIGHT};
 pub use look::{NO_TINT, PlanetLook};
 pub use movement::{

@@ -25,6 +25,14 @@ pub enum Behaviour {
     Ranged,
     /// Never attacks; sprints away from players it notices (the dasher).
     Flee,
+    /// Hops about passively; once triggered (hurt, or a player close on a
+    /// hostile world) whistles, then throws itself at the target and
+    /// explodes; may curl into a ball that cannot be hurt (the popper,
+    /// Boundless's hopper; milestone 13 part 2).
+    Exploder,
+    /// Rests on the ground; when angered flies, strafes above its target and
+    /// fires (the drifter, Boundless's cuttletrunk).
+    Flyer,
 }
 
 /// How a kind attacks.
@@ -56,6 +64,112 @@ pub enum Attack {
         burst: [u8; 3],
         spread: f32,
     },
+    /// Whistles for `fuse` seconds, leaps at the target and explodes within
+    /// `radius` blocks (impulse damage = the tier's damage, falling off to
+    /// half at the edge, never through walls), knocking back at `knockback`
+    /// blocks a second. When first hurt it curls into a ball for
+    /// `curl` seconds with chance `curl_chance`: it cannot be hurt, and
+    /// explodes if it lands hard.
+    Explode {
+        fuse: f32,
+        radius: f32,
+        knockback: f32,
+        curl: f32,
+        curl_chance: f32,
+    },
+    /// The drifter's kit. It hovers `hover` blocks above its target and fires
+    /// bolts (kinetic) at `bolt_speed` every `cooldown` seconds from up to
+    /// `range`. Attacks unlock as its health drops (Boundless, players 2019):
+    /// lobbed bombs (impulse, `bomb_radius`) below `bomb_below` of its health,
+    /// homing bolts below `homing_below`; from `beam_tier` a beam (impulse,
+    /// a hit every half second while it lasts); from `lift_tier` it lifts a
+    /// player who stays in a marked spot for 1 s and drops them, every
+    /// `lift_cooldown` seconds (Boundless: 30 s).
+    Barrage {
+        bolt_speed: f32,
+        range: f32,
+        cooldown: f32,
+        hover: f32,
+        bomb_below: f32,
+        bomb_radius: f32,
+        homing_below: f32,
+        beam_tier: u8,
+        lift_tier: u8,
+        lift_cooldown: f32,
+    },
+}
+
+/// An exotic creature's buffs (Boundless: visible decals, 1 to 2 buffs on low
+/// worlds, 3 to 4 on high ones [tuning 3.2.2]). A bit set, sent on the wire.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub struct Exotic(pub u8);
+
+impl Exotic {
+    pub const HEALTH: u8 = 1;
+    pub const ARMOUR: u8 = 2;
+    pub const DAMAGE: u8 = 4;
+    pub const SPEED: u8 = 8;
+
+    pub fn any(self) -> bool {
+        self.0 != 0
+    }
+
+    pub fn has(self, bit: u8) -> bool {
+        self.0 & bit != 0
+    }
+
+    /// Health x3 with the health buff (+200%, Boundless).
+    pub fn health(self, base: u32) -> u32 {
+        if self.has(Self::HEALTH) { base * 3 } else { base }
+    }
+
+    /// Armour x2 with the armour buff (+100%, Boundless).
+    pub fn armour(self, base: u32) -> u32 {
+        if self.has(Self::ARMOUR) { base * 2 } else { base }
+    }
+
+    /// Damage x1.5 with the damage buff: a **guess** (Boundless never
+    /// published it).
+    pub fn damage(self, base: u32) -> u32 {
+        if self.has(Self::DAMAGE) { base + base / 2 } else { base }
+    }
+
+    /// Speed x1.3 with the speed buff: a **guess**.
+    pub fn speed(self) -> f64 {
+        if self.has(Self::SPEED) { 1.3 } else { 1.0 }
+    }
+
+    /// XP x1.5 for any exotic: a **guess** ("extra XP", Boundless wiki).
+    pub fn xp(self, base: u32) -> u32 {
+        if self.any() { base + base / 2 } else { base }
+    }
+
+    /// Extra drop rolls for any exotic: one more at least and at most (a
+    /// **guess**; "more drops", Boundless wiki).
+    pub fn extra_rolls(self) -> u8 {
+        u8::from(self.any())
+    }
+}
+
+/// Chance a spawned creature is exotic: Boundless's wiki gave 20% for
+/// spitters, and Testing 218 made exotics rarer on low worlds; 10% up to
+/// world tier 4 and 20% above is a **guess**.
+pub fn exotic_chance(world_tier: u8) -> f64 {
+    if world_tier <= 4 { 0.10 } else { 0.20 }
+}
+
+/// Rolls an exotic's buffs on a world of `world_tier`: 1 or 2 up to tier 4,
+/// 3 or 4 above (Testing 218), each buff different. `rand` gives 0..1.
+pub fn roll_exotic(world_tier: u8, mut rand: impl FnMut() -> f64) -> Exotic {
+    if rand() >= exotic_chance(world_tier) {
+        return Exotic::default();
+    }
+    let n = if world_tier <= 4 { 1 } else { 3 } + u32::from(rand() < 0.5);
+    let mut bits = 0u8;
+    while bits.count_ones() < n {
+        bits |= 1 << ((rand() * 4.0) as u8).min(3);
+    }
+    Exotic(bits)
 }
 
 /// One weighted entry in a drop pool [tuning 3.2.4]: picked with chance
@@ -327,6 +441,64 @@ mod tests {
         assert_eq!(dasher.tier(3).health, 5000);
         assert_eq!(dasher.title(2), "Hardy Dasher");
         assert_eq!(grazer.title(1), "Grazer");
+    }
+
+    #[test]
+    fn part_two_matches_boundless() {
+        let k = CreatureKinds::builtin();
+        // tuning 3.2.2: hopper and cuttletrunk (HP / armour / XP).
+        let popper = k.get(k.id("popper").unwrap()).unwrap();
+        let p: Vec<_> = popper.tiers.iter().map(|t| (t.health, t.armour, t.xp)).collect();
+        assert_eq!(
+            p,
+            [
+                (1000, 0, 140),
+                (2500, 100, 240),
+                (4500, 200, 360),
+                (7000, 300, 540),
+                (10000, 400, 840)
+            ]
+        );
+        assert_eq!((popper.tier(1).damage, popper.tier(2).damage), (400, 1000));
+        let drifter = k.get(k.id("drifter").unwrap()).unwrap();
+        let d: Vec<_> = drifter.tiers.iter().map(|t| (t.health, t.armour, t.xp)).collect();
+        assert_eq!(
+            d,
+            [
+                (1500, 100, 240),
+                (3000, 350, 360),
+                (5000, 750, 540),
+                (10000, 1300, 840),
+                (20000, 2000, 1200)
+            ]
+        );
+        assert_eq!((popper.min_world_tier, drifter.min_world_tier), (3, 3));
+        assert!(popper.tier(1).drops.iter().any(|d| d.item == "volatile_blood"));
+    }
+
+    #[test]
+    fn exotics() {
+        let e = Exotic(Exotic::HEALTH | Exotic::ARMOUR);
+        assert_eq!((e.health(1000), e.armour(100), e.damage(100)), (3000, 200, 100));
+        assert_eq!(e.xp(140), 210);
+        assert_eq!(Exotic::default().xp(140), 140);
+        let mut seed = 7u64;
+        let mut rand = move || {
+            seed ^= seed << 13;
+            seed ^= seed >> 7;
+            seed ^= seed << 17;
+            (seed >> 11) as f64 / (1u64 << 53) as f64
+        };
+        let (mut exotic, mut most) = (0, 0);
+        for _ in 0..10_000 {
+            let x = roll_exotic(3, &mut rand);
+            if x.any() {
+                exotic += 1;
+                most = most.max(x.0.count_ones());
+            }
+        }
+        assert!((800..1200).contains(&exotic), "about 10% on a tier 3 world: {exotic}");
+        assert_eq!(most, 2, "1 or 2 buffs on low worlds");
     }
 
     #[test]

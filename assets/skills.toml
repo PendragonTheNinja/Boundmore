@@ -144,8 +144,8 @@ name = "Bomb Skill"
 category = "mastery"
 ranks = 5
 cost = 1
-effect = "later"
-text = "Bombs (comes with bombs)"
+effect = "bomb_mastery"
+text = "+5% bomb damage and +2 action speed"
 
 [[skill]]
 id = "spanner_mastery"
@@ -319,8 +319,8 @@ name = "Blaster"
 category = "epic1"
 ranks = 1
 cost = 5
-effect = "later"
-text = "Bombs (comes with bombs)"
+effect = "bomb_epic"
+text = "+25% bomb damage and +10 action speed"
 
 [[skill]]
 id = "rapid_fire_epic"
