@@ -245,11 +245,11 @@ impl Predictor {
             self.seq = self.seq.max(ack);
             return;
         }
-        let agrees = match self.history.front() {
-            Some(e) if e.seq == ack => same(&e.state, &server, shape),
+        let (agrees, server_led) = match self.history.front() {
+            Some(e) if e.seq == ack => (same(&e.state, &server, shape), server_led(&e.state, &server, shape)),
             // The server is ahead of anything we remember (fell far behind):
             // its state is all we have.
-            _ => false,
+            _ => (false, false),
         };
         if agrees {
             return;
@@ -268,7 +268,11 @@ impl Predictor {
         }
         self.previous = self.state;
         self.correction += shape.delta(self.state.pos, before);
-        self.corrections += 1;
+        // Health is the server's to rule (a creature's hit, a defeat): taking
+        // its word on it is no misprediction.
+        if !server_led {
+            self.corrections += 1;
+        }
     }
 
     /// Decays the visual correction. Call once per rendered frame.
@@ -305,6 +309,27 @@ fn replay(state: &mut PlayerState, e: &mut Entry, cfg: &MoveConfig, shape: Plane
 }
 
 fn same(a: &PlayerState, b: &PlayerState, shape: PlanetShape) -> bool {
+    same_body(a, b, shape) && same_health(a, b)
+}
+
+/// Health and defeat (milestone 13, `bm_core::combat`): stepped alike on
+/// both sides, but hits come from the server alone.
+fn same_health(a: &PlayerState, b: &PlayerState) -> bool {
+    a.hurt == b.hurt && a.calm == b.calm && a.beat == b.beat && a.loose == b.loose && a.down == b.down
+}
+
+/// Whether a disagreement with the server (`ours` against `server` at the
+/// same input) is the server's to make rather than a misprediction: only
+/// health differs (a hit we could not know of), or the server says we are
+/// down and we did not predict it (defeated wherever we stand; a hit's
+/// knockback may have moved us too). Either is adopted and replayed like a
+/// correction, but not counted as one.
+fn server_led(ours: &PlayerState, server: &PlayerState, shape: PlanetShape) -> bool {
+    (same_body(ours, server, shape) && !same_health(ours, server)) || (server.down && !ours.down)
+}
+
+/// Everything movement predicts: position, velocity, hook, energy, body.
+fn same_body(a: &PlayerState, b: &PlayerState, shape: PlanetShape) -> bool {
     let hooks = match (a.hook, b.hook) {
         (None, None) => true,
         (Some(x), Some(y)) => {
@@ -678,6 +703,118 @@ mod tests {
             p.decay_correction(1.0 / 60.0);
         }
         assert_eq!(p.correction, DVec3::ZERO);
+    }
+
+    /// The server's states for `inputs`, with `hits` (after input n, an
+    /// amount) taken as a creature's hit lands there.
+    fn hit_states(
+        inputs: &[PlayerInput],
+        hits: &[(u32, u32)],
+        world: &impl PhysicsWorld,
+        from: PlayerState,
+    ) -> Vec<PlayerState> {
+        let mut s = from;
+        inputs
+            .iter()
+            .enumerate()
+            .map(|(i, input)| {
+                movement::step(&mut s, input, &MoveConfig::default(), None, shape(), world);
+                for &(_, amount) in hits.iter().filter(|h| h.0 == i as u32 + 1) {
+                    s.take(amount);
+                }
+                s
+            })
+            .collect()
+    }
+
+    #[test]
+    fn a_server_hit_is_adopted_without_a_correction() {
+        let (cfg, w) = (MoveConfig::default(), Floor(10));
+        let inputs: Vec<PlayerInput> = (1..=300).map(walk).collect();
+        // Two pelter shots and a charge we could never predict.
+        let truth = hit_states(&inputs, &[(30, 30), (31, 30), (90, 250)], &w, spawn());
+        let mut p = Predictor::new(spawn());
+        for (i, input) in inputs.iter().enumerate() {
+            p.tick(*input, None, &cfg, shape(), &w);
+            if i >= 5 && i % 3 == 0 {
+                let ack = i as u32 - 4;
+                p.reconcile(i as u64, ack, truth[ack as usize - 1], &cfg, shape(), &w);
+            }
+        }
+        assert_eq!(p.corrections, 0);
+        assert_eq!(p.state.hurt, truth[299].hurt);
+        assert_eq!(p.state.health(), 600 - 310);
+        assert_eq!(p.state, truth[299], "the calm counter and healing agree after the hit");
+    }
+
+    #[test]
+    fn a_defeat_between_snapshots_is_no_correction() {
+        let (cfg, w) = (MoveConfig::default(), Floor(10));
+        let inputs: Vec<PlayerInput> = (1..=120).map(walk).collect();
+        // Defeated after input 40 and knocked back a little as it happened:
+        // the server's body lies elsewhere from then on.
+        let mut s = spawn();
+        let truth: Vec<PlayerState> = inputs
+            .iter()
+            .enumerate()
+            .map(|(i, input)| {
+                movement::step(&mut s, input, &cfg, None, shape(), &w);
+                if i + 1 == 40 {
+                    s.take(5000);
+                    s.vel += DVec3::new(6.0, 3.0, 0.0);
+                }
+                s
+            })
+            .collect();
+        assert!(truth[60].down);
+        let mut p = Predictor::new(spawn());
+        for (i, input) in inputs.iter().enumerate() {
+            p.tick(*input, None, &cfg, shape(), &w);
+            if i >= 5 && i % 3 == 0 {
+                let ack = i as u32 - 4;
+                p.reconcile(i as u64, ack, truth[ack as usize - 1], &cfg, shape(), &w);
+            }
+        }
+        assert_eq!(p.corrections, 0);
+        assert!(p.state.down);
+        assert_eq!(p.state, truth[119], "lying where the server says, still");
+    }
+
+    #[test]
+    fn a_long_fall_hurts_the_same_on_both_sides() {
+        let (cfg, w) = (MoveConfig::default(), Floor(10));
+        let from = PlayerState {
+            pos: DVec3::new(10.5, 40.0, 10.5),
+            loose: u16::MAX,
+            ..Default::default()
+        };
+        let inputs: Vec<PlayerInput> = (1..=240).map(|_| PlayerInput::default()).collect();
+        let truth = hit_states(&inputs, &[], &w, from);
+        assert!(truth[239].hurt > 0, "thirty blocks onto rock hurts");
+        let mut p = Predictor::new(from);
+        for (i, input) in inputs.iter().enumerate() {
+            p.tick(*input, None, &cfg, shape(), &w);
+            if i >= 5 && i % 3 == 0 {
+                let ack = i as u32 - 4;
+                p.reconcile(i as u64, ack, truth[ack as usize - 1], &cfg, shape(), &w);
+            }
+        }
+        assert_eq!(p.corrections, 0);
+        assert_eq!(p.state, truth[239]);
+    }
+
+    #[test]
+    fn a_hit_with_a_position_disagreement_still_counts() {
+        let cfg = MoveConfig::default();
+        let inputs: Vec<PlayerInput> = (1..=60).map(walk).collect();
+        let truth = hit_states(&inputs[..50], &[(45, 100)], &Floor(12), spawn());
+        let mut p = Predictor::new(spawn());
+        for input in &inputs {
+            p.tick(*input, None, &cfg, shape(), &Floor(10));
+        }
+        p.reconcile(1, 50, truth[49], &cfg, shape(), &Floor(10));
+        assert_eq!(p.corrections, 1);
+        assert_eq!(p.state.hurt, 100);
     }
 
     #[test]
