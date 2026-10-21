@@ -15,6 +15,7 @@ use crate::block::{BlockDef, Health};
 use crate::coords::BlockPos;
 use crate::items::{Aoe, ToolStats};
 use crate::movement::TICK_HZ;
+use crate::skills::Effects;
 use glam::DVec3;
 
 /// The highest world tier with numbers (tier 8 exists in Boundless's data
@@ -105,6 +106,23 @@ pub fn swing_damage(tool: &ToolStats, def: &BlockDef, tier: u8, crit: bool, area
         d *= WRONG_TOOL;
     }
     (d * area).floor() as u32
+}
+
+/// `tool` as a character with skill `effects` swings it (milestone 12,
+/// tuning 2.3): damage scaled by `Effects::damage_multiplier` and rounded
+/// up (`dmg = ceil(e x skill_mult)`, before crit and armour), action speed
+/// plus `Effects::action_speed_bonus`, crit chance plus
+/// `Effects::crit_bonus` (at most 1). Client and server both pass the result
+/// to [`swing_ticks`], [`is_crit`] and [`swing_damage`].
+pub fn skilled_tool(tool: &ToolStats, effects: &Effects) -> ToolStats {
+    // A hair under, so 400 x 2.85 is 1140, not 1141 from rounding error.
+    let damage = (tool.damage as f64 * effects.damage_multiplier(tool.class) - 1e-9).ceil();
+    ToolStats {
+        damage: damage.max(0.0) as u32,
+        action_speed: tool.action_speed + effects.action_speed_bonus(tool.class) as f32,
+        crit_chance: (tool.crit_chance + effects.crit_bonus() as f32).min(1.0),
+        ..*tool
+    }
 }
 
 /// Swings `tool` needs to break a fresh `def` with no critical hits.
@@ -297,6 +315,50 @@ mod tests {
         let hand_stone = tool(&i, "hand_stone");
         assert_eq!(hits_to_break(&hand_stone, stone, 1), Some(6));
         assert_eq!(hits_to_break(&hand_stone, soil, 1), Some(4));
+    }
+
+    #[test]
+    fn skills_scale_damage_cadence_and_crits() {
+        use crate::skills::{Character, SkillTree, xp_for_level};
+        let b = BlockRegistry::builtin();
+        let i = ItemRegistry::builtin(&b);
+        let t = SkillTree::builtin();
+        let stone = b.get(b.id("stone").unwrap());
+        let copper = tool(&i, "copper_hammer");
+        let hand_stone = tool(&i, "hand_stone");
+        // Untrained: the tool as it is.
+        let none = Character::default().effects(&t);
+        assert_eq!(skilled_tool(&copper, &none), copper);
+        // The miner's build (tuning 2.7): copper hits 1140, the hand stone
+        // ignores mastery and the hammer epic (470), and the tables' hits.
+        let mut c = Character {
+            xp: xp_for_level(50),
+            ..Default::default()
+        };
+        for (id, n) in [
+            ("power", 8),
+            ("all_attributes", 5),
+            ("hammer_mastery", 5),
+            ("dexterity", 8),
+            ("agility", 8),
+        ] {
+            for _ in 0..n {
+                c.learn(&t, id).unwrap();
+            }
+        }
+        c.learn(&t, "hammer_epic").unwrap();
+        c.learn(&t, "damage_epic").unwrap();
+        let e = c.effects(&t);
+        let skilled = skilled_tool(&copper, &e);
+        assert_eq!(skilled.damage, 1140);
+        assert_eq!(skilled_tool(&hand_stone, &e).damage, 470);
+        assert_eq!(hits_to_break(&skilled, stone, 1), Some(2));
+        assert_eq!(hits_to_break(&skilled, stone, 6), Some(9));
+        // 9 dexterity, 5 mastery and the epic: +18 + 10 + 12 action speed.
+        assert!((skilled.action_speed - copper.action_speed - 40.0).abs() < 1e-4);
+        assert!(swing_ticks(skilled.action_speed) < swing_ticks(copper.action_speed));
+        // 9 agility: +20% crit chance.
+        assert!((skilled.crit_chance - copper.crit_chance - 0.2).abs() < 1e-6);
     }
 
     #[test]
