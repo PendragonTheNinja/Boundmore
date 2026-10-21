@@ -45,7 +45,7 @@ const XP_FILL: Color32 = Color32::from_rgb(132, 196, 236);
 const LOCKED: Color32 = Color32::from_rgb(120, 114, 106);
 const PARTNER: Color32 = Color32::from_rgb(196, 160, 236);
 const CARD_W: f32 = 318.0;
-const CARD_H: f32 = 104.0;
+const CARD_H: f32 = 92.0;
 
 /// 12345 as "12,345".
 pub fn grouped(n: u64) -> String {
@@ -75,7 +75,7 @@ pub fn skills(ctx: &egui::Context, v: &SkillView, state: &mut SkillUi, actions: 
                 ui.set_width(176.0);
                 categories(ui, v, state);
             });
-            ui.separator();
+            ui.add_space(10.0);
             ui.vertical(|ui| {
                 ui.set_width(CARD_W * 2.0 + 14.0);
                 skill_cards(ui, v, state.tab, actions);
@@ -219,19 +219,30 @@ fn plots(ui: &mut Ui, v: &SkillView, state: &mut SkillUi, actions: &mut Vec<UiAc
 
 /// A small labelled number in a box.
 fn stat(ui: &mut Ui, label: &str, value: &str, hover: &str) {
-    egui::Frame::new()
-        .fill(Color32::from_white_alpha(8))
-        .stroke(Stroke::new(1.0, Color32::from_rgba_unmultiplied(150, 116, 62, 120)))
-        .corner_radius(CornerRadius::same(8))
-        .inner_margin(egui::Margin::symmetric(12, 5))
-        .show(ui, |ui| {
-            ui.vertical_centered(|ui| {
-                ui.label(egui::RichText::new(value).color(GOLD).size(20.0).strong());
-                ui.label(egui::RichText::new(label).color(MUTED).small());
-            });
-        })
-        .response
-        .on_hover_text(hover);
+    let (rect, resp) = ui.allocate_exact_size(vec2(116.0, 52.0), Sense::hover());
+    let p = ui.painter();
+    p.rect_filled(rect, CornerRadius::same(8), Color32::from_white_alpha(8));
+    p.rect_stroke(
+        rect,
+        CornerRadius::same(8),
+        Stroke::new(1.0, Color32::from_rgba_unmultiplied(150, 116, 62, 120)),
+        StrokeKind::Inside,
+    );
+    p.text(
+        rect.center_top() + vec2(0.0, 5.0),
+        egui::Align2::CENTER_TOP,
+        value,
+        egui::FontId::proportional(21.0),
+        GOLD,
+    );
+    p.text(
+        rect.center_bottom() - vec2(0.0, 5.0),
+        egui::Align2::CENTER_BOTTOM,
+        label,
+        egui::FontId::proportional(12.0),
+        MUTED,
+    );
+    resp.on_hover_text(hover);
 }
 
 /// The page tabs, buying a page, resetting one, and the switch cooldown.
@@ -339,7 +350,7 @@ fn categories(ui: &mut Ui, v: &SkillView, state: &mut SkillUi) {
         let open = level >= unlock;
         let chosen = state.tab == cat;
         let spent = spent_in(&v.progress.tree, c, cat);
-        let (rect, resp) = ui.allocate_exact_size(vec2(176.0, 42.0), Sense::click());
+        let (rect, resp) = ui.allocate_exact_size(vec2(176.0, 38.0), Sense::click());
         let p = ui.painter();
         let fill = if chosen {
             Color32::from_rgb(78, 60, 36)
@@ -354,10 +365,10 @@ fn categories(ui: &mut Ui, v: &SkillView, state: &mut SkillUi) {
         }
         let name_colour = if open { TEXT } else { LOCKED };
         p.text(
-            rect.left_top() + vec2(10.0, 4.0),
+            rect.left_top() + vec2(10.0, 3.0),
             egui::Align2::LEFT_TOP,
             category_name(cat),
-            egui::FontId::proportional(16.0),
+            egui::FontId::proportional(15.0),
             name_colour,
         );
         let sub = if open {
@@ -366,7 +377,7 @@ fn categories(ui: &mut Ui, v: &SkillView, state: &mut SkillUi) {
             format!("unlocks at level {unlock}")
         };
         p.text(
-            rect.left_bottom() + vec2(10.0, -4.0),
+            rect.left_bottom() + vec2(10.0, -3.0),
             egui::Align2::LEFT_BOTTOM,
             sub,
             egui::FontId::proportional(12.0),
@@ -400,7 +411,7 @@ fn skill_cards(ui: &mut Ui, v: &SkillView, tab: Category, actions: &mut Vec<UiAc
     };
     ui.label(egui::RichText::new(title).color(GOLD).size(18.0));
     egui::ScrollArea::vertical()
-        .max_height(430.0)
+        .max_height(300.0)
         .auto_shrink([false, true])
         .show(ui, |ui| {
             for row in list.chunks(2) {
