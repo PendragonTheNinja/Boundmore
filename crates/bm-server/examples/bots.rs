@@ -26,6 +26,10 @@ struct Totals {
     chunks: AtomicU64,
     snapshots: AtomicU64,
     travelled: AtomicU64,
+    /// Creatures in view across all bots (milestone 13): came into view
+    /// less left.
+    creatures: AtomicU64,
+    creatures_gone: AtomicU64,
 }
 
 #[tokio::main]
@@ -68,13 +72,17 @@ async fn main() -> anyhow::Result<()> {
         tokio::time::sleep(Duration::from_secs(5)).await;
         let t = start.elapsed().as_secs_f64();
         println!(
-            "{:>5.0}s | {} bots connected, {} travelled | {} chunks, {:.1} MiB reliable | {:.0} snapshots/s",
+            "{:>5.0}s | {} bots connected, {} travelled | {} chunks, {:.1} MiB reliable | {:.0} snapshots/s | {} creatures in view",
             t,
             totals.connected.load(Ordering::Relaxed),
             totals.travelled.load(Ordering::Relaxed),
             totals.chunks.load(Ordering::Relaxed),
             totals.reliable_bytes.load(Ordering::Relaxed) as f64 / (1 << 20) as f64,
             totals.snapshots.load(Ordering::Relaxed) as f64 / t,
+            totals
+                .creatures
+                .load(Ordering::Relaxed)
+                .saturating_sub(totals.creatures_gone.load(Ordering::Relaxed)),
         );
         if seconds > 0 && t >= seconds as f64 {
             return Ok(());
@@ -159,10 +167,20 @@ async fn bot(
     let _send = send;
     let t2 = totals.clone();
     tokio::spawn(async move {
+        let mut seen = std::collections::HashSet::new();
         while let Ok(Some(m)) = read_msg::<ServerMsg>(&mut recv).await {
-            if let ServerMsg::Chunk { data, .. } = &m {
-                t2.chunks.fetch_add(1, Ordering::Relaxed);
-                t2.reliable_bytes.fetch_add(data.len() as u64, Ordering::Relaxed);
+            match &m {
+                ServerMsg::Chunk { data, .. } => {
+                    t2.chunks.fetch_add(1, Ordering::Relaxed);
+                    t2.reliable_bytes.fetch_add(data.len() as u64, Ordering::Relaxed);
+                }
+                ServerMsg::Creature(v) if seen.insert(v.id) => {
+                    t2.creatures.fetch_add(1, Ordering::Relaxed);
+                }
+                ServerMsg::CreatureGone { id } if seen.remove(id) => {
+                    t2.creatures_gone.fetch_add(1, Ordering::Relaxed);
+                }
+                _ => {}
             }
         }
     });

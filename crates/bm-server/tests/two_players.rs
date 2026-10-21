@@ -4472,3 +4472,73 @@ async fn shots_cost_energy_and_wear_and_others_see_them_fly() {
     assert_eq!(bob.shots.len(), 2);
     server.stop();
 }
+
+/// Milestone 13, acceptance 4: tools (the hand stone too) hit creatures with
+/// their damage, on the swing cadence shared with slings and block swings,
+/// within reach only; each strike wears the tool.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn tools_strike_creatures_in_reach_on_the_swing_cadence() {
+    let dir = tempfile::tempdir().unwrap();
+    seed(dir.path(), "Alice", &[]);
+    let server = bm_server::start(creature_config(dir.path(), &[("target", 2.0), ("target", 20.0)])).unwrap();
+    let mut alice = TestClient::login(&server, "Alice").await;
+    let feet = alice.feet();
+    alice.wait_for_chunk(feet.chunk()).await;
+    let k = alice.welcome.creatures.iter().position(|d| d.name == "target").unwrap() as u16;
+    while alice.creatures.values().filter(|v| v.kind == k).count() < 2 {
+        alice.until(|m| matches!(m, ServerMsg::Creature(_))).await;
+    }
+    let ids: Vec<u32> = alice.creatures.keys().copied().collect();
+    let (a, you) = alice.snapshot_with(ids[0]).await;
+    let dx = alice
+        .shape()
+        .delta(
+            you.pos,
+            glam::DVec3::new(a.pos[0] as f64, a.pos[1] as f64, a.pos[2] as f64),
+        )
+        .x;
+    let (near, far) = if dx < 10.0 { (ids[0], ids[1]) } else { (ids[1], ids[0]) };
+    let hand_ticks = alice.swing_ticks(HAND);
+    let strike = |at: u32, creature: u32| ClientMsg::Strike {
+        at,
+        creature,
+        slot: HAND,
+    };
+
+    alice.send_inputs(1, PlayerInput::default());
+    let at = alice.seq;
+    alice.send(strike(at, near)).await;
+    alice
+        .until(|m| matches!(m, ServerMsg::Hit { target: Target::Creature(c), .. } if *c == near))
+        .await;
+    assert_eq!(
+        alice.hits_on(Target::Creature(near)),
+        vec![200],
+        "the hand stone deals 200"
+    );
+    // Too soon: nothing.
+    alice.send(strike(at + 1, near)).await;
+    alice.send_inputs(hand_ticks - 1, PlayerInput::default());
+    let _ = snapshot_after(&mut alice).await;
+    alice.settle().await;
+    assert_eq!(
+        alice.hits_on(Target::Creature(near)).len(),
+        1,
+        "sooner than the cadence"
+    );
+    // Out of reach: nothing.
+    alice.send_inputs(1, PlayerInput::default());
+    alice.send(strike(alice.seq, far)).await;
+    let _ = snapshot_after(&mut alice).await;
+    alice.settle().await;
+    assert!(alice.hits_on(Target::Creature(far)).is_empty(), "out of reach");
+    // In time, it lands again.
+    alice.send_inputs(hand_ticks, PlayerInput::default());
+    alice.send(strike(alice.seq, near)).await;
+    alice
+        .until(|m| matches!(m, ServerMsg::Creature(v) if v.id == near && v.damage == 400))
+        .await;
+    alice.settle().await;
+    assert_eq!(alice.inv.get(HAND as usize).unwrap().wear, 2, "a strike wears the tool");
+    server.stop();
+}

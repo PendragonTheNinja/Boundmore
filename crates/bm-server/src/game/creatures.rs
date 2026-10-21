@@ -219,6 +219,34 @@ impl Creature {
         self.history[((now - ticks) % HISTORY as u64) as usize]
     }
 
+    /// Whether it stays at `tick`: a body until its time is up, a living
+    /// creature until nobody has been within [`DESPAWN_RANGE`] for
+    /// [`LONELY_TICKS`].
+    pub(super) fn stays(&mut self, seen: &[Seen], shape: PlanetShape, tick: u64) -> bool {
+        if self.dead_at.is_some_and(|t| tick >= t + BODY_TICKS) {
+            return false;
+        }
+        let near = seen
+            .iter()
+            .any(|p| horizontal(shape.delta(self.state.pos, p.pos)).length() <= DESPAWN_RANGE);
+        if near {
+            self.lonely_since = None;
+            return true;
+        }
+        let since = *self.lonely_since.get_or_insert(tick);
+        tick < since + LONELY_TICKS
+    }
+
+    /// Marks the body looted by `account`: false if it is not a body, or
+    /// they already took their drops (one roll each).
+    pub(super) fn take_loot(&mut self, account: &str) -> bool {
+        if self.alive() || self.looted.iter().any(|a| a == account) {
+            return false;
+        }
+        self.looted.push(account.to_string());
+        true
+    }
+
     /// Adds threat from player `id`.
     pub(super) fn add_threat(&mut self, id: u32, amount: f64) {
         match self.threat.iter_mut().find(|(p, _)| *p == id) {
@@ -293,6 +321,41 @@ impl Herds {
     }
 }
 
+/// What a block is to a creature looking for somewhere to stand.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) enum Ground {
+    /// Collides: something to stand on.
+    Solid,
+    Water,
+    /// Air, or what does not collide (a plant, a prop): room.
+    Open,
+}
+
+/// What creatures ask of a planet's blocks: physics, plus what a resident
+/// block is (None: not loaded). `World` answers on the server; tests use a
+/// small world of their own.
+pub(super) trait Terrain: PhysicsWorld {
+    fn ground(&self, p: BlockPos) -> Option<Ground>;
+    fn planet(&self) -> PlanetShape;
+}
+
+impl Terrain for World {
+    fn ground(&self, p: BlockPos) -> Option<Ground> {
+        let b = self.block(p)?;
+        Some(if b == self.water {
+            Ground::Water
+        } else if self.flags.solid(b) {
+            Ground::Solid
+        } else {
+            Ground::Open
+        })
+    }
+
+    fn planet(&self) -> PlanetShape {
+        self.shape
+    }
+}
+
 /// The 32 by 32 column holding a block (a chunk column).
 pub(super) fn column(p: BlockPos) -> (i64, i64) {
     (p.x >> 5, p.z >> 5)
@@ -317,7 +380,7 @@ pub(super) fn yaw_toward(d: DVec3) -> u16 {
 }
 
 /// Whether nothing solid lies between two points.
-pub(super) fn clear_sight(world: &World, from: DVec3, to: DVec3) -> bool {
+pub(super) fn clear_sight(world: &impl PhysicsWorld, from: DVec3, to: DVec3) -> bool {
     let d = to - from;
     let len = d.length();
     len < 1e-6 || raycast(from, d, len, |p| world.solid(p)).is_none()
@@ -327,26 +390,19 @@ pub(super) fn clear_sight(world: &World, from: DVec3, to: DVec3) -> bool {
 /// solid block with room above it (air or what does not collide, such as a
 /// plant; never water), all resident, searching from `top` down to
 /// `bottom`. Returns the feet position.
-pub(super) fn surface(world: &World, x: i64, z: i64, top: i64, bottom: i64, height: f64) -> Option<DVec3> {
+pub(super) fn surface(world: &impl Terrain, x: i64, z: i64, top: i64, bottom: i64, height: f64) -> Option<DVec3> {
     let clear = height.ceil().max(1.0) as i64;
-    let mut above_air = 0;
+    let mut room = 0;
     for y in (bottom..=top).rev() {
-        let b = world.block(BlockPos::new(x, y, z))?;
-        if b == world.water {
-            above_air = 0;
-            continue;
+        match world.ground(BlockPos::new(x, y, z))? {
+            Ground::Water => room = 0,
+            Ground::Open => room += 1,
+            Ground::Solid if room >= clear => {
+                let feet = DVec3::new(x as f64 + 0.5, y as f64 + 1.0, z as f64 + 0.5);
+                return Some(world.planet().wrap_point(feet));
+            }
+            Ground::Solid => room = 0,
         }
-        if !world.flags.solid(b) {
-            above_air += 1;
-            continue;
-        }
-        if above_air >= clear {
-            let p = world
-                .shape
-                .wrap_point(DVec3::new(x as f64 + 0.5, y as f64 + 1.0, z as f64 + 0.5));
-            return Some(p);
-        }
-        above_air = 0;
     }
     None
 }
@@ -398,6 +454,13 @@ pub(super) fn creature_box(def: &CreatureDef, feet: DVec3) -> (DVec3, DVec3) {
     )
 }
 
+/// How many more creatures may spawn around a player with `near` already
+/// near them (cap `near_cap`), on a planet holding `on_planet` (cap
+/// `planet_cap`): a group never takes either past its cap.
+pub(super) fn spawn_room(near: usize, near_cap: usize, on_planet: usize, planet_cap: usize) -> usize {
+    near_cap.saturating_sub(near).min(planet_cap.saturating_sub(on_planet))
+}
+
 /// Picks a kind for a spawn on a world of `tier`, by spawn weight among the
 /// kinds that live there; `r` in 0..1.
 pub(super) fn pick_kind(kinds: &CreatureKinds, world_tier: u8, r: f64) -> Option<u16> {
@@ -432,8 +495,8 @@ pub(super) fn pick_tier(def: &CreatureDef, world_tier: u8, r: f64) -> u8 {
 
 /// The planet a creature lives on, for its AI: who is there and what the
 /// world is like.
-pub(super) struct Ctx<'a> {
-    pub world: &'a World,
+pub(super) struct Ctx<'a, W> {
+    pub world: &'a W,
     pub shape: PlanetShape,
     pub seen: &'a [Seen],
     pub tick: u64,
@@ -442,7 +505,7 @@ pub(super) struct Ctx<'a> {
     pub body: MoveConfig,
 }
 
-impl Ctx<'_> {
+impl<W> Ctx<'_, W> {
     fn player(&self, id: u32) -> Option<&Seen> {
         self.seen.iter().find(|s| s.id == id)
     }
@@ -459,7 +522,13 @@ fn horizontal(d: DVec3) -> DVec3 {
 
 /// One tick of thinking for a living creature: its mind may change, and it
 /// says how it moves (an input for `movement::step`) and what it does.
-pub(super) fn think(c: &mut Creature, def: &CreatureDef, ctx: &Ctx, rng: &mut u64, acts: &mut Vec<Act>) -> PlayerInput {
+pub(super) fn think(
+    c: &mut Creature,
+    def: &CreatureDef,
+    ctx: &Ctx<impl Terrain>,
+    rng: &mut u64,
+    acts: &mut Vec<Act>,
+) -> PlayerInput {
     let tick = ctx.tick;
     let id = c.id;
     // Calm: look about now and then.
@@ -528,7 +597,7 @@ pub(super) fn think(c: &mut Creature, def: &CreatureDef, ctx: &Ctx, rng: &mut u6
 }
 
 /// A calm creature looks for players to react to.
-fn notice(c: &mut Creature, def: &CreatureDef, ctx: &Ctx) {
+fn notice(c: &mut Creature, def: &CreatureDef, ctx: &Ctx<impl Terrain>) {
     let nearest = ctx
         .seen
         .iter()
@@ -578,7 +647,7 @@ pub(super) fn provoke(c: &mut Creature, def: &CreatureDef, by: u32, tick: u64) {
     }
 }
 
-fn wander(c: &mut Creature, def: &CreatureDef, ctx: &Ctx, rng: &mut u64) -> PlayerInput {
+fn wander(c: &mut Creature, def: &CreatureDef, ctx: &Ctx<impl Terrain>, rng: &mut u64) -> PlayerInput {
     let tick = ctx.tick;
     if let Some(goal) = c.wander {
         let d = horizontal(ctx.delta(c.state.pos, goal));
@@ -606,7 +675,7 @@ fn wander(c: &mut Creature, def: &CreatureDef, ctx: &Ctx, rng: &mut u64) -> Play
 
 /// Moves along `d` (horizontal), running or walking, jumping when a block
 /// is in the way or in water.
-fn run(c: &mut Creature, ctx: &Ctx, d: DVec3, sprint: bool) -> PlayerInput {
+fn run(c: &mut Creature, ctx: &Ctx<impl Terrain>, d: DVec3, sprint: bool) -> PlayerInput {
     let d = horizontal(d);
     if d.length() < 1e-6 {
         return PlayerInput {
@@ -625,7 +694,7 @@ fn run(c: &mut Creature, ctx: &Ctx, d: DVec3, sprint: bool) -> PlayerInput {
 }
 
 /// Whether the way ahead is a step to jump (or it is swimming).
-fn blocked(c: &Creature, ctx: &Ctx, dir: DVec3) -> bool {
+fn blocked(c: &Creature, ctx: &Ctx<impl Terrain>, dir: DVec3) -> bool {
     let p = c.state.pos;
     if ctx.world.liquid(BlockPos::containing(p.x, p.y + 0.4, p.z)) {
         return true;
@@ -641,7 +710,7 @@ fn blocked(c: &Creature, ctx: &Ctx, dir: DVec3) -> bool {
 fn fight_tick(
     c: &mut Creature,
     def: &CreatureDef,
-    ctx: &Ctx,
+    ctx: &Ctx<impl Terrain>,
     p: &Seen,
     d: DVec3,
     fight: Fight,
@@ -805,7 +874,7 @@ fn fight_tick(
     }
 }
 
-fn charge_input(c: &Creature, ctx: &Ctx, dir: DVec3) -> PlayerInput {
+fn charge_input(c: &Creature, ctx: &Ctx<impl Terrain>, dir: DVec3) -> PlayerInput {
     PlayerInput {
         forward: 1,
         sprint: true,
@@ -965,20 +1034,7 @@ impl Game {
         let tick = self.tick;
         let shape = self.planets[pi].world.shape;
         self.herds[pi].empty.retain(|_, until| *until > tick);
-        self.herds[pi].list.retain_mut(|c| {
-            if c.dead_at.is_some_and(|t| tick >= t + BODY_TICKS) {
-                return false;
-            }
-            let near = seen
-                .iter()
-                .any(|p| horizontal(shape.delta(c.state.pos, p.pos)).length() <= DESPAWN_RANGE);
-            if near {
-                c.lonely_since = None;
-                return true;
-            }
-            let since = *c.lonely_since.get_or_insert(tick);
-            tick < since + LONELY_TICKS
-        });
+        self.herds[pi].list.retain_mut(|c| c.stays(seen, shape, tick));
     }
 
     /// Spawns a group around player `id` if there are few creatures near
@@ -1001,7 +1057,13 @@ impl Game {
             .iter()
             .filter(|c| horizontal(shape.delta(pos, c.state.pos)).length() <= CROWD_RANGE)
             .count();
-        if near >= self.cfg.creatures_near_player {
+        let room = spawn_room(
+            near,
+            self.cfg.creatures_near_player,
+            herd.list.len(),
+            self.cfg.creatures_per_planet,
+        );
+        if room == 0 {
             return;
         }
         let Some(kind) = pick_kind(&self.creature_kinds, planet.tier, roll(&mut self.rng)) else {
@@ -1033,9 +1095,8 @@ impl Game {
         let Some(spot) = spot else { return };
         let (lo, hi) = (def.group[0] as f64, def.group[1] as f64);
         let n = (lo + roll(&mut self.rng) * (hi - lo + 1.0)).floor().min(hi) as usize;
-        let room = self.cfg.creatures_per_planet.saturating_sub(self.herds[pi].list.len());
         let height = def.height as f64;
-        for k in 0..n.min(room).max(1) {
+        for k in 0..n.clamp(1, room) {
             let feet = if k == 0 {
                 Some(spot)
             } else {
@@ -1281,5 +1342,275 @@ mod tests {
             let got = f(d);
             assert!(got.distance(d.normalize()) < 1e-3, "{d} -> {got}");
         }
+    }
+}
+
+#[cfg(test)]
+mod ai_tests {
+    use super::*;
+
+    /// Flat ground (solid below y 10), a wall at x 3 if asked, water in
+    /// column (5, 5), nothing loaded at x 300 and beyond.
+    struct Flat {
+        shape: PlanetShape,
+        wall: bool,
+    }
+
+    impl PhysicsWorld for Flat {
+        fn solid(&self, p: BlockPos) -> bool {
+            p.y < 10 || (self.wall && p.x == 3 && p.y < 40)
+        }
+        fn liquid(&self, p: BlockPos) -> bool {
+            (p.x, p.z) == (5, 5) && (10..12).contains(&p.y)
+        }
+    }
+
+    impl Terrain for Flat {
+        fn ground(&self, p: BlockPos) -> Option<Ground> {
+            if p.x >= 300 {
+                return None;
+            }
+            Some(if self.liquid(p) {
+                Ground::Water
+            } else if self.solid(p) {
+                Ground::Solid
+            } else {
+                Ground::Open
+            })
+        }
+        fn planet(&self) -> PlanetShape {
+            self.shape
+        }
+    }
+
+    fn flat(wall: bool) -> Flat {
+        Flat {
+            shape: PlanetShape::new(16, 12),
+            wall,
+        }
+    }
+
+    fn player(id: u32, x: f64) -> Seen {
+        let pos = DVec3::new(x, 10.0, 0.5);
+        Seen {
+            id,
+            pos,
+            eye: pos + DVec3::new(0.0, 1.75, 0.0),
+            down: false,
+            protected: false,
+            noticed_at: 1.0,
+        }
+    }
+
+    /// Runs a creature's AI and physics for `ticks` from `tick`; the acts.
+    fn run(
+        c: &mut Creature,
+        def: &CreatureDef,
+        world: &Flat,
+        seen: &[Seen],
+        hostile: bool,
+        tick: &mut u64,
+        ticks: u64,
+    ) -> Vec<Act> {
+        let mut rng = 1;
+        let mut acts = Vec::new();
+        let cfg = def.move_config();
+        for _ in 0..ticks {
+            *tick += 1;
+            let ctx = Ctx {
+                world,
+                shape: world.shape,
+                seen,
+                tick: *tick,
+                hostile,
+                body: MoveConfig::default(),
+            };
+            let input = think(c, def, &ctx, &mut rng, &mut acts);
+            let m = move_config(def, &cfg, &c.mind);
+            movement::step(&mut c.state, &input, &m, None, world.shape, world);
+        }
+        acts
+    }
+
+    fn kind(name: &str) -> (CreatureKinds, u16) {
+        let k = CreatureKinds::builtin();
+        let id = k.id(name).unwrap();
+        (k, id)
+    }
+
+    #[test]
+    fn creatures_stand_on_open_ground_never_water_or_unloaded() {
+        let w = flat(false);
+        assert_eq!(surface(&w, 1, 1, 30, 0, 1.4), Some(DVec3::new(1.5, 10.0, 1.5)));
+        assert_eq!(surface(&w, 5, 5, 30, 0, 1.4), None, "water");
+        assert_eq!(surface(&w, 400, 1, 30, 0, 1.4), None, "not loaded");
+        assert_eq!(surface(&w, 1, 1, 10, 0, 1.4), None, "no room under the top searched");
+    }
+
+    #[test]
+    fn spawns_never_pass_the_caps() {
+        assert_eq!(spawn_room(0, 8, 0, 600), 8);
+        assert_eq!(spawn_room(6, 8, 0, 600), 2, "a group fills the room left");
+        assert_eq!(spawn_room(8, 8, 0, 600), 0);
+        assert_eq!(spawn_room(9, 8, 0, 600), 0);
+        assert_eq!(spawn_room(0, 8, 597, 600), 3, "the planet's cap too");
+        assert_eq!(spawn_room(0, 8, 600, 600), 0);
+    }
+
+    #[test]
+    fn lonely_creatures_and_old_bodies_go() {
+        let shape = PlanetShape::new(16, 12);
+        let mut c = Creature::new(1, 0, 1, DVec3::new(0.5, 10.0, 0.5), 0);
+        let near = [player(7, 30.0)];
+        let far = [player(7, 100.0)];
+        assert!(c.stays(&near, shape, 10));
+        assert!(c.stays(&far, shape, 20), "the wait starts");
+        assert!(c.stays(&far, shape, 20 + LONELY_TICKS - 1));
+        assert!(!c.stays(&far, shape, 20 + LONELY_TICKS), "nobody near for 10 s");
+        // Someone coming back resets the wait.
+        let mut c = Creature::new(2, 0, 1, DVec3::new(0.5, 10.0, 0.5), 0);
+        assert!(c.stays(&far, shape, 20));
+        assert!(c.stays(&near, shape, 500));
+        assert!(c.stays(&far, shape, 20 + LONELY_TICKS + 1));
+        // Across the seam counts as near: x 0.5 and x 500 are 12.5 apart.
+        let mut c = Creature::new(3, 0, 1, DVec3::new(0.5, 10.0, 0.5), 0);
+        assert!(c.stays(&[player(7, 500.0)], shape, 1));
+        assert!(c.stays(&[player(7, 500.0)], shape, 1 + LONELY_TICKS * 2));
+        // A body stays its time, near or not.
+        c.dead_at = Some(100);
+        assert!(c.stays(&near, shape, 100 + BODY_TICKS - 1));
+        assert!(!c.stays(&near, shape, 100 + BODY_TICKS));
+    }
+
+    #[test]
+    fn each_player_loots_a_body_once() {
+        let mut c = Creature::new(1, 0, 1, DVec3::ZERO, 0);
+        assert!(!c.take_loot("alice"), "not while it lives");
+        c.dead_at = Some(5);
+        assert!(c.take_loot("alice"));
+        assert!(!c.take_loot("alice"), "once");
+        assert!(c.take_loot("bob"), "every player their own");
+        assert!(c.view("alice").looted && c.view("bob").looted && !c.view("carol").looted);
+    }
+
+    #[test]
+    fn a_herd_stays_calm_until_hurt_then_gives_up_far_away() {
+        let (k, id) = kind("grazer");
+        let def = k.get(id).unwrap();
+        let w = flat(false);
+        let mut c = Creature::new(1, id, 1, DVec3::new(0.5, 10.0, 0.5), 0);
+        let mut tick = 0;
+        let near = [player(7, 5.0)];
+        run(&mut c, def, &w, &near, true, &mut tick, 120);
+        assert_eq!(c.mind, Mind::Calm, "herds never start a fight");
+        c.add_threat(7, 300.0);
+        provoke(&mut c, def, 7, tick);
+        assert!(c.angry());
+        run(&mut c, def, &w, &near, true, &mut tick, 1);
+        assert!(c.angry(), "angry at whoever hurt it");
+        // The target runs beyond give_up: it lets them go.
+        let far = [player(7, c.state.pos.x + def.give_up as f64 + 5.0)];
+        run(&mut c, def, &w, &far, true, &mut tick, 2);
+        assert_eq!(c.mind, Mind::Calm);
+        assert!(c.threat.is_empty());
+    }
+
+    #[test]
+    fn an_angry_creature_forgets_a_target_it_cannot_see() {
+        let (k, id) = kind("grazer");
+        let def = k.get(id).unwrap();
+        let w = flat(true);
+        // Behind a wall, within give_up.
+        let seen = [player(7, 8.0)];
+        let mut c = Creature::new(1, id, 1, DVec3::new(0.5, 10.0, 0.5), 0);
+        let mut tick = 0;
+        c.add_threat(7, 10.0);
+        provoke(&mut c, def, 7, tick);
+        let forget = (def.forget as f64 * TICK_HZ as f64) as u64;
+        run(&mut c, def, &w, &seen, true, &mut tick, forget / 2);
+        assert!(c.angry(), "still hunting");
+        run(&mut c, def, &w, &seen, true, &mut tick, forget);
+        assert_eq!(c.mind, Mind::Calm, "unseen for `forget` seconds");
+    }
+
+    #[test]
+    fn ranged_creatures_attack_on_hostile_worlds_but_spare_new_players() {
+        let (k, id) = kind("pelter");
+        let def = k.get(id).unwrap();
+        let w = flat(false);
+        let at = DVec3::new(0.5, 10.0, 0.5);
+        let check = |seen: Seen, hostile: bool, threat: bool| {
+            let mut c = Creature::new(1, id, 1, at, 0);
+            if threat {
+                c.add_threat(seen.id, 50.0);
+            }
+            let mut tick = 0;
+            run(&mut c, def, &w, &[seen], hostile, &mut tick, NOTICE_EVERY * 2);
+            c.angry()
+        };
+        assert!(check(player(7, 10.0), true, false), "noticed on a hostile world");
+        assert!(!check(player(7, 10.0), false, false), "a tier 1 world is passive");
+        let new = Seen {
+            protected: true,
+            ..player(7, 10.0)
+        };
+        assert!(!check(new, true, false), "new players are spared");
+        assert!(check(new, true, true), "unless they attacked it");
+        assert!(!check(player(7, 30.0), true, false), "beyond notice");
+        // Volleys follow, at the target.
+        let mut c = Creature::new(1, id, 1, at, 0);
+        let mut tick = 0;
+        let acts = run(&mut c, def, &w, &[player(7, 10.0)], true, &mut tick, 6 * TICK_HZ as u64);
+        let volleys = acts
+            .iter()
+            .filter(|a| matches!(a, Act::Volley { target: 7, .. }))
+            .count();
+        assert!((2..=4).contains(&volleys), "a volley every 2 s: {volleys}");
+    }
+
+    #[test]
+    fn a_dasher_flees_and_quiet_step_halves_its_notice() {
+        let (k, id) = kind("dasher");
+        let def = k.get(id).unwrap();
+        let w = flat(false);
+        let at = DVec3::new(0.5, 10.0, 0.5);
+        let x = def.notice as f64 * 0.75;
+        let mut c = Creature::new(1, id, 1, at, 0);
+        let mut tick = 0;
+        run(&mut c, def, &w, &[player(7, x)], true, &mut tick, NOTICE_EVERY * 2);
+        assert_eq!(c.mind, Mind::Flee { from: 7 });
+        let start = c.state.pos.x;
+        let acts = run(&mut c, def, &w, &[player(7, x)], true, &mut tick, 60);
+        assert!(c.state.pos.x < start - 3.0, "runs away: {} -> {}", start, c.state.pos.x);
+        assert!(acts.is_empty(), "never attacks");
+        let quiet = Seen {
+            noticed_at: 0.5,
+            ..player(7, x)
+        };
+        let mut c = Creature::new(1, id, 1, at, 0);
+        let mut tick = 0;
+        run(&mut c, def, &w, &[quiet], true, &mut tick, NOTICE_EVERY * 2);
+        assert_eq!(c.mind, Mind::Calm, "Quiet Step: noticed at half the range");
+    }
+
+    #[test]
+    fn a_grazer_charges_once_a_run_up_at_tier_1_and_more_higher() {
+        let (k, id) = kind("grazer");
+        let def = k.get(id).unwrap();
+        let w = flat(false);
+        let charges = |tier: u8| {
+            let mut c = Creature::new(1, id, tier, DVec3::new(0.5, 10.0, 0.5), 0);
+            let mut tick = 0;
+            c.add_threat(7, 100.0);
+            provoke(&mut c, def, 7, 0);
+            // Within its cooldown (3 s) of the first charge.
+            let acts = run(&mut c, def, &w, &[player(7, 8.0)], true, &mut tick, 150);
+            acts.iter()
+                .filter(|a| matches!(a, Act::Charge { target: 7, .. }))
+                .count()
+        };
+        assert_eq!(charges(1), 1);
+        assert_eq!(charges(2), 2);
+        assert_eq!(charges(3), 3);
     }
 }

@@ -406,9 +406,6 @@ impl Game {
         let Some(c) = self.herds[pi].get(cid).filter(|c| !c.alive()) else {
             return tracing::debug!("#{id} looted no body {cid}");
         };
-        if c.looted.contains(&p.account) {
-            return tracing::debug!("#{id} looted body {cid} again");
-        }
         let def = self.creature_kinds.get(c.kind).expect("present");
         let shape = self.planets[pi].world.shape;
         let reach = self.cfg.reach + p.effects.reach_bonus() + def.half_width as f64;
@@ -421,7 +418,9 @@ impl Game {
         let rng = &mut self.rng;
         let drops = roll_drops(def.tier(c.tier), luck, || roll(rng));
         let c = self.herds[pi].get_mut(cid).expect("present");
-        c.looted.push(account.clone());
+        if !c.take_loot(&account) {
+            return tracing::debug!("#{id} looted body {cid} again");
+        }
         let view = c.view(&account);
         let p = self.players.get_mut(&id).expect("present");
         let before = p.inventory.clone();
