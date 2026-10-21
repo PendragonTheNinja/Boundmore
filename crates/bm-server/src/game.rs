@@ -814,7 +814,8 @@ impl Game {
             view_radius: self.cfg.view_radius,
             reach: self.cfg.reach,
             claims: pl.claims.views(),
-            plot_allowance: self.cfg.plot_allowance,
+            // Plots bought with marks included (the client adds nothing).
+            plot_allowance: self.cfg.plot_allowance.saturating_add(character.plots_bought),
         })));
         for (oid, other) in self.players.iter().filter(|(_, o)| o.planet == planet) {
             out.send(&ServerMsg::PlayerJoined {

@@ -1,6 +1,6 @@
 //! End to end: real server, real QUIC, headless players.
 
-use bm_core::skills::Character;
+use bm_core::skills::{Character, xp_for_level};
 use bm_core::{
     BlockId, BlockPos, BlockRegistry, BlockState, Chiselling, Chunk, ChunkPos, Colour, Inventory, ItemRegistry,
     ItemStack, PlayerInput, PlayerState, PlotPos, ShapeFamily, Station,
@@ -9,7 +9,7 @@ use bm_net::quinn::Connection;
 use bm_net::{read_msg, write_msg};
 use bm_protocol::{
     Channel, ChatLine, ClaimView, ClientDatagram, ClientMsg, EditAction, PROTOCOL_VERSION, PortalAction, PortalView,
-    ServerDatagram, ServerMsg, SlotRef, StationView, StorageView, Welcome,
+    ServerDatagram, ServerMsg, SkillAction, SlotRef, StationView, StorageView, Welcome,
 };
 use bm_server::config::{PlanetSpec, ServerConfig};
 use bm_server::store::{PlayerData, SavedBody, SavedStack, SavedStation, Store, UNIVERSE_FILE, WriteBatch};
@@ -49,6 +49,8 @@ struct TestClient {
     /// The planet the player is on now, and where they arrived on it.
     planet: bm_protocol::PlanetInfo,
     spawn: PlayerState,
+    /// The character as last heard of (milestone 12).
+    character: Character,
 }
 
 /// Opens a connection and says hello; the welcome, or the refusal's reason.
@@ -107,6 +109,7 @@ async fn hello(
         inv: welcome.inventory.clone(),
         planet: welcome.planet.clone(),
         spawn: welcome.spawn,
+        character: welcome.character.clone(),
         welcome,
         items,
         notices: Vec::new(),
@@ -216,6 +219,7 @@ impl TestClient {
             ServerMsg::Reclaim { items } => self.reclaim = Some(items.clone()),
             ServerMsg::Claim(c) => self.claim = Some(c.clone()),
             ServerMsg::TokenNames { names } => self.token_names.extend(names.iter().cloned()),
+            ServerMsg::Character { character, .. } => self.character = character.clone(),
             // Everything of the old planet goes, as in the game.
             ServerMsg::Travel(t) => {
                 self.chunks.clear();
@@ -417,6 +421,58 @@ impl TestClient {
             text: text.into(),
         })
         .await;
+    }
+
+    /// A skill action following the last input sent, and the character the
+    /// server answered with (after a refusal, as it was).
+    async fn skill(&mut self, action: SkillAction) -> Character {
+        if self.seq == 0 {
+            // `at` 0 is how XP updates are tagged; follow a real input.
+            self.send_inputs(1, PlayerInput::default());
+        }
+        let at = self.seq;
+        self.send(ClientMsg::Skill { at, action }).await;
+        match self
+            .until(|m| matches!(m, ServerMsg::Character { at: a, .. } if *a == at))
+            .await
+        {
+            ServerMsg::Character { character, .. } => character,
+            _ => unreachable!(),
+        }
+    }
+
+    /// `n` ranks of skill `id`, each accepted.
+    async fn learn(&mut self, id: &str, n: u32) {
+        for _ in 0..n {
+            let before = self.character.clone();
+            let after = self.skill(SkillAction::Learn(id.into())).await;
+            assert_ne!(after, before, "learning {id}: {:?}", self.notices.last());
+        }
+    }
+
+    /// A skill action the server refuses with `text`, changing nothing.
+    async fn skill_refused(&mut self, action: SkillAction, text: &str) {
+        self.notices.clear();
+        let before = self.character.clone();
+        let after = self.skill(action).await;
+        assert_eq!(after, before, "refused: nothing changes");
+        assert_eq!(self.notices, vec![text.to_string()]);
+    }
+
+    /// Waits until the character has `xp` in all.
+    async fn until_xp(&mut self, xp: u64) {
+        if self.character.xp != xp {
+            self.until(|m| matches!(m, ServerMsg::Character { character, .. } if character.xp == xp))
+                .await;
+        }
+    }
+
+    fn mine_xp(&self, block: BlockId) -> u64 {
+        self.welcome.blocks[block.0 as usize].mine_xp as u64
+    }
+
+    fn build_xp(&self, block: &str) -> u64 {
+        self.welcome.blocks[self.block(block).0 as usize].build_xp as u64
     }
 
     async fn station(&mut self, mut pred: impl FnMut(&StationView) -> bool) -> StationView {
@@ -3391,5 +3447,567 @@ async fn swings_cost_energy_and_a_tired_swing_is_refused() {
         !matches!(alice.swing(4, feet, 0).await, Swung::Refused(..)),
         "rested, it swings again"
     );
+    server.stop();
+}
+
+// Milestone 12: skills and progression.
+
+/// A character at `level` with `marks`, and nothing spent.
+fn at_level(level: u32, marks: u32) -> Character {
+    Character {
+        xp: xp_for_level(level),
+        marks,
+        ..Default::default()
+    }
+}
+
+/// Waits for the chunks of a few blocks around `feet`.
+async fn wait_around(c: &mut TestClient, feet: BlockPos, r: i64) {
+    for dx in [-r, 0, r] {
+        for dz in [-r, 0, r] {
+            for dy in [-1, 0, 4] {
+                c.wait_for_chunk(c.shape().wrap_block(feet.offset(dx, dy, dz)).chunk())
+                    .await;
+            }
+        }
+    }
+}
+
+/// Milestone 12, acceptance 1 and 7: breaking gives a block's mine XP,
+/// placing gives its build XP only inside your own claim, a hand craft its
+/// recipe's XP at once and a station craft when collected; a level up says
+/// what it gave and adds the marks; the character is saved with the
+/// account.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn xp_comes_from_breaking_building_and_crafting_and_levels_up() {
+    let dir = tempfile::tempdir().unwrap();
+    seed_character(
+        dir.path(),
+        "Alice",
+        &[
+            (1, "stone", 10, 0),
+            (2, "sand", 4, 0),
+            (3, "crafting_table", 1, 0),
+            (4, "trunk", 1, 0),
+            (5, "claim_stone", 1, 0),
+        ],
+        Character {
+            xp: 480,
+            ..Default::default()
+        },
+    );
+    let server = bm_server::start(config(dir.path())).unwrap();
+    let mut alice = TestClient::login(&server, "Alice").await;
+    assert_eq!(alice.welcome.character.xp, 480, "the character arrives in the welcome");
+    assert_eq!(
+        alice.welcome.skills.len(),
+        bm_core::skills::SkillTree::builtin().skills.len()
+    );
+    let feet = alice.feet();
+    wait_around(&mut alice, feet, 3).await;
+    let shape = alice.shape();
+    // The data: Boundless's numbers (tuning 2.8, 5.5).
+    assert_eq!((alice.mine_xp(alice.block("stone")), alice.build_xp("stone")), (2, 8));
+
+    // Placed outside any claim: no XP.
+    let out = shape.wrap_block(feet.offset(2, 1, 0));
+    assert!(place(&mut alice, 1, out, 1, None).await.0);
+    alice.settle().await;
+    assert_eq!(alice.character.xp, 480, "no build XP outside a claim");
+    // Broken: its mine XP.
+    assert!(alice.dig(2, out).await.0);
+    alice.until_xp(482).await;
+    // A hand craft gives its recipe's XP at once (timber's is 0).
+    let timber = alice.recipe("timber");
+    craft_at(&mut alice, timber, 1, None).await;
+    alice.settle().await;
+    assert_eq!((alice.count("timber"), alice.character.xp), (2, 482));
+
+    // Her claim: the ground she digs and the stone she claims with.
+    let ground = alice.chunks[&feet.chunk()].get(feet.local());
+    let claimed = 482 + alice.mine_xp(ground) + alice.build_xp("claim_stone");
+    claim_around(&mut alice, 10, 5).await;
+    alice.until_xp(claimed).await;
+    assert_eq!(alice.character.level(), 1);
+    // Building inside it: build XP, and level 2 (500 XP).
+    let inside = shape.wrap_block(feet.offset(1, 1, 0));
+    assert!(place(&mut alice, 20, inside, 1, None).await.0);
+    alice.until_xp(claimed + 8).await;
+    alice.notice("You reached level 2: 4 skill points and 100 marks").await;
+    assert_eq!((alice.character.level(), alice.character.marks), (2, 100));
+
+    // A station craft gives its XP to whoever collects it.
+    let table = shape.wrap_block(feet.offset(-1, 1, 1));
+    assert!(place(&mut alice, 21, table, 3, None).await.0);
+    let with_table = claimed + 8 + alice.build_xp("crafting_table");
+    alice.until_xp(with_table).await;
+    let sandstone = alice.recipe("sandstone");
+    craft_at(&mut alice, sandstone, 1, Some(table)).await;
+    look_at_station(&mut alice, table, |v| !v.output.is_empty()).await;
+    alice.settle().await;
+    assert_eq!(alice.character.xp, with_table, "not before it is collected");
+    alice.send(ClientMsg::CollectStation { pos: table }).await;
+    alice.until_xp(with_table + 2).await;
+    assert_eq!(alice.count("sandstone"), 4);
+
+    // Saved with the account.
+    let character = alice.character.clone();
+    drop(alice);
+    server.stop();
+    let server = bm_server::start(config(dir.path())).unwrap();
+    let alice = TestClient::login(&server, "Alice").await;
+    assert_eq!(alice.welcome.character, character);
+    server.stop();
+}
+
+/// A loaded, solid top block a few blocks from `feet` whose centre is
+/// between `lo` and `hi` from the eye.
+fn block_at_distance(c: &TestClient, feet: BlockPos, lo: f64, hi: f64) -> BlockPos {
+    let shape = c.shape();
+    let eye = c.spawn.eye(&c.welcome.movement);
+    for dx in -7i64..=7 {
+        for dz in -7i64..=7 {
+            for dy in (-3i64..=3).rev() {
+                let p = shape.wrap_block(feet.offset(dx, dy, dz));
+                let Some(chunk) = c.chunks.get(&p.chunk()) else {
+                    continue;
+                };
+                let above = shape.wrap_block(p.offset(0, 1, 0));
+                let open = c
+                    .chunks
+                    .get(&above.chunk())
+                    .is_some_and(|a| a.get(above.local()).is_air());
+                if chunk.get(p.local()).is_air() || !open {
+                    continue;
+                }
+                let centre = glam::DVec3::new(p.x as f64 + 0.5, p.y as f64 + 0.5, p.z as f64 + 0.5);
+                let d = shape.delta(eye, centre).length();
+                if d > lo && d < hi {
+                    return p;
+                }
+            }
+        }
+    }
+    panic!("no block between {lo} and {hi} away");
+}
+
+/// Milestone 12, acceptance 3, 5 and 6: spending, refusing (comes later,
+/// either/or, no points, locked), cleanse and reset costs, pages and the
+/// switch cooldown (free at home); Might adds damage, Deftness quickens the
+/// swing, Grasp adds reach, Fine Hands lets an ordinary chisel cut one
+/// octant.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn skills_are_spent_by_the_rules_and_change_swings_reach_and_chisels() {
+    let dir = tempfile::tempdir().unwrap();
+    seed_character(
+        dir.path(),
+        "Alice",
+        &[
+            (0, "square_chisel", 1, 0),
+            (3, "timber", 4, 0),
+            (5, "claim_stone", 1, 0),
+        ],
+        at_level(30, 2000),
+    );
+    let cfg = ServerConfig {
+        // An untrained Boundless reach, so Grasp shows.
+        reach: 4.0,
+        ..config(dir.path())
+    };
+    let server = bm_server::start(cfg).unwrap();
+    let mut alice = TestClient::login(&server, "Alice").await;
+    let feet = alice.feet();
+    wait_around(&mut alice, feet, 7).await;
+    let shape = alice.shape();
+    let tree = bm_core::skills::SkillTree::builtin();
+
+    // Refusals change nothing and say why.
+    alice
+        .skill_refused(SkillAction::Learn("vitality".into()), "That skill comes later")
+        .await;
+    alice
+        .skill_refused(SkillAction::Learn("nonsense".into()), "There is no such skill")
+        .await;
+    alice.learn("hammer_epic", 1).await;
+    alice
+        .skill_refused(
+            SkillAction::Learn("shovel_axe_epic".into()),
+            "That cannot go on the same page as Rockbreaker",
+        )
+        .await;
+    let mut bob = TestClient::register(&server, "Bob").await;
+    bob.skill_refused(SkillAction::Learn("power".into()), "You have no skill points left")
+        .await;
+    bob.skill_refused(SkillAction::Learn("hammer_mastery".into()), "That unlocks at level 2")
+        .await;
+    drop(bob);
+
+    // Grasp: a block beyond an untrained reach comes within it.
+    let far = block_at_distance(&alice, feet, 5.2, 6.5);
+    assert!(
+        matches!(alice.swing(1, far, HAND).await, Swung::Refused(..)),
+        "out of reach"
+    );
+    alice.learn("control", 2).await;
+    assert_eq!(alice.character.effects(&tree).reach(), 6.0);
+    alice.ready();
+    assert_eq!(alice.swing(2, far, HAND).await, Swung::Damaged(200), "in reach");
+
+    // Might: the hand stone's 200 becomes 210 (1.05, rounded up).
+    let ground = alice.chunks[&feet.chunk()].get(feet.local());
+    let near = shape.wrap_block(feet.offset(1, 0, 0));
+    assert_eq!(
+        alice.chunks[&near.chunk()].get(near.local()),
+        ground,
+        "the same ground beside her"
+    );
+    alice.learn("power", 1).await;
+    alice.ready();
+    assert_eq!(alice.swing(3, near, HAND).await, Swung::Damaged(210));
+    // Deftness: 8 ranks (+16 action speed) swing sooner, and the server
+    // takes the sooner swing.
+    alice.learn("dexterity", 8).await;
+    let hand = alice.items.swing_tool(Some(alice.item("hand_stone"))).unwrap();
+    let skilled = bm_core::mining::skilled_tool(&hand, &alice.character.effects(&tree));
+    let (old, new) = (
+        bm_core::mining::swing_ticks(hand.action_speed),
+        bm_core::mining::swing_ticks(skilled.action_speed),
+    );
+    assert!(new < old, "{new} < {old}");
+    // The swing before waited the old cadence; the next waits the new one.
+    alice.ready();
+    assert_eq!(alice.swing(4, near, HAND).await, Swung::Damaged(420));
+    alice.send_inputs(new - 1, PlayerInput::default());
+    assert_eq!(
+        alice.swing(5, near, HAND).await,
+        Swung::Refused(ground, 420),
+        "not sooner than the new cadence"
+    );
+    alice.send_inputs(1, PlayerInput::default());
+    assert_eq!(
+        alice.swing(6, near, HAND).await,
+        Swung::Damaged(630),
+        "at the quicker cadence"
+    );
+
+    // Fine Hands: an ordinary chisel cuts one octant.
+    let t = shape.wrap_block(feet.offset(-1, 1, 1));
+    assert!(alice.edit(6, t, EditAction::Place { slot: 3, mount: None }).await.0);
+    assert!(
+        !alice.edit(7, t, chisel(0, 0x80, false)).await.0,
+        "one octant needs the epic"
+    );
+    alice.learn("chisel_epic", 1).await;
+    assert!(alice.edit(8, t, chisel(0, 0x80, false)).await.0);
+    assert_eq!(cut_at(&alice, t), (0x80, Some(ShapeFamily::Square)));
+    assert!(
+        alice.edit(9, t, chisel(0, 0x03, false)).await.0,
+        "and still its own cut"
+    );
+
+    // From level 20 a cleanse uses a cleanse point, a reset 800 marks.
+    let c = alice.skill(SkillAction::Cleanse("power".into())).await;
+    assert_eq!((c.page().rank("power"), c.cleanses_used), (0, 1));
+    let c = alice.skill(SkillAction::ResetPage).await;
+    assert!(c.page().ranks.is_empty());
+    assert_eq!(c.marks, 1200);
+    // A page for 600; switching away from home waits 15 minutes.
+    let c = alice.skill(SkillAction::BuyPage).await;
+    assert_eq!((c.pages.len(), c.marks), (2, 600));
+    let c = alice.skill(SkillAction::BuyPage).await;
+    assert_eq!((c.pages.len(), c.marks), (3, 0));
+    alice.skill_refused(SkillAction::BuyPage, "You need 600 marks").await;
+    alice.learn("power", 2).await;
+    let c = alice.skill(SkillAction::SwitchPage(1)).await;
+    assert_eq!(c.active, 1);
+    assert!(c.effects(&tree).power == 0.0, "the new page is empty");
+    alice
+        .skill_refused(SkillAction::SwitchPage(0), "You can switch pages again in 15 minutes")
+        .await;
+    // At home it is free.
+    claim_around(&mut alice, 20, 5).await;
+    let c = alice.skill(SkillAction::SwitchPage(0)).await;
+    assert_eq!((c.active, c.page().rank("power")), (0, 2));
+    server.stop();
+}
+
+/// A world for replaying movement from the chunks a client holds, ruled as
+/// the server's is (invariant 3).
+struct HeldWorld<'a> {
+    c: &'a TestClient,
+    solid: Vec<bool>,
+    water: BlockId,
+}
+
+impl HeldWorld<'_> {
+    fn state(&self, p: BlockPos) -> Option<BlockState> {
+        let shape = self.c.shape();
+        if !shape.contains_y(p.y) {
+            return None;
+        }
+        let p = shape.wrap_block(p);
+        self.c.chunks.get(&p.chunk()).map(|ch| ch.state(p.local()))
+    }
+}
+
+impl bm_core::PhysicsWorld for HeldWorld<'_> {
+    fn solid(&self, p: BlockPos) -> bool {
+        p.y < 0 || self.state(p).is_none_or(|s| self.solid[s.id.0 as usize])
+    }
+
+    fn liquid(&self, p: BlockPos) -> bool {
+        self.state(p).is_some_and(|s| s.id == self.water)
+    }
+
+    fn shape(&self, p: BlockPos) -> bm_core::Shape {
+        self.state(p).map_or(bm_core::Shape::FULL, |s| s.shape)
+    }
+}
+
+/// The next snapshot that has simulated input `seq`.
+async fn snapshot_at(c: &mut TestClient, seq: u32) -> PlayerState {
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(10);
+    loop {
+        let (_, ack, you, _) = c.latest_snapshot().await;
+        if ack == seq {
+            return you;
+        }
+        assert!(
+            ack < seq && tokio::time::Instant::now() < deadline,
+            "ack {ack}, wanted {seq}"
+        );
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
+}
+
+/// Milestone 12, acceptance 6 (Swiftness) and the contract: a skill change
+/// tagged with an input changes the body from the next input on, so the
+/// server's walk is exactly the step a client predicts with the new body
+/// from that input (no correction).
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn the_body_changes_at_the_input_a_skill_follows() {
+    let dir = tempfile::tempdir().unwrap();
+    seed_character(dir.path(), "Alice", &[], at_level(10, 0));
+    let server = bm_server::start(config(dir.path())).unwrap();
+    let mut alice = TestClient::login(&server, "Alice").await;
+    assert_eq!(alice.welcome.spawn.body, bm_core::Body::default(), "untrained");
+    let feet = alice.feet();
+    wait_around(&mut alice, feet, 12).await;
+    alice.send_inputs(5, PlayerInput::default());
+    let seq = alice.seq;
+    let start = snapshot_at(&mut alice, seq).await;
+    let s0 = alice.seq;
+
+    // Eight ranks of Swiftness, following input s0 + 20 (sent ahead of it).
+    let at = s0 + 20;
+    for _ in 0..8 {
+        alice
+            .send(ClientMsg::Skill {
+                at,
+                action: SkillAction::Learn("agility".into()),
+            })
+            .await;
+    }
+    tokio::time::sleep(Duration::from_millis(200)).await;
+    let (yaw, _) = PlayerInput::from_angles(std::f64::consts::FRAC_PI_2, 0.0);
+    let walk = PlayerInput {
+        forward: 1,
+        yaw,
+        ..Default::default()
+    };
+    for _ in 0..60 {
+        alice.send_inputs(1, walk);
+        tokio::time::sleep(Duration::from_millis(16)).await;
+    }
+    let seq = alice.seq;
+    let end = snapshot_at(&mut alice, seq).await;
+    let c = alice
+        .until(|m| matches!(m, ServerMsg::Character { character, at: a } if *a == at && character.page().rank("agility") == 8))
+        .await;
+    let ServerMsg::Character { character, .. } = c else {
+        unreachable!()
+    };
+    let tree = bm_core::skills::SkillTree::builtin();
+    let body = character.effects(&tree).body();
+    assert!((body.run_bonus - 2.4).abs() < 1e-9 && (body.sprint_bonus - 4.8).abs() < 1e-9);
+    assert_eq!(end.body, body);
+
+    // Replay: untrained to input s0 + 20, trained after.
+    let world = HeldWorld {
+        c: &alice,
+        solid: alice.welcome.blocks.iter().map(|b| b.solid).collect(),
+        water: alice.block("water"),
+    };
+    let replay = |switch: bool| {
+        let mut s = start;
+        for seq in s0 + 1..=s0 + 60 {
+            bm_core::movement::step(&mut s, &walk, &alice.welcome.movement, None, alice.shape(), &world);
+            if switch && seq == at {
+                s.body = body;
+            }
+        }
+        s
+    };
+    let predicted = replay(true);
+    assert_eq!(end, predicted, "the server stepped exactly as predicted");
+    let untrained = replay(false);
+    let d = |s: &PlayerState| alice.shape().delta(start.pos, s.pos).length();
+    assert!(
+        d(&end) > d(&untrained) + 1.0,
+        "faster: {} vs {}",
+        d(&end),
+        d(&untrained)
+    );
+    server.stop();
+}
+
+/// Milestone 12, acceptance 6: crafting levels gate recipes, by name.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn a_gated_recipe_is_refused_until_its_crafting_skill_is_learned() {
+    let dir = tempfile::tempdir().unwrap();
+    seed_character(
+        dir.path(),
+        "Alice",
+        &[
+            (0, "workbench", 4, 0),
+            (11, "copper_ingot", 3, 0),
+            (12, "stick", 4, 0),
+            (13, "sackcloth", 1, 0),
+            (14, "glue", 1, 0),
+        ],
+        at_level(4, 0),
+    );
+    let server = bm_server::start(config(dir.path())).unwrap();
+    let mut alice = TestClient::login(&server, "Alice").await;
+    let feet = alice.feet();
+    wait_around(&mut alice, feet, 3).await;
+    let shape = alice.shape();
+    let bench = [(1, 1), (2, 1), (1, 2), (2, 2)].map(|(dx, dz)| shape.wrap_block(feet.offset(dx, 1, dz)));
+    for (i, p) in bench.iter().enumerate() {
+        assert!(place(&mut alice, 1 + i as u32, *p, 0, None).await.0);
+    }
+    let working = look_at_station(&mut alice, bench[0], |_| true).await;
+    assert_eq!(working.idle, None);
+
+    let hammer = alice.recipe("copper_hammer");
+    craft_at(&mut alice, hammer, 1, Some(bench[0])).await;
+    alice.notice("Needs Toolmaking 1").await;
+    alice.settle().await;
+    assert_eq!(alice.count("copper_ingot"), 3, "nothing taken");
+    alice.learn("tool_crafting", 1).await;
+    craft_at(&mut alice, hammer, 1, Some(bench[0])).await;
+    let queued = alice.station(|v| !v.jobs.is_empty()).await;
+    assert_eq!(queued.jobs[0].recipe, hammer);
+    alice.settle().await;
+    assert_eq!(alice.count("copper_ingot"), 0);
+    server.stop();
+}
+
+/// Nathan, 2026-10-21: plots are bought with marks (30 each), and opening a
+/// portal needs the portal epic, as in Boundless.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn marks_buy_plots_and_portals_need_the_portal_epic() {
+    let dir = tempfile::tempdir().unwrap();
+    seed_character(
+        dir.path(),
+        "Alice",
+        &[(5, "claim_stone", 1, 0), (6, "portal_conduit", 4, 0)],
+        at_level(10, 1000),
+    );
+    let cfg = ServerConfig {
+        plot_allowance: 1,
+        portal_epic_required: true,
+        ..config(dir.path())
+    };
+    assert!(ServerConfig::default().portal_epic_required, "required by default");
+    let server = bm_server::start(cfg).unwrap();
+    let mut alice = TestClient::login(&server, "Alice").await;
+    let feet = alice.feet();
+    wait_around(&mut alice, feet, 3).await;
+    let shape = alice.shape();
+
+    assert!(alice.dig(1, feet).await.0);
+    assert!(alice.edit(2, feet, EditAction::Place { slot: 5, mount: None }).await.0);
+    if alice.claim.is_none() {
+        alice.until(|m| matches!(m, ServerMsg::Claim(_))).await;
+    }
+    let id = alice.claim.as_ref().unwrap().id;
+    let home = PlotPos::of(feet, shape);
+    let above = home.offset(0, 1, 0).wrap(shape);
+    alice.send(ClientMsg::ClaimPlot { claim: id, plot: above }).await;
+    alice.notice("You have claimed all 1 of your plots").await;
+    alice
+        .skill_refused(SkillAction::BuyPlots(0), "You can buy 1 to 80 plots at once")
+        .await;
+    alice
+        .skill_refused(SkillAction::BuyPlots(40), "You need 1200 marks")
+        .await;
+    let c = alice.skill(SkillAction::BuyPlots(1)).await;
+    assert_eq!((c.plots_bought, c.marks), (1, 970));
+    alice.send(ClientMsg::ClaimPlot { claim: id, plot: above }).await;
+    alice
+        .until(|m| matches!(m, ServerMsg::Claim(v) if v.plots.len() == 2))
+        .await;
+
+    // A portal on her claim, which she cannot open without the epic.
+    let ground = (-2i64..=2)
+        .flat_map(|dx| (-2i64..=2).map(move |dz| (dx, dz)))
+        .filter(|&d| d != (0, 0))
+        .map(|(dx, dz)| shape.wrap_block(feet.offset(dx, 0, dz)))
+        .find(|g| {
+            let p = PlotPos::of(*g, shape);
+            (p.x, p.z) == (home.x, home.z)
+                && !state_at(&alice, *g).id.is_air()
+                && state_at(&alice, g.offset(0, 1, 0)).id.is_air()
+                && state_at(&alice, g.offset(0, 2, 0)).id.is_air()
+        })
+        .expect("a spot for a portal on the claim");
+    conduit_column(&mut alice, 10, ground, 6).await;
+    let corner = ground.offset(0, 1, 0);
+    alice.send(ClientMsg::OpenPortal { pos: Some(corner) }).await;
+    alice.notice("Opening portals needs the Waywise skill").await;
+    alice.until(|m| matches!(m, ServerMsg::Portal(None))).await;
+    alice.learn("portal_epic", 1).await;
+    let view = open_portal(&mut alice, corner).await;
+    assert_eq!(view.corner, corner);
+    // The welcome's allowance counts the plots bought.
+    drop(alice);
+    let alice = TestClient::login(&server, "Alice").await;
+    assert_eq!(alice.welcome.plot_allowance, 2);
+    server.stop();
+}
+
+/// Milestone 12: the light-source epic lights its owner for everyone, but
+/// not in daylight under open sky.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn the_light_epic_shines_out_of_daylight() {
+    let dir = tempfile::tempdir().unwrap();
+    seed_character(dir.path(), "Alice", &[(1, "stone", 10, 0)], at_level(10, 0));
+    let server = bm_server::start(config(dir.path())).unwrap();
+    let mut alice = TestClient::login(&server, "Alice").await;
+    let mut bob = TestClient::register(&server, "Bob").await;
+    let feet = alice.feet();
+    wait_around(&mut alice, feet, 3).await;
+    let shape = alice.shape();
+    let her = alice.welcome.player_id;
+    async fn light_of(bob: &mut TestClient, her: u32, want: u8) {
+        let deadline = tokio::time::Instant::now() + Duration::from_secs(5);
+        loop {
+            let (_, _, _, others) = bob.latest_snapshot().await;
+            if others.iter().any(|o| o.id == her && o.light == want) {
+                return;
+            }
+            assert!(tokio::time::Instant::now() < deadline, "her light never became {want}");
+        }
+    }
+    alice.learn("light_epic", 1).await;
+    tokio::time::sleep(Duration::from_millis(500)).await;
+    light_of(&mut bob, her, 0).await;
+    // A roof over her head: a pillar beside her, and a block on top.
+    for (i, (dx, dy)) in [(1, 1), (1, 2), (1, 3), (0, 3)].into_iter().enumerate() {
+        let p = shape.wrap_block(feet.offset(dx, dy, 0));
+        assert!(place(&mut alice, 1 + i as u32, p, 1, None).await.0, "roof block {i}");
+    }
+    light_of(&mut bob, her, 10).await;
     server.stop();
 }
