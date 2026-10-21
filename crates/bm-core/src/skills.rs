@@ -31,6 +31,12 @@ pub const PAGE_PRICE: u32 = 600;
 pub const RESET_PRICE: u32 = 800;
 /// Full resets are free below this level.
 pub const FREE_RESET_BELOW: u32 = 20;
+/// Marks a plot costs (Boundless: 30 cubits a plot, no discount for more;
+/// Nathan, 2026-10-21: marks buy plots, as in Boundless).
+pub const PLOT_PRICE: u32 = 30;
+/// Most plots one purchase may buy (Boundless's largest coffer: 80).
+pub const MAX_PLOTS_AT_ONCE: u32 = 80;
+
 /// Switching pages away from home waits this long (15 minutes, in ticks).
 pub const SWITCH_COOLDOWN_TICKS: u64 = 15 * 60 * crate::movement::TICK_HZ as u64;
 
@@ -277,6 +283,9 @@ pub struct Character {
     pub cleanses_used: u32,
     /// Server tick of the last page switch away from home (0: never).
     pub switched_at: u64,
+    /// Plots bought with marks, added to the account's plot allowance.
+    #[serde(default)]
+    pub plots_bought: u32,
 }
 
 impl Default for Character {
@@ -288,6 +297,7 @@ impl Default for Character {
             active: 0,
             cleanses_used: 0,
             switched_at: 0,
+            plots_bought: 0,
         }
     }
 }
@@ -321,6 +331,8 @@ pub enum Refused {
     NoSuchPage,
     #[error("You can switch pages again in {0} minutes")]
     Cooldown(u64),
+    #[error("You can buy 1 to 80 plots at once")]
+    PlotCount,
 }
 
 impl Character {
@@ -431,6 +443,20 @@ impl Character {
         }
         self.marks -= PAGE_PRICE;
         self.pages.push(Page::default());
+        Ok(())
+    }
+
+    /// Buys `n` plots (1 to 80) for 30 marks each.
+    pub fn buy_plots(&mut self, n: u32) -> Result<(), Refused> {
+        if n == 0 || n > MAX_PLOTS_AT_ONCE {
+            return Err(Refused::PlotCount);
+        }
+        let price = n * PLOT_PRICE;
+        if self.marks < price {
+            return Err(Refused::Marks(price));
+        }
+        self.marks -= price;
+        self.plots_bought = self.plots_bought.saturating_add(n);
         Ok(())
     }
 
@@ -743,6 +769,12 @@ mod tests {
         c.switch_page(0, 200, true).unwrap();
         assert_eq!(c.active, 0);
         assert!(c.switch_page(1, 100 + SWITCH_COOLDOWN_TICKS, false).is_ok());
+        // Plots: 30 marks each, 1 to 80 at once.
+        c.marks = 100;
+        assert_eq!(c.buy_plots(4), Err(Refused::Marks(120)));
+        c.buy_plots(3).unwrap();
+        assert_eq!((c.plots_bought, c.marks), (3, 10));
+        assert_eq!(c.buy_plots(81), Err(Refused::PlotCount));
     }
 
     #[test]
