@@ -1537,7 +1537,7 @@ impl Demo {
     /// no look direction (it gets no inputs): an area tool's shape faces
     /// east. Unlike the server it checks no reach.
     fn swing(&mut self, seq: u32, at: u32, pos: BlockPos, slot: u8) {
-        use crate::mining::{skill_swing_damage, skilled_tool};
+        use crate::mining::skilled_tool;
         use bm_core::mining::{HEAL_TICKS, aoe_blocks, block_health, is_crit, swing_ticks};
         let hit = shape().wrap_block(pos);
         let heal = HEAL_TICKS as u32;
@@ -1561,7 +1561,6 @@ impl Demo {
             return;
         };
         let effects = self.character.effects(&self.tree);
-        let mult = effects.damage_multiplier(tool.class);
         let tool = skilled_tool(&tool, &effects);
         self.last_swing = Some((at, swing_ticks(tool.action_speed)));
         let tier = self.planets[self.here].info.tier;
@@ -1582,7 +1581,7 @@ impl Demo {
                 continue;
             }
             let crit = is_crit(tool.crit_chance, 1, at, p);
-            let dealt = skill_swing_damage(&tool, def, tier, crit, area, mult);
+            let dealt = bm_core::mining::swing_damage(&tool, def, tier, crit, area);
             if dealt == 0 {
                 continue;
             }

@@ -3432,7 +3432,7 @@ async fn swings_cost_energy_and_a_tired_swing_is_refused() {
         Swung::Refused(ground, 200),
         "too tired: nothing happens"
     );
-    let (_, _, state, _) = alice.latest_snapshot().await;
+    let state = snapshot_after(&mut alice).await;
     assert_eq!(state.energy(), 0);
 
     // The pause (3.5 s) and the refill (2 s), at the real input rate.
@@ -3440,7 +3440,7 @@ async fn swings_cost_energy_and_a_tired_swing_is_refused() {
         alice.send_inputs(30, PlayerInput::default());
         tokio::time::sleep(Duration::from_millis(500)).await;
     }
-    let (_, _, state, _) = alice.latest_snapshot().await;
+    let state = snapshot_after(&mut alice).await;
     assert_eq!(state.energy(), bm_core::energy::MAX_ENERGY, "rested");
     alice.ready();
     assert!(
@@ -4010,4 +4010,18 @@ async fn the_light_epic_shines_out_of_daylight() {
     }
     light_of(&mut bob, her, 10).await;
     server.stop();
+}
+
+/// The player's state from the first snapshot that has applied every input
+/// sent so far (a snapshot read straight away may predate them on a busy
+/// machine).
+async fn snapshot_after(c: &mut TestClient) -> PlayerState {
+    let want = c.seq;
+    for _ in 0..600 {
+        let (_, ack, state, _) = c.latest_snapshot().await;
+        if ack >= want {
+            return state;
+        }
+    }
+    panic!("no snapshot acknowledged input {want}");
 }

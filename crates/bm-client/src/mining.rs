@@ -15,8 +15,7 @@
 //!   `area` the shape's multiplier when the tool has one (1 otherwise), and
 //!   breaks when its damage reaches `mining::block_health(def, tier)`;
 //! - skills (milestone 12) change the tool first ([`skilled_tool`]: action
-//!   speed and crit chance) and the damage ([`skill_swing_damage`]: the
-//!   active page's `Effects::damage_multiplier` for the tool's class).
+//!   speed, crit chance and damage: the shared `bm_core::mining::skilled_tool`).
 //!
 //! The damage map holds the server's word for each block (`BlockHealth`)
 //! plus our own swings it has not answered yet, so the bar never steps back
@@ -24,7 +23,7 @@
 //! `mining::HEAL_TICKS` heals (its entry goes), on our input clock.
 
 use bm_core::items::{Aoe, ToolStats};
-use bm_core::mining::{HEAL_TICKS, aoe_blocks, block_health, is_crit, right_tool};
+use bm_core::mining::{HEAL_TICKS, aoe_blocks, block_health, is_crit};
 use bm_core::skills::Effects;
 use bm_core::{BlockDef, BlockId, BlockPos, BlockRegistry, Mount, PlanetShape};
 use glam::DVec3;
@@ -67,45 +66,10 @@ pub struct BlockHit {
     pub breaks: bool,
 }
 
-/// The tool as skills change it (milestone 12): action speed plus
-/// `Effects::action_speed_bonus` for its class (Deftness, its mastery and
-/// epic), crit chance plus `Effects::crit_bonus` (Swiftness), at most 1.
-/// Damage is changed in [`skill_swing_damage`].
-pub fn skilled_tool(tool: &ToolStats, e: &Effects) -> ToolStats {
-    ToolStats {
-        action_speed: tool.action_speed + e.action_speed_bonus(tool.class) as f32,
-        crit_chance: (tool.crit_chance + e.crit_bonus() as f32).min(1.0),
-        ..*tool
-    }
-}
-
-/// `bm_core::mining::swing_damage` with the skills' damage multiplier
-/// `mult` (`Effects::damage_multiplier`) applied to the tool's damage first,
-/// rounded up, as tuning 2.3 has it (`dmg = ceil(base x skill_mult)`; a hair
-/// is taken off so 400 x 2.85 is 1140, not 1141 from float noise).
-///
-/// MERGE NOTE: the server agent may extend `mining::swing_damage` to take
-/// this multiplier; once it does, this should call the shared function so
-/// both sides compute one number.
-pub fn skill_swing_damage(tool: &ToolStats, def: &BlockDef, tier: u8, crit: bool, area: f64, mult: f64) -> u32 {
-    if def.health == bm_core::block::Health::Prop {
-        return 1;
-    }
-    let mut d = (tool.damage as f64 * mult - 1e-9).ceil();
-    if crit {
-        d *= 1.0 + tool.crit_effect as f64;
-    }
-    let armour = if def.health == bm_core::block::Health::Plant {
-        0
-    } else {
-        bm_core::mining::armour(tier)
-    };
-    d = (d - armour as f64).max(0.0);
-    if !right_tool(tool, def) {
-        d *= bm_core::mining::WRONG_TOOL;
-    }
-    (d * area).floor() as u32
-}
+/// The tool as skills change it (milestone 12): the shared rule the server
+/// uses (`bm_core::mining::skilled_tool`: damage times the skills'
+/// multiplier, rounded up; action speed and crit chance added).
+pub use bm_core::mining::skilled_tool;
 
 /// Everything a swing's prediction needs.
 pub struct SwingInput<'a> {
@@ -130,7 +94,6 @@ pub struct SwingInput<'a> {
 pub fn predict_swing(s: &SwingInput, map: &DamageMap, block_at: impl Fn(BlockPos) -> Option<BlockId>) -> Vec<BlockHit> {
     let hit = s.shape.wrap_block(s.hit);
     let tool = skilled_tool(s.tool, s.effects);
-    let mult = s.effects.damage_multiplier(s.tool.class);
     let area = s.tool.aoe.map_or(1.0, Aoe::multiplier);
     let mut out: Vec<BlockHit> = Vec::new();
     for p in aoe_blocks(s.tool.aoe, hit, s.look, s.player, s.at) {
@@ -147,7 +110,7 @@ pub fn predict_swing(s: &SwingInput, map: &DamageMap, block_at: impl Fn(BlockPos
             continue;
         }
         let crit = is_crit(tool.crit_chance, s.player, s.at, pos);
-        let damage = skill_swing_damage(&tool, def, s.tier, crit, area, mult);
+        let damage = bm_core::mining::swing_damage(&tool, def, s.tier, crit, area);
         let breaks = damage > 0 && map.damage(pos) + damage >= block_health(def, s.tier);
         out.push(BlockHit {
             pos,
@@ -314,13 +277,9 @@ mod tests {
         }
         let e = c.effects(&t);
         let m = e.damage_multiplier(copper.class);
-        assert_eq!(skill_swing_damage(&copper, stone, 1, false, 1.0, m), 1140);
-        assert_eq!(
-            skill_swing_damage(&copper, stone, 1, false, 1.0, 1.0),
-            bm_core::mining::swing_damage(&copper, stone, 1, false, 1.0),
-            "untrained, the same as bm-core's"
-        );
+        assert!((m - 2.85).abs() < 1e-9);
         let skilled = skilled_tool(&copper, &e);
+        assert_eq!(bm_core::mining::swing_damage(&skilled, stone, 1, false, 1.0), 1140);
         assert!(swing_ticks(skilled.action_speed) < swing_ticks(copper.action_speed));
         assert!((skilled.crit_chance - copper.crit_chance - 0.2).abs() < 1e-6);
     }
