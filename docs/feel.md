@@ -151,4 +151,12 @@ Boundless's live tree and tables exactly (Nathan, 2026-10-20), in Boundmore's na
 | Fall damage | share of max health by impact speed, softer on soft blocks, slightly gentler than Boundless | **Nathan, 2026-10-21.** Curve is a guess: measure 10, 20, 30 block falls in Boundless |
 | Hooked landing | no fall damage while a hook is attached | Boundless, and Nathan |
 | Grace after letting go | the first landing within 3 s of releasing a hook takes no fall damage | **Nathan, 2026-10-21** (momentum deaths from early releases); 3 s is a guess |
-| Creature speeds, notice and give-up ranges, attack rates | see `assets/creatures.toml` | guesses: Nathan can measure in game (spec, Measure in game) |
+| Health, armour, XP and drops by creature tier | `assets/creatures.toml` | Boundless, exact (tuning 3.2.2, 3.2.4) |
+| Grazer | walk 1.4, charge 12 blocks/s over up to 15, hit radius 1.8, wind-up 0.8 s, 3 s between charges; notices at 16, gives up at 32 or 12 s unseen | charge speed, range, radius: Boundless (Release 172). The rest: guesses |
+| Pelter | walk 3.0, run 5.5; shots 22 blocks/s from up to 24 blocks, a volley every 2 s (1 shot, 3 at tier 2, 5 at tier 3+, 8 degrees apart); notices at 20, gives up at 30 | give-up 30: Boundless (Release 156). The rest: guesses |
+| Dasher | walk 1.6, sprint 9.0; notices at 14 | guesses |
+| Creature hits | grazer 100, 250, 600, 1500, 3600; pelter 30, 90, 180, 360, 720 (tiers 1 to 5) | tiers 1 and 2: players' measurements (2023). Higher tiers: guesses |
+| Luck on creature drops | multiplies the number of rolls | guess |
+| Sling shot drop | gravity 20 x fall-off (a stone sling's shot drops about a block over its 15) | guess |
+| Draw | holding charges over 2 s to double damage | Boundless (charge time 2, charge effect 1) |
+| Respawn health | half of max | guess (a player complained of "half", 2018) |
