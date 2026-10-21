@@ -18,10 +18,10 @@ use egui::{
 use std::collections::HashMap;
 
 pub const GOLD: Color32 = Color32::from_rgb(240, 186, 84);
-const GOLD_DIM: Color32 = Color32::from_rgb(150, 116, 62);
-const TEXT: Color32 = Color32::from_rgb(236, 228, 212);
-const MUTED: Color32 = Color32::from_rgb(170, 162, 150);
-const SHORT: Color32 = Color32::from_rgb(235, 104, 92);
+pub(crate) const GOLD_DIM: Color32 = Color32::from_rgb(150, 116, 62);
+pub(crate) const TEXT: Color32 = Color32::from_rgb(236, 228, 212);
+pub(crate) const MUTED: Color32 = Color32::from_rgb(170, 162, 150);
+pub(crate) const SHORT: Color32 = Color32::from_rgb(235, 104, 92);
 const RED: Color32 = Color32::from_rgb(226, 82, 70);
 const PANEL: Color32 = Color32::from_rgba_premultiplied(13, 12, 19, 222);
 const SLOT_FILL: Color32 = Color32::from_rgba_premultiplied(5, 5, 9, 150);
@@ -34,9 +34,14 @@ const GAP: f32 = 6.0;
 #[derive(Clone, Debug, PartialEq)]
 pub enum UiAction {
     Send(ClientMsg),
-    LogIn { register: bool },
+    LogIn {
+        register: bool,
+    },
     CancelLogin,
     CloseMenu,
+    /// A change to the character's skills (milestone 12): predicted, then
+    /// sent following the latest input.
+    Skill(bm_protocol::SkillAction),
 }
 
 /// Which screen holds the mouse, if any.
@@ -51,6 +56,8 @@ pub enum Menu {
     Storage(BlockPos),
     /// The portal one of whose blocks is here (ADR-0009).
     Portal(BlockPos),
+    /// The skill screen (milestone 12).
+    Skills,
 }
 
 #[derive(Default)]
@@ -243,7 +250,7 @@ fn heading(ui: &mut Ui, text: &str) {
     ui.label(egui::RichText::new(text).heading().color(GOLD));
 }
 
-fn window(title: &str) -> egui::Window<'static> {
+pub(crate) fn window(title: &str) -> egui::Window<'static> {
     egui::Window::new(egui::RichText::new(title.to_string()).color(GOLD).size(20.0))
         .id(Id::unique(("menu", title.to_string())))
         .anchor(Align2::CENTER_CENTER, vec2(0.0, -30.0))
@@ -437,7 +444,12 @@ pub struct Hud<'a> {
     pub block_bar: Option<BlockBar>,
     /// Energy left, 0 to 1 (milestone 10), shown as a bar over the hotbar.
     pub energy: f32,
+    /// Level, XP into it and XP it needs (milestone 12), shown as a thin
+    /// bar under the hotbar.
+    pub level: Option<(u32, u64, u64)>,
 }
+
+const XP_BAR: Color32 = Color32::from_rgb(132, 196, 236);
 
 /// The energy bar's fill: a warm yellow, turning red when nearly empty.
 const ENERGY_FULL: Color32 = Color32::from_rgb(238, 200, 96);
@@ -584,6 +596,32 @@ pub fn hud(ctx: &egui::Context, h: &Hud) {
                 painter.rect_filled(fill, CornerRadius::same(3), colour);
             }
         });
+
+    // XP: a hairline under the hotbar, the level at its left.
+    if let Some((level, into, need)) = h.level {
+        egui::Area::new(Id::unique("xp"))
+            .anchor(Align2::CENTER_BOTTOM, vec2(-14.0, -4.0))
+            .interactable(false)
+            .order(egui::Order::Background)
+            .show(ctx, |ui| {
+                let (rect, _) = ui.allocate_exact_size(vec2(width + 28.0, 13.0), Sense::hover());
+                let painter = ui.painter();
+                painter.text(
+                    pos2(rect.left() + 22.0, rect.center().y),
+                    Align2::RIGHT_CENTER,
+                    level.to_string(),
+                    FontId::proportional(12.0),
+                    GOLD,
+                );
+                let bar = Rect::from_min_size(pos2(rect.left() + 28.0, rect.center().y - 1.5), vec2(width, 3.0));
+                painter.rect_filled(bar.expand(1.0), CornerRadius::same(2), Color32::from_black_alpha(140));
+                let f = (into as f32 / need.max(1) as f32).clamp(0.0, 1.0);
+                if f > 0.0 {
+                    let fill = Rect::from_min_size(bar.min, vec2(bar.width() * f, bar.height()));
+                    painter.rect_filled(fill, CornerRadius::same(2), XP_BAR);
+                }
+            });
+    }
 
     if !h.notices.is_empty() {
         egui::Area::new(Id::unique("notices"))
@@ -1038,6 +1076,9 @@ pub struct CraftingView<'a> {
     /// `pos` is the machine's own and may not be the block opened.
     pub live: Option<&'a LiveStation>,
     pub now: f64,
+    /// The character's skills: recipes with a crafting gate need them
+    /// (milestone 12).
+    pub progress: &'a crate::skills::Progress,
 }
 
 pub fn station_name(blocks: &BlockRegistry, station: Station) -> String {
@@ -1143,7 +1184,9 @@ fn recipe_row(
     // Hand recipes are made in the hands, at a table too; the rest queue at
     // the machine, which must be working.
     let in_hand = recipe.station == Station::Hand;
-    let blocked = idle && !in_hand;
+    // A crafting skill it needs and we lack ("Needs Toolmaking 1").
+    let gate = crate::skills::recipe_gate(&v.progress.tree, v.progress.effects(), recipe);
+    let blocked = (idle && !in_hand) || gate.is_some();
     egui::Frame::new()
         .fill(Color32::from_white_alpha(7))
         .corner_radius(CornerRadius::same(10))
@@ -1188,6 +1231,9 @@ fn recipe_row(
                         }
                         if !notes.is_empty() {
                             ui.label(egui::RichText::new(notes.join(", ")).color(MUTED).small());
+                        }
+                        if let Some(why) = &gate {
+                            ui.label(egui::RichText::new(why).color(SHORT).small());
                         }
                     });
                     ui.horizontal_wrapped(|ui| {

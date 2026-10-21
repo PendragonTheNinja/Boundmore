@@ -13,7 +13,10 @@
 //!   pos)` with that block's canonical position;
 //! - each block takes `mining::swing_damage(tool, def, tier, crit, area)`,
 //!   `area` the shape's multiplier when the tool has one (1 otherwise), and
-//!   breaks when its damage reaches `mining::block_health(def, tier)`.
+//!   breaks when its damage reaches `mining::block_health(def, tier)`;
+//! - skills (milestone 12) change the tool first ([`skilled_tool`]: action
+//!   speed and crit chance) and the damage ([`skill_swing_damage`]: the
+//!   active page's `Effects::damage_multiplier` for the tool's class).
 //!
 //! The damage map holds the server's word for each block (`BlockHealth`)
 //! plus our own swings it has not answered yet, so the bar never steps back
@@ -21,7 +24,8 @@
 //! `mining::HEAL_TICKS` heals (its entry goes), on our input clock.
 
 use bm_core::items::{Aoe, ToolStats};
-use bm_core::mining::{HEAL_TICKS, aoe_blocks, block_health, is_crit, swing_damage};
+use bm_core::mining::{HEAL_TICKS, aoe_blocks, block_health, is_crit, right_tool};
+use bm_core::skills::Effects;
 use bm_core::{BlockDef, BlockId, BlockPos, BlockRegistry, Mount, PlanetShape};
 use glam::DVec3;
 use std::collections::{HashMap, VecDeque};
@@ -63,9 +67,52 @@ pub struct BlockHit {
     pub breaks: bool,
 }
 
+/// The tool as skills change it (milestone 12): action speed plus
+/// `Effects::action_speed_bonus` for its class (Deftness, its mastery and
+/// epic), crit chance plus `Effects::crit_bonus` (Swiftness), at most 1.
+/// Damage is changed in [`skill_swing_damage`].
+pub fn skilled_tool(tool: &ToolStats, e: &Effects) -> ToolStats {
+    ToolStats {
+        action_speed: tool.action_speed + e.action_speed_bonus(tool.class) as f32,
+        crit_chance: (tool.crit_chance + e.crit_bonus() as f32).min(1.0),
+        ..*tool
+    }
+}
+
+/// `bm_core::mining::swing_damage` with the skills' damage multiplier
+/// `mult` (`Effects::damage_multiplier`) applied to the tool's damage first,
+/// rounded up, as tuning 2.3 has it (`dmg = ceil(base x skill_mult)`; a hair
+/// is taken off so 400 x 2.85 is 1140, not 1141 from float noise).
+///
+/// MERGE NOTE: the server agent may extend `mining::swing_damage` to take
+/// this multiplier; once it does, this should call the shared function so
+/// both sides compute one number.
+pub fn skill_swing_damage(tool: &ToolStats, def: &BlockDef, tier: u8, crit: bool, area: f64, mult: f64) -> u32 {
+    if def.health == bm_core::block::Health::Prop {
+        return 1;
+    }
+    let mut d = (tool.damage as f64 * mult - 1e-9).ceil();
+    if crit {
+        d *= 1.0 + tool.crit_effect as f64;
+    }
+    let armour = if def.health == bm_core::block::Health::Plant {
+        0
+    } else {
+        bm_core::mining::armour(tier)
+    };
+    d = (d - armour as f64).max(0.0);
+    if !right_tool(tool, def) {
+        d *= bm_core::mining::WRONG_TOOL;
+    }
+    (d * area).floor() as u32
+}
+
 /// Everything a swing's prediction needs.
 pub struct SwingInput<'a> {
+    /// The tool as it is, before skills.
     pub tool: &'a ToolStats,
+    /// What the active skill page does.
+    pub effects: &'a Effects,
     /// The block aimed at.
     pub hit: BlockPos,
     /// Look direction at input `at` (`movement::look_dir`).
@@ -82,6 +129,8 @@ pub struct SwingInput<'a> {
 /// skipped, as an unloaded block is).
 pub fn predict_swing(s: &SwingInput, map: &DamageMap, block_at: impl Fn(BlockPos) -> Option<BlockId>) -> Vec<BlockHit> {
     let hit = s.shape.wrap_block(s.hit);
+    let tool = skilled_tool(s.tool, s.effects);
+    let mult = s.effects.damage_multiplier(s.tool.class);
     let area = s.tool.aoe.map_or(1.0, Aoe::multiplier);
     let mut out: Vec<BlockHit> = Vec::new();
     for p in aoe_blocks(s.tool.aoe, hit, s.look, s.player, s.at) {
@@ -97,8 +146,8 @@ pub fn predict_swing(s: &SwingInput, map: &DamageMap, block_at: impl Fn(BlockPos
         if block.is_air() || !def.breakable {
             continue;
         }
-        let crit = is_crit(s.tool.crit_chance, s.player, s.at, pos);
-        let damage = swing_damage(s.tool, def, s.tier, crit, area);
+        let crit = is_crit(tool.crit_chance, s.player, s.at, pos);
+        let damage = skill_swing_damage(&tool, def, s.tier, crit, area, mult);
         let breaks = damage > 0 && map.damage(pos) + damage >= block_health(def, s.tier);
         out.push(BlockHit {
             pos,
@@ -239,6 +288,43 @@ mod tests {
         (b, i)
     }
 
+    #[test]
+    fn skills_change_damage_cadence_and_crits() {
+        let (b, i) = reg();
+        let copper = tool(&i, "copper_hammer");
+        let stone = b.get(b.id("stone").unwrap());
+        // The typical miner's page (tuning 2.7): x2.85, so 400 hits 1140.
+        let t = bm_core::skills::SkillTree::builtin();
+        let mut c = bm_core::skills::Character {
+            xp: bm_core::skills::xp_for_level(50),
+            ..Default::default()
+        };
+        for (id, n) in [
+            ("power", 8),
+            ("all_attributes", 5),
+            ("hammer_mastery", 5),
+            ("hammer_epic", 1),
+            ("damage_epic", 1),
+            ("agility", 8),
+            ("dexterity", 8),
+        ] {
+            for _ in 0..n {
+                c.learn(&t, id).unwrap();
+            }
+        }
+        let e = c.effects(&t);
+        let m = e.damage_multiplier(copper.class);
+        assert_eq!(skill_swing_damage(&copper, stone, 1, false, 1.0, m), 1140);
+        assert_eq!(
+            skill_swing_damage(&copper, stone, 1, false, 1.0, 1.0),
+            bm_core::mining::swing_damage(&copper, stone, 1, false, 1.0),
+            "untrained, the same as bm-core's"
+        );
+        let skilled = skilled_tool(&copper, &e);
+        assert!(swing_ticks(skilled.action_speed) < swing_ticks(copper.action_speed));
+        assert!((skilled.crit_chance - copper.crit_chance - 0.2).abs() < 1e-6);
+    }
+
     fn tool(i: &ItemRegistry, name: &str) -> ToolStats {
         i.swing_tool(Some(i.id(name).unwrap())).unwrap()
     }
@@ -275,6 +361,7 @@ mod tests {
         let mut broke = Vec::new();
         for (n, at) in [1u32, 36, 71].into_iter().enumerate() {
             let input = SwingInput {
+                effects: &Effects::default(),
                 tool: &copper,
                 hit: pos,
                 look: DVec3::X,
@@ -298,6 +385,7 @@ mod tests {
         loop {
             n += 1;
             let input = SwingInput {
+                effects: &Effects::default(),
                 tool: &copper,
                 hit: pos,
                 look: DVec3::X,
@@ -330,6 +418,7 @@ mod tests {
         };
         // Aimed across the seam: the row runs along z at x = width.
         let input = SwingInput {
+            effects: &Effects::default(),
             tool: &wide,
             hit: BlockPos::new(w, 20, 0),
             look: DVec3::X,

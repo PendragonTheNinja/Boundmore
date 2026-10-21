@@ -9,7 +9,7 @@
 //! we lack, an edit in flight) or an input was lost, and the visible jump is
 //! smoothed away over a few frames.
 
-use bm_core::movement::{self, GrappleSpec, MoveConfig, PlayerInput, PlayerState};
+use bm_core::movement::{self, Body, GrappleSpec, MoveConfig, PlayerInput, PlayerState};
 use bm_core::{PhysicsWorld, PlanetShape};
 use glam::DVec3;
 use std::collections::{HashMap, VecDeque};
@@ -22,13 +22,21 @@ const TOLERANCE: f64 = 1e-6;
 /// Visual correction decays to ~5% in this many seconds.
 const SMOOTHING_SECONDS: f64 = 0.15;
 
+/// Something the server applies right after an input, in the order queued:
+/// a swing's or cut's energy, or a skill change's body (milestone 12).
+#[derive(Clone, Copy, Debug, PartialEq)]
+enum After {
+    Spend(u16),
+    Body(Body),
+}
+
 struct Entry {
     seq: u32,
     input: PlayerInput,
     grapple: Option<GrappleSpec>,
-    /// Energy costs of the swings and cuts that follow this input (the server
-    /// applies them right after it, in this order); a replay re-applies them.
-    spends: Vec<u16>,
+    /// What follows this input (the server applies it right after, in this
+    /// order); a replay re-applies it.
+    after: Vec<After>,
     state: PlayerState,
 }
 
@@ -113,7 +121,7 @@ impl Predictor {
             seq: self.seq,
             input,
             grapple,
-            spends: Vec::new(),
+            after: Vec::new(),
             state: self.state,
         });
         self.seq
@@ -137,13 +145,58 @@ impl Predictor {
         };
         let mut state = self.history[i].state;
         let spent = state.try_spend(cost);
-        self.history[i].spends.push(cost);
+        self.history[i].after.push(After::Spend(cost));
         self.history[i].state = state;
         for e in self.history.iter_mut().skip(i + 1) {
             replay(&mut state, e, cfg, shape, world);
         }
         self.state = state;
         spent
+    }
+
+    /// The body (what skills do to moving and energy, milestone 12) is
+    /// `body` from right after input `at`, as the server sets it when a
+    /// skill change follows that input: set there, and the inputs after it
+    /// replayed. Kept with the input, so a reconcile replays it too. Setting
+    /// it again at the same input replaces the last one set there.
+    pub fn set_body(&mut self, at: u32, body: Body, cfg: &MoveConfig, shape: PlanetShape, world: &impl PhysicsWorld) {
+        let Some(i) = self.history.iter().position(|e| e.seq == at) else {
+            // Older than anything we remember (or nothing predicted yet):
+            // from where we are; the server's snapshots carry the rest.
+            self.state.body = body;
+            self.previous.body = body;
+            return;
+        };
+        let e = &mut self.history[i];
+        match e.after.iter_mut().rev().find(|a| matches!(a, After::Body(_))) {
+            Some(a) => *a = After::Body(body),
+            None => e.after.push(After::Body(body)),
+        }
+        // Replayed from the state before input `at`: the one before it in
+        // the history, or (for the oldest) its own state with the body put
+        // straight on, since nothing after it in that input depends on it.
+        let mut state = match i.checked_sub(1) {
+            Some(j) => self.history[j].state,
+            None => {
+                let mut s = self.history[i].state;
+                s.body = body;
+                self.history[i].state = s;
+                for e in self.history.iter_mut().skip(1) {
+                    replay(&mut s, e, cfg, shape, world);
+                }
+                self.state = s;
+                return;
+            }
+        };
+        for e in self.history.iter_mut().skip(i) {
+            replay(&mut state, e, cfg, shape, world);
+        }
+        self.state = state;
+    }
+
+    /// The body we predicted right after input `at`, if we still remember it.
+    pub fn body_at(&self, at: u32) -> Option<Body> {
+        self.history.iter().find(|e| e.seq == at).map(|e| e.state.body)
     }
 
     /// The last `n` inputs, newest first, for a redundant input datagram.
@@ -236,12 +289,17 @@ impl Predictor {
     }
 }
 
-/// Runs one remembered input again from `state`, with the spends that
-/// followed it, and remembers the result.
+/// Runs one remembered input again from `state`, with what followed it,
+/// and remembers the result.
 fn replay(state: &mut PlayerState, e: &mut Entry, cfg: &MoveConfig, shape: PlanetShape, world: &impl PhysicsWorld) {
     movement::step(state, &e.input, cfg, e.grapple.as_ref(), shape, world);
-    for &cost in &e.spends {
-        state.try_spend(cost);
+    for a in &e.after {
+        match *a {
+            After::Spend(cost) => {
+                state.try_spend(cost);
+            }
+            After::Body(body) => state.body = body,
+        }
     }
     e.state = *state;
 }
@@ -259,6 +317,9 @@ fn same(a: &PlayerState, b: &PlayerState, shape: PlanetShape) -> bool {
         && a.on_ground == b.on_ground
         && a.spent == b.spent
         && a.rest == b.rest
+        && a.body == b.body
+        && a.jump_held == b.jump_held
+        && a.air_jumped == b.air_jumped
         && hooks
 }
 
@@ -453,6 +514,64 @@ mod tests {
             600 - 3 * 8,
             "each swing restarted the pause: nothing back yet"
         );
+    }
+
+    #[test]
+    fn a_skill_change_moves_us_faster_from_its_input_with_no_correction() {
+        // Swiftness learned after input 40 (sent with `at` 40 while 41 and
+        // 42 were already predicted), then a rank cleansed after input 120:
+        // the server sets the body right after each input; so do we.
+        let (cfg, w) = (MoveConfig::default(), Floor(10));
+        let inputs: Vec<PlayerInput> = (1..=200).map(walk).collect();
+        let fast = Body {
+            run_bonus: 0.6,
+            sprint_bonus: 1.2,
+            high_jump: true,
+            ..Default::default()
+        };
+        let slower = Body {
+            run_bonus: 0.3,
+            sprint_bonus: 0.6,
+            ..fast
+        };
+        let changes = [(40u32, fast), (120, slower)];
+        let mut s = spawn();
+        let truth: Vec<PlayerState> = inputs
+            .iter()
+            .enumerate()
+            .map(|(i, input)| {
+                movement::step(&mut s, input, &cfg, None, shape(), &w);
+                if let Some((_, b)) = changes.iter().find(|c| c.0 == i as u32 + 1) {
+                    s.body = *b;
+                }
+                s
+            })
+            .collect();
+        let mut p = Predictor::new(spawn());
+        for (i, input) in inputs.iter().enumerate() {
+            let seq = p.tick(*input, None, &cfg, shape(), &w);
+            if let Some(&(at, b)) = changes.iter().find(|c| c.0 + 2 == seq) {
+                p.set_body(at, b, &cfg, shape(), &w);
+            }
+            if i >= 5 && i % 3 == 0 {
+                let ack = i as u32 - 4;
+                p.reconcile(i as u64, ack, truth[ack as usize - 1], &cfg, shape(), &w);
+            }
+        }
+        assert_eq!(p.corrections, 0);
+        assert_eq!(p.state, truth[199]);
+        assert_eq!(p.body_at(200), Some(slower));
+        // It made a difference: walking untrained ends elsewhere.
+        let plain = server_states(&inputs, &w);
+        assert!(shape().delta(plain[199].pos, truth[199].pos).length() > 0.01);
+        // A server that never changed the body corrects us once.
+        let mut p = Predictor::new(spawn());
+        for input in &inputs[..60] {
+            p.tick(*input, None, &cfg, shape(), &w);
+        }
+        p.set_body(40, fast, &cfg, shape(), &w);
+        p.reconcile(1, 50, plain[49], &cfg, shape(), &w);
+        assert_eq!(p.corrections, 1);
     }
 
     #[test]
