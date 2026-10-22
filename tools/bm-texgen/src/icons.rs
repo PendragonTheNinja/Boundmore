@@ -403,6 +403,63 @@ fn hammer(metal: Metal) -> Tex {
     icon.finish()
 }
 
+/// A hand tiller (milestone 16 part 2): a short handle ending in a crossbar
+/// with three claw tines that curl down to bite the soil.
+fn tiller(metal: Metal) -> Tex {
+    let salt = metal.salt("tiller");
+    let f = Frame { ox: 4.5, oy: 27.5 };
+    let ramp = metal.ramp();
+    let mut icon = Icon::new();
+    handle(&mut icon, f, 0.0, 18.5, salt);
+    let (ub, u0, len, curl) = (18.8f32, 19.6f32, 6.6f32, 4.2f32);
+    icon.layer(true, |x, y| {
+        let (u, v) = f.uv(x, y);
+        // The crossbar.
+        if rounded_box(u, v, ub, 0.0, 1.5, 6.0, 0.8) <= 0.0 {
+            let mut t = 0.5 - v / 6.0 * 0.2 + metal.facet(salt, u, v);
+            if u > ub + 0.5 {
+                t += 0.14;
+            }
+            if metal.cast() && (u - ub - 0.3).abs() < 0.5 && v < 3.5 {
+                t += 0.22;
+            }
+            return Some(ramp.pick(t, x, y));
+        }
+        // Three tines, curling towards the bottom right, tapering.
+        for v0 in [-4.6f32, 0.0, 4.6] {
+            let k = (u - u0) / len;
+            if !(-0.2..=1.0).contains(&k) {
+                continue;
+            }
+            let centre = v0 + k.max(0.0).powi(2) * curl;
+            let half = 1.3 - k.max(0.0) * 0.65;
+            let d = v - centre;
+            if d.abs() > half {
+                continue;
+            }
+            let mut t = 0.55 - d / half * 0.25 + metal.facet(salt, u, v0);
+            if k > 0.8 {
+                t += 0.15;
+            }
+            if metal.cast() && d < -0.3 && k > 0.1 && k < 0.8 {
+                t += 0.2;
+            }
+            return Some(ramp.pick(t, x, y));
+        }
+        None
+    });
+    if metal.cast() {
+        // A ferrule where the handle meets the head.
+        icon.layer(true, |x, y| {
+            let (u, v) = f.uv(x, y);
+            ((15.6..17.2).contains(&u) && v.abs() < 1.7).then(|| ramp.pick(0.62 - v / 1.7 * 0.3, x, y))
+        });
+    } else {
+        lashing(&mut icon, f, metal, 16.4, 1.6, 1.8);
+    }
+    icon.finish()
+}
+
 fn axe(metal: Metal) -> Tex {
     let salt = metal.salt("axe");
     let f = Frame { ox: 7.5, oy: 27.5 };
@@ -1290,9 +1347,12 @@ pub fn paint_icon(name: &str) -> Option<Tex> {
         "stone_spanner" => spanner(Metal::Stone),
         "copper_spanner" => spanner(Metal::Copper),
         "iron_spanner" => spanner(Metal::Iron),
+        "wood_tiller" => tiller(Metal::Wood),
+        "metal_tiller" => tiller(Metal::Iron),
         other => {
             return crate::gathered::paint(other)
                 .or_else(|| crate::food::paint(other))
+                .or_else(|| crate::farming::paint_icon(other))
                 .or_else(|| crate::creatures::paint(other))
                 .or_else(|| crate::spark::paint_icon(other));
         }

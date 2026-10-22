@@ -26,11 +26,11 @@ use crate::tex::{Ctx, SIZE, Tex, c, smoothstep};
 const CLEAR: Rgba = Rgba::new(0.0, 0.0, 0.0, 0.0);
 
 /// A ramp around a catalogue colour, `dark` to `light` in Oklab lightness.
-fn ramp(rgb: u32, dark: f32, light: f32) -> Ramp {
+pub(crate) fn ramp(rgb: u32, dark: f32, light: f32) -> Ramp {
     RampSpec::new(Rgba::hex(rgb), 7, dark, light).build()
 }
 
-fn leaf_ramp(rgb: u32) -> Ramp {
+pub(crate) fn leaf_ramp(rgb: u32) -> Ramp {
     RampSpec::new(Rgba::hex(rgb), 7, 0.3, 0.86)
         .cool(HUE_BLUE, 0.3)
         .warm(HUE_GOLD, 0.3)
@@ -40,11 +40,11 @@ fn leaf_ramp(rgb: u32) -> Ramp {
 
 // ------------------------------------------------------------ plant toolkit
 
-type P = (f32, f32);
+pub(crate) type P = (f32, f32);
 
 /// How a blade's half width runs from its foot (t = 0) to its tip (t = 1).
 #[derive(Clone, Copy)]
-enum Profile {
+pub(crate) enum Profile {
     /// Widest at the foot, to a sharp point.
     Spike,
     /// Narrow at the foot, widest a third of the way, pointed.
@@ -72,20 +72,20 @@ impl Profile {
 /// A blade drawn along a quadratic curve from `foot` to `tip`, bowed by
 /// `bend` pixels to its left (seen walking from foot to tip).
 #[derive(Clone, Copy)]
-struct Blade {
-    foot: P,
-    tip: P,
-    bend: f32,
-    width: f32,
-    profile: Profile,
+pub(crate) struct Blade {
+    pub(crate) foot: P,
+    pub(crate) tip: P,
+    pub(crate) bend: f32,
+    pub(crate) width: f32,
+    pub(crate) profile: Profile,
     /// Tone offset: back blades darker, front ones lighter.
-    tone: f32,
+    pub(crate) tone: f32,
     /// A paler midrib down the middle.
-    rib: bool,
+    pub(crate) rib: bool,
 }
 
 impl Blade {
-    fn point(&self, t: f32) -> P {
+    pub(crate) fn point(&self, t: f32) -> P {
         let (dx, dy) = (self.tip.0 - self.foot.0, self.tip.1 - self.foot.1);
         let len = dx.hypot(dy).max(1e-3);
         let (nx, ny) = (dy / len, -dx / len);
@@ -128,25 +128,25 @@ impl Blade {
 }
 
 /// A plant picture being painted, back to front.
-struct Sprite {
-    tex: Tex,
+pub(crate) struct Sprite {
+    pub(crate) tex: Tex,
 }
 
 impl Sprite {
-    fn new() -> Self {
+    pub(crate) fn new() -> Self {
         Self {
             tex: Tex::filled(CLEAR),
         }
     }
 
-    fn opaque(&self, x: i32, y: i32) -> bool {
+    pub(crate) fn opaque(&self, x: i32, y: i32) -> bool {
         (0..SIZE as i32).contains(&x) && (0..SIZE as i32).contains(&y) && self.tex.get(x as usize, y as usize).a > 0.0
     }
 
     /// Paints every pixel `f` covers. Where the new part lies over earlier
     /// ones, they get a dark contact line just outside it, so leaves in
     /// front stand off those behind.
-    fn part(&mut self, f: impl Fn(usize, usize) -> Option<Rgba>) {
+    pub(crate) fn part(&mut self, f: impl Fn(usize, usize) -> Option<Rgba>) {
         let cover: Vec<Option<Rgba>> = (0..SIZE * SIZE).map(|i| f(i % SIZE, i / SIZE)).collect();
         let covered = |x: i32, y: i32| {
             (0..SIZE as i32).contains(&x)
@@ -174,7 +174,7 @@ impl Sprite {
 
     /// A shaded blade: lit on the side facing the top left, darker towards
     /// its foot and its edges, a paler midrib if it has one.
-    fn blade(&mut self, b: &Blade, ramp: &Ramp) {
+    pub(crate) fn blade(&mut self, b: &Blade, ramp: &Ramp) {
         self.part(|x, y| {
             let p = (c(x), c(y));
             let (t, across, half) = b.locate(p)?;
@@ -199,7 +199,7 @@ impl Sprite {
     }
 
     /// A filled ellipse lit from the top left, `tone` its middle tone.
-    fn disc(&mut self, centre: P, r: P, ramp: &Ramp, tone: f32) {
+    pub(crate) fn disc(&mut self, centre: P, r: P, ramp: &Ramp, tone: f32) {
         self.part(|x, y| {
             let (dx, dy) = ((c(x) - centre.0) / r.0, (c(y) - centre.1) / r.1);
             let d = dx.hypot(dy);
@@ -211,13 +211,13 @@ impl Sprite {
         });
     }
 
-    fn dot(&mut self, x: i32, y: i32, col: Rgba) {
+    pub(crate) fn dot(&mut self, x: i32, y: i32, col: Rgba) {
         if self.opaque(x, y) {
             self.tex.set(x as usize, y as usize, col);
         }
     }
 
-    fn finish(self) -> Tex {
+    pub(crate) fn finish(self) -> Tex {
         self.tex
     }
 }
@@ -226,7 +226,7 @@ impl Sprite {
 /// straight up, negative to the left) spread over `spread`, lengths from
 /// `len`, each bowed outwards by `droop`.
 #[allow(clippy::too_many_arguments)]
-fn fan(
+pub(crate) fn fan(
     s: &mut Sprite,
     rng: &mut Rng,
     foot: P,

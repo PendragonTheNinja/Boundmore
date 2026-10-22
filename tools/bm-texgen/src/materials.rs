@@ -298,6 +298,41 @@ pub fn soil(ctx: Ctx) -> Tex {
     tex
 }
 
+/// Tilled soil seen from above (milestone 16 part 2): the soil's palette
+/// raked into four parallel furrows, each a raised ridge of crumbly clods
+/// lit on its upper (top-left) slope with a dark trough below it.
+pub fn tilled_soil(ctx: Ctx) -> Tex {
+    let salt = seed("tilled_soil");
+    let clods = ctx.sites(salt, 3.4);
+    const PERIOD: f32 = 8.0;
+    let height = Field::from_fn(|x, y| {
+        let (fx, fy) = (c(x), c(y));
+        // A gentle wobble along each ridge, one wave per tile so it tiles.
+        let wobble = (fx / SIZEF * std::f32::consts::TAU + 0.7).sin() * 0.7;
+        let k = cell(&clods, fx, fy, 1.0);
+        let lumpy = (clods[k.index].r[0] - 0.5) * 0.9 + k.rim(1.6) * 0.5;
+        let phase = (fy + wobble + lumpy * 0.6).rem_euclid(PERIOD) / PERIOD;
+        // A ridge across the middle of each period, a trough at its ends.
+        let ridge = (phase * std::f32::consts::PI).sin().powf(0.7);
+        ridge * 3.0 + lumpy * 0.5
+    })
+    .blur();
+    let light = height.light();
+    let tone = Field::from_fn(|x, y| {
+        let (fx, fy) = (c(x), c(y));
+        let h = height.at(x, y);
+        let mut t = 0.1 + h * 0.17 + light.at(x, y) * 0.32;
+        t += (ctx.fbm(salt ^ 1, 4, 4, 2 + fine_octaves(), fx, fy) - 0.5) * 0.18;
+        if h < 0.55 {
+            t = t.min(0.12);
+        }
+        t
+    });
+    let mut tex = paint(&soil_ramp(), &tone);
+    specks(ctx, &mut tex, salt ^ 4, 6.0, 0.4, Rgba::hex(0x3a2022));
+    tex
+}
+
 /// Little dark two- and three-pixel clumps.
 fn specks(ctx: Ctx, tex: &mut Tex, salt: u32, spacing: f32, chance: f32, col: Rgba) {
     if hires() {
@@ -1906,6 +1941,7 @@ pub fn paint_named(name: &str, variant: u32) -> Option<Tex> {
         "stone" => stone,
         "deep_stone" => deep_stone,
         "soil" => soil,
+        "tilled_soil" => tilled_soil,
         "turf_top" => turf_top,
         "turf_side" => turf_side,
         "sand" => sand,
@@ -1951,7 +1987,12 @@ pub fn paint_named(name: &str, variant: u32) -> Option<Tex> {
         "meteor_shell" => meteor_shell,
         "meteor_heart" => meteor_heart,
         "silver_seam" => silver_seam,
-        other => crate::spark::painter(other).or_else(|| flora::painter(other))?,
+        other => {
+            if let Some(t) = crate::farming::paint_crop(other) {
+                return Some(t);
+            }
+            crate::spark::painter(other).or_else(|| flora::painter(other))?
+        }
     };
     Some(f(ctx))
 }

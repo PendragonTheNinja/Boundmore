@@ -9,6 +9,7 @@
 pub mod canvas;
 pub mod color;
 pub mod creatures;
+pub mod farming;
 pub mod flora;
 pub mod food;
 pub mod gathered;

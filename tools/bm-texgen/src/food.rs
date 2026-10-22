@@ -105,6 +105,12 @@ enum Fill {
     Broth,
     /// Chunks heaped over the rim.
     Chunks,
+    /// A smooth domed porridge with a swirl and a few bits.
+    Porridge,
+    /// A dome of rice grains, each one showing, with bits through it.
+    Risotto,
+    /// Raw: pale grain on one side, the ingredients on the other, unmixed.
+    Raw,
 }
 
 /// The shared bowl, with `fill` in `rgb` and, for some, a second colour of
@@ -145,6 +151,10 @@ fn bowl(rgb: u32, fill: Fill, bits: u32, name: &str) -> Tex {
                 let heap = (p.1 - (top + 1.0)) / 8.0;
                 (u.hypot(v) < 1.0) || (heap > -1.0 && heap < 0.0 && u.hypot(heap) < 0.95)
             }
+            Fill::Porridge | Fill::Risotto | Fill::Raw => {
+                let heap = (p.1 - (top + 1.0)) / 6.0;
+                (u.hypot(v) < 1.0) || (heap > -1.0 && heap < 0.0 && u.hypot(heap) < 0.98)
+            }
         };
         if !inside {
             return None;
@@ -156,10 +166,44 @@ fn bowl(rgb: u32, fill: Fill, bits: u32, name: &str) -> Tex {
         match fill {
             Fill::Broth if h > 0.82 => Some(bit.pick(0.6 + lit, x, y)),
             Fill::Chunks if h > 0.55 => Some(bit.pick(0.55 + lit, x, y)),
+            Fill::Porridge => {
+                if h > 0.86 {
+                    return Some(bit.pick(0.6 + lit, x, y));
+                }
+                // A swirl of cream drawn round the dome's top.
+                let (sx, sy) = ((p.0 - cx + 1.0) / 6.0, (p.1 - (top - 1.5)) / 2.6);
+                let ring = (sx.hypot(sy) - 0.6).abs() < 0.12;
+                Some(food.pick(0.55 + lit + if ring { 0.22 } else { 0.0 }, x, y))
+            }
+            Fill::Risotto => {
+                if h > 0.72 {
+                    return Some(bit.pick(0.55 + lit, x, y));
+                }
+                Some(food.pick(0.5 + lit + grains(salt, p), x, y))
+            }
+            Fill::Raw => {
+                // The ingredients heaped on the right, the dry grain left.
+                let split = cx + 1.5 + ((p.1 * 0.9).sin() * 1.2);
+                if p.0 > split && h > 0.25 {
+                    return Some(bit.pick(0.5 + lit, x, y));
+                }
+                Some(food.pick(0.56 + lit + grains(salt, p), x, y))
+            }
             _ => Some(food.pick(0.55 + lit, x, y)),
         }
     });
     icon.finish()
+}
+
+/// Tone offset for a heap of grains: three-by-two pixel grains in staggered
+/// rows, each a little lighter or darker, with a dark gap at its left end.
+fn grains(salt: u32, p: P) -> f32 {
+    let row = (p.1 / 2.0).floor() as i32;
+    let shift = if row % 2 == 0 { 0.0 } else { 1.5 };
+    let col = ((p.0 + shift) / 3.0).floor() as i32;
+    let h = unit(hash2(salt ^ 0x5eed, (col * 7 + row * 131) as u32));
+    let gap = (p.0 + shift).rem_euclid(3.0) < 1.0;
+    (h - 0.5) * 0.2 + if gap { -0.14 } else { 0.08 }
 }
 
 /// A wooden bucket with two iron bands; `top` the colour of what is in it.
@@ -281,6 +325,146 @@ fn sugar() -> Tex {
     icon.finish()
 }
 
+/// What a sack holds, as seen at its mouth.
+#[derive(Clone, Copy)]
+enum Heap {
+    /// Rolled flakes: light and dark flecks.
+    Flakes,
+    /// Separate grains: little dashes.
+    Grains,
+    /// A fine powder, smooth.
+    Powder,
+}
+
+/// A tied sack (like `sugar`) in `cloth`, a heap of `fill` at its mouth and,
+/// for some, a coloured stripe round its belly.
+fn sack(cloth: u32, fill: u32, heap: Heap, stripe: Option<u32>, name: &str) -> Tex {
+    let sackr = ramp(cloth, 0.35, 0.95);
+    let content = ramp(fill, 0.5, 1.0);
+    let salt = seed(name);
+    let mut icon = Icon::new();
+    blob(&mut icon, (16.0, 20.0), (11.0, 9.5), 0.0, &sackr, 0.05, false, salt);
+    if let Some(rgb) = stripe {
+        let band = ramp(rgb, 0.3, 0.9);
+        icon.layer(false, |x, y| {
+            let p = (c(x), c(y));
+            let (u, v) = ((p.0 - 16.0) / 11.0, (p.1 - 20.0) / 9.5);
+            (u.hypot(v) < 0.93 && (p.1 - 21.0 - u * u * 2.0).abs() < 1.3).then(|| band.pick(0.6 - u * 0.3, x, y))
+        });
+    }
+    icon.layer(true, |x, y| {
+        let p = (c(x), c(y));
+        let (u, v) = ((p.0 - 16.0) / 7.0, (p.1 - 10.5) / 3.5);
+        if u.hypot(v) >= 1.0 {
+            return None;
+        }
+        let t = 0.6 - u * 0.2 - v * 0.1;
+        let h = unit(hash2(salt, (x / 2 + y * 16) as u32));
+        Some(match heap {
+            Heap::Flakes => content.pick(
+                t + if h > 0.6 {
+                    0.15
+                } else if h < 0.3 {
+                    -0.2
+                } else {
+                    0.0
+                },
+                x,
+                y,
+            ),
+            Heap::Grains => content.pick(t + if (x / 2 + y) % 2 == 0 { 0.12 } else { -0.14 }, x, y),
+            Heap::Powder => content.pick(t, x, y),
+        })
+    });
+    icon.layer(true, |x, y| {
+        let p = (c(x), c(y));
+        ((p.0 - 16.0).abs() < 7.5 && (12.5..14.5).contains(&p.1)).then(|| sackr.at(1))
+    });
+    icon.finish()
+}
+
+/// A rounded loaf with three slashes across its top: raw is pale dough, baked
+/// a golden-brown crust; both tinted towards their line, flecked with it.
+fn loaf(line: u32, raw: bool, name: &str) -> Tex {
+    use crate::farming::mix_hex;
+    let crust = if raw {
+        ramp(mix_hex(0xf0dcb8, line, 0.2), 0.55, 1.0)
+    } else {
+        ramp(mix_hex(0xc0803a, line, 0.28), 0.28, 0.95)
+    };
+    let crumb = ramp(if raw { mix_hex(0xe0c8a0, line, 0.2) } else { 0xf0d8a0 }, 0.45, 1.0);
+    let fleck = ramp(line, 0.3, 0.9);
+    let salt = seed(name);
+    let (cx, cy, w) = (16.0f32, 20.0f32, 13.5f32);
+    let mut icon = Icon::new();
+    icon.layer(true, |x, y| {
+        let p = (c(x), c(y));
+        let dx = (p.0 - cx) / w;
+        let dy = p.1 - cy;
+        let h = if dy < 0.0 { 10.0 } else { 7.0 };
+        if dx.abs().powi(4) + (dy / h).powi(2) > 1.0 {
+            return None;
+        }
+        let lit = -(dx * 0.5 + dy / 10.0 * 0.8);
+        let mut t = 0.5 + lit * 0.4;
+        if dy > 3.0 {
+            t -= 0.18;
+        }
+        // The slashes, showing the crumb.
+        for k in 0..3 {
+            let x0 = 8.5 + k as f32 * 6.0;
+            if seg_dist((x0, 13.5), (x0 + 4.0, 18.5), p) < 0.8 {
+                return Some(crumb.pick(0.6, x, y));
+            }
+        }
+        let cell = (((p.0 * 0.4) as i32) * 11 + (p.1 * 0.4) as i32) as u32;
+        if unit(hash2(salt, cell)) > 0.88 {
+            return Some(fleck.pick(0.5 + lit * 0.3, x, y));
+        }
+        // Raw dough has a dusting of flour on top, in soft patches.
+        if raw && dy < -4.0 && unit(hash2(salt ^ 3, cell)) > 0.6 {
+            t += 0.25;
+        }
+        Some(crust.pick(t, x, y))
+    });
+    icon.finish()
+}
+
+/// Each dish line's colour and the colour of its bits.
+fn line_colours(key: &str) -> Option<(u32, u32)> {
+    Some(match key {
+        "dewberry" => (0xd03a50, 0xf0b0c0),
+        "tuber" => (0xc89a50, 0x9a6a40),
+        "meat" => (0xa0603a, 0x7a3a24),
+        "lively" => (0xf0c840, 0xb88a30),
+        "keen" => (0xe07040, 0xf0c070),
+        "gentle" => (0x8a60b0, 0xd0b0f0),
+        "guarding" => (0x9a4030, 0x5aa040),
+        "wise" => (0x4a90c0, 0xd0f0f8),
+        _ => return None,
+    })
+}
+
+/// The rank 3 and 4 dishes of milestone 16 part 2: `[raw_]<line>_porridge`,
+/// `[raw_]<line>_risotto` and `[raw_]<line>_loaf`.
+fn farm_dish(name: &str) -> Option<Tex> {
+    use crate::farming::mix_hex;
+    let (raw, rest) = match name.strip_prefix("raw_") {
+        Some(rest) => (true, rest),
+        None => (false, name),
+    };
+    let (key, kind) = rest.rsplit_once('_')?;
+    let (line, bits) = line_colours(key)?;
+    Some(match (kind, raw) {
+        ("porridge", false) => bowl(mix_hex(0xe8d8b0, line, 0.55), Fill::Porridge, bits, name),
+        ("risotto", false) => bowl(mix_hex(0xf0ead8, line, 0.45), Fill::Risotto, bits, name),
+        ("porridge", true) => bowl(0xe0d0a8, Fill::Raw, line, name),
+        ("risotto", true) => bowl(0xf0ecdc, Fill::Raw, line, name),
+        ("loaf", raw) => loaf(line, raw, name),
+        _ => return None,
+    })
+}
+
 /// Paints the food icon called `name`, or `None` if it is not one.
 pub fn paint(name: &str) -> Option<Tex> {
     Some(match name {
@@ -312,7 +496,11 @@ pub fn paint(name: &str) -> Option<Tex> {
         "nail" => nails(),
         "syrup" => syrup(),
         "sugar" => sugar(),
-        _ => return None,
+        "oat_bag" => sack(0xc8a878, 0xe4cc90, Heap::Flakes, None, name),
+        "rice_bag" => sack(0xa8b47a, 0xf6f2e6, Heap::Grains, None, name),
+        "flour" => sack(0xe4dccc, 0xfaf6f0, Heap::Powder, Some(0x4a6ac0), name),
+        "baking_powder" => sack(0x98aac4, 0xf2f6fc, Heap::Powder, Some(0xc84a3a), name),
+        _ => return farm_dish(name),
     })
 }
 
@@ -332,5 +520,31 @@ mod tests {
             let t = super::paint(name).unwrap();
             assert!(t.mean().a > 0.15, "{name} is mostly empty");
         }
+    }
+
+    #[test]
+    fn every_farm_dish_and_bag_paints_something() {
+        let mut names: Vec<String> = ["oat_bag", "rice_bag", "flour", "baking_powder"]
+            .map(String::from)
+            .to_vec();
+        for key in [
+            "dewberry", "tuber", "meat", "lively", "keen", "gentle", "guarding", "wise",
+        ] {
+            let bowl = if matches!(key, "dewberry" | "wise") {
+                "porridge"
+            } else {
+                "risotto"
+            };
+            for dish in [bowl, "loaf"] {
+                names.push(format!("raw_{key}_{dish}"));
+                names.push(format!("{key}_{dish}"));
+            }
+        }
+        for name in &names {
+            let t = super::paint(name).unwrap_or_else(|| panic!("{name} has no painter"));
+            assert!(t.mean().a > 0.15, "{name} is mostly empty");
+        }
+        // Raw and cooked look different.
+        assert_ne!(super::paint("raw_keen_loaf"), super::paint("keen_loaf"));
     }
 }
