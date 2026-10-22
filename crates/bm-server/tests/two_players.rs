@@ -5511,7 +5511,8 @@ fn farm_spot(c: &TestClient, skip: &[BlockPos]) -> BlockPos {
 /// Asks about the crop at `pos` and waits for the answer.
 async fn look_crop(c: &mut TestClient, pos: BlockPos) -> ServerMsg {
     c.send(ClientMsg::LookCrop { pos }).await;
-    c.until(|m| matches!(m, ServerMsg::CropInfo { pos: p, .. } if *p == pos)).await
+    c.until(|m| matches!(m, ServerMsg::CropInfo { pos: p, .. } if *p == pos))
+        .await
 }
 
 /// Milestone 16 part 2, acceptance 1 to 4: a tiller tills soil for good, a
@@ -5588,13 +5589,23 @@ async fn crops_grow_by_the_clock_and_replant_when_harvested() {
     let mut alice = TestClient::login(&server, "Alice").await;
     alice.wait_for_chunk(crop_at.chunk()).await;
     let ripe = alice.block("tuber_plant_4");
-    assert_eq!(alice.chunks[&crop_at.chunk()].get(crop_at.local()), ripe, "caught up while away");
-    assert_eq!(alice.chunks[&ground.chunk()].get(ground.local()), alice.block("tilled_soil"));
+    assert_eq!(
+        alice.chunks[&crop_at.chunk()].get(crop_at.local()),
+        ripe,
+        "caught up while away"
+    );
+    assert_eq!(
+        alice.chunks[&ground.chunk()].get(ground.local()),
+        alice.block("tilled_soil")
+    );
 
     // Harvested: a tuber or more, and it grows again from seed.
     let xp = alice.character.xp;
     assert!(alice.dig_with(10, crop_at, 0).await.0);
-    assert_eq!(alice.chunks[&crop_at.chunk()].get(crop_at.local()), alice.block("tuber_bulb"));
+    assert_eq!(
+        alice.chunks[&crop_at.chunk()].get(crop_at.local()),
+        alice.block("tuber_bulb")
+    );
     assert!(alice.count("tuber") >= 1);
     alice.until_xp(xp + 12).await;
     match look_crop(&mut alice, crop_at).await {

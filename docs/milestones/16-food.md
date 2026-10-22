@@ -130,8 +130,23 @@ Elemental shielding and atmosphere protection foods wait for elements and atmosp
 5. After a defeat, how much is shaded?
 6. A berry dish's Recovery buff: how long does it last?
 7. Is a water block used up by filling a bucket?
+8. Farming: Boundless's crop HUD showed an "Expected time to maturity". For each crop (starberry vine, tuber plant, waxy and exotic tuber plants, oats, wheat, rice), sown on tilled soil with good light and no fertiliser, what does it say? Rice in and out of water?
+9. Which crops needed which Crop Sowing level (the seed's tooltip, "Requires crop sowing")?
 
 ## Status
+
+*Part 2 (farming) built 2026-10-22; awaiting Nathan's play-test.* ADR-0010; protocol 23, `SAVE_VERSION` 10 (the crops table; version 9 opens with none).
+
+- [x] Core (`bm-core/src/crops.rs`): crop kinds from `assets/crops.toml`, growth as a pure function of time with tilled, water and fertiliser, harvest rolls from Boundless's drop data, the Farming Epic
+- [x] Data: 7 crops with 4 stage blocks each (the first is the seed), tilled soil, wood and metal tillers, grains, bags of oats, rice and flour, baking powder, rank 3 and 4 dishes of every line, Wise porridge and loaf (Studious), raw dishes; Farming and the Farming Epic are real skills; wild crops appended to every kind (existing planets gain them in unsaved chunks)
+- [x] Server (`farm.rs`, `game/farm.rs`): a record per crop, saved; sowing checks (ground, Farming level), turf under a crop becomes soil; stage changes in loaded chunks once a second; chunks catch up as they load; ripe harvests replant themselves and give XP; tilling; `LookCrop`/`CropInfo`
+- [x] Client: the crop line under the crosshair ("Oats: ripe in 1 h 20 min, tilled"), tillers predict no damage on soil, `--demo-ui farm`
+- [x] Tests: crop maths (clock, tilled, rice, fertiliser, harvest rolls), farm records, the round trip in the save, worldgen pins (`appending_m16_only_grows_crops_on_their_ground`), and end to end: till, sow, catch up across a restart with nobody near, harvest and replant, the Farming gate, the record gone with its block
+
+Open: fertiliser has its rules but no recipe (resins come later); berry vines stand on soil rather than hanging under foliage; the crop times and Farming levels are guesses (Measure 8 and 9).
+
+### Part 1
+
 
 *Part 1 built 2026-10-22; awaiting Nathan's play-test.* Protocol 22, `SAVE_VERSION` 9 (version 8 universes open with everyone unhungry, no buff, and stations' jobs holding fresh buckets).
 
@@ -146,4 +161,4 @@ Not covered by an automated test: filling a bucket at water (refused away from w
 Open (for Nathan):
 - Eating raw meat with no hunger is refused like any plain food ("You are full"). Boundless's rule here is not found.
 - The rates marked guess in `docs/feel.md` (running, sprinting, jumping, starving, defeat) wait for the Measure list above.
-- Next: part 2, farming. It needs a format decision for crop growth (an ADR) and Nathan's view on the farming complaints (random growth, untilling soil, hand replanting, low XP) before it is built.
+- Part 2 followed (above).

@@ -47,6 +47,20 @@ pub const SHAPES_VIEW: [f64; 3] = [128.5, 46.0, 130.5];
 pub const GRAPPLE_BEAM: [i64; 3] = [124, 56, 118];
 /// The torch demo's hall (`show_torches`), inside: west and east x, north
 /// and south z, and its highest open layer. The spawn is at its south end.
+/// The farm demo (milestone 16): seven crops in columns along x, their four
+/// stages in rows along z, on tilled soil, seen from the south.
+pub const FARM_X: i64 = 125;
+pub const FARM_Z: i64 = 119;
+pub const FARM_VIEW: [f64; 3] = [128.5, 44.0, 126.5];
+pub const FARM_CROPS: [(&str, &str, f64); 7] = [
+    ("dewberry", "Dewberry Bush", 3.0),
+    ("tuber", "Tuber Plant", 3.0),
+    ("waxy_tuber", "Waxy Tuber Plant", 4.0),
+    ("exotic_tuber", "Exotic Tuber Plant", 6.0),
+    ("oats", "Oats", 4.0),
+    ("wheat", "Wheat", 6.0),
+    ("rice", "Rice", 6.0),
+];
 pub const TORCH_HALL: (i64, i64, i64, i64, i64) = (124, 132, 106, 129, 47);
 /// The demo's planets: name, kind, and the width shown for it in the sky and
 /// menu. (The demo's own patch is tiny; these are sizes real planets have.)
@@ -789,6 +803,73 @@ impl Demo {
         self.events.extend(chunks.into_iter().map(NetEvent::Msg));
     }
 
+    /// Milestone 16 part 2: a field of every crop at every stage on tilled
+    /// soil (rice by a row of water), a tiller and seeds in hand.
+    pub fn show_farm(&mut self) {
+        let b = |n: &str| BlockState::plain(self.blocks.id(n).expect("builtin block"));
+        let crops = bm_core::crops::CropKinds::builtin(&self.blocks, &self.items);
+        let mut put = Vec::new();
+        for (i, (name, _, _)) in FARM_CROPS.iter().enumerate() {
+            let def = crops.get(crops.by_name(name).expect("crop")).expect("crop");
+            for stage in 0..4 {
+                let (x, z) = (FARM_X + i as i64, FARM_Z + stage);
+                put.push((BlockPos::new(x, GROUND, z), b("tilled_soil")));
+                put.push((
+                    BlockPos::new(x, GROUND + 1, z),
+                    BlockState::plain(def.stages[stage as usize]),
+                ));
+            }
+        }
+        for z in FARM_Z..FARM_Z + 4 {
+            put.push((BlockPos::new(FARM_X + 7, GROUND, z), b("water")));
+        }
+        let planet = &mut self.planets[0];
+        planet.flat = true;
+        planet.edits.clear();
+        planet.edits.extend(put);
+        let id = |n: &str| self.items.id(n).expect("builtin item");
+        let before = self.inv.clone();
+        for (slot, name, n) in [
+            (0, "wood_tiller", 1),
+            (1, "tuber_bulb", 6),
+            (2, "oat_seed", 4),
+            (3, "rice_seed", 4),
+            (4, "wheat_seed", 3),
+            (5, "dewberry_seed", 5),
+            (6, "oat_grain", 9),
+            (7, "flour", 2),
+            (8, "tuber_risotto", 1),
+            (9, "meat_loaf", 1),
+        ] {
+            self.inv.slots[slot] = Some(ItemStack::new(id(name), n));
+        }
+        self.slots_since(&before);
+        let chunks = self.chunks_around_spawn();
+        self.events.extend(chunks.into_iter().map(NetEvent::Msg));
+    }
+
+    /// The demo field's answer about a crop: tilled, not wild, its time to
+    /// ripe by its stage.
+    fn look_crop(&mut self, pos: BlockPos) {
+        let (dx, dz) = (pos.x - FARM_X, pos.z - FARM_Z);
+        if pos.y != GROUND + 1 || !(0..7).contains(&dx) || !(0..4).contains(&dz) {
+            return;
+        }
+        let (_, name, hours) = FARM_CROPS[dx as usize];
+        let stage = dz as u8 + 1;
+        let ripe_in = ((3 - dz as i64).max(0) as f64 / 3.0 * hours * 0.75 * 3600.0) as u32;
+        self.events.push_back(NetEvent::Msg(ServerMsg::CropInfo {
+            pos,
+            name: name.into(),
+            stage,
+            stages: 4,
+            ripe_in,
+            wild: false,
+            tilled: true,
+            dry: false,
+        }));
+    }
+
     /// Milestone 16: a hotbar of food, buckets and berries, on the spawn.
     pub fn show_food(&mut self) {
         let id = |n: &str| self.items.id(n).expect("builtin item");
@@ -1366,6 +1447,7 @@ impl Demo {
             } => self.throw(at, slot, yaw, pitch, hold),
             ClientMsg::Loot { creature } => self.loot(creature),
             ClientMsg::Eat { slot, .. } => self.eat(slot),
+            ClientMsg::LookCrop { pos } => self.look_crop(pos),
             ClientMsg::Return => self.come_back(),
             ClientMsg::Hello { .. } => {}
             // The old hold-to-break message, until the protocol drops it.

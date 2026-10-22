@@ -221,3 +221,18 @@ Boundless's live tree and tables exactly (Nathan, 2026-10-20), in Boundmore's na
 | Dewberries from foliage | 0.1 a block on tier 1 to 3 | Boundless's drop data, exact |
 | Tubers from soil and turf | 0.015 a block (0.025 on tier 3) | Boundless's drop data, exact |
 
+
+## Farming (M16 part 2, `assets/crops.toml`, `bm-core/src/crops.rs`, ADR-0010)
+
+| Value | Now | Source, or guess |
+|---|---|---|
+| Growth | by the clock, no dice: crops sown together ripen together; ripe crops never wither | **Nathan, 2026-10-22:** fix Boundless's farming complaints (its growth was a daily dice roll) |
+| Time to ripen | dewberry 3 h, tuber 3 h, waxy tuber 4 h, oats 4 h, exotic tuber 6 h, wheat 6 h, rice 6 h | **guesses** from players' reports (tubers 2 to 4 hours, the rest "hours to days"). Measure 1 below |
+| Tilled soil | a quarter off the time, half again of the yield chance; stays tilled until broken | the effect sizes are **guesses**; staying tilled: Nathan's fix |
+| Rice without water beside it | four times as long | Boundless's rule (Testing 224), the factor a **guess** |
+| Fertiliser | doubles growth speed from when applied (Farming Epic triples it); lasts until harvest | the size is a **guess**; lasting: Nathan's fix. No recipe yet (needs resins) |
+| Harvest | a seed certain, 35% a second; tuber and dewberry 1 + 10%, grains and waxy or exotic tubers 20% + 10%; replants itself | Boundless's drop data; replanting: Nathan's fix |
+| Farming levels | dewberry and tuber 0; oats and waxy tuber 1; wheat, rice, exotic tuber 2 | **guesses** |
+| Farming Epic | +2 Farming, 20% more yield, fertiliser x2 | Boundless's skill (tuning 5) |
+| XP | 1 a seed sown; 4 an hour of ripening at harvest (tuber 12, wheat 24) | **guesses** (Boundless gave little; Nathan: fix it) |
+| Wild crops | tuber, dewberry and oats on turf everywhere, rice by water, waxy tuber and wheat on tier 2 and 3, exotic tuber on tier 3 | densities **guesses** |

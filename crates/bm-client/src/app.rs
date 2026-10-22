@@ -2874,6 +2874,23 @@ impl App {
             // torches at its far end, a torch in hand (slot 0 holds none).
             // Milestone 16: hungry, Sated, a hotbar of food; the HUD shows
             // the shaded energy bar and the food tags.
+            // Milestone 16 part 2: a field of every crop at every stage.
+            "farm" => {
+                if let Some(Link::Demo(d)) = &mut self.link {
+                    d.show_farm();
+                }
+                if let Some(s) = &mut self.session {
+                    s.me.teleport(bm_core::PlayerState {
+                        pos: DVec3::from_array(crate::demo::FARM_VIEW),
+                        vel: DVec3::ZERO,
+                        on_ground: true,
+                        hook: None,
+                        ..Default::default()
+                    });
+                    s.selected = 0;
+                }
+                (self.yaw, self.pitch) = (0.0, -0.42);
+            }
             "food" => {
                 if let Some(Link::Demo(d)) = &mut self.link {
                     d.show_food();
