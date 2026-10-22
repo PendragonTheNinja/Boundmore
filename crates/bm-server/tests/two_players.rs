@@ -5474,3 +5474,139 @@ async fn hunger_grows_food_takes_it_away_and_buffs_last() {
     assert!(s.buff.left > 0 && s.buff.left <= buff.left);
     server.stop();
 }
+
+// Milestone 16 part 2: farming.
+
+/// A spot of soil or turf with air above, near the arrival.
+fn farm_spot(c: &TestClient, skip: &[BlockPos]) -> BlockPos {
+    let feet = c.feet();
+    let shape = c.shape();
+    let name = |p: BlockPos| {
+        let p = shape.wrap_block(p);
+        c.chunks
+            .get(&p.chunk())
+            .map(|ch| c.welcome.blocks[ch.get(p.local()).0 as usize].name.clone())
+    };
+    for r in 1..8i64 {
+        for dx in -r..=r {
+            for dz in -r..=r {
+                for dy in -2..=1 {
+                    let p = shape.wrap_block(feet.offset(dx, dy, dz));
+                    let ground = name(p);
+                    if skip.contains(&p)
+                        || !matches!(ground.as_deref(), Some("turf" | "soil"))
+                        || name(p.offset(0, 1, 0)).as_deref() != Some("air")
+                        || name(p.offset(0, 2, 0)).as_deref() != Some("air")
+                    {
+                        continue;
+                    }
+                    return p;
+                }
+            }
+        }
+    }
+    panic!("no soil near the arrival");
+}
+
+/// Asks about the crop at `pos` and waits for the answer.
+async fn look_crop(c: &mut TestClient, pos: BlockPos) -> ServerMsg {
+    c.send(ClientMsg::LookCrop { pos }).await;
+    c.until(|m| matches!(m, ServerMsg::CropInfo { pos: p, .. } if *p == pos)).await
+}
+
+/// Milestone 16 part 2, acceptance 1 to 4: a tiller tills soil for good, a
+/// tuber bulb sown on it grows by the clock (catching up across a restart
+/// with nobody near), a ripe harvest gives its yield and replants itself, a
+/// crop needing Farming is refused, and breaking an unripe crop gives its
+/// seed back and drops its record.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn crops_grow_by_the_clock_and_replant_when_harvested() {
+    let dir = tempfile::tempdir().unwrap();
+    seed(
+        dir.path(),
+        "Alice",
+        &[(0, "wood_tiller", 1, 0), (1, "tuber_bulb", 2, 0), (2, "oat_seed", 1, 0)],
+    );
+    let hour = 3600 * bm_core::TICK_HZ as u64;
+    let (crop_at, ground) = {
+        let server = bm_server::start(config(dir.path())).unwrap();
+        let mut alice = TestClient::login(&server, "Alice").await;
+        let feet = alice.feet();
+        alice.wait_for_chunk(feet.chunk()).await;
+        let ground = farm_spot(&alice, &[]);
+        let tilled = alice.block("tilled_soil");
+
+        // Tilled, for good.
+        alice.ready();
+        assert_eq!(alice.swing(1, ground, 0).await, Swung::Broke);
+        alice.settle().await;
+        let state = |c: &TestClient, p: BlockPos| c.chunks[&p.chunk()].get(p.local());
+        assert_eq!(state(&alice, ground), tilled);
+
+        // Sown: a tuber on tilled soil ripens in three quarters of 3 hours.
+        let crop_at = ground.offset(0, 1, 0);
+        let mount = Some(bm_core::Mount::Floor);
+        assert!(place(&mut alice, 2, crop_at, 1, mount).await.0);
+        match look_crop(&mut alice, crop_at).await {
+            ServerMsg::CropInfo {
+                name,
+                stage,
+                ripe_in,
+                wild,
+                tilled,
+                ..
+            } => {
+                assert_eq!((name.as_str(), stage, wild, tilled), ("Tuber Plant", 1, false, true));
+                assert!((8090..=8100).contains(&ripe_in), "{ripe_in}");
+            }
+            _ => unreachable!(),
+        }
+
+        // Oats need Farming 1.
+        let other = farm_spot(&alice, &[ground]);
+        assert!(!place(&mut alice, 3, other.offset(0, 1, 0), 2, mount).await.0);
+        alice.notice("Sowing Oats needs Farming 1").await;
+        drop(alice);
+        server.stop();
+        (crop_at, ground)
+    };
+
+    // Nobody near for three hours: the clock moves on in the save.
+    {
+        let store = Store::open(&dir.path().join(UNIVERSE_FILE)).unwrap();
+        let crops = store.crops(0).unwrap();
+        assert_eq!(crops.len(), 1);
+        let clock = store.clock().unwrap();
+        store
+            .write(&WriteBatch {
+                clock: Some(clock + 3 * hour),
+                ..Default::default()
+            })
+            .unwrap();
+    }
+    let server = bm_server::start(config(dir.path())).unwrap();
+    let mut alice = TestClient::login(&server, "Alice").await;
+    alice.wait_for_chunk(crop_at.chunk()).await;
+    let ripe = alice.block("tuber_plant_4");
+    assert_eq!(alice.chunks[&crop_at.chunk()].get(crop_at.local()), ripe, "caught up while away");
+    assert_eq!(alice.chunks[&ground.chunk()].get(ground.local()), alice.block("tilled_soil"));
+
+    // Harvested: a tuber or more, and it grows again from seed.
+    let xp = alice.character.xp;
+    assert!(alice.dig_with(10, crop_at, 0).await.0);
+    assert_eq!(alice.chunks[&crop_at.chunk()].get(crop_at.local()), alice.block("tuber_bulb"));
+    assert!(alice.count("tuber") >= 1);
+    alice.until_xp(xp + 12).await;
+    match look_crop(&mut alice, crop_at).await {
+        ServerMsg::CropInfo { stage, wild, .. } => assert_eq!((stage, wild), (1, false), "replanted"),
+        _ => unreachable!(),
+    }
+
+    // Broken unripe: its seed back, and no crop is left.
+    let bulbs = alice.count("tuber_bulb");
+    assert!(alice.dig_with(11, crop_at, 0).await.0);
+    assert_eq!(alice.count("tuber_bulb"), bulbs + 1);
+    server.stop();
+    let store = Store::open(&dir.path().join(UNIVERSE_FILE)).unwrap();
+    assert!(store.crops(0).unwrap().is_empty(), "the record went with its block");
+}
