@@ -281,6 +281,9 @@ pub enum Station {
     /// One block; burns fuel into spark and stores it (`spark`). Joined
     /// generators share one store.
     SparkGenerator,
+    /// Four blocks touching; forges traits onto gear (milestone 17,
+    /// `forge`). Draws spark for its queue.
+    Forge,
 }
 
 /// How a machine's blocks must stand for it to work (milestone 11, as in

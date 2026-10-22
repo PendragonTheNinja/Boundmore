@@ -12,6 +12,7 @@ pub mod creatures;
 pub mod crops;
 pub mod energy;
 pub mod food;
+pub mod forge;
 pub mod inventory;
 pub mod items;
 pub mod light;

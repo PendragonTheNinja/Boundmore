@@ -1318,3 +1318,273 @@ seconds = 360.0
 heat = 200
 xp = 28
 skill = { name = "food_crafting", level = 4 }
+
+# Milestone 17: forging (Boundless's recipe data, single craft: boundlessinfo
+# compiled-recipes.json, 2026-10-22). Only what needs no power: the rest
+# waits for power coils.
+[[recipe]]
+output = "forge"
+count = 4
+inputs = [["stones", 10], ["silver_alloy", 3], ["relic_fragment", 6], ["relic_component", 1]]
+station = "workbench"
+seconds = 900.0
+xp = 46
+wear = 55
+spark = 400
+skill = { name = "machine_crafting", level = 2 }
+
+[[recipe]]
+output = "charcoal"
+inputs = [["trunk", 1]]
+station = "furnace"
+seconds = 120.0
+heat = 100
+xp = 4
+
+[[recipe]]
+output = "fossil_essence"
+inputs = [["small_fossil", 1]]
+station = "extractor"
+seconds = 60.0
+xp = 4
+wear = 7
+
+[[recipe]]
+output = "fossil_essence"
+count = 4
+inputs = [["medium_fossil", 1]]
+station = "extractor"
+seconds = 240.0
+xp = 8
+wear = 17
+spark = 100
+
+[[recipe]]
+output = "tincture_base"
+inputs = [["glass", 1], ["reactive_lamella", 1], ["charcoal", 1]]
+station = "extractor"
+seconds = 30.0
+xp = 4
+wear = 6
+skill = { name = "ingredient_crafting", level = 1 }
+
+[[recipe]]
+output = "glaze_base"
+inputs = [["glass", 1], ["syrup", 1], ["fleshy_leaf", 1]]
+station = "extractor"
+seconds = 30.0
+xp = 4
+wear = 6
+skill = { name = "ingredient_crafting", level = 1 }
+
+[[recipe]]
+output = "wax_base"
+inputs = [["glass", 1], ["sap", 1], ["fossil_essence", 1]]
+station = "extractor"
+seconds = 30.0
+xp = 4
+wear = 6
+skill = { name = "ingredient_crafting", level = 1 }
+
+[[recipe]]
+output = "salve_base"
+inputs = [["glass", 1], ["spicy_bean", 2], ["bitter_bean", 1]]
+station = "extractor"
+seconds = 30.0
+xp = 8
+wear = 6
+spark = 200
+skill = { name = "ingredient_crafting", level = 1 }
+
+[[recipe]]
+output = "spur_base"
+inputs = [["glass", 1], ["inky_leaf", 2], ["cobalt", 1]]
+station = "extractor"
+seconds = 30.0
+xp = 8
+wear = 6
+spark = 200
+skill = { name = "ingredient_crafting", level = 2 }
+
+[[recipe]]
+output = "wash_base"
+inputs = [["glass", 1], ["thick_blood", 1], ["olivine", 1]]
+station = "extractor"
+seconds = 30.0
+xp = 8
+wear = 6
+spark = 200
+skill = { name = "ingredient_crafting", level = 2 }
+
+[[recipe]]
+output = "pure_tincture_1"
+count = 4
+inputs = [["tincture_base", 1], ["vital_essence", 2]]
+station = "extractor"
+seconds = 30.0
+xp = 2
+wear = 6
+skill = { name = "ingredient_crafting", level = 1 }
+
+[[recipe]]
+output = "rough_tincture_1"
+count = 4
+inputs = [["tincture_base", 1], ["vital_essence", 2]]
+station = "extractor"
+seconds = 30.0
+xp = 2
+wear = 6
+skill = { name = "ingredient_crafting", level = 1 }
+
+[[recipe]]
+output = "wild_tincture_1"
+count = 4
+inputs = [["tincture_base", 1], ["vital_essence", 2]]
+station = "extractor"
+seconds = 30.0
+xp = 2
+wear = 6
+skill = { name = "ingredient_crafting", level = 1 }
+
+[[recipe]]
+output = "thrift_glaze"
+count = 4
+inputs = [["glaze_base", 1], ["fresh_blood", 1]]
+station = "extractor"
+seconds = 30.0
+xp = 2
+wear = 6
+skill = { name = "ingredient_crafting", level = 1 }
+
+[[recipe]]
+output = "swift_glaze"
+count = 4
+inputs = [["glaze_base", 1], ["float_sac", 1]]
+station = "extractor"
+seconds = 30.0
+xp = 2
+wear = 6
+skill = { name = "ingredient_crafting", level = 1 }
+
+[[recipe]]
+output = "odd_glaze"
+count = 4
+inputs = [["glaze_base", 1], ["thick_blood", 1]]
+station = "extractor"
+seconds = 30.0
+xp = 2
+wear = 6
+skill = { name = "ingredient_crafting", level = 1 }
+
+[[recipe]]
+output = "force_glaze"
+count = 4
+inputs = [["glaze_base", 1], ["heat_sac", 1]]
+station = "extractor"
+seconds = 30.0
+xp = 2
+wear = 6
+skill = { name = "ingredient_crafting", level = 1 }
+
+[[recipe]]
+output = "lasting_glaze"
+count = 4
+inputs = [["glaze_base", 1], ["mantle", 1]]
+station = "extractor"
+seconds = 30.0
+xp = 2
+wear = 6
+skill = { name = "ingredient_crafting", level = 1 }
+
+[[recipe]]
+output = "glow_glaze"
+count = 4
+inputs = [["glaze_base", 1], ["glowing_lamella", 1]]
+station = "extractor"
+seconds = 30.0
+xp = 2
+wear = 6
+skill = { name = "ingredient_crafting", level = 1 }
+
+[[recipe]]
+output = "elder_glaze"
+count = 4
+inputs = [["glaze_base", 1], ["tuber", 20]]
+station = "extractor"
+seconds = 30.0
+xp = 2
+wear = 6
+skill = { name = "ingredient_crafting", level = 1 }
+
+[[recipe]]
+output = "keeping_glaze"
+count = 4
+inputs = [["glaze_base", 2], ["olivine", 1]]
+station = "extractor"
+seconds = 30.0
+xp = 2
+wear = 6
+skill = { name = "ingredient_crafting", level = 1 }
+
+[[recipe]]
+output = "seeking_glaze"
+count = 4
+inputs = [["glaze_base", 2], ["sulphur", 1]]
+station = "extractor"
+seconds = 60.0
+xp = 7
+wear = 7
+skill = { name = "ingredient_crafting", level = 1 }
+
+[[recipe]]
+output = "sealing_wax"
+count = 4
+inputs = [["wax_base", 1], ["flint", 1]]
+station = "extractor"
+seconds = 30.0
+xp = 2
+wear = 6
+skill = { name = "ingredient_crafting", level = 1 }
+
+[[recipe]]
+output = "unmaking_wax_1"
+count = 4
+inputs = [["wax_base", 1], ["volatile_blood", 1]]
+station = "extractor"
+seconds = 30.0
+xp = 2
+wear = 6
+skill = { name = "ingredient_crafting", level = 1 }
+
+[[recipe]]
+output = "boon_wash_1"
+count = 4
+inputs = [["wash_base", 2], ["horn_trophy", 1], ["shimmering_orb", 1]]
+station = "extractor"
+seconds = 60.0
+xp = 8
+wear = 7
+spark = 200
+skill = { name = "ingredient_crafting", level = 1 }
+
+[[recipe]]
+output = "flaw_shift_wash"
+count = 4
+inputs = [["wash_base", 2], ["horn_trophy", 1], ["shimmering_orb", 1]]
+station = "extractor"
+seconds = 90.0
+xp = 12
+wear = 9
+spark = 200
+skill = { name = "ingredient_crafting", level = 1 }
+
+[[recipe]]
+output = "quirk_shift_wash"
+count = 4
+inputs = [["wash_base", 2], ["horn_trophy", 1], ["shimmering_orb", 1]]
+station = "extractor"
+seconds = 90.0
+xp = 12
+wear = 9
+spark = 200
+skill = { name = "ingredient_crafting", level = 1 }

@@ -192,6 +192,7 @@ impl Items {
                 }
             }
             ItemKind::Food(f) => lines.extend(food_lines(&f)),
+            ItemKind::Ingredient(_) => lines.push("Used in a forge".into()),
             ItemKind::Bucket { fills } => {
                 lines.push("Left click on water fills it".into());
                 lines.push(format!("{} of {fills} fills left", fills.saturating_sub(stack.wear)));

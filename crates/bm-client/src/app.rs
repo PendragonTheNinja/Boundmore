@@ -1465,6 +1465,8 @@ impl App {
         let now = self.now();
         let Some(s) = &mut self.session else { return };
         match m {
+            // Milestone 17: forging (not shown yet).
+            ServerMsg::Forged { .. } => {}
             ServerMsg::Creature(v) => s.creatures.view(v),
             ServerMsg::Blast { pos, radius } => {
                 let pos = DVec3::from_array(pos.map(|v| v as f64));

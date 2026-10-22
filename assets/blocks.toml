@@ -1861,3 +1861,59 @@ drops = "rice_seed"
 bonus = [{ item = "rice_seed", per_tier = [0.35, 0.35, 0.35, 0.35, 0.35, 0.35, 0.35, 0.35] }, { item = "rice_grain", per_tier = [0.3, 0.3, 0.3, 0.3, 0.3, 0.3, 0.3, 0.3] }]
 mine_xp = 4
 build_xp = 0
+
+# Milestone 17: the forge. Four blocks touching, like the workbench; it draws
+# spark through links for its queue.
+[[block]]
+name = "forge"
+colourable = false
+color = [112, 96, 132]
+top_color = [150, 128, 170]
+solid = true
+opaque = true
+translucent = false
+breakable = true
+placeable = true
+health = "hard"
+textures = { top = "forge_top", side = "forge_side", bottom = "stone" }
+material = "rock"
+station = "forge"
+assembly = "four"
+build_xp = 16
+
+# Milestone 17: fossils (Boundless: small and medium fossil seams on every
+# tier, small 3 to 40 below the surface). Bonus by tier as the relic seam and
+# cache (tuning 4.4).
+[[block]]
+name = "small_fossil_seam"
+colourable = false
+color = [176, 164, 140]
+solid = true
+opaque = true
+translucent = false
+breakable = true
+placeable = false
+health = "seam"
+textures = { all = "small_fossil_seam" }
+material = "rock"
+drops = "small_fossil"
+bonus = [{ item = "small_fossil", per_tier = [0.5, 0.5, 0.7, 0.7, 1.05, 1.05, 1.05, 1.05] }]
+mine_xp = 24
+build_xp = 0
+
+[[block]]
+name = "medium_fossil_seam"
+colourable = false
+color = [160, 150, 128]
+solid = true
+opaque = true
+translucent = false
+breakable = true
+placeable = false
+health = "seam"
+textures = { all = "medium_fossil_seam" }
+material = "rock"
+drops = "medium_fossil"
+bonus = [{ item = "medium_fossil", per_tier = [0, 0, 0.5, 0.5, 0.7, 0.7, 1.05, 1.05] }]
+mine_xp = 64
+build_xp = 0

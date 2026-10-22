@@ -81,8 +81,8 @@ name = "Insight"
 category = "attributes"
 ranks = 8
 cost = 1
-effect = "later"
-text = "Stronger healing and forging (comes with them)"
+effect = "insight"
+text = "+10 Intelligence: more boon points in the forge (healing comes later)"
 
 [[skill]]
 id = "all_attributes"
@@ -207,8 +207,8 @@ name = "Forge Stocks"
 category = "crafting"
 ranks = 3
 cost = 1
-effect = "later"
-text = "Make forging ingredients (comes with forging)"
+effect = "ingredient_crafting"
+text = "Make forging ingredients: a level a rank"
 
 [[skill]]
 id = "augment_crafting"
@@ -534,8 +534,8 @@ name = "Forgemaster"
 category = "epic2"
 ranks = 1
 cost = 5
-effect = "later"
-text = "More forging ingredients at once (comes with forging)"
+effect = "forging_epic"
+text = "+25 Flexibility in the forge, 4 more ingredient slots"
 
 [[skill]]
 id = "farming_epic"

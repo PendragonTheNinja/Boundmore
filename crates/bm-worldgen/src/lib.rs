@@ -1300,7 +1300,8 @@ mod tests {
 
     /// A kind's settings as planets made before M16 part 2 saved them:
     /// without the wild crops appended to the flora.
-    fn before_m16(mut cfg: PlanetGenConfig) -> PlanetGenConfig {
+    fn before_m16(cfg: PlanetGenConfig) -> PlanetGenConfig {
+        let mut cfg = before_m17(cfg);
         let n = cfg
             .flora
             .iter()
@@ -1308,6 +1309,16 @@ mod tests {
             .map_or(0, |i| i + 1);
         assert!(n < cfg.flora.len(), "wild crops appended");
         cfg.flora.truncate(n);
+        cfg
+    }
+
+    /// A kind's settings as planets made before M17 saved them: without the
+    /// two fossil seams at the end of the ores.
+    fn before_m17(mut cfg: PlanetGenConfig) -> PlanetGenConfig {
+        for seam in ["medium_fossil_seam", "small_fossil_seam"] {
+            assert_eq!(cfg.ores.last().map(|o| o.block.as_str()), Some(seam));
+            cfg.ores.pop();
+        }
         cfg
     }
 
@@ -1580,13 +1591,58 @@ mod tests {
     // Re-pinned for M16 part 2's wild crops (appended flora) without a
     // version bump: planets saved before keep their terrain (`PINNED_M15`,
     // checked in `appending_m16_only_grows_crops_on_their_ground`).
+    // Re-pinned for M17's fossil seams (appended ores) without a version
+    // bump: planets saved before keep their terrain (`PINNED_M16`, checked in
+    // `appending_m17_only_turns_rock_into_fossils`).
     const PINNED: [(&str, u64); 5] = [
         ("default", 0x6bc9_e59d_8877_7736),
+        ("temperate", 0xa10a_36aa_5d69_57f1),
+        ("arid", 0x8ef1_bc6b_29ce_448c),
+        ("frozen", 0x9068_f146_8540_363b),
+        ("lush", 0xb328_fb3d_cdc9_94a1),
+    ];
+    const PINNED_M16: [(&str, u64); 4] = [
         ("temperate", 0x22cb_b64b_0855_1daa),
         ("arid", 0x31a0_b625_c37a_056f),
         ("frozen", 0xb412_fff4_a47a_bd70),
         ("lush", 0xb327_5465_e360_86ec),
     ];
+
+    /// M17 appended small and medium fossil seams to every kind's ores: an
+    /// existing planet's unsaved chunks may only turn rock into fossil.
+    #[test]
+    fn appending_m17_only_turns_rock_into_fossils() {
+        let blocks = BlockRegistry::builtin();
+        let kinds = PlanetKinds::builtin(&blocks);
+        let rock = ["stone", "deep_stone", "sandstone"].map(id);
+        let fossils = [id("small_fossil_seam"), id("medium_fossil_seam")];
+        for k in &kinds.kinds {
+            let with = k.generation(42);
+            let shape = PlanetShape::new(64, 12);
+            let old = Generator::new(shape, before_m17(with.clone()), &blocks).unwrap();
+            let new = Generator::new(shape, with, &blocks).unwrap();
+            let pinned = PINNED_M16.iter().find(|(n, _)| *n == k.name).expect("pinned").1;
+            assert_eq!(fingerprint(&old), pinned, "{} before M17 keeps its terrain", k.name);
+            let mut found = [0; 2];
+            for x in 0..12 {
+                for y in 0..5 {
+                    let pos = ChunkPos::new(x * 5, y, x * 11);
+                    let (a, b) = (old.generate(pos).to_dense_states(), new.generate(pos).to_dense_states());
+                    for (a, b) in a.iter().zip(&b) {
+                        if a == b {
+                            continue;
+                        }
+                        assert!(rock.contains(&a.id), "{}: {a:?} became {b:?}", k.name);
+                        let i = fossils.iter().position(|f| *f == b.id).expect("only fossils appear");
+                        found[i] += 1;
+                    }
+                }
+            }
+            assert!(found[0] > 0 && found[1] > 0, "{}: fossils {found:?}", k.name);
+            assert!(found[0] > found[1], "{}: medium fossils are rarer {found:?}", k.name);
+        }
+    }
+
     const PINNED_M15: [(&str, u64); 4] = [
         ("temperate", 0xa6ab_8a36_dcb2_7da0),
         ("arid", 0x31a0_b625_c37a_056f),
@@ -1606,7 +1662,7 @@ mod tests {
             let with = k.generation(42);
             let shape = PlanetShape::new(64, 12);
             let old = Generator::new(shape, before_m16(with.clone()), &blocks).unwrap();
-            let new = Generator::new(shape, with, &blocks).unwrap();
+            let new = Generator::new(shape, before_m17(with), &blocks).unwrap();
             let pinned = PINNED_M15.iter().find(|(n, _)| *n == k.name).expect("pinned").1;
             assert_eq!(fingerprint(&old), pinned, "{} before M16 keeps its terrain", k.name);
             for x in 0..16 {

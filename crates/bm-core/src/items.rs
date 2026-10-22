@@ -157,6 +157,9 @@ pub enum ItemKind {
     /// bucket used in a recipe comes back with one more of its `fills`
     /// used (the stack's `wear`).
     Bucket { fills: u16 },
+    /// A forging ingredient (milestone 17): index into
+    /// `forge::INGREDIENTS`.
+    Ingredient(u8),
 }
 
 /// What a bag of bombs does [tuning 3.1.3]: area (impulse) damage within
@@ -252,6 +255,13 @@ pub struct ItemDef {
     /// back when it uses this, by name (milestone 16).
     #[serde(default)]
     pub returns: Option<String>,
+    /// How readily it takes traits in the forge (Boundless's Flexibility,
+    /// milestone 17); 0: it cannot be forged.
+    #[serde(default)]
+    pub flex: u16,
+    /// Its rank before traits (Boundless's Default Rank).
+    #[serde(default)]
+    pub rank: u16,
 }
 
 impl ItemDef {
@@ -375,6 +385,9 @@ pub struct ItemStack {
     pub colour: Colour,
     #[serde(default)]
     pub tag: u32,
+    /// What forging did to it (milestone 17); plain for everything unforged.
+    #[serde(default)]
+    pub forge: crate::forge::Forged,
 }
 
 impl ItemStack {
@@ -389,6 +402,7 @@ impl ItemStack {
             wear: 0,
             colour,
             tag: 0,
+            forge: crate::forge::Forged::default(),
         }
     }
 
@@ -406,6 +420,7 @@ impl ItemStack {
         self.item == other.item
             && self.colour == other.colour
             && self.tag == other.tag
+            && self.forge == other.forge
             && self.wear == 0
             && other.wear == 0
     }
@@ -429,6 +444,8 @@ pub enum ItemError {
     BadBlock(String, u16),
     #[error("too many items")]
     TooMany,
+    #[error("item `{0}` is the forging ingredient `{1}`, which does not exist")]
+    UnknownIngredient(String, String),
 }
 
 #[derive(Deserialize)]
@@ -465,6 +482,14 @@ struct ItemEntry {
     bucket: Option<u16>,
     #[serde(default)]
     returns: Option<String>,
+    /// Forge Flexibility and rank (milestone 17).
+    #[serde(default)]
+    flex: u16,
+    #[serde(default)]
+    rank: u16,
+    /// A forging ingredient's name in `forge::INGREDIENTS`.
+    #[serde(default)]
+    ingredient: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -630,6 +655,8 @@ impl ItemRegistry {
                     },
                     fuel: b.fuel,
                     returns: None,
+                    flex: 0,
+                    rank: 0,
                 });
             }
         }
@@ -684,6 +711,13 @@ impl ItemRegistry {
                 (None, None, None) if e.bucket.is_some() => ItemKind::Bucket {
                     fills: e.bucket.expect("checked"),
                 },
+                (None, None, None) if e.ingredient.is_some() => {
+                    let name = e.ingredient.as_deref().expect("checked");
+                    match crate::forge::ingredient_by_name(name) {
+                        Some(i) => ItemKind::Ingredient(i),
+                        None => return Err(ItemError::UnknownIngredient(e.name, name.to_string())),
+                    }
+                }
                 (None, None, None) => ItemKind::Material,
                 _ => return Err(ItemError::BadTool(e.name)),
             };
@@ -696,6 +730,8 @@ impl ItemRegistry {
                 held_light: 0,
                 fuel: e.fuel,
                 returns: e.returns,
+                flex: e.flex,
+                rank: e.rank,
             });
         }
         let reg = Self::from_defs(defs, blocks)?;

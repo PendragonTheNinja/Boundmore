@@ -19,6 +19,7 @@
 //! catalogue, and adding one block shifts every item after it.
 
 use anyhow::{Context, Result, bail};
+use bm_core::forge::Forged;
 use bm_core::portal::PortalAxis;
 use bm_core::skills::{Character, MAX_PAGES, Page};
 use bm_core::{
@@ -207,7 +208,9 @@ impl std::fmt::Debug for AccountRecord {
 /// every stack saved before colours existed reads (ADR-0007). A tagged stack
 /// (a portal token, ADR-0009) saves its tag after an `@`, always last
 /// (`portal_token@17`, `name#3@17` with both); no `@` is tag 0, so every
-/// older save reads unchanged.
+/// older save reads unchanged. A forged stack (milestone 17) saves its
+/// traits after a `!`, before any tag (`iron_hammer!mighty5,quick3`,
+/// `iron_hammer!` for forged with none); no `!` is unforged.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SavedStack {
     pub item: String,
@@ -221,6 +224,10 @@ impl SavedStack {
         let mut item = name.clone();
         if s.colour != Colour::NATURAL {
             item.push_str(&format!("#{}", s.colour.0));
+        }
+        if s.forge.done {
+            item.push('!');
+            item.push_str(&s.forge.to_suffix());
         }
         if s.tag != 0 {
             item.push_str(&format!("@{}", s.tag));
@@ -238,6 +245,10 @@ impl SavedStack {
             Some((rest, t)) => (rest, t.parse().ok()?),
             None => (self.item.as_str(), 0),
         };
+        let (rest, forge) = match rest.split_once('!') {
+            Some((rest, traits)) => (rest, Forged::from_suffix(traits)),
+            None => (rest, Forged::default()),
+        };
         let (name, colour) = match rest.split_once('#') {
             Some((name, c)) => (name, Colour(c.parse().ok()?)),
             None => (rest, Colour::NATURAL),
@@ -249,6 +260,7 @@ impl SavedStack {
             wear: self.wear,
             colour,
             tag,
+            forge,
         })
     }
 }

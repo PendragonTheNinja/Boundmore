@@ -420,6 +420,7 @@ fn station_name(kind: Station) -> &'static str {
         Station::Refinery => "Refinery",
         Station::Compactor => "Compactor",
         Station::SparkGenerator => "Spark Generator",
+        Station::Forge => "Forge",
     }
 }
 
@@ -913,6 +914,8 @@ impl Game {
                 ClientMsg::Eat { at, slot } => self.queue(id, at, Queued::Eat { at, slot }),
                 ClientMsg::FillBucket { slot, pos } => self.fill_bucket(id, slot, pos),
                 ClientMsg::LookCrop { pos } => self.look_crop(id, pos),
+                // Milestone 17: forging (not handled yet).
+                ClientMsg::ForgeBegin { .. } | ClientMsg::ForgeUse { .. } => {}
                 ClientMsg::Throw {
                     at,
                     slot,

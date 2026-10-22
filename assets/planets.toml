@@ -109,6 +109,22 @@ size = 9.0
 threshold = 0.63
 min_y = 40
 min_depth = 5
+[[kind.generation.ores]]
+# Milestone 17: small fossils on every tier, 3+ below the surface (Boundless:
+# 3 to 40 down; there is no deepest-depth setting, so rarity stands in). The
+# richness is a guess.
+block = "small_fossil_seam"
+size = 7.0
+threshold = 0.62
+min_y = 10
+min_depth = 3
+[[kind.generation.ores]]
+# Medium fossils, deeper and rarer (a guess: Boundless 5 to 50 down).
+block = "medium_fossil_seam"
+size = 6.0
+threshold = 0.65
+min_y = 10
+min_depth = 5
 # Flora (all placement a guess): spikeleaf on the beaches and in dry
 # patches of turf so a new player finds fibrous leaves early, ferns and
 # roots on turf, lilies by the water, snowbells above the snow line,
@@ -281,6 +297,22 @@ size = 9.0
 threshold = 0.63
 min_y = 40
 min_depth = 5
+[[kind.generation.ores]]
+# Milestone 17: small fossils on every tier, 3+ below the surface (Boundless:
+# 3 to 40 down; there is no deepest-depth setting, so rarity stands in). The
+# richness is a guess.
+block = "small_fossil_seam"
+size = 7.0
+threshold = 0.62
+min_y = 10
+min_depth = 3
+[[kind.generation.ores]]
+# Medium fossils, deeper and rarer (a guess: Boundless 5 to 50 down).
+block = "medium_fossil_seam"
+size = 6.0
+threshold = 0.65
+min_y = 10
+min_depth = 5
 # Flora (a guess): spikeleaf plentiful on the dunes, with cactus and
 # aloe (no turf here, so they take the sand); boulders on sand and rock.
 [[kind.generation.flora]]
@@ -441,6 +473,22 @@ block = "relic_cache"
 size = 9.0
 threshold = 0.63
 min_y = 40
+min_depth = 5
+[[kind.generation.ores]]
+# Milestone 17: small fossils on every tier, 3+ below the surface (Boundless:
+# 3 to 40 down; there is no deepest-depth setting, so rarity stands in). The
+# richness is a guess.
+block = "small_fossil_seam"
+size = 7.0
+threshold = 0.62
+min_y = 10
+min_depth = 3
+[[kind.generation.ores]]
+# Medium fossils, deeper and rarer (a guess: Boundless 5 to 50 down).
+block = "medium_fossil_seam"
+size = 6.0
+threshold = 0.65
+min_y = 10
 min_depth = 5
 # Flora (a guess): snowbells on the snow; boulders on snow and rock.
 [[kind.generation.flora]]
@@ -603,6 +651,22 @@ threshold = 0.6
 min_y = 10
 max_y = 40
 min_depth = 20
+[[kind.generation.ores]]
+# Milestone 17: small fossils on every tier, 3+ below the surface (Boundless:
+# 3 to 40 down; there is no deepest-depth setting, so rarity stands in). The
+# richness is a guess.
+block = "small_fossil_seam"
+size = 7.0
+threshold = 0.62
+min_y = 10
+min_depth = 3
+[[kind.generation.ores]]
+# Medium fossils, deeper and rarer (a guess: Boundless 5 to 50 down).
+block = "medium_fossil_seam"
+size = 6.0
+threshold = 0.65
+min_y = 10
+min_depth = 5
 # Flora (a guess): the most plants, lilies by the water, spikeleaf on
 # the beaches, snowbells on the peaks, boulders on rock and turf.
 [[kind.generation.flora]]

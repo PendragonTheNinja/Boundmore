@@ -197,6 +197,12 @@ pub enum Effect {
     FarmingEpic,
     /// +1 cooking (and brewing, with brews); excludes the gear epic.
     ConsumableCraftingEpic,
+    /// Milestone 17: Intelligence for forging (+10 a rank; its healing part
+    /// comes with healing), the forging-ingredient crafting level, and the
+    /// forging epic (+25 Flexibility, 4 more deck slots).
+    Insight,
+    IngredientCrafting,
+    ForgingEpic,
     /// On the tree, not built yet ("Comes later"): cannot be bought.
     Later,
 }
@@ -576,6 +582,11 @@ pub struct Effects {
     /// The Farming (crop sowing) level and the Farming Epic.
     pub farming: u8,
     pub farming_epic: bool,
+    /// Milestone 17: Insight ranks (an attribute: Wholeness adds to it), the
+    /// ingredient crafting level, Forgemaster.
+    pub insight: f64,
+    pub ingredient_crafting: u8,
+    pub forging_epic: bool,
     /// Milestone 13.
     pub vitality: f64,
     pub sling_mastery: u8,
@@ -662,6 +673,9 @@ impl Effects {
                     e.farming += 2 * r;
                     e.farming_epic |= on;
                 }
+                Effect::Insight => e.insight += f,
+                Effect::IngredientCrafting => e.ingredient_crafting += r,
+                Effect::ForgingEpic => e.forging_epic |= on,
                 Effect::Later => {}
             }
         }
@@ -673,6 +687,7 @@ impl Effects {
             &mut e.luck,
             &mut e.zeal,
             &mut e.vitality,
+            &mut e.insight,
         ] {
             *a += all;
         }
@@ -680,6 +695,16 @@ impl Effects {
         e.tech_crafting += gear;
         e.weapon_crafting += gear;
         e
+    }
+
+    /// What these skills make of a forger (milestone 17).
+    pub fn forger(&self) -> crate::forge::Forger {
+        crate::forge::Forger {
+            vitality: self.vitality,
+            power: self.power,
+            insight: self.insight,
+            epic: self.forging_epic,
+        }
     }
 
     /// The damage multiplier for a tool of `class` (None: the hand stone,
@@ -866,6 +891,7 @@ impl Effects {
             "decoration_crafting" => self.decoration_crafting,
             "weapon_crafting" => self.weapon_crafting,
             "food_crafting" => self.food_crafting,
+            "ingredient_crafting" => self.ingredient_crafting,
             _ => 0,
         }
     }
@@ -988,7 +1014,7 @@ mod tests {
         assert_eq!(c.learn(&t, "power"), Err(Refused::MaxRank));
         c.learn(&t, "hammer_epic").unwrap();
         assert!(matches!(c.learn(&t, "shovel_axe_epic"), Err(Refused::Excluded(_))));
-        assert_eq!(c.learn(&t, "intelligence"), Err(Refused::ComesLater));
+        assert_eq!(c.learn(&t, "augment_crafting"), Err(Refused::ComesLater));
         assert_eq!(c.page().spent(&t), 13);
         // The page cap and the pool.
         let ids: Vec<String> = t

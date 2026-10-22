@@ -25,7 +25,7 @@ use glam::DVec3;
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
 
 /// Bump on any change to a message below. Client and server must match.
-pub const PROTOCOL_VERSION: u32 = 23;
+pub const PROTOCOL_VERSION: u32 = 24;
 
 /// QUIC application protocol name; also refuses non-Boundmore peers early.
 pub const ALPN: &[u8] = b"boundmore/1";
@@ -188,6 +188,20 @@ pub enum ClientMsg {
     /// What is the crop at `pos`? (milestone 16) Answered with `CropInfo`
     /// if it is one.
     LookCrop { pos: BlockPos },
+    /// Starts a forging session at the forge at `pos` (any of its blocks, in
+    /// reach; milestone 17): the gear in inventory slot `gear`, and a deck of
+    /// (inventory slot, count) ingredient stacks, moved into the forge.
+    /// Answered with `Slots` and `Station`, or a `Notice`.
+    ForgeBegin {
+        pos: BlockPos,
+        gear: u8,
+        deck: Vec<(u8, u16)>,
+    },
+    /// Uses one ingredient from deck slot `slot` in the session at `pos`: one
+    /// round. `round` is the number of rounds already played as the client
+    /// saw it; a mismatch (a double click) is ignored. Answered with
+    /// `Station`, and `Forged` if the session ended.
+    ForgeUse { pos: BlockPos, slot: u8, round: u32 },
 }
 
 /// What the portal window's buttons do.
@@ -576,6 +590,71 @@ pub enum ServerMsg {
         tilled: bool,
         dry: bool,
     },
+    /// A forging session at `pos` ended (milestone 17), told to its forger.
+    Forged {
+        pos: BlockPos,
+        outcome: ForgeOutcome,
+    },
+}
+
+/// How a forging session ended.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub enum ForgeOutcome {
+    /// Sealed: the gear, with its traits, is in the forge's queue.
+    Sealed(ItemStack),
+    /// Unmade: the gear back unforged, and these ingredients back.
+    Unmade { gear: ItemStack, returned: Vec<ItemStack> },
+    /// Stability ran out: the gear and the ingredients used are lost.
+    Destroyed(ItemStack),
+}
+
+/// A forge as its window shows it (part of `StationView`, milestone 17).
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+pub struct ForgeView {
+    /// The session running, if any.
+    pub session: Option<SessionView>,
+    /// Who is forging, when it is not the watcher.
+    pub forger: Option<String>,
+    /// A sealed item in the queue: the item, how far along (0..1) and
+    /// seconds left. Done, it waits in the station's `output`.
+    pub queued: Option<(ItemStack, f32, u32)>,
+}
+
+/// A forging session as its forger sees it: everything but the dice.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct SessionView {
+    pub item: ItemStack,
+    pub gear: bm_core::forge::Gear,
+    pub stats: bm_core::forge::SessionStats,
+    pub stability: i32,
+    pub vigour: i32,
+    pub pools: [i32; 3],
+    pub traits: [Vec<(bm_core::forge::TraitId, u32)>; 3],
+    pub buffs: Vec<bm_core::forge::Buff>,
+    pub deck: Vec<bm_core::forge::DeckSlot>,
+    /// Ingredients used so far.
+    pub used: u32,
+    pub rounds: u32,
+    pub last: bm_core::forge::RoundReport,
+}
+
+impl SessionView {
+    pub fn of(s: &bm_core::forge::Session) -> Self {
+        Self {
+            item: s.item,
+            gear: s.gear,
+            stats: s.stats,
+            stability: s.stability,
+            vigour: s.vigour,
+            pools: s.pools,
+            traits: s.traits.clone(),
+            buffs: s.buffs.clone(),
+            deck: s.deck.clone(),
+            used: s.used.len() as u32,
+            rounds: s.rounds,
+            last: s.last.clone(),
+        }
+    }
 }
 
 /// A meteor's phase.

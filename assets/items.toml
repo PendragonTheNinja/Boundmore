@@ -49,76 +49,106 @@ name = "iron_ingot"
 
 [[item]]
 name = "stone_hammer"
+flex = 120
+rank = 20
 stack = 1
 tool = { class = "hammer", damage = 400, action_speed = 15.0, durability = 600 }
 
 [[item]]
 name = "stone_shovel"
+flex = 120
+rank = 20
 stack = 1
 tool = { class = "shovel", damage = 400, action_speed = 15.0, durability = 600 }
 
 [[item]]
 name = "stone_axe"
+flex = 120
+rank = 20
 stack = 1
 tool = { class = "axe", damage = 400, action_speed = 15.0, durability = 600 }
 
 [[item]]
 name = "copper_hammer"
+flex = 110
+rank = 30
 stack = 1
 tool = { class = "hammer", damage = 400, action_speed = 30.0, durability = 700 }
 
 [[item]]
 name = "copper_shovel"
+flex = 110
+rank = 30
 stack = 1
 tool = { class = "shovel", damage = 400, action_speed = 30.0, durability = 700 }
 
 [[item]]
 name = "copper_axe"
+flex = 110
+rank = 30
 stack = 1
 tool = { class = "axe", damage = 400, action_speed = 30.0, durability = 700 }
 
 [[item]]
 name = "iron_hammer"
+flex = 110
+rank = 30
 stack = 1
 tool = { class = "hammer", damage = 700, action_speed = 10.0, crit_chance = 0.2, durability = 900 }
 
 [[item]]
 name = "iron_shovel"
+flex = 110
+rank = 30
 stack = 1
 tool = { class = "shovel", damage = 700, action_speed = 10.0, crit_chance = 0.2, durability = 900 }
 
 [[item]]
 name = "iron_axe"
+flex = 110
+rank = 30
 stack = 1
 tool = { class = "axe", damage = 700, action_speed = 10.0, crit_chance = 0.2, durability = 900 }
 
 [[item]]
 name = "square_chisel"
+flex = 100
+rank = 50
 stack = 1
 chisel = { family = "square", durability = 300 }
 
 [[item]]
 name = "slope_chisel"
+flex = 100
+rank = 50
 stack = 1
 chisel = { family = "slope", durability = 400 }
 
 [[item]]
 name = "bevel_chisel"
+flex = 100
+rank = 50
 stack = 1
 chisel = { family = "bevel", durability = 600 }
 
 [[item]]
 name = "round_chisel"
+flex = 100
+rank = 50
 stack = 1
 chisel = { family = "round", durability = 600 }
 
 [[item]]
 name = "precise_square_chisel"
+flex = 100
+rank = 50
 stack = 1
 chisel = { family = "square", precise = true, durability = 600 }
 
 [[item]]
 name = "precise_slope_chisel"
+flex = 100
+rank = 50
 stack = 1
 chisel = { family = "slope", precise = true, durability = 600 }
 
@@ -128,11 +158,15 @@ chisel = { family = "slope", precise = true, durability = 600 }
 
 [[item]]
 name = "copper_grapple"
+flex = 110
+rank = 30
 stack = 1
 grapple = { range = 10.0, shot_speed = 45.0, reel_in = 5.0, reel_out = 15.0, durability = 500, energy = 60 }
 
 [[item]]
 name = "iron_grapple"
+flex = 110
+rank = 30
 stack = 1
 grapple = { range = 20.0, shot_speed = 30.0, reel_in = 2.0, reel_out = 10.0, durability = 1000, energy = 80 }
 
@@ -159,16 +193,22 @@ tool = { damage = 200, action_speed = 20.0, durability = 400 }
 
 [[item]]
 name = "wood_hammer"
+flex = 150
+rank = 10
 stack = 1
 tool = { class = "hammer", damage = 300, action_speed = 20.0, durability = 600 }
 
 [[item]]
 name = "wood_shovel"
+flex = 150
+rank = 10
 stack = 1
 tool = { class = "shovel", damage = 300, action_speed = 20.0, durability = 600 }
 
 [[item]]
 name = "wood_axe"
+flex = 150
+rank = 10
 stack = 1
 tool = { class = "axe", damage = 300, action_speed = 20.0, durability = 600 }
 
@@ -338,17 +378,23 @@ name = "vital_essence"
 # damage / 50.
 [[item]]
 name = "stone_sling"
+flex = 120
+rank = 20
 stack = 1
 sling = { damage = 300, action_speed = 10.0, shot_speed = 30.0, range = 15.0, falloff = 0.5, durability = 600 }
 
 [[item]]
 name = "copper_sling"
+flex = 110
+rank = 30
 display = "Quick Copper Sling"
 stack = 1
 sling = { damage = 300, action_speed = 30.0, shot_speed = 55.0, range = 15.0, falloff = 0.5, durability = 500 }
 
 [[item]]
 name = "iron_sling"
+flex = 110
+rank = 30
 display = "Heavy Iron Sling"
 stack = 1
 sling = { damage = 600, action_speed = 10.0, shot_speed = 35.0, range = 20.0, falloff = 0.6, crit_chance = 0.2, durability = 900 }
@@ -383,12 +429,16 @@ name = "bomb_charge"
 # energy damage / 10.
 [[item]]
 name = "copper_bombs"
+flex = 110
+rank = 30
 display = "Bag of Copper Bombs"
 stack = 1
 bomb = { damage = 900, radius = 3.0, knockback = 10.0 }
 
 [[item]]
 name = "iron_bombs"
+flex = 110
+rank = 30
 display = "Bag of Iron Bombs"
 stack = 1
 bomb = { damage = 1500, radius = 2.0, knockback = 10.0 }
@@ -450,16 +500,22 @@ display = "Unused Spark"
 # energy as Burst Stamina Drain, wear removed per hit).
 [[item]]
 name = "stone_spanner"
+flex = 120
+rank = 20
 stack = 1
 tool = { class = "spanner", action_speed = 40.0, durability = 600, energy = 4, repair = 100 }
 
 [[item]]
 name = "copper_spanner"
+flex = 110
+rank = 30
 stack = 1
 tool = { class = "spanner", action_speed = 70.0, durability = 500, energy = 6, repair = 400 }
 
 [[item]]
 name = "iron_spanner"
+flex = 110
+rank = 30
 stack = 1
 tool = { class = "spanner", action_speed = 30.0, durability = 900, energy = 8, repair = 700 }
 
@@ -794,3 +850,366 @@ food = { hunger = 300, sick = true }
 name = "wise_loaf"
 display = "Wise Loaf"
 food = { hunger = 2000, buff = "studious", rank = 3, minutes = 30 }
+
+# Milestone 17: forging. Materials, then the bases, then every forging
+# ingredient (`ingredient` names its rules in bm-core/src/forge.rs). The
+# ingredients whose recipes need power have no recipe until power coils.
+[[item]]
+name = "charcoal"
+
+[[item]]
+name = "small_fossil"
+
+[[item]]
+name = "medium_fossil"
+
+[[item]]
+name = "fossil_essence"
+
+[[item]]
+name = "tincture_base"
+
+[[item]]
+name = "glaze_base"
+
+[[item]]
+name = "salve_base"
+
+[[item]]
+name = "spur_base"
+
+[[item]]
+name = "wash_base"
+
+[[item]]
+name = "wax_base"
+
+[[item]]
+name = "pure_tincture_1"
+display = "Pure Tincture I"
+ingredient = "pure_tincture_1"
+
+[[item]]
+name = "pure_tincture_2"
+display = "Pure Tincture II"
+ingredient = "pure_tincture_2"
+
+[[item]]
+name = "pure_tincture_3"
+display = "Pure Tincture III"
+ingredient = "pure_tincture_3"
+
+[[item]]
+name = "rough_tincture_1"
+display = "Rough Tincture I"
+ingredient = "rough_tincture_1"
+
+[[item]]
+name = "rough_tincture_2"
+display = "Rough Tincture II"
+ingredient = "rough_tincture_2"
+
+[[item]]
+name = "rough_tincture_3"
+display = "Rough Tincture III"
+ingredient = "rough_tincture_3"
+
+[[item]]
+name = "wild_tincture_1"
+display = "Wild Tincture I"
+ingredient = "wild_tincture_1"
+
+[[item]]
+name = "wild_tincture_2"
+display = "Wild Tincture II"
+ingredient = "wild_tincture_2"
+
+[[item]]
+name = "wild_tincture_3"
+display = "Wild Tincture III"
+ingredient = "wild_tincture_3"
+
+[[item]]
+name = "sapping_tincture_1"
+display = "Sapping Tincture I"
+ingredient = "sapping_tincture_1"
+
+[[item]]
+name = "sapping_tincture_2"
+display = "Sapping Tincture II"
+ingredient = "sapping_tincture_2"
+
+[[item]]
+name = "tainted_tincture_1"
+display = "Tainted Tincture I"
+ingredient = "tainted_tincture_1"
+
+[[item]]
+name = "tainted_tincture_2"
+display = "Tainted Tincture II"
+ingredient = "tainted_tincture_2"
+
+[[item]]
+name = "mending_tincture_1"
+display = "Mending Tincture I"
+ingredient = "mending_tincture_1"
+
+[[item]]
+name = "mending_tincture_2"
+display = "Mending Tincture II"
+ingredient = "mending_tincture_2"
+
+[[item]]
+name = "wild_mending_tincture_1"
+display = "Wild Mending Tincture I"
+ingredient = "wild_mending_tincture_1"
+
+[[item]]
+name = "wild_mending_tincture_2"
+display = "Wild Mending Tincture II"
+ingredient = "wild_mending_tincture_2"
+
+[[item]]
+name = "calming_tincture_1"
+display = "Calming Tincture I"
+ingredient = "calming_tincture_1"
+
+[[item]]
+name = "calming_tincture_2"
+display = "Calming Tincture II"
+ingredient = "calming_tincture_2"
+
+[[item]]
+name = "rough_calming_tincture_1"
+display = "Rough Calming Tincture I"
+ingredient = "rough_calming_tincture_1"
+
+[[item]]
+name = "rough_calming_tincture_2"
+display = "Rough Calming Tincture II"
+ingredient = "rough_calming_tincture_2"
+
+[[item]]
+name = "thrift_glaze"
+display = "Thrift Glaze"
+ingredient = "thrift_glaze"
+
+[[item]]
+name = "swift_glaze"
+display = "Swift Glaze"
+ingredient = "swift_glaze"
+
+[[item]]
+name = "odd_glaze"
+display = "Odd Glaze"
+ingredient = "odd_glaze"
+
+[[item]]
+name = "force_glaze"
+display = "Force Glaze"
+ingredient = "force_glaze"
+
+[[item]]
+name = "lasting_glaze"
+display = "Lasting Glaze"
+ingredient = "lasting_glaze"
+
+[[item]]
+name = "glow_glaze"
+display = "Glow Glaze"
+ingredient = "glow_glaze"
+
+[[item]]
+name = "elder_glaze"
+display = "Elder Glaze"
+ingredient = "elder_glaze"
+
+[[item]]
+name = "keeping_glaze"
+display = "Keeping Glaze"
+ingredient = "keeping_glaze"
+
+[[item]]
+name = "seeking_glaze"
+display = "Seeking Glaze"
+ingredient = "seeking_glaze"
+
+[[item]]
+name = "shield_salve_1"
+display = "Shield Salve I"
+ingredient = "shield_salve_1"
+
+[[item]]
+name = "shield_salve_2"
+display = "Shield Salve II"
+ingredient = "shield_salve_2"
+
+[[item]]
+name = "boost_salve_1"
+display = "Boost Salve I"
+ingredient = "boost_salve_1"
+
+[[item]]
+name = "boost_salve_2"
+display = "Boost Salve II"
+ingredient = "boost_salve_2"
+
+[[item]]
+name = "flaw_guard_salve_1"
+display = "Flaw Guard Salve I"
+ingredient = "flaw_guard_salve_1"
+
+[[item]]
+name = "flaw_guard_salve_2"
+display = "Flaw Guard Salve II"
+ingredient = "flaw_guard_salve_2"
+
+[[item]]
+name = "quirk_guard_salve_1"
+display = "Quirk Guard Salve I"
+ingredient = "quirk_guard_salve_1"
+
+[[item]]
+name = "quirk_guard_salve_2"
+display = "Quirk Guard Salve II"
+ingredient = "quirk_guard_salve_2"
+
+[[item]]
+name = "vigour_salve_1"
+display = "Vigour Salve I"
+ingredient = "vigour_salve_1"
+
+[[item]]
+name = "vigour_salve_2"
+display = "Vigour Salve II"
+ingredient = "vigour_salve_2"
+
+[[item]]
+name = "steady_salve_1"
+display = "Steady Salve I"
+ingredient = "steady_salve_1"
+
+[[item]]
+name = "steady_salve_2"
+display = "Steady Salve II"
+ingredient = "steady_salve_2"
+
+[[item]]
+name = "fate_salve_1"
+display = "Fate Salve I"
+ingredient = "fate_salve_1"
+
+[[item]]
+name = "fate_salve_2"
+display = "Fate Salve II"
+ingredient = "fate_salve_2"
+
+[[item]]
+name = "turnabout_salve"
+display = "Turnabout Salve"
+ingredient = "turnabout_salve"
+
+[[item]]
+name = "gamble_salve_1"
+display = "Gamble Salve I"
+ingredient = "gamble_salve_1"
+
+[[item]]
+name = "gamble_salve_2"
+display = "Gamble Salve II"
+ingredient = "gamble_salve_2"
+
+[[item]]
+name = "flaw_turning_spur"
+display = "Flaw Turning Spur"
+ingredient = "flaw_turning_spur"
+
+[[item]]
+name = "vigour_spur_1"
+display = "Vigour Spur I"
+ingredient = "vigour_spur_1"
+
+[[item]]
+name = "vigour_spur_2"
+display = "Vigour Spur II"
+ingredient = "vigour_spur_2"
+
+[[item]]
+name = "boost_spur"
+display = "Boost Spur"
+ingredient = "boost_spur"
+
+[[item]]
+name = "points_spur_1"
+display = "Points Spur I"
+ingredient = "points_spur_1"
+
+[[item]]
+name = "points_spur_2"
+display = "Points Spur II"
+ingredient = "points_spur_2"
+
+[[item]]
+name = "boon_wash_1"
+display = "Boon Wash I"
+ingredient = "boon_wash_1"
+
+[[item]]
+name = "boon_wash_2"
+display = "Boon Wash II"
+ingredient = "boon_wash_2"
+
+[[item]]
+name = "flaw_wash_1"
+display = "Flaw Wash I"
+ingredient = "flaw_wash_1"
+
+[[item]]
+name = "flaw_wash_2"
+display = "Flaw Wash II"
+ingredient = "flaw_wash_2"
+
+[[item]]
+name = "quirk_wash_1"
+display = "Quirk Wash I"
+ingredient = "quirk_wash_1"
+
+[[item]]
+name = "quirk_wash_2"
+display = "Quirk Wash II"
+ingredient = "quirk_wash_2"
+
+[[item]]
+name = "boon_shift_wash"
+display = "Boon Shift Wash"
+ingredient = "boon_shift_wash"
+
+[[item]]
+name = "flaw_shift_wash"
+display = "Flaw Shift Wash"
+ingredient = "flaw_shift_wash"
+
+[[item]]
+name = "quirk_shift_wash"
+display = "Quirk Shift Wash"
+ingredient = "quirk_shift_wash"
+
+[[item]]
+name = "sealing_wax"
+display = "Sealing Wax"
+ingredient = "sealing_wax"
+
+[[item]]
+name = "unmaking_wax_1"
+display = "Unmaking Wax I"
+ingredient = "unmaking_wax_1"
+
+[[item]]
+name = "unmaking_wax_2"
+display = "Unmaking Wax II"
+ingredient = "unmaking_wax_2"
+
+[[item]]
+name = "unmaking_wax_3"
+display = "Unmaking Wax III"
+ingredient = "unmaking_wax_3"
