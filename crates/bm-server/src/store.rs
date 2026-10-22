@@ -854,15 +854,22 @@ impl Store {
                     tx.open_table(META)?
                         .insert("universe", postcard::to_stdvec(&u)?.as_slice())?;
                     tx.commit()?;
-                    let characters = if from <= 4 {
-                        "start at level 1"
+                    if from >= 6 {
+                        tracing::info!(
+                            "upgraded the universe from save version {from} to {SAVE_VERSION} (regions and \
+                             meteorites added; characters, stations and planets as they were)"
+                        );
                     } else {
-                        "keep their progress"
-                    };
-                    tracing::info!(
-                        "upgraded the universe from save version {from} to {SAVE_VERSION} ({stations} stations, \
-                         {players} characters {characters}, unhurt and with no XP debt)"
-                    );
+                        let characters = if from <= 4 {
+                            "start at level 1"
+                        } else {
+                            "keep their progress"
+                        };
+                        tracing::info!(
+                            "upgraded the universe from save version {from} to {SAVE_VERSION} ({stations} stations, \
+                             {players} characters {characters}, unhurt and with no XP debt)"
+                        );
+                    }
                     u
                 } else {
                     u
@@ -2112,6 +2119,62 @@ mod tests {
             "reopens without upgrading again"
         );
         assert_eq!(s.player("alice").unwrap().unwrap(), want);
+    }
+
+    /// A version 6 universe (M13) opens as it is: characters keep their
+    /// health and XP debt (a version 5 reading of them would garble them),
+    /// it has no skies or discoveries yet, and it is marked version 7.
+    #[test]
+    fn a_version_6_universe_opens_with_characters_untouched() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("u.redb");
+        let player = PlayerData {
+            planet: 1,
+            state: None,
+            inventory: vec![],
+            last_seen: 1_700_000_000,
+            character: SavedCharacter {
+                xp: 777,
+                marks: 5,
+                pages: vec![vec![("power".into(), 1)]],
+                active: 0,
+                cleanses_used: 0,
+                switched_at: 0,
+                plots_bought: 0,
+                debt: 321,
+            },
+            hurt: 77,
+        };
+        {
+            let s = Store::open(&path).unwrap();
+            let tx = s.db.begin_write().unwrap();
+            tx.open_table(META)
+                .unwrap()
+                .insert(
+                    "universe",
+                    postcard::to_stdvec(&UniverseMeta {
+                        save_version: 6,
+                        chunk_format: CHUNK_FORMAT_VERSION,
+                    })
+                    .unwrap()
+                    .as_slice(),
+                )
+                .unwrap();
+            tx.open_table(PLAYER_DATA)
+                .unwrap()
+                .insert("alice", postcard::to_stdvec(&player).unwrap().as_slice())
+                .unwrap();
+            tx.commit().unwrap();
+        }
+        let s = Store::open(&path).unwrap();
+        assert!(s.universe(&kinds()).unwrap().is_none());
+        assert_eq!(s.player("alice").unwrap().unwrap(), player, "untouched");
+        assert_eq!(s.sky(1).unwrap(), None);
+        assert!(s.discoveries("alice").unwrap().is_empty());
+        let tx = s.db.begin_read().unwrap();
+        let meta = tx.open_table(META).unwrap();
+        let u: UniverseMeta = postcard::from_bytes(meta.get("universe").unwrap().unwrap().value()).unwrap();
+        assert_eq!(u.save_version, SAVE_VERSION);
     }
 
     /// A version 5 universe (M12) opens: every character keeps its level,
