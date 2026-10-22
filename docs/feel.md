@@ -236,3 +236,20 @@ Boundless's live tree and tables exactly (Nathan, 2026-10-20), in Boundmore's na
 | Farming Epic | +2 Farming, 20% more yield, fertiliser x2 | Boundless's skill (tuning 5) |
 | XP | 1 a seed sown; 4 an hour of ripening at harvest (tuber 12, wheat 24) | **guesses** (Boundless gave little; Nathan: fix it) |
 | Wild crops | tuber, dewberry and oats on turf everywhere, rice by water, waxy tuber and wheat on tier 2 and 3, exotic tuber on tier 3 | densities **guesses** |
+
+## Forging (M17, `docs/milestones/17-forging.md`, `bm-core/src/forge.rs`)
+
+| Value | Now | Source, or guess |
+|---|---|---|
+| Session rules: pools, rolls, weights, buffs, every ingredient's costs and points | as Boundless | the game's data via mayumi's forge simulator, exact (tuning 5.7) |
+| Trait levels and per-level values | as Boundless | `forge.json`, the trait mega-thread (tuning 5.7, 5.8) |
+| Stability, Vigour, Intelligence | 900 + 100 a Vitality rank; 200 a Power rank; 10 + 10 an Insight rank; Stability and Vigour at most 1,800 | wiki skill tables and the game's skill text |
+| Effectiveness | min(2, 0.34 (0.5 + 4.5 f²) (0.2 + 0.8 min(1, Int / (30 + 105 (1 − f)))) + power / (1,000 + 13,500 (1 − f))), f = Flexibility / 150 | **guess** built on the game's forge constants, fitted to the one measured line (diamond: 6% a coil, 200% at 18). Measure 1 |
+| A stabilising salve on a round that costs nothing | never gives Stability back | Boundmore's choice (the simulator lets the cost go negative) |
+| Stability at 0 or below after a round | the gear is destroyed | tuning 5.7; Measure 4 checks whether Boundless allowed a last seal |
+| Queue after sealing | 2 min (rank up to 200) to 60 min (above 5,000), with spark, wear and XP | `forge.json` levels; reading its "value" as rank is a **guess** (Measure 3) |
+| A quirk's rank | -12 (a quirk counted as 40, times Boundless's -0.3) | **guess** |
+| Glowing | held light 8, 11, 14 | **guess** for Boundless's radius 6, 9, 12 (Measure 6) |
+| Loud | creatures notice from 1.5 times as far | **guess** (the size is unpublished) |
+| Small fossils | every world, 3+ below the surface, about as rare as wayshards | Boundless: 3 to 40 down; the richness a **guess** |
+| Medium fossils | 5+ below the surface, rarer | **guess** (Boundless 5 to 50) |
