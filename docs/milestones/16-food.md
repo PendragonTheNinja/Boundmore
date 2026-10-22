@@ -6,7 +6,7 @@
 
 Using tools, running and jumping make you **hungry**, and hunger eats into your energy bar. **Food** takes the hunger away. Cooked food beats raw, raw meat makes you **sick**, and dishes cooked at the furnace carry a **food buff** for 10 to 60 minutes: never hungry, more health, more energy, faster energy refill, more crits, less tool wear, or armour. Being **full** is what heals you out of combat, replacing M13's stand-in. Going hungry long enough **starves** you.
 
-Part 1 is hunger, eating, buffs and every dish whose ingredients exist on Boundmore's worlds today. Part 2 is **farming**, which brings oats, rice and wheat (porridge, risotto, loaf, pie: ranks 3 to 5) and the berries of harder worlds.
+Part 1 is hunger, eating, buffs and every dish whose ingredients exist on Boundmore's worlds today. Part 2 is **farming**, which brings oats, rice and wheat (porridge, risotto and loaf: ranks 3 and 4; pies wait for power) and fixes Boundless's farming complaints.
 
 ## How Boundless did it
 
@@ -81,15 +81,45 @@ Elemental shielding and atmosphere protection foods wait for elements and atmosp
 - `--demo-ui food` shows the HUD with hunger, a buff and the food tooltips; screenshots.
 - Upgrade check from save version 8.
 
-## Part 2: farming (outline; detailed before it is built)
+## Part 2: farming
 
-Wild crops on every world (berry vines under foliage; tuber, oat, rice and wheat plants), seeds from harvesting them, sowing on soil (tilled soil with a tiller grows more), growth ticks once a game day through up to 8 stages, fertiliser, yield chances from the drop data (seed 1 + 0.35, crop 0.2 + 0.1 for grains), the Farming skill. Then bags of oats, rice, flour and baking powder, butter at the mixer, and the rank 3 to 5 dishes, teaching foods, hearty and springy foods. Crop growth is saved world state: it needs a format decision (an ADR) before building, and a question for Nathan on the farming complaints in `research/boundless-forum-feedback.md` (random growth, tilled soil untilling itself, hand replanting, low XP).
+*Detailed 2026-10-22. Nathan (2026-10-22): fix every farming complaint ("farming was implemented but never fully finished"); where Boundless's way is unknown, do what is best in the long run. How crops grow and are saved: ADR-0010.*
+
+### How Boundless did it (Testing 224, forum t/31046, t/31322; tuning 3.9)
+
+- Crops grow from seeds sown on (or, for vines, under) blocks; wild crops spawn on worlds and drop seeds and some yield. Organic crops: berry vines, tuber plants (three kinds), oats, rice, wheat; inorganic and decorative crops besides.
+- A crop ticks once a game day through up to 8 stages, each tick a dice roll; expected times run from about 2 to 4 hours (tubers) to days. Fertiliser raises the chance and is itself rolled away. Rice grows very slowly out of water. Tilled soil (hand tiller) improves growth and yield, but reverts. Harvesting a ripe crop drops its seed (always one, a chance of more) and its yield (a chance); an unripe one gives its seed back. Crop sowing levels (the Farming skill) gate the better crops.
+- Complaints (`research/boundless-forum-feedback.md`): random growth, fertiliser lost without effect, tilled soil untilling itself, replanting every harvest by hand, low XP.
+
+### Rules (part 2)
+
+13. **Crops** (`assets/crops.toml`, data): dewberry bush, tuber, waxy tuber, exotic tuber, oats, rice, wheat. Each has a seed item, a yield item, four stage blocks (`<crop>_1` to `<crop>_4`, props like the gathering plants; `_4` is ripe), a base time to ripen, the ground it is sown on, and the Farming level it needs. Boundless's berry vines hang under foliage; ours stand on soil until props can hang from a ceiling (a later change, noted in Non-goals).
+14. **Growth by the clock** (ADR-0010): stage = time since sowing over the time to ripen, split into four. Nothing is rolled. Times to ripen (**guesses**, from players' reports of 2 to 4 hours for tubers and "hours to days" for the rest): dewberry 3 h, tuber 3 h, waxy tuber 4 h, oats 4 h, exotic tuber 6 h, wheat 6 h, rice 6 h. Tilled soil takes a quarter off; rice not beside water takes four times as long (Boundless's rice rule, factor a **guess**). A ripe crop never withers.
+15. **Tilling**: a hand tiller (wood: crafting table, 2 timber, 1 stick, 1 foliage; metal: workbench, 3 copper or iron bars, 4 sticks, 1 cotton cloth, 200 spark, Toolmaking 1; Boundless's recipes and stats) swung at soil or turf with air above turns it into **tilled soil**, which stays tilled until broken. A tiller swung at a crop harvests it.
+16. **Sowing**: placing a seed on the top of soil, turf or tilled soil (rice also beside water counts) plants its crop at stage 1 above it. Turf becomes soil under a crop (Boundless). Needs the crop's Farming level. 1 XP a seed.
+17. **Harvesting**: breaking a crop. Unripe: its seed back. Ripe: its seed and a 35% chance of a second, its yield (dewberry and tuber 1 plus a 10% chance of another; waxy and exotic tubers and grains a 20% chance plus a 10% chance of another; Boundless's drop data), half again with tilled soil (**guess**); then it **replants itself** from one seed, keeping its conditions. XP: 4 a ripen hour (**guess**: a tuber 12, wheat 24). Wild crops (no record) drop the same ripe yield and do not replant.
+18. **Fertiliser**, when it arrives (it needs resins, a later milestone), halves the time left and lasts until harvest. The Farming Epic doubles its effect. Built into the record now; no recipe yet.
+19. **Wild crops** grow on new and existing planets' unsaved chunks (flora appended, as M11's were): tuber, dewberry and oats on turf everywhere; wheat on turf on tier 2 and 3; rice by water; waxy tuber on tier 2 and 3; exotic tuber on tier 3. Densities **guesses**.
+20. **Looking at a crop** shows its name, stage and time to ripe (asked of the server: `ClientMsg::LookCrop`, answered `ServerMsg::CropInfo`).
+21. **Foods unlocked by grain** (Boundless's recipes, tuning 3.9): bags of oats, rice and flour (extractor, 2 grain, Cooking 2, 3, 4); baking powder (extractor, 2 rock salt, 1 sackcloth, Cooking 4); butter (mixer, a bucket of milk, 100 spark, Cooking 5); the rank 3 dishes (porridge or risotto: mixed raw at the mixer, cooked at the furnace) and rank 4 loaves for every line in part 1, and teaching porridge and loaf (Studious). Raw unbaked dishes are food too (200 or 300, sick). Pies need power (power coils, with gems) and wait; so do dishes needing purified milk (charcoal is not in the game yet).
+22. **Formats**: `SAVE_VERSION` 10 (the `crops` table; version 9 opens with no crops), protocol 23.
+
+### Acceptance (part 2)
+
+- A tuber sown on tilled soil ripens in 2 h 15 min of universe time, whether or not anyone was near; two sown together ripen together.
+- Harvesting it gives a seed, its yield and XP, and it is growing again at stage 1.
+- Tilled soil stays tilled; a crop with no record is wild and does not replant.
+- A crop's stage survives a restart and catches up; breaking its block drops the record.
+- A bag of oats, a porridge and a loaf can be made from farmed grain.
+- `--demo-ui farm` shows a field at every stage and the crop info; screenshots.
+- Upgrade check from save version 9.
 
 ## Non-goals
 
 - Brews, bombs that heal, healing items (with brews); elemental shielding and atmosphere foods (with elements and atmospheres).
 - Glossy and juicy berries from foliage (no tier 4+ world yet); Hearty and Springy dishes come with farming or higher tiers.
 - Food decay; drinking water; thirst (Boundless had none).
+- Hanging crops (vines under foliage), inorganic and decorative crops, light as a crop condition, neighbour-block conditions, fertiliser's recipe (it needs resins).
 
 ## Measure in game (Nathan)
 
