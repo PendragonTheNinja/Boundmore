@@ -26,6 +26,8 @@ pub enum ToolClass {
     /// Repairs machines (milestone 15): no damage to blocks; each hit on a
     /// machine removes `ToolStats::repair` wear.
     Spanner,
+    /// Tills soil and turf for crops, and harvests crops (milestone 16).
+    Tiller,
 }
 
 impl ToolClass {

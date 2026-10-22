@@ -153,6 +153,10 @@ pub struct BlockDef {
     /// XP for placing one inside your own claim.
     #[serde(default)]
     pub build_xp: u16,
+    /// A crop's stage block (milestone 16): 1 sown to 4 ripe, 0 for
+    /// anything else (`crops`).
+    #[serde(default)]
+    pub crop: u8,
 }
 
 /// A block's health category [tuning 2.2]: soft 800 (soil, sand, foliage),

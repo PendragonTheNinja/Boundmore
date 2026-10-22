@@ -955,3 +955,366 @@ seconds = 60.0
 xp = 5
 wear = 35
 skill = { name = "food_crafting", level = 2 }
+
+# Milestone 16 part 2: farming and the foods grain unlocks (tuning 3.9,
+# Boundless's recipe data, single craft). Raw dishes are mixed at the mixer
+# and cooked at the furnace. Mixer wear is a guess (10). Pies need power and
+# wait for power coils.
+
+[[recipe]]
+output = "wood_tiller"
+inputs = [["timber", 2], ["stick", 1], ["foliage", 1]]
+station = "crafting_table"
+seconds = 10.0
+xp = 2
+
+[[recipe]]
+output = "metal_tiller"
+inputs = [["copper_ingot", 3], ["stick", 4], ["cotton_cloth", 1]]
+station = "workbench"
+seconds = 240.0
+spark = 200
+xp = 38
+wear = 11
+skill = { name = "tool_crafting", level = 1 }
+
+[[recipe]]
+output = "metal_tiller"
+inputs = [["iron_ingot", 3], ["stick", 4], ["cotton_cloth", 1]]
+station = "workbench"
+seconds = 240.0
+spark = 200
+xp = 38
+wear = 11
+skill = { name = "tool_crafting", level = 1 }
+
+[[recipe]]
+output = "oat_bag"
+inputs = [["oat_grain", 2]]
+station = "extractor"
+seconds = 60.0
+xp = 4
+wear = 7
+skill = { name = "food_crafting", level = 2 }
+
+[[recipe]]
+output = "rice_bag"
+inputs = [["rice_grain", 2]]
+station = "extractor"
+seconds = 60.0
+xp = 4
+wear = 7
+skill = { name = "food_crafting", level = 3 }
+
+[[recipe]]
+output = "flour"
+inputs = [["wheat_grain", 2]]
+station = "extractor"
+seconds = 60.0
+xp = 4
+wear = 7
+skill = { name = "food_crafting", level = 4 }
+
+[[recipe]]
+output = "baking_powder"
+inputs = [["rock_salt", 2], ["sackcloth", 1]]
+station = "extractor"
+seconds = 60.0
+xp = 6
+wear = 7
+skill = { name = "food_crafting", level = 4 }
+
+[[recipe]]
+output = "raw_dewberry_porridge"
+inputs = [["dewberry", 6], ["oat_bag", 1]]
+station = "mixer"
+seconds = 60.0
+xp = 6
+wear = 10
+skill = { name = "food_crafting", level = 3 }
+
+[[recipe]]
+output = "dewberry_porridge"
+inputs = [["raw_dewberry_porridge", 1]]
+station = "furnace"
+seconds = 120.0
+heat = 100
+xp = 10
+skill = { name = "food_crafting", level = 3 }
+
+[[recipe]]
+output = "raw_dewberry_loaf"
+inputs = [["dewberry", 8], ["flour", 1], ["baking_powder", 1]]
+station = "mixer"
+seconds = 80.0
+xp = 8
+wear = 10
+skill = { name = "food_crafting", level = 4 }
+
+[[recipe]]
+output = "dewberry_loaf"
+inputs = [["raw_dewberry_loaf", 1]]
+station = "furnace"
+seconds = 240.0
+heat = 200
+xp = 18
+skill = { name = "food_crafting", level = 4 }
+
+[[recipe]]
+output = "raw_tuber_risotto"
+inputs = [["tuber", 6], ["rice_bag", 1], ["rock_salt", 1]]
+station = "mixer"
+seconds = 80.0
+xp = 7
+wear = 10
+skill = { name = "food_crafting", level = 3 }
+
+[[recipe]]
+output = "tuber_risotto"
+inputs = [["raw_tuber_risotto", 1]]
+station = "furnace"
+seconds = 180.0
+heat = 100
+xp = 12
+skill = { name = "food_crafting", level = 3 }
+
+[[recipe]]
+output = "raw_tuber_loaf"
+inputs = [["tuber", 8], ["flour", 1], ["baking_powder", 1]]
+station = "mixer"
+seconds = 120.0
+spark = 200
+xp = 12
+wear = 10
+skill = { name = "food_crafting", level = 4 }
+
+[[recipe]]
+output = "tuber_loaf"
+inputs = [["raw_tuber_loaf", 1]]
+station = "furnace"
+seconds = 300.0
+heat = 200
+xp = 22
+skill = { name = "food_crafting", level = 4 }
+
+[[recipe]]
+output = "raw_meat_risotto"
+inputs = [["raw_meat", 6], ["rice_bag", 1], ["rock_salt", 1]]
+station = "mixer"
+seconds = 120.0
+xp = 10
+wear = 10
+skill = { name = "food_crafting", level = 3 }
+
+[[recipe]]
+output = "meat_risotto"
+inputs = [["raw_meat_risotto", 1]]
+station = "furnace"
+seconds = 240.0
+heat = 100
+xp = 16
+skill = { name = "food_crafting", level = 3 }
+
+[[recipe]]
+output = "raw_meat_loaf"
+inputs = [["raw_meat", 8], ["flour", 1], ["baking_powder", 1]]
+station = "mixer"
+seconds = 160.0
+spark = 200
+xp = 14
+wear = 10
+skill = { name = "food_crafting", level = 4 }
+
+[[recipe]]
+output = "meat_loaf"
+inputs = [["raw_meat_loaf", 1]]
+station = "furnace"
+seconds = 360.0
+heat = 200
+xp = 25
+skill = { name = "food_crafting", level = 4 }
+
+[[recipe]]
+output = "raw_lively_risotto"
+inputs = [["waxy_tuber", 6], ["rice_bag", 1], ["rock_salt", 1]]
+station = "mixer"
+seconds = 80.0
+xp = 8
+wear = 10
+skill = { name = "food_crafting", level = 3 }
+
+[[recipe]]
+output = "lively_risotto"
+inputs = [["raw_lively_risotto", 1]]
+station = "furnace"
+seconds = 180.0
+heat = 100
+xp = 12
+skill = { name = "food_crafting", level = 3 }
+
+[[recipe]]
+output = "raw_lively_loaf"
+inputs = [["waxy_tuber", 8], ["flour", 1], ["baking_powder", 1]]
+station = "mixer"
+seconds = 120.0
+spark = 200
+xp = 12
+wear = 10
+skill = { name = "food_crafting", level = 4 }
+
+[[recipe]]
+output = "lively_loaf"
+inputs = [["raw_lively_loaf", 1]]
+station = "furnace"
+seconds = 300.0
+heat = 200
+xp = 22
+skill = { name = "food_crafting", level = 4 }
+
+[[recipe]]
+output = "raw_keen_risotto"
+inputs = [["lean_meat", 6], ["rice_bag", 1], ["rock_salt", 1]]
+station = "mixer"
+seconds = 80.0
+xp = 10
+wear = 10
+skill = { name = "food_crafting", level = 3 }
+
+[[recipe]]
+output = "keen_risotto"
+inputs = [["raw_keen_risotto", 1]]
+station = "furnace"
+seconds = 180.0
+heat = 100
+xp = 15
+skill = { name = "food_crafting", level = 3 }
+
+[[recipe]]
+output = "raw_keen_loaf"
+inputs = [["lean_meat", 8], ["flour", 1], ["baking_powder", 1]]
+station = "mixer"
+seconds = 120.0
+spark = 200
+xp = 15
+wear = 10
+skill = { name = "food_crafting", level = 4 }
+
+[[recipe]]
+output = "keen_loaf"
+inputs = [["raw_keen_loaf", 1]]
+station = "furnace"
+seconds = 300.0
+heat = 200
+xp = 24
+skill = { name = "food_crafting", level = 4 }
+
+[[recipe]]
+output = "raw_gentle_risotto"
+inputs = [["exotic_tuber", 6], ["rice_bag", 1], ["rock_salt", 1]]
+station = "mixer"
+seconds = 80.0
+xp = 10
+wear = 10
+skill = { name = "food_crafting", level = 3 }
+
+[[recipe]]
+output = "gentle_risotto"
+inputs = [["raw_gentle_risotto", 1]]
+station = "furnace"
+seconds = 180.0
+heat = 100
+xp = 15
+skill = { name = "food_crafting", level = 3 }
+
+[[recipe]]
+output = "raw_gentle_loaf"
+inputs = [["exotic_tuber", 8], ["flour", 1], ["baking_powder", 1]]
+station = "mixer"
+seconds = 120.0
+spark = 200
+xp = 15
+wear = 10
+skill = { name = "food_crafting", level = 4 }
+
+[[recipe]]
+output = "gentle_loaf"
+inputs = [["raw_gentle_loaf", 1]]
+station = "furnace"
+seconds = 300.0
+heat = 200
+xp = 24
+skill = { name = "food_crafting", level = 4 }
+
+[[recipe]]
+output = "raw_guarding_risotto"
+inputs = [["prime_meat", 6], ["rice_bag", 2], ["rock_salt", 1]]
+station = "mixer"
+seconds = 120.0
+xp = 14
+wear = 10
+skill = { name = "food_crafting", level = 3 }
+
+[[recipe]]
+output = "guarding_risotto"
+inputs = [["raw_guarding_risotto", 1]]
+station = "furnace"
+seconds = 240.0
+heat = 100
+xp = 20
+skill = { name = "food_crafting", level = 3 }
+
+[[recipe]]
+output = "raw_guarding_loaf"
+inputs = [["prime_meat", 8], ["flour", 2], ["baking_powder", 2]]
+station = "mixer"
+seconds = 160.0
+spark = 200
+xp = 20
+wear = 10
+skill = { name = "food_crafting", level = 4 }
+
+[[recipe]]
+output = "guarding_loaf"
+inputs = [["raw_guarding_loaf", 1]]
+station = "furnace"
+seconds = 360.0
+heat = 200
+xp = 30
+skill = { name = "food_crafting", level = 4 }
+
+[[recipe]]
+output = "raw_wise_porridge"
+inputs = [["sweet_bean", 2], ["sugar", 1], ["oat_bag", 1]]
+station = "mixer"
+seconds = 80.0
+xp = 8
+wear = 10
+skill = { name = "food_crafting", level = 2 }
+
+[[recipe]]
+output = "wise_porridge"
+inputs = [["raw_wise_porridge", 1]]
+station = "furnace"
+seconds = 180.0
+heat = 100
+xp = 12
+skill = { name = "food_crafting", level = 2 }
+
+[[recipe]]
+output = "raw_wise_loaf"
+inputs = [["sweet_bean", 8], ["sugar", 2], ["flour", 2], ["baking_powder", 2]]
+station = "mixer"
+seconds = 160.0
+spark = 200
+xp = 18
+wear = 10
+skill = { name = "food_crafting", level = 4 }
+
+[[recipe]]
+output = "wise_loaf"
+inputs = [["raw_wise_loaf", 1]]
+station = "furnace"
+seconds = 360.0
+heat = 200
+xp = 28
+skill = { name = "food_crafting", level = 4 }

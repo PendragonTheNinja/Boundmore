@@ -591,3 +591,206 @@ name = "syrup"
 [[item]]
 name = "sugar"
 display = "Bag of Sugar"
+
+# Milestone 16 part 2: farming. Seeds are their crop's first stage block
+# (placeable, so they have items of their own); these are the grains and
+# tools. Tillers are Boundless's hoes: wood 500 uses at action speed 20,
+# metal 700 at 30, energy 6 and 8 a swing (their data).
+[[item]]
+name = "oat_grain"
+
+[[item]]
+name = "wheat_grain"
+
+[[item]]
+name = "rice_grain"
+
+[[item]]
+name = "wood_tiller"
+display = "Wood Hand Tiller"
+stack = 1
+tool = { class = "tiller", damage = 50, action_speed = 20.0, durability = 500, energy = 6 }
+
+[[item]]
+name = "metal_tiller"
+display = "Metal Hand Tiller"
+stack = 1
+tool = { class = "tiller", damage = 50, action_speed = 30.0, durability = 700, energy = 8 }
+
+# Milestone 16 part 2: bags, raw dishes (sick) and rank 3 and 4 dishes
+# (Boundless's values, tuning 3.9; Wise is Boundless's Teaching line).
+[[item]]
+name = "oat_bag"
+display = "Bag of Oats"
+
+[[item]]
+name = "rice_bag"
+display = "Bag of Rice"
+
+[[item]]
+name = "flour"
+display = "Bag of Flour"
+
+[[item]]
+name = "baking_powder"
+display = "Bag of Baking Powder"
+
+[[item]]
+name = "raw_dewberry_porridge"
+display = "Raw Berry Porridge"
+food = { hunger = 200, sick = true }
+
+[[item]]
+name = "dewberry_porridge"
+display = "Berry Porridge"
+food = { hunger = 1200, buff = "refreshed", rank = 3, minutes = 30 }
+
+[[item]]
+name = "raw_dewberry_loaf"
+display = "Raw Berry Loaf"
+food = { hunger = 300, sick = true }
+
+[[item]]
+name = "dewberry_loaf"
+display = "Berry Loaf"
+food = { hunger = 1600, buff = "refreshed", rank = 4, minutes = 30 }
+
+[[item]]
+name = "raw_tuber_risotto"
+display = "Raw Tuber Risotto"
+food = { hunger = 200, sick = true }
+
+[[item]]
+name = "tuber_risotto"
+display = "Tuber Risotto"
+food = { hunger = 3500 }
+
+[[item]]
+name = "raw_tuber_loaf"
+display = "Raw Tuber Loaf"
+food = { hunger = 300, sick = true }
+
+[[item]]
+name = "tuber_loaf"
+display = "Tuber Loaf"
+food = { hunger = 4500 }
+
+[[item]]
+name = "raw_meat_risotto"
+display = "Raw Meat Risotto"
+food = { hunger = 200, sick = true }
+
+[[item]]
+name = "meat_risotto"
+display = "Meat Risotto"
+food = { hunger = 2400, buff = "sated", rank = 3, minutes = 30 }
+
+[[item]]
+name = "raw_meat_loaf"
+display = "Raw Meat Loaf"
+food = { hunger = 300, sick = true }
+
+[[item]]
+name = "meat_loaf"
+display = "Meat Loaf"
+food = { hunger = 3200, buff = "sated", rank = 4, minutes = 40 }
+
+[[item]]
+name = "raw_lively_risotto"
+display = "Raw Lively Risotto"
+food = { hunger = 200, sick = true }
+
+[[item]]
+name = "lively_risotto"
+display = "Lively Risotto"
+food = { hunger = 2100, buff = "lively", rank = 3, minutes = 30 }
+
+[[item]]
+name = "raw_lively_loaf"
+display = "Raw Lively Loaf"
+food = { hunger = 300, sick = true }
+
+[[item]]
+name = "lively_loaf"
+display = "Lively Loaf"
+food = { hunger = 2800, buff = "lively", rank = 4, minutes = 30 }
+
+[[item]]
+name = "raw_keen_risotto"
+display = "Raw Keen Risotto"
+food = { hunger = 200, sick = true }
+
+[[item]]
+name = "keen_risotto"
+display = "Keen Risotto"
+food = { hunger = 3000, buff = "keen", rank = 3, minutes = 30 }
+
+[[item]]
+name = "raw_keen_loaf"
+display = "Raw Keen Loaf"
+food = { hunger = 300, sick = true }
+
+[[item]]
+name = "keen_loaf"
+display = "Keen Loaf"
+food = { hunger = 4000, buff = "keen", rank = 4, minutes = 30 }
+
+[[item]]
+name = "raw_gentle_risotto"
+display = "Raw Gentle Risotto"
+food = { hunger = 200, sick = true }
+
+[[item]]
+name = "gentle_risotto"
+display = "Gentle Risotto"
+food = { hunger = 2100, buff = "gentle", rank = 3, minutes = 30 }
+
+[[item]]
+name = "raw_gentle_loaf"
+display = "Raw Gentle Loaf"
+food = { hunger = 300, sick = true }
+
+[[item]]
+name = "gentle_loaf"
+display = "Gentle Loaf"
+food = { hunger = 2800, buff = "gentle", rank = 4, minutes = 30 }
+
+[[item]]
+name = "raw_guarding_risotto"
+display = "Raw Guarding Risotto"
+food = { hunger = 200, sick = true }
+
+[[item]]
+name = "guarding_risotto"
+display = "Guarding Risotto"
+food = { hunger = 3000, buff = "guarded", rank = 3, minutes = 30 }
+
+[[item]]
+name = "raw_guarding_loaf"
+display = "Raw Guarding Loaf"
+food = { hunger = 300, sick = true }
+
+[[item]]
+name = "guarding_loaf"
+display = "Guarding Loaf"
+food = { hunger = 4000, buff = "guarded", rank = 4, minutes = 30 }
+
+[[item]]
+name = "raw_wise_porridge"
+display = "Raw Wise Porridge"
+food = { hunger = 200, sick = true }
+
+[[item]]
+name = "wise_porridge"
+display = "Wise Porridge"
+food = { hunger = 1000, buff = "studious", rank = 1, minutes = 30 }
+
+[[item]]
+name = "raw_wise_loaf"
+display = "Raw Wise Loaf"
+food = { hunger = 300, sick = true }
+
+[[item]]
+name = "wise_loaf"
+display = "Wise Loaf"
+food = { hunger = 2000, buff = "studious", rank = 3, minutes = 30 }

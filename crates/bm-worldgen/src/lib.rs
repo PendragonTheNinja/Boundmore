@@ -1288,7 +1288,8 @@ mod tests {
 
     /// A kind's settings as planets made before M15 saved them: without the
     /// relic cache (every kind) and silver (tier 3) appended to the ores.
-    fn before_m15(mut cfg: PlanetGenConfig) -> PlanetGenConfig {
+    fn before_m15(cfg: PlanetGenConfig) -> PlanetGenConfig {
+        let mut cfg = before_m16(cfg);
         if cfg.ores.last().map(|o| o.block.as_str()) == Some("silver_seam") {
             cfg.ores.pop();
         }
@@ -1296,6 +1297,29 @@ mod tests {
         cfg.ores.pop();
         cfg
     }
+
+    /// A kind's settings as planets made before M16 part 2 saved them:
+    /// without the wild crops appended to the flora.
+    fn before_m16(mut cfg: PlanetGenConfig) -> PlanetGenConfig {
+        let n = cfg
+            .flora
+            .iter()
+            .rposition(|f| !CROP_FLORA.contains(&f.block.as_str()))
+            .map_or(0, |i| i + 1);
+        assert!(n < cfg.flora.len(), "wild crops appended");
+        cfg.flora.truncate(n);
+        cfg
+    }
+
+    const CROP_FLORA: [&str; 7] = [
+        "tuber_plant_4",
+        "dewberry_bush_4",
+        "oats_4",
+        "rice_4",
+        "waxy_tuber_plant_4",
+        "wheat_4",
+        "exotic_tuber_plant_4",
+    ];
 
     /// A kind's settings as planets made before M11 saved them: without the
     /// relic seam at the end of the ores, and with no flora.
@@ -1553,13 +1577,53 @@ mod tests {
     // Re-pinned for M15's appended ores (relic caches, silver) without a
     // version bump: planets saved before keep their terrain (`PINNED_M14`,
     // checked in `appending_m15_only_turns_rock_into_relic_caches_and_silver`).
+    // Re-pinned for M16 part 2's wild crops (appended flora) without a
+    // version bump: planets saved before keep their terrain (`PINNED_M15`,
+    // checked in `appending_m16_only_grows_crops_on_their_ground`).
     const PINNED: [(&str, u64); 5] = [
         ("default", 0x6bc9_e59d_8877_7736),
+        ("temperate", 0x22cb_b64b_0855_1daa),
+        ("arid", 0x31a0_b625_c37a_056f),
+        ("frozen", 0xb412_fff4_a47a_bd70),
+        ("lush", 0xb327_5465_e360_86ec),
+    ];
+    const PINNED_M15: [(&str, u64); 4] = [
         ("temperate", 0xa6ab_8a36_dcb2_7da0),
         ("arid", 0x31a0_b625_c37a_056f),
         ("frozen", 0xb412_fff4_a47a_bd70),
         ("lush", 0xab67_cc12_6f1d_84d9),
     ];
+
+    /// M16 part 2 appended wild crops to every kind's flora: an existing
+    /// planet's unsaved chunks may only turn air into a ripe crop.
+    #[test]
+    fn appending_m16_only_grows_crops_on_their_ground() {
+        let blocks = BlockRegistry::builtin();
+        let kinds = PlanetKinds::builtin(&blocks);
+        let crops: Vec<BlockId> = CROP_FLORA.iter().map(|n| id(n)).collect();
+        let mut grown = 0;
+        for k in &kinds.kinds {
+            let with = k.generation(42);
+            let shape = PlanetShape::new(64, 12);
+            let old = Generator::new(shape, before_m16(with.clone()), &blocks).unwrap();
+            let new = Generator::new(shape, with, &blocks).unwrap();
+            let pinned = PINNED_M15.iter().find(|(n, _)| *n == k.name).expect("pinned").1;
+            assert_eq!(fingerprint(&old), pinned, "{} before M16 keeps its terrain", k.name);
+            for x in 0..16 {
+                for y in 0..6 {
+                    let pos = ChunkPos::new(x * 3, y, x * 7);
+                    let (a, b) = (old.generate(pos).to_dense_states(), new.generate(pos).to_dense_states());
+                    for (a, b) in a.iter().zip(&b) {
+                        if a != b {
+                            assert!(a.id.is_air() && crops.contains(&b.id), "{}: {a:?} became {b:?}", k.name);
+                            grown += 1;
+                        }
+                    }
+                }
+            }
+        }
+        assert!(grown > 0, "some wild crops grew");
+    }
     const PINNED_M14: [(&str, u64); 4] = [
         ("temperate", 0xb7f4_90e8_ceaf_2736),
         ("arid", 0x143e_1e07_0a9f_c1e7),
@@ -1620,7 +1684,7 @@ mod tests {
             let with = k.generation(42);
             let shape = PlanetShape::new(64, 12);
             let old = Generator::new(shape, before_m15(with.clone()), &blocks).unwrap();
-            let new = Generator::new(shape, with, &blocks).unwrap();
+            let new = Generator::new(shape, before_m16(with), &blocks).unwrap();
             let pinned = PINNED_M14.iter().find(|(n, _)| *n == k.name).expect("pinned").1;
             assert_eq!(fingerprint(&old), pinned, "{} before M15 keeps its terrain", k.name);
             let (mut caches, mut silvers) = (0, 0);

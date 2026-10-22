@@ -192,6 +192,25 @@ on = ["stone", "deep_stone", "sandstone", "soil"]
 density = 0.006
 cave = true
 min_depth = 50
+# Milestone 16 part 2: wild crops (densities guesses), appended so
+# existing planets' unsaved chunks gain them and saved terrain is untouched.
+[[kind.generation.flora]]
+block = "tuber_plant_4"
+on = ["turf"]
+density = 0.0015
+[[kind.generation.flora]]
+block = "dewberry_bush_4"
+on = ["turf"]
+density = 0.0012
+[[kind.generation.flora]]
+block = "oats_4"
+on = ["turf"]
+density = 0.0012
+[[kind.generation.flora]]
+block = "rice_4"
+on = ["turf", "sand"]
+density = 0.006
+near_water = true
 
 [[kind]]
 name = "arid"
@@ -328,6 +347,33 @@ on = ["stone", "deep_stone", "sandstone", "soil"]
 density = 0.006
 cave = true
 min_depth = 50
+# Milestone 16 part 2: wild crops (densities guesses), appended so
+# existing planets' unsaved chunks gain them and saved terrain is untouched.
+[[kind.generation.flora]]
+block = "tuber_plant_4"
+on = ["turf"]
+density = 0.0015
+[[kind.generation.flora]]
+block = "dewberry_bush_4"
+on = ["turf"]
+density = 0.0012
+[[kind.generation.flora]]
+block = "oats_4"
+on = ["turf"]
+density = 0.0012
+[[kind.generation.flora]]
+block = "rice_4"
+on = ["turf", "sand"]
+density = 0.006
+near_water = true
+[[kind.generation.flora]]
+block = "waxy_tuber_plant_4"
+on = ["turf"]
+density = 0.0012
+[[kind.generation.flora]]
+block = "wheat_4"
+on = ["turf"]
+density = 0.0012
 
 [[kind]]
 name = "frozen"
@@ -453,6 +499,33 @@ on = ["stone", "deep_stone", "sandstone", "soil"]
 density = 0.006
 cave = true
 min_depth = 50
+# Milestone 16 part 2: wild crops (densities guesses), appended so
+# existing planets' unsaved chunks gain them and saved terrain is untouched.
+[[kind.generation.flora]]
+block = "tuber_plant_4"
+on = ["turf"]
+density = 0.0015
+[[kind.generation.flora]]
+block = "dewberry_bush_4"
+on = ["turf"]
+density = 0.0012
+[[kind.generation.flora]]
+block = "oats_4"
+on = ["turf"]
+density = 0.0012
+[[kind.generation.flora]]
+block = "rice_4"
+on = ["turf", "sand"]
+density = 0.006
+near_water = true
+[[kind.generation.flora]]
+block = "waxy_tuber_plant_4"
+on = ["turf"]
+density = 0.0012
+[[kind.generation.flora]]
+block = "wheat_4"
+on = ["turf"]
+density = 0.0012
 
 [[kind]]
 name = "lush"
@@ -613,3 +686,34 @@ on = ["stone", "deep_stone", "sandstone", "soil"]
 density = 0.006
 cave = true
 min_depth = 50
+# Milestone 16 part 2: wild crops (densities guesses), appended so
+# existing planets' unsaved chunks gain them and saved terrain is untouched.
+[[kind.generation.flora]]
+block = "tuber_plant_4"
+on = ["turf"]
+density = 0.0015
+[[kind.generation.flora]]
+block = "dewberry_bush_4"
+on = ["turf"]
+density = 0.0012
+[[kind.generation.flora]]
+block = "oats_4"
+on = ["turf"]
+density = 0.0012
+[[kind.generation.flora]]
+block = "rice_4"
+on = ["turf", "sand"]
+density = 0.006
+near_water = true
+[[kind.generation.flora]]
+block = "waxy_tuber_plant_4"
+on = ["turf"]
+density = 0.0012
+[[kind.generation.flora]]
+block = "wheat_4"
+on = ["turf"]
+density = 0.0012
+[[kind.generation.flora]]
+block = "exotic_tuber_plant_4"
+on = ["turf"]
+density = 0.001

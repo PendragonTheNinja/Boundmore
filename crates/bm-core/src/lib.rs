@@ -9,6 +9,7 @@ pub mod colours;
 pub mod combat;
 pub mod coords;
 pub mod creatures;
+pub mod crops;
 pub mod energy;
 pub mod food;
 pub mod inventory;

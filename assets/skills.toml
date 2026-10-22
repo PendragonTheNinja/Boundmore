@@ -243,8 +243,8 @@ name = "Farming"
 category = "crafting"
 ranks = 3
 cost = 1
-effect = "later"
-text = "Grow crops (comes with farming)"
+effect = "farming"
+text = "Sow better crops: rank 1 oats and waxy tubers, rank 2 wheat, rice and exotic tubers"
 
 [[skill]]
 id = "hammer_epic"
@@ -543,8 +543,8 @@ name = "Green Thumb"
 category = "epic2"
 ranks = 1
 cost = 5
-effect = "later"
-text = "More from crops (comes with farming)"
+effect = "farming_epic"
+text = "+2 Farming, 20% more from harvests, fertiliser works twice as hard"
 
 [[skill]]
 id = "volatile_protection"

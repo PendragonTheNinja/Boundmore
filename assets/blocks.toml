@@ -1328,3 +1328,536 @@ health = "soft"
 textures = { all = "spark_link" }
 material = "rock"
 build_xp = 8
+
+# Milestone 16 part 2: farming. Tilled soil stays tilled until broken
+# (fixing Boundless's reverting soil).
+[[block]]
+name = "tilled_soil"
+color = [96, 70, 50]
+solid = true
+opaque = true
+translucent = false
+breakable = true
+placeable = false
+health = "soft"
+textures = { top = "tilled_soil", side = "soil", bottom = "soil" }
+material = "soil"
+drops = "soil"
+mine_xp = 2
+build_xp = 2
+
+# Crop stages (assets/crops.toml): the first is the seed, placed like a
+# prop; unripe stages give the seed back; a ripe one wild (with no crop
+# record) gives a seed, a chance of another and its yield. Farmed ripe
+# crops are harvested by the server's crop rules and replant themselves.
+
+[[block]]
+name = "dewberry_seed"
+colourable = false
+color = [176, 52, 74]
+solid = false
+opaque = false
+translucent = false
+breakable = true
+placeable = true
+health = "prop"
+textures = { all = "dewberry_1" }
+material = "plant"
+mount = "floor"
+model = "plant"
+crop = 1
+build_xp = 1
+
+[[block]]
+name = "dewberry_bush_2"
+colourable = false
+color = [176, 52, 74]
+solid = false
+opaque = false
+translucent = false
+breakable = true
+placeable = false
+health = "prop"
+textures = { all = "dewberry_2" }
+material = "plant"
+mount = "floor"
+model = "plant"
+crop = 2
+drops = "dewberry_seed"
+build_xp = 0
+
+[[block]]
+name = "dewberry_bush_3"
+colourable = false
+color = [176, 52, 74]
+solid = false
+opaque = false
+translucent = false
+breakable = true
+placeable = false
+health = "prop"
+textures = { all = "dewberry_3" }
+material = "plant"
+mount = "floor"
+model = "plant"
+crop = 3
+drops = "dewberry_seed"
+build_xp = 0
+
+[[block]]
+name = "dewberry_bush_4"
+colourable = false
+color = [176, 52, 74]
+solid = false
+opaque = false
+translucent = false
+breakable = true
+placeable = false
+health = "prop"
+textures = { all = "dewberry_4" }
+material = "plant"
+mount = "floor"
+model = "plant"
+crop = 4
+drops = "dewberry_seed"
+bonus = [{ item = "dewberry_seed", per_tier = [0.35, 0.35, 0.35, 0.35, 0.35, 0.35, 0.35, 0.35] }, { item = "dewberry", per_tier = [1.1, 1.1, 1.1, 1.1, 1.1, 1.1, 1.1, 1.1] }]
+mine_xp = 4
+build_xp = 0
+
+[[block]]
+name = "tuber_bulb"
+colourable = false
+color = [154, 106, 64]
+solid = false
+opaque = false
+translucent = false
+breakable = true
+placeable = true
+health = "prop"
+textures = { all = "tuber_1" }
+material = "plant"
+mount = "floor"
+model = "plant"
+crop = 1
+build_xp = 1
+
+[[block]]
+name = "tuber_plant_2"
+colourable = false
+color = [154, 106, 64]
+solid = false
+opaque = false
+translucent = false
+breakable = true
+placeable = false
+health = "prop"
+textures = { all = "tuber_2" }
+material = "plant"
+mount = "floor"
+model = "plant"
+crop = 2
+drops = "tuber_bulb"
+build_xp = 0
+
+[[block]]
+name = "tuber_plant_3"
+colourable = false
+color = [154, 106, 64]
+solid = false
+opaque = false
+translucent = false
+breakable = true
+placeable = false
+health = "prop"
+textures = { all = "tuber_3" }
+material = "plant"
+mount = "floor"
+model = "plant"
+crop = 3
+drops = "tuber_bulb"
+build_xp = 0
+
+[[block]]
+name = "tuber_plant_4"
+colourable = false
+color = [154, 106, 64]
+solid = false
+opaque = false
+translucent = false
+breakable = true
+placeable = false
+health = "prop"
+textures = { all = "tuber_4" }
+material = "plant"
+mount = "floor"
+model = "plant"
+crop = 4
+drops = "tuber_bulb"
+bonus = [{ item = "tuber_bulb", per_tier = [0.35, 0.35, 0.35, 0.35, 0.35, 0.35, 0.35, 0.35] }, { item = "tuber", per_tier = [1.1, 1.1, 1.1, 1.1, 1.1, 1.1, 1.1, 1.1] }]
+mine_xp = 4
+build_xp = 0
+
+[[block]]
+name = "waxy_tuber_bulb"
+colourable = false
+color = [184, 138, 48]
+solid = false
+opaque = false
+translucent = false
+breakable = true
+placeable = true
+health = "prop"
+textures = { all = "waxy_tuber_1" }
+material = "plant"
+mount = "floor"
+model = "plant"
+crop = 1
+build_xp = 1
+
+[[block]]
+name = "waxy_tuber_plant_2"
+colourable = false
+color = [184, 138, 48]
+solid = false
+opaque = false
+translucent = false
+breakable = true
+placeable = false
+health = "prop"
+textures = { all = "waxy_tuber_2" }
+material = "plant"
+mount = "floor"
+model = "plant"
+crop = 2
+drops = "waxy_tuber_bulb"
+build_xp = 0
+
+[[block]]
+name = "waxy_tuber_plant_3"
+colourable = false
+color = [184, 138, 48]
+solid = false
+opaque = false
+translucent = false
+breakable = true
+placeable = false
+health = "prop"
+textures = { all = "waxy_tuber_3" }
+material = "plant"
+mount = "floor"
+model = "plant"
+crop = 3
+drops = "waxy_tuber_bulb"
+build_xp = 0
+
+[[block]]
+name = "waxy_tuber_plant_4"
+colourable = false
+color = [184, 138, 48]
+solid = false
+opaque = false
+translucent = false
+breakable = true
+placeable = false
+health = "prop"
+textures = { all = "waxy_tuber_4" }
+material = "plant"
+mount = "floor"
+model = "plant"
+crop = 4
+drops = "waxy_tuber_bulb"
+bonus = [{ item = "waxy_tuber_bulb", per_tier = [0.35, 0.35, 0.35, 0.35, 0.35, 0.35, 0.35, 0.35] }, { item = "waxy_tuber", per_tier = [0.3, 0.3, 0.3, 0.3, 0.3, 0.3, 0.3, 0.3] }]
+mine_xp = 4
+build_xp = 0
+
+[[block]]
+name = "exotic_tuber_bulb"
+colourable = false
+color = [106, 58, 122]
+solid = false
+opaque = false
+translucent = false
+breakable = true
+placeable = true
+health = "prop"
+textures = { all = "exotic_tuber_1" }
+material = "plant"
+mount = "floor"
+model = "plant"
+crop = 1
+build_xp = 1
+
+[[block]]
+name = "exotic_tuber_plant_2"
+colourable = false
+color = [106, 58, 122]
+solid = false
+opaque = false
+translucent = false
+breakable = true
+placeable = false
+health = "prop"
+textures = { all = "exotic_tuber_2" }
+material = "plant"
+mount = "floor"
+model = "plant"
+crop = 2
+drops = "exotic_tuber_bulb"
+build_xp = 0
+
+[[block]]
+name = "exotic_tuber_plant_3"
+colourable = false
+color = [106, 58, 122]
+solid = false
+opaque = false
+translucent = false
+breakable = true
+placeable = false
+health = "prop"
+textures = { all = "exotic_tuber_3" }
+material = "plant"
+mount = "floor"
+model = "plant"
+crop = 3
+drops = "exotic_tuber_bulb"
+build_xp = 0
+
+[[block]]
+name = "exotic_tuber_plant_4"
+colourable = false
+color = [106, 58, 122]
+solid = false
+opaque = false
+translucent = false
+breakable = true
+placeable = false
+health = "prop"
+textures = { all = "exotic_tuber_4" }
+material = "plant"
+mount = "floor"
+model = "plant"
+crop = 4
+drops = "exotic_tuber_bulb"
+bonus = [{ item = "exotic_tuber_bulb", per_tier = [0.35, 0.35, 0.35, 0.35, 0.35, 0.35, 0.35, 0.35] }, { item = "exotic_tuber", per_tier = [0.3, 0.3, 0.3, 0.3, 0.3, 0.3, 0.3, 0.3] }]
+mine_xp = 4
+build_xp = 0
+
+[[block]]
+name = "oat_seed"
+colourable = false
+color = [200, 180, 110]
+solid = false
+opaque = false
+translucent = false
+breakable = true
+placeable = true
+health = "prop"
+textures = { all = "oats_1" }
+material = "plant"
+mount = "floor"
+model = "plant"
+crop = 1
+build_xp = 1
+
+[[block]]
+name = "oats_2"
+colourable = false
+color = [200, 180, 110]
+solid = false
+opaque = false
+translucent = false
+breakable = true
+placeable = false
+health = "prop"
+textures = { all = "oats_2" }
+material = "plant"
+mount = "floor"
+model = "plant"
+crop = 2
+drops = "oat_seed"
+build_xp = 0
+
+[[block]]
+name = "oats_3"
+colourable = false
+color = [200, 180, 110]
+solid = false
+opaque = false
+translucent = false
+breakable = true
+placeable = false
+health = "prop"
+textures = { all = "oats_3" }
+material = "plant"
+mount = "floor"
+model = "plant"
+crop = 3
+drops = "oat_seed"
+build_xp = 0
+
+[[block]]
+name = "oats_4"
+colourable = false
+color = [200, 180, 110]
+solid = false
+opaque = false
+translucent = false
+breakable = true
+placeable = false
+health = "prop"
+textures = { all = "oats_4" }
+material = "plant"
+mount = "floor"
+model = "plant"
+crop = 4
+drops = "oat_seed"
+bonus = [{ item = "oat_seed", per_tier = [0.35, 0.35, 0.35, 0.35, 0.35, 0.35, 0.35, 0.35] }, { item = "oat_grain", per_tier = [0.3, 0.3, 0.3, 0.3, 0.3, 0.3, 0.3, 0.3] }]
+mine_xp = 4
+build_xp = 0
+
+[[block]]
+name = "wheat_seed"
+colourable = false
+color = [214, 170, 72]
+solid = false
+opaque = false
+translucent = false
+breakable = true
+placeable = true
+health = "prop"
+textures = { all = "wheat_1" }
+material = "plant"
+mount = "floor"
+model = "plant"
+crop = 1
+build_xp = 1
+
+[[block]]
+name = "wheat_2"
+colourable = false
+color = [214, 170, 72]
+solid = false
+opaque = false
+translucent = false
+breakable = true
+placeable = false
+health = "prop"
+textures = { all = "wheat_2" }
+material = "plant"
+mount = "floor"
+model = "plant"
+crop = 2
+drops = "wheat_seed"
+build_xp = 0
+
+[[block]]
+name = "wheat_3"
+colourable = false
+color = [214, 170, 72]
+solid = false
+opaque = false
+translucent = false
+breakable = true
+placeable = false
+health = "prop"
+textures = { all = "wheat_3" }
+material = "plant"
+mount = "floor"
+model = "plant"
+crop = 3
+drops = "wheat_seed"
+build_xp = 0
+
+[[block]]
+name = "wheat_4"
+colourable = false
+color = [214, 170, 72]
+solid = false
+opaque = false
+translucent = false
+breakable = true
+placeable = false
+health = "prop"
+textures = { all = "wheat_4" }
+material = "plant"
+mount = "floor"
+model = "plant"
+crop = 4
+drops = "wheat_seed"
+bonus = [{ item = "wheat_seed", per_tier = [0.35, 0.35, 0.35, 0.35, 0.35, 0.35, 0.35, 0.35] }, { item = "wheat_grain", per_tier = [0.3, 0.3, 0.3, 0.3, 0.3, 0.3, 0.3, 0.3] }]
+mine_xp = 4
+build_xp = 0
+
+[[block]]
+name = "rice_seed"
+colourable = false
+color = [170, 190, 110]
+solid = false
+opaque = false
+translucent = false
+breakable = true
+placeable = true
+health = "prop"
+textures = { all = "rice_1" }
+material = "plant"
+mount = "floor"
+model = "plant"
+crop = 1
+build_xp = 1
+
+[[block]]
+name = "rice_2"
+colourable = false
+color = [170, 190, 110]
+solid = false
+opaque = false
+translucent = false
+breakable = true
+placeable = false
+health = "prop"
+textures = { all = "rice_2" }
+material = "plant"
+mount = "floor"
+model = "plant"
+crop = 2
+drops = "rice_seed"
+build_xp = 0
+
+[[block]]
+name = "rice_3"
+colourable = false
+color = [170, 190, 110]
+solid = false
+opaque = false
+translucent = false
+breakable = true
+placeable = false
+health = "prop"
+textures = { all = "rice_3" }
+material = "plant"
+mount = "floor"
+model = "plant"
+crop = 3
+drops = "rice_seed"
+build_xp = 0
+
+[[block]]
+name = "rice_4"
+colourable = false
+color = [170, 190, 110]
+solid = false
+opaque = false
+translucent = false
+breakable = true
+placeable = false
+health = "prop"
+textures = { all = "rice_4" }
+material = "plant"
+mount = "floor"
+model = "plant"
+crop = 4
+drops = "rice_seed"
+bonus = [{ item = "rice_seed", per_tier = [0.35, 0.35, 0.35, 0.35, 0.35, 0.35, 0.35, 0.35] }, { item = "rice_grain", per_tier = [0.3, 0.3, 0.3, 0.3, 0.3, 0.3, 0.3, 0.3] }]
+mine_xp = 4
+build_xp = 0

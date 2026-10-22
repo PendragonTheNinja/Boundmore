@@ -191,6 +191,10 @@ pub enum Effect {
     /// Milestone 16: cooking levels (+1 a rank; the epics +1 each).
     FoodCrafting,
     FoodCraftingEpic,
+    /// Milestone 16 part 2: the sowing level (+1 a rank) and its epic (+2,
+    /// more yield, stronger fertiliser).
+    Farming,
+    FarmingEpic,
     /// +1 cooking (and brewing, with brews); excludes the gear epic.
     ConsumableCraftingEpic,
     /// On the tree, not built yet ("Comes later"): cannot be bought.
@@ -569,6 +573,9 @@ pub struct Effects {
     pub decoration_crafting: u8,
     /// Milestone 16.
     pub food_crafting: u8,
+    /// The Farming (crop sowing) level and the Farming Epic.
+    pub farming: u8,
+    pub farming_epic: bool,
     /// Milestone 13.
     pub vitality: f64,
     pub sling_mastery: u8,
@@ -650,6 +657,11 @@ impl Effects {
                 Effect::FoodCrafting | Effect::FoodCraftingEpic | Effect::ConsumableCraftingEpic => {
                     e.food_crafting += r
                 }
+                Effect::Farming => e.farming += r,
+                Effect::FarmingEpic => {
+                    e.farming += 2 * r;
+                    e.farming_epic |= on;
+                }
                 Effect::Later => {}
             }
         }
@@ -683,7 +695,7 @@ impl Effects {
             Some(ToolClass::Shovel) => (self.mastery[1], self.shovel_axe_epic),
             Some(ToolClass::Axe) => (self.mastery[2], self.shovel_axe_epic),
             // A spanner deals no damage; its mastery adds repair.
-            Some(ToolClass::Spanner) => (0, false),
+            Some(ToolClass::Spanner | ToolClass::Tiller) => (0, false),
         };
         1.0 + power + 0.05 * mastery as f64 + if epic { 0.25 } else { 0.0 }
     }
@@ -699,6 +711,7 @@ impl Effects {
             Some(ToolClass::Shovel) => (self.mastery[1], self.shovel_axe_epic),
             Some(ToolClass::Axe) => (self.mastery[2], self.shovel_axe_epic),
             Some(ToolClass::Spanner) => (self.spanner_mastery, false),
+            Some(ToolClass::Tiller) => (0, false),
         };
         2.0 * self.dexterity + 2.0 * mastery as f64 + if epic { 10.0 } else { 0.0 }
     }

@@ -336,6 +336,7 @@ fn tool_materials(class: ToolClass) -> &'static str {
         ToolClass::Shovel => "soil, sand, gravel and snow",
         ToolClass::Axe => "wood and leaves",
         ToolClass::Spanner => "machines (repairs wear)",
+        ToolClass::Tiller => "soil and turf (tills them for crops) and crops (harvests them)",
     }
 }
 
