@@ -451,12 +451,11 @@ pub struct SavedStation {
     /// A machine's wear left (save version 8; `spark::MACHINE_WEAR` when
     /// repaired, unused by stations that do not wear).
     pub wear: u32,
-    /// A spark generator group's stored spark, the spark still to come from
-    /// the item burning and the ticks it takes, and its blocks (save
-    /// version 8).
+    /// A spark generator group's stored spark, the spark of the item burning
+    /// and the ticks it has burnt, and its blocks (save version 8).
     pub spark: u32,
-    pub burn_left: u32,
-    pub burn_ticks: u32,
+    pub burn_total: u32,
+    pub burn_elapsed: u32,
     pub blocks: u32,
 }
 
@@ -491,8 +490,8 @@ mod v7 {
                 // Fully repaired, no spark.
                 wear: bm_core::spark::MACHINE_WEAR,
                 spark: 0,
-                burn_left: 0,
-                burn_ticks: 0,
+                burn_total: 0,
+                burn_elapsed: 0,
                 blocks: 1,
             }
         }
@@ -526,8 +525,8 @@ mod v3 {
                 xp: 0,
                 wear: bm_core::spark::MACHINE_WEAR,
                 spark: 0,
-                burn_left: 0,
-                burn_ticks: 0,
+                burn_total: 0,
+                burn_elapsed: 0,
                 blocks: 1,
             }
         }
@@ -565,8 +564,8 @@ mod v4 {
                 xp: 0,
                 wear: bm_core::spark::MACHINE_WEAR,
                 spark: 0,
-                burn_left: 0,
-                burn_ticks: 0,
+                burn_total: 0,
+                burn_elapsed: 0,
                 blocks: 1,
             }
         }
@@ -1822,8 +1821,8 @@ mod tests {
             xp: 17,
             wear: bm_core::spark::MACHINE_WEAR,
             spark: 0,
-            burn_left: 0,
-            burn_ticks: 0,
+            burn_total: 0,
+            burn_elapsed: 0,
             blocks: 1,
         };
         let claim = SavedClaim {
@@ -1988,8 +1987,8 @@ mod tests {
             xp: 0,
             wear: bm_core::spark::MACHINE_WEAR,
             spark: 0,
-            burn_left: 0,
-            burn_ticks: 0,
+            burn_total: 0,
+            burn_elapsed: 0,
             blocks: 1,
         };
         s.write(&WriteBatch {
@@ -2277,6 +2276,77 @@ mod tests {
         assert_eq!(u.save_version, SAVE_VERSION);
     }
 
+    /// A version 7 universe (M14) opens with every station fully repaired
+    /// and no spark, keeping everything else; it is marked version 8 and
+    /// reopens as it is.
+    #[test]
+    fn a_version_7_universe_gives_stations_full_wear_and_no_spark() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("u.redb");
+        let stack = SavedStack {
+            item: "coal".into(),
+            count: 3,
+            wear: 0,
+        };
+        let old = V7SavedStation {
+            kind: Station::Workbench,
+            jobs: vec![SavedJob {
+                output: "cog".into(),
+                output_count: 1,
+                inputs: vec![("copper_ingot".into(), 1)],
+                remaining: 2,
+            }],
+            started: 5,
+            output: vec![Some(stack.clone())],
+            fuel: None,
+            heat: 0,
+            waiting: false,
+            xp: 33,
+        };
+        let spot = BlockPos::new(3, 40, 5);
+        {
+            let s = Store::open(&path).unwrap();
+            let tx = s.db.begin_write().unwrap();
+            tx.open_table(META)
+                .unwrap()
+                .insert(
+                    "universe",
+                    postcard::to_stdvec(&UniverseMeta {
+                        save_version: 7,
+                        chunk_format: CHUNK_FORMAT_VERSION,
+                    })
+                    .unwrap()
+                    .as_slice(),
+                )
+                .unwrap();
+            tx.open_table(STATIONS)
+                .unwrap()
+                .insert(
+                    block_key(1, spot).as_slice(),
+                    postcard::to_stdvec(&old).unwrap().as_slice(),
+                )
+                .unwrap();
+            tx.commit().unwrap();
+        }
+        let s = Store::open(&path).unwrap();
+        assert!(s.universe(&kinds()).unwrap().is_none());
+        let st = s.stations(1).unwrap();
+        let want: SavedStation = old.clone().into();
+        assert_eq!(st, vec![(spot, want.clone())]);
+        assert_eq!(
+            (st[0].1.wear, st[0].1.spark, st[0].1.xp, st[0].1.jobs.len()),
+            (bm_core::spark::MACHINE_WEAR, 0, 33, 1)
+        );
+        drop(s);
+        let s = Store::open(&path).unwrap();
+        assert!(s.universe(&kinds()).unwrap().is_none(), "reopens as it is");
+        assert_eq!(s.stations(1).unwrap(), vec![(spot, want)]);
+        let tx = s.db.begin_read().unwrap();
+        let meta = tx.open_table(META).unwrap();
+        let u: UniverseMeta = postcard::from_bytes(meta.get("universe").unwrap().unwrap().value()).unwrap();
+        assert_eq!(u.save_version, 8);
+    }
+
     /// A version 5 universe (M12) opens: every character keeps its level,
     /// marks and pages, and starts unhurt with no XP debt; stations are as
     /// they were; it is marked version 6 and reopens as it is.
@@ -2319,8 +2389,8 @@ mod tests {
             xp: 9,
             wear: bm_core::spark::MACHINE_WEAR,
             spark: 0,
-            burn_left: 0,
-            burn_ticks: 0,
+            burn_total: 0,
+            burn_elapsed: 0,
             blocks: 1,
         };
         let spot = BlockPos::new(3, -4, 5);

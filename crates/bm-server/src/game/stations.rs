@@ -341,7 +341,7 @@ impl Game {
                     stored: st.map_or(0, |s| s.spark),
                     capacity: spark::capacity(blocks),
                     linked: true,
-                    burning: st.map_or(0, |s| s.burn_left),
+                    burning: st.map_or(0, |s| s.burn_left()),
                 })
             }
             Station::Workbench | Station::Mixer | Station::Refinery | Station::Compactor => {
