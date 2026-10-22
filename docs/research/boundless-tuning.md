@@ -1201,6 +1201,8 @@ Machine rules (WIKI Machine, Machine Power, Power Coil pages, v244; medium-high)
 - Machines wear with use; at 0% the queue stops until repaired with a spanner. Spanner "wear removed per hit": stone 100, copper 400, iron 700, silver 1500, gold 2000, titanium 6000, gems 10000 (BI-ATTR). Each recipe lists a wear cost per size (e.g. workbench single 2, compactor 29).
 - Power thresholds in use are clustered at 500, 1000, 1500, 2000 and 3000 (gem tools 1500, lucent tools 3000; player note t/22224, 2018-11-22, confirmed by MAY).
 
+Spark rules checked 2026-10-22 (WIKI Spark, Spark Generator, Spark Link, v244; high): generators joined on a face sum their spark behind one window; a broken one with spark drops Unused Spark; every machine needs its own path of links to a generator and machines never pass spark on; spark crosses at most 100 links (a network up to 200 m across). Recipe wear from the wiki's recipe boxes: spark generator 29, spark link 7, mixer/refinery/compactor 29, extractor 14, iron furnace parts 9, cog 6, silver alloy 12, cotton cloth 35, sackcloth 6, bomb charge 9, copper grapple/slope chisel/spanner 7, iron spanner 11, stone spanner 1. Machine wear capacity is not published.
+
 ### 4.7 Spark and fuel
 
 Spark is made by burning fuel in a spark generator. From ITEMS (`fuelData`: spark amount, burn time in seconds, generator wear), high:

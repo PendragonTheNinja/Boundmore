@@ -183,3 +183,16 @@ Boundless's live tree and tables exactly (Nathan, 2026-10-20), in Boundmore's na
 | Heart | open 30 minutes; 4 + 3 x level wayshards (+25% a tier above 3), 1 to 3 rolls of ores, relics and creature parts; dormant: a quarter of the wayshards, 1 roll | guess (`assets/meteors.toml`) |
 | Shell | every fourth block broken gives a portal conduit | guess (Boundless's meteorites were made of conduits) |
 | Stuck creatures | a wave creature that moves under half a block in 8 s with nobody within 4 blocks drops back in through a portal | our rule (a creature in a pit by the shell made a meteor unbeatable) |
+
+## Spark and machines (M15, `docs/milestones/15-spark.md`)
+
+| Number | Value | Source |
+|---|---|---|
+| Fuel | spark = heat value; burns stick 1 s, timber 3.5, trunk 7, soft coal 10 | Boundless `fuelData` (tuning 4.7) |
+| Generator store | 5,000 spark a block, joined blocks add up | guess (not published) |
+| Link limit | 100 links between generator and machine | Boundless (wiki Spark Link) |
+| Machine wear | 10,000 when repaired; recipes wear copper 7, iron 11, machines 29, cog 6, silver alloy 12, cotton 35, sackcloth 6, extractor 14 | capacity: guess (players: 10 to 15 gem spanner hits for a machine and its coils); wear: wiki recipe boxes, the rest follow the pattern (guesses: compact 10 to 14, refined 8 to 12, machined 8 to 12, tools 7 and 11) |
+| Spanners | stone 100 wear a hit (speed 40, 600 uses, 4 energy), copper 400 (70, 500, 6), iron 700 (30, 900, 8); Spanner Mastery +10% and +2 speed a rank | Boundless item attributes (boundlessinfo) |
+| Iron furnace | half the heat | Boundless (wiki Furnace) |
+| Silver | tier 3+, 10 to 40 above the floor, 20+ below the surface; one ore a block to tier 3 | Boundless (tuning 4.3, 4.4) |
+| Relic components | every tier, 40+ above the floor, 5+ below; rarer than fragments (size 9, threshold 0.63) | placement: Boundless; richness: guess |
