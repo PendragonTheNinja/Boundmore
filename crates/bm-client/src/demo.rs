@@ -132,6 +132,11 @@ pub const TABLE: [i64; 3] = [130, 44, 128];
 pub const WORKBENCH: [[i64; 3]; 4] = [[128, 44, 125], [127, 44, 126], [128, 44, 126], [129, 44, 126]];
 pub const FURNACE: [[i64; 3]; 2] = [[131, 44, 126], [131, 45, 126]];
 pub const EXTRACTOR: [[i64; 3]; 3] = [[133, 44, 124], [134, 44, 124], [135, 44, 124]];
+/// Where `show_meteor` drops its meteor (x, z), and where the player stands
+/// to watch it.
+pub const METEOR_SITE: [i64; 2] = [128, 116];
+pub const METEOR_VIEW: [f64; 3] = [128.5, 44.0, 131.5];
+
 /// Where `show_textures` puts the player: looking north over turf, a patch
 /// of bare soil, a stone wall with copper in it and a tree.
 pub const TEXTURES_VIEW: [f64; 3] = [128.5, 44.0, 132.5];
@@ -466,6 +471,19 @@ impl Demo {
         self.events.push_back(NetEvent::Connected(Box::new(w)));
         let chunks = self.chunks_around_spawn();
         self.events.extend(chunks.into_iter().map(NetEvent::Msg));
+        // Named regions (milestone 14), as the server names them; the demo's
+        // land is all plain.
+        let shape = self.planets[0].info.shape;
+        let seed = bm_core::regions::layout_seed(&self.planets[0].info.name, shape);
+        let map = bm_core::regions::RegionMap::new(shape, seed);
+        let lands = vec![bm_core::regions::LandClass::Plain; map.len()];
+        let names = bm_core::regions::RegionNames::builtin().name_all("temperate", &lands, seed);
+        let here = map.locate(SPAWN[0], SPAWN[2]) as u16;
+        self.events.push_back(NetEvent::Msg(ServerMsg::Regions {
+            layout_seed: seed,
+            names,
+            discovered: vec![here],
+        }));
     }
 
     fn universe(&self) -> Vec<PlanetSummary> {
@@ -1610,6 +1628,100 @@ impl Demo {
         planet.edits.extend(put);
         let chunks = self.chunks_around_spawn();
         self.events.extend(chunks.into_iter().map(NetEvent::Msg));
+    }
+
+    /// A meteor mid-fight (milestone 14), north of the spawn: its crater,
+    /// shell and heart, three creature portals over it, a wave of angry
+    /// creatures, the meteor bar and a meteor life.
+    pub fn show_meteor(&mut self) {
+        use bm_protocol::{MeteorPhase, MeteorView, Pose};
+        let b = |n: &str| BlockState::plain(self.blocks.id(n).expect("builtin block"));
+        let (shell, heart) = (b("meteor_shell"), b("meteor_heart"));
+        let g = GROUND;
+        let site = BlockPos::new(METEOR_SITE[0], g, METEOR_SITE[1]);
+        let mut put: Vec<(BlockPos, BlockState)> = Vec::new();
+        for dx in -4i64..=4 {
+            for dz in -4i64..=4 {
+                for dy in -1i64..=4 {
+                    let d = ((dx * dx + dz * dz) as f64).sqrt() + (dy.max(0) as f64) * 0.3;
+                    if d > 4.0 || (dy < 0 && d > 2.5) {
+                        continue;
+                    }
+                    put.push((site.offset(dx, dy + 1, dz), BlockState::AIR));
+                }
+            }
+        }
+        for dx in -2i64..=2 {
+            for dy in -2i64..=2 {
+                for dz in -2i64..=2 {
+                    if dx * dx + dy * dy + dz * dz <= 5 && (dx, dy, dz) != (0, 0, 0) {
+                        put.push((site.offset(dx, dy + 1, dz), shell));
+                    }
+                }
+            }
+        }
+        put.push((site.offset(0, 1, 0), heart));
+        let planet = &mut self.planets[0];
+        planet.flat = true;
+        planet.edits.clear();
+        planet.edits.extend(put);
+        let chunks = self.chunks_around_spawn();
+        self.events.extend(chunks.into_iter().map(NetEvent::Msg));
+        let centre = |dx: f64, dz: f64, dy: f64| {
+            [
+                (site.x as f64 + 0.5 + dx) as f32,
+                (g as f64 + dy) as f32,
+                (site.z as f64 + 0.5 + dz) as f32,
+            ]
+        };
+        self.events.push_back(NetEvent::Msg(ServerMsg::Meteor(MeteorView {
+            id: 1,
+            from: centre(-40.0, -40.0, 220.0),
+            site: site.offset(0, 1, 0),
+            level: 2,
+            phase: MeteorPhase::Fighting {
+                wave: 2,
+                waves: 4,
+                left: 3,
+                lives: 1,
+            },
+            portals: [centre(-7.0, 0.0, 12.0), centre(4.0, -6.0, 12.0), centre(4.0, 6.0, 12.0)],
+            beam_until: u64::MAX / 2,
+            looted: false,
+        })));
+        self.events
+            .push_back(NetEvent::Msg(ServerMsg::MeteorLife { life: Some((1, None)) }));
+        let k = self.kinds();
+        let kind = |n: &str| k.id(n).expect("builtin creature");
+        let at = |x: f64, z: f64| DVec3::new(x, (GROUND + 1) as f64, z);
+        let deg = |d: f64| ((d / 360.0).rem_euclid(1.0) * 65536.0) as u16;
+        let creature = |id, kind, tier, pos, yaw, pose| DemoCreature {
+            id,
+            kind,
+            tier,
+            pos,
+            yaw,
+            pose,
+            damage: 0,
+            angry: true,
+            dead: false,
+            looted: false,
+            pace: None,
+            beaten: false,
+            exotic: 0,
+        };
+        let (sx, sz) = (site.x as f64 + 0.5, site.z as f64 + 0.5);
+        self.fight.creatures = vec![
+            creature(1, kind("grazer"), 2, at(sx - 5.0, sz + 5.5), deg(160.0), Pose::Walk),
+            creature(2, kind("pelter"), 2, at(sx + 5.5, sz + 4.0), deg(200.0), Pose::Windup),
+            DemoCreature {
+                damage: 900,
+                ..creature(3, kind("popper"), 2, at(sx - 1.0, sz + 6.5), deg(180.0), Pose::Lit)
+            },
+        ];
+        for i in 0..self.fight.creatures.len() {
+            self.push_creature(i);
+        }
     }
 
     /// The six textures of the 128 trial (`docs/proposals/textures-128.md`)

@@ -1132,3 +1132,38 @@ light = 13
 textures = { all = "tallow_torch" }
 mount = "west"
 drops = "tallow_torch"
+
+# Milestone 14: meteorites. The shell of star iron the server builds where a
+# meteor lands; unbreakable while its creatures live (the server refuses),
+# then every fourth one broken gives a portal conduit (as Boundless's
+# meteorites were made of conduits).
+[[block]]
+name = "meteor_shell"
+colourable = false
+color = [70, 58, 84]
+solid = true
+opaque = true
+translucent = false
+breakable = true
+placeable = false
+health = "seam"
+light = 2
+textures = { all = "meteor_shell" }
+material = "rock"
+drops = ""
+
+# The heart at a meteor's centre: never broken, used (each player takes
+# their own share once); turns to shell when it closes.
+[[block]]
+name = "meteor_heart"
+colourable = false
+color = [255, 150, 80]
+solid = true
+opaque = true
+translucent = false
+breakable = false
+placeable = false
+light = 12
+textures = { all = "meteor_heart" }
+material = "crystal"
+drops = ""

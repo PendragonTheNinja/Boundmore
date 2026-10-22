@@ -61,6 +61,13 @@ struct TestClient {
     defeated: Option<(u64, String)>,
     /// Milestone 13 part 2: blasts heard (where, radius).
     blasts: Vec<([f32; 3], f32)>,
+    /// Milestone 14: the planet's regions (layout seed, names, discovered),
+    /// discoveries heard (region, nth, xp), meteors as last told, and the
+    /// meteor life.
+    regions: Option<(u64, Vec<String>, Vec<u16>)>,
+    discovered: Vec<(u16, u32, u64)>,
+    meteors: HashMap<u32, bm_protocol::MeteorView>,
+    life: Option<(u32, Option<u32>)>,
 }
 
 /// Opens a connection and says hello; the welcome, or the refusal's reason.
@@ -137,6 +144,10 @@ async fn hello(
         hits: Vec::new(),
         defeated: None,
         blasts: Vec::new(),
+        regions: None,
+        discovered: Vec::new(),
+        meteors: HashMap::new(),
+        life: None,
     })
 }
 
@@ -247,6 +258,19 @@ impl TestClient {
             ServerMsg::Hit { target, amount, crit } => self.hits.push((*target, *amount, *crit)),
             ServerMsg::Defeated { debt, by } => self.defeated = Some((*debt, by.clone())),
             ServerMsg::Blast { pos, radius } => self.blasts.push((*pos, *radius)),
+            ServerMsg::Regions {
+                layout_seed,
+                names,
+                discovered,
+            } => self.regions = Some((*layout_seed, names.clone(), discovered.clone())),
+            ServerMsg::Discovered { region, nth, xp } => self.discovered.push((*region, *nth, *xp)),
+            ServerMsg::Meteor(v) => {
+                self.meteors.insert(v.id, *v);
+            }
+            ServerMsg::MeteorGone { id } => {
+                self.meteors.remove(id);
+            }
+            ServerMsg::MeteorLife { life } => self.life = *life,
             // Everything of the old planet goes, as in the game.
             ServerMsg::Travel(t) => {
                 self.chunks.clear();
@@ -529,6 +553,8 @@ fn config(dir: &Path) -> ServerConfig {
         // Portal tests open windows with untrained characters; the epic's
         // rule has its own test.
         portal_epic_required: false,
+        // Tests count XP exactly; discovery has its own test.
+        discovery_xp: false,
         ..Default::default()
     }
 }
@@ -4916,5 +4942,241 @@ async fn a_drifters_bolt_hits_a_player() {
         }
     }
     assert!(flying);
+    server.stop();
+}
+
+// ------------------------------------------------------------ milestone 14
+
+/// Milestone 14, acceptance 1: every planet has named regions; the first
+/// region entered is discovered once, for 50 XP, and stays discovered after
+/// logging back in.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn regions_are_named_and_discovered_once_for_xp() {
+    let dir = tempfile::tempdir().unwrap();
+    let cfg = ServerConfig {
+        discovery_xp: true,
+        ..config(dir.path())
+    };
+    let server = bm_server::start(cfg.clone()).unwrap();
+    let mut alice = TestClient::register(&server, "Alice").await;
+    alice.until(|m| matches!(m, ServerMsg::Regions { .. })).await;
+    let (seed, names, found) = alice.regions.clone().unwrap();
+    let shape = alice.shape();
+    let map = bm_core::regions::RegionMap::new(shape, seed);
+    assert_eq!(names.len(), map.len(), "a name for every region");
+    assert_eq!(map.len(), 4, "a 512-block test planet has 2 x 2 regions");
+    assert!(found.is_empty(), "nothing discovered before arriving");
+    let here = map.locate(alice.spawn.pos.x, alice.spawn.pos.z) as u16;
+    alice.until(|m| matches!(m, ServerMsg::Discovered { .. })).await;
+    assert_eq!(alice.discovered, vec![(here, 1, 50)]);
+    alice.until_xp(50).await;
+    alice.settle().await;
+    drop(alice);
+    tokio::time::sleep(Duration::from_millis(500)).await;
+    let mut again = TestClient::login(&server, "Alice").await;
+    again.until(|m| matches!(m, ServerMsg::Regions { .. })).await;
+    assert_eq!(again.regions.as_ref().unwrap().2, vec![here], "remembered");
+    again.settle().await;
+    tokio::time::sleep(Duration::from_millis(500)).await;
+    again.settle().await;
+    assert!(again.discovered.is_empty(), "discovered only once");
+    assert_eq!(again.character.xp, 50);
+    server.stop();
+}
+
+/// Meteor waves for the tests: one harmless creature that walks up to the
+/// player and dies to one stone sling shot.
+const METEOR_CREATURES: &str = r#"
+[[creature]]
+name = "mote"
+behaviour = "herd"
+attack = "none"
+half_width = 0.4
+height = 0.9
+walk_speed = 2.0
+run_speed = 3.0
+notice = 16.0
+give_up = 96.0
+forget = 120.0
+spawn_weight = 1
+group = [1, 1]
+
+[[creature.tiers]]
+health = 300
+armour = 0
+xp = 10
+drops_min = 1
+drops_max = 1
+drops = [{ item = "bone", weight = 1, max = 1 }]
+"#;
+
+fn meteor_config(dir: &Path) -> ServerConfig {
+    let path = dir.join("meteor-creatures.toml");
+    std::fs::write(&path, METEOR_CREATURES).unwrap();
+    ServerConfig {
+        planets: vec![PlanetSpec::new("Wildtest", "lush", 7, 16)],
+        creatures: Some(path),
+        creature_spawning: false,
+        placed_meteor: Some([7.0, 0.0]),
+        ..config(dir)
+    }
+}
+
+impl TestClient {
+    /// Waits until meteor `id`'s view matches `pred`.
+    async fn meteor_until(
+        &mut self,
+        mut pred: impl FnMut(&bm_protocol::MeteorView) -> bool,
+    ) -> bm_protocol::MeteorView {
+        loop {
+            if let Some(v) = self.meteors.values().find(|v| pred(v)) {
+                return *v;
+            }
+            self.until(|m| matches!(m, ServerMsg::Meteor(_))).await;
+        }
+    }
+
+    /// Strikes every living creature that comes within reach with the tool
+    /// in hotbar `melee` (they walk up to the player) until `done` says the
+    /// fight is over. Idle inputs pass time, so energy comes back.
+    async fn fight_until(&mut self, melee: u8, mut done: impl FnMut(&TestClient) -> bool) {
+        let shape = self.shape();
+        for _ in 0..600 {
+            // About as many inputs as the 300 ms `settle` waits (60 a second),
+            // so the server never falls behind them.
+            self.send_inputs(18, PlayerInput::default());
+            self.settle().await;
+            if done(self) {
+                return;
+            }
+            let living: Vec<u32> = self.creatures.values().filter(|v| !v.dead).map(|v| v.id).collect();
+            if living.is_empty() {
+                continue;
+            }
+            // From the newest snapshot, not the oldest queued.
+            while self.snaps.try_recv().is_ok() {}
+            let snap = tokio::time::timeout(Duration::from_secs(5), self.snaps.recv())
+                .await
+                .unwrap()
+                .unwrap();
+            let ServerDatagram::Snapshot { you, creatures, .. } = snap;
+            let eye = you.pos + glam::DVec3::new(0.0, self.welcome.movement.eye_height, 0.0);
+            let near = creatures.iter().filter(|c| living.contains(&c.id)).find(|c| {
+                let at = glam::DVec3::new(c.pos[0] as f64, c.pos[1] as f64 + 0.45, c.pos[2] as f64);
+                shape.delta(eye, at).length() < 7.0
+            });
+            let Some(c) = near else { continue };
+            if self.last_swing.is_some_and(|(at, ticks)| self.seq < at + ticks) {
+                continue;
+            }
+            let at = self.seq;
+            self.last_swing = Some((at, self.swing_ticks(melee)));
+            self.send(ClientMsg::Strike {
+                at,
+                creature: c.id,
+                slot: melee,
+            })
+            .await;
+        }
+        panic!("the fight did not end");
+    }
+}
+
+/// Milestone 14, acceptance 2 to 7: a meteor falls on a tier 3 planet, its
+/// shell is guarded while its waves fight, lives are given from the first
+/// kill, clearing every wave opens the heart, each player takes their own
+/// share once (wayshards first), and a restart keeps the opened meteor with
+/// its looters remembered.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn a_meteor_falls_fights_and_pays_each_player_once() {
+    let dir = tempfile::tempdir().unwrap();
+    seed(
+        dir.path(),
+        "Alice",
+        &[(0, "stone_sling", 1, 0), (1, "iron_hammer", 1, 0)],
+    );
+    let cfg = meteor_config(dir.path());
+    let server = bm_server::start(cfg.clone()).unwrap();
+    let mut alice = TestClient::login(&server, "Alice").await;
+    alice.wait_for_chunk(alice.feet().chunk()).await;
+    let falling = alice
+        .meteor_until(|v| matches!(v.phase, bm_protocol::MeteorPhase::Falling { .. }))
+        .await;
+    assert_eq!(falling.level, 1, "one player: level 1");
+    let fighting = alice
+        .meteor_until(|v| matches!(v.phase, bm_protocol::MeteorPhase::Fighting { .. }))
+        .await;
+    let bm_protocol::MeteorPhase::Fighting { wave, waves, left, .. } = fighting.phase else {
+        unreachable!()
+    };
+    assert_eq!((wave, waves, left), (1, 3, 3), "level 1: three waves of three");
+    let site = fighting.site;
+    assert_eq!(state_at(&alice, site).id, alice.block("meteor_heart"));
+    // The shell next to the heart, on the player's side.
+    let shell = alice.shape().wrap_block(site.offset(-1, 0, 0));
+    assert_eq!(state_at(&alice, shell).id, alice.block("meteor_shell"));
+    alice.ready();
+    let refused = alice.swing(900, shell, 1).await;
+    assert!(matches!(refused, Swung::Refused(..)), "{refused:?}");
+    alice
+        .notice("The meteorite is guarded until its creatures are beaten")
+        .await;
+    alice.send(ClientMsg::LootHeart { pos: site }).await;
+    alice.notice("The heart is sealed until its creatures are beaten").await;
+
+    // Every wave, shot down; a life from the first kill.
+    alice
+        .fight_until(1, |c| {
+            c.meteors
+                .values()
+                .any(|v| matches!(v.phase, bm_protocol::MeteorPhase::Cleared { .. }))
+        })
+        .await;
+    alice
+        .notice("The meteorite is beaten: break it open and take your share from its heart")
+        .await;
+    assert_eq!(alice.life, None, "lives end when it is cleared");
+
+    // The heart: wayshards first, once.
+    let before = alice.count("wayshard");
+    alice.send(ClientMsg::LootHeart { pos: site }).await;
+    alice.meteor_until(|v| v.looted).await;
+    alice.settle().await;
+    assert_eq!(alice.count("wayshard") - before, 7, "4 + 3 x level 1 on tier 3");
+    assert!(
+        alice
+            .notices
+            .iter()
+            .any(|n| n.starts_with("From the meteor heart: 7 Wayshard")),
+        "{:?}",
+        alice.notices
+    );
+    alice.send(ClientMsg::LootHeart { pos: site }).await;
+    alice.notice("You have taken your share of this meteor").await;
+    alice.settle().await;
+    assert_eq!(alice.count("wayshard") - before, 7, "once only");
+
+    // The shell breaks now.
+    alice.ready();
+    let swung = alice.swing(901, shell, 1).await;
+    assert!(!matches!(swung, Swung::Refused(..)), "{swung:?}");
+    alice.settle().await;
+    drop(alice);
+    server.stop();
+
+    // A restart: the opened meteor is still there, and still looted.
+    let server = bm_server::start(ServerConfig {
+        placed_meteor: None,
+        ..cfg
+    })
+    .unwrap();
+    let mut alice = TestClient::login(&server, "Alice").await;
+    let v = alice.meteor_until(|v| v.site == site).await;
+    assert!(
+        matches!(v.phase, bm_protocol::MeteorPhase::Cleared { .. }),
+        "{:?}",
+        v.phase
+    );
+    assert!(v.looted, "looters are remembered");
     server.stop();
 }

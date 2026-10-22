@@ -129,6 +129,13 @@ pub struct ServerConfig {
     pub creatures_per_planet: usize,
     /// Creatures placed at startup (tests).
     pub placed_creatures: Vec<PlacedCreature>,
+    /// Discovering a region gives XP (milestone 14; off in tests that count
+    /// XP exactly).
+    pub discovery_xp: bool,
+    /// A meteor brought down at this offset (x, z) from the start planet's
+    /// arrival point once a player is there, skipping the triggers and the
+    /// distance rules (tests).
+    pub placed_meteor: Option<[f64; 2]>,
 
     /// Save version 2 settings, still read so an old `server.toml` keeps its
     /// planet: they apply to the first planet.
@@ -168,6 +175,8 @@ impl Default for ServerConfig {
             creatures_near_player: 8,
             creatures_per_planet: 600,
             placed_creatures: Vec::new(),
+            discovery_xp: true,
+            placed_meteor: None,
             planet_name: None,
             seed: None,
             width_chunks: None,

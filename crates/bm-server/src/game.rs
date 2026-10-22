@@ -27,6 +27,7 @@ use crate::store::{PlayerData, Store, WriteBatch, load_slots, save_slots};
 mod blasts;
 mod combat;
 mod creatures;
+mod meteors;
 mod mining;
 mod portal;
 mod skills;
@@ -217,6 +218,11 @@ struct Player {
     /// Their defeat has been dealt with (debt, `Defeated`); cleared on
     /// returning.
     defeated: bool,
+    /// The region and meteor square they are in, and whether they are near
+    /// the region's centre (milestone 14), as last seen.
+    region: Option<usize>,
+    square: Option<(i64, i64)>,
+    at_centre: bool,
 }
 
 /// A player who left, held in memory until the save holding their last state
@@ -340,6 +346,16 @@ pub struct Game {
     /// Scratch the creature step reuses.
     seen_buf: Vec<creatures::Seen>,
     acts_buf: Vec<creatures::Act>,
+    /// Regions and meteors by planet index (milestone 14).
+    skies: Vec<meteors::Sky>,
+    /// Regions discovered, by account (loaded on joining), and the accounts
+    /// whose list changed since the last save.
+    discoveries: HashMap<String, crate::store::Discoveries>,
+    discoveries_dirty: HashSet<String>,
+    next_meteor: u32,
+    meteor_loot: bm_core::meteors::MeteorLoot,
+    meteor_shell_id: BlockId,
+    meteor_heart_id: BlockId,
 }
 
 /// One planet's load, as the report shows it.
@@ -531,6 +547,28 @@ impl Game {
         let last_seen = claim_owners_last_seen(&store, &planets, planets[start].id);
         let planet_count = planets.len();
         let creature_moves = creature_kinds.defs().iter().map(|d| d.move_config()).collect();
+        let meteor_shell_id = registry.id("meteor_shell")?;
+        let meteor_heart_id = registry.id("meteor_heart")?;
+        let region_names = bm_core::regions::RegionNames::builtin();
+        let mut skies = Vec::with_capacity(planet_count);
+        for p in &planets {
+            let generator = p.world.generator().clone();
+            skies.push(meteors::Sky::new(
+                &p.name,
+                &p.kind,
+                p.world.shape,
+                &region_names,
+                |x, z| meteors::land_of(&generator, x, z),
+                store.sky(p.id)?,
+                tick,
+            ));
+        }
+        let next_meteor = skies
+            .iter()
+            .flat_map(|s| s.meteors.iter().map(|m| m.id))
+            .max()
+            .unwrap_or(0)
+            + 1;
         Ok(Self {
             cfg,
             planets,
@@ -578,6 +616,13 @@ impl Game {
             next_shot: 1,
             seen_buf: Vec::new(),
             acts_buf: Vec::new(),
+            skies,
+            discoveries: HashMap::new(),
+            discoveries_dirty: HashSet::new(),
+            next_meteor,
+            meteor_loot: bm_core::meteors::MeteorLoot::builtin(),
+            meteor_shell_id,
+            meteor_heart_id,
         })
     }
 
@@ -700,6 +745,7 @@ impl Game {
         let creatures = Instant::now();
         self.step_creatures();
         self.step_shots();
+        self.step_meteors();
         let views = Instant::now();
         if self.tick % SNAPSHOT_EVERY == 0 {
             self.sync_creature_views();
@@ -849,6 +895,7 @@ impl Game {
                 ClientMsg::Strike { at, creature, slot } => self.queue(id, at, Queued::Strike { at, creature, slot }),
                 ClientMsg::Loot { creature } => self.loot(id, creature),
                 ClientMsg::Return => self.return_player(id),
+                ClientMsg::LootHeart { pos } => self.loot_heart(id, pos),
                 ClientMsg::StationFuel { pos, slot, count, into } => self.station_fuel(id, pos, slot, count, into),
                 ClientMsg::Edit { seq, at, pos, action } => self.queue(id, at, Queued::Edit { seq, pos, action }),
                 ClientMsg::Swing { seq, at, pos, slot } => self.queue(id, at, Queued::Swing { seq, at, pos, slot }),
@@ -1041,8 +1088,20 @@ impl Game {
                 in_view: Vec::new(),
                 near_creatures: Vec::new(),
                 defeated: false,
+                region: None,
+                square: None,
+                at_centre: false,
             },
         );
+        let key = self.players[&id].account.clone();
+        if !self.discoveries.contains_key(&key) {
+            let found = self.store.discoveries(&key).unwrap_or_else(|e| {
+                tracing::error!("reading {key}'s discoveries: {e:#}; starting with none");
+                Default::default()
+            });
+            self.discoveries.insert(key, found);
+        }
+        self.arrived_in_sky(id);
         self.tell_tokens(id);
         self.server_line(planet, arrived);
     }
@@ -1917,6 +1976,7 @@ impl Game {
             tick: self.tick,
             claims: planet.claims.views(),
         })));
+
         tracing::info!(
             "{name} (#{id}) travelled from {} to {}",
             self.planets[from].name,
@@ -1945,6 +2005,13 @@ impl Game {
         self.server_line(from, left);
         self.server_line(to, arrived);
         self.left_planet(from);
+        // A meteor life does not travel.
+        let account = self.players[&id].account.clone();
+        for m in &mut self.skies[from].meteors {
+            m.lives.remove(&account);
+        }
+        self.players[&id].out.send(&ServerMsg::MeteorLife { life: None });
+        self.arrived_in_sky(id);
     }
 
     /// The storage block at `pos` and its slots, if this player may use it
@@ -2602,6 +2669,17 @@ impl Game {
         for (pi, c) in self.unpin_after_save.drain(..) {
             self.planets[pi].world.unpin(c);
         }
+        let mut skies = Vec::new();
+        for (pi, sky) in self.skies.iter_mut().enumerate() {
+            if std::mem::take(&mut sky.dirty) {
+                skies.push((self.planets[pi].id, sky.saved()));
+            }
+        }
+        let discoveries = self
+            .discoveries_dirty
+            .drain()
+            .filter_map(|a| self.discoveries.get(&a).map(|d| (a, d.clone())))
+            .collect();
         let batch = WriteBatch {
             chunks,
             players,
@@ -2611,6 +2689,8 @@ impl Game {
             reclaim: self.reclaims.take_dirty(&self.items),
             portals,
             next_portal,
+            skies,
+            discoveries,
             clock: Some(self.tick),
             done,
         };

@@ -224,7 +224,11 @@ impl Game {
             || state.id == self.claim_stone
             || state.id == self.portal_conduit
             || state.id == self.portal_surface;
-        if kept || planet.guarded(canon) || self.portals.at(planet.id, canon).is_some() {
+        if kept
+            || planet.guarded(canon)
+            || self.portals.at(planet.id, canon).is_some()
+            || self.meteor_guards(pi, canon).is_some()
+        {
             return None;
         }
         if planet.claims.at_block(canon).is_some_and(|c| c.owner != account) {

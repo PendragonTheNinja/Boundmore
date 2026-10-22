@@ -105,7 +105,7 @@ pub struct Options {
     /// (`hud`, `inventory`, `crafting`, `station`, `claims`, `shrine`,
     /// `travel`, `travelling`, `sky`, `storage`, `chat`, `colours`,
     /// `coloured-icons`, `reclaim`, `shapes`, `chisel`, `grapple`, `portal`,
-    /// `mining`, `torches`, `table`, `furnace`, `extractor`, `flora`, `textures`,
+    /// `mining`, `torches`, `table`, `furnace`, `extractor`, `flora`, `textures`, `meteor`,
     /// `creatures`, `defeat`, `skills` or `login`).
     pub demo: Option<String>,
 }
@@ -192,6 +192,8 @@ struct Session {
     fuse: Fuse,
     /// Blasts and beams being drawn.
     fx: crate::effects::Effects,
+    /// Regions and meteors on this planet (milestone 14).
+    sky_view: crate::meteors::Sky,
     /// Shots in the air, ours and others'.
     shots: Shots,
     /// Damage numbers floating up.
@@ -245,6 +247,7 @@ impl Session {
             trigger: Trigger::default(),
             fuse: Fuse::default(),
             fx: crate::effects::Effects::default(),
+            sky_view: crate::meteors::Sky::default(),
             shots: Shots::default(),
             floaters: Floaters::default(),
             losses,
@@ -585,6 +588,14 @@ impl Session {
     fn aiming_at_portal(&self) -> Option<BlockPos> {
         let hit = self.use_target?;
         self.is_portal_block(hit.block).then_some(hit.block)
+    }
+
+    /// The open meteor heart aimed at, whose share we have not taken.
+    fn aiming_at_heart(&self) -> Option<BlockPos> {
+        let hit = self.use_target?;
+        self.sky_view
+            .heart_open(self.world.shape, hit.block)
+            .then_some(hit.block)
     }
 
     /// Applies a snapshot; one about another planet (sent before we
@@ -1430,6 +1441,18 @@ impl App {
                     .collect();
             }
             ServerMsg::TokenNames { names } => s.items.set_token_names(names),
+            ServerMsg::Regions {
+                layout_seed,
+                names,
+                discovered,
+            } => s.sky_view.regions(s.world.shape, layout_seed, names, discovered),
+            ServerMsg::Discovered { region, xp, .. } => {
+                let text = s.sky_view.discovered(region, xp);
+                self.notices.push(text, now);
+            }
+            ServerMsg::Meteor(v) => s.sky_view.meteor(v),
+            ServerMsg::MeteorGone { id } => s.sky_view.gone(id),
+            ServerMsg::MeteorLife { life } => s.sky_view.life(life),
             ServerMsg::Welcome(_)
             | ServerMsg::Refused { .. }
             | ServerMsg::Travel(_)
@@ -1975,6 +1998,8 @@ impl App {
                 Some(("E", "open"))
             } else if s.aiming_at_portal().is_some() {
                 Some(("E", "portal"))
+            } else if s.aiming_at_heart().is_some() {
+                Some(("E", "take your share"))
             } else {
                 None
             };
@@ -1997,6 +2022,9 @@ impl App {
                     level: Some(bm_core::skills::level_of(s.progress.character().xp)),
                     health: (s.me.state.health(), s.me.state.max_health()),
                     debt: s.progress.character().debt,
+                    region: s.sky_view.place(feet),
+                    meteor: s.sky_view.status(feet, shape, s.server_tick(local)),
+                    life: s.sky_view.life_text(),
                 },
             );
             // Fighting: name plates, numbers, the hurt flash, the charge
@@ -2283,6 +2311,9 @@ impl App {
             crate::effects::shot_boxes(&mut boxes, rel.as_vec3(), &shot, time, light(shot.pos));
         }
         // Blasts and beams; a beam shines from its drifter's face.
+        // Meteors: the fall, the beam over a site, the creature portals.
+        let tick_now = s.server_tick(self.local_ticks()) as f64;
+        boxes.extend(s.sky_view.boxes(eye, shape, tick_now, time));
         boxes.extend(s.fx.boxes(eye, shape, now, |id| {
             let c = s.seen.iter().find(|c| c.id == id)?;
             let k = s.creatures.kind(c.kind)?;
@@ -2363,6 +2394,7 @@ impl App {
         if let Some(r) = &mut self.renderer {
             let mut lights = s.held_lights(&remotes, &camera);
             lights.extend(s.fx.lights(now));
+            lights.extend(s.sky_view.lights(s.world.shape, camera.eye));
             r.set_point_lights(&lights);
         }
         let highlight = if self.claim_mode || s.chisel.is_some() {
@@ -2488,6 +2520,22 @@ impl App {
                 };
                 (self.yaw, self.pitch) = (yaw, pitch);
                 self.open_menu(Menu::Crafting(Some(BlockPos::new(at[0], at[1], at[2]))));
+            }
+            // A meteor mid-fight, seen from the south.
+            "meteor" => {
+                if let Some(Link::Demo(d)) = &mut self.link {
+                    d.show_meteor();
+                }
+                if let Some(s) = &mut self.session {
+                    s.me.teleport(bm_core::PlayerState {
+                        pos: DVec3::from_array(crate::demo::METEOR_VIEW),
+                        vel: DVec3::ZERO,
+                        on_ground: true,
+                        hook: None,
+                        ..Default::default()
+                    });
+                }
+                (self.yaw, self.pitch) = (0.0, 0.12);
             }
             // The texture trial's six textures in one view.
             "textures" => {
@@ -2986,6 +3034,8 @@ impl ApplicationHandler for App {
                                 self.open_storage(pos);
                             } else if let Some(pos) = s.aiming_at_portal() {
                                 self.open_portal(pos);
+                            } else if let Some(pos) = s.aiming_at_heart() {
+                                self.send(ClientMsg::LootHeart { pos });
                             }
                         }
                     }

@@ -15,6 +15,7 @@ mod fight_hud;
 mod icons;
 mod items;
 mod menus;
+mod meteors;
 mod mining;
 mod net;
 mod portal;

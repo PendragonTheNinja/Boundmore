@@ -25,7 +25,7 @@ use glam::DVec3;
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
 
 /// Bump on any change to a message below. Client and server must match.
-pub const PROTOCOL_VERSION: u32 = 19;
+pub const PROTOCOL_VERSION: u32 = 20;
 
 /// QUIC application protocol name; also refuses non-Boundmore peers early.
 pub const ALPN: &[u8] = b"boundmore/1";
@@ -174,6 +174,9 @@ pub enum ClientMsg {
         pitch: i16,
         hold: u16,
     },
+    /// Takes your own share from the meteor heart at `pos` (milestone 14),
+    /// once per meteor.
+    LootHeart { pos: BlockPos },
 }
 
 /// What the portal window's buttons do.
@@ -493,6 +496,65 @@ pub enum ServerMsg {
         to: [f32; 3],
         ticks: u16,
     },
+    /// This planet's named regions (milestone 14), sent on arrival:
+    /// `bm_core::regions::RegionMap` lays them out from `layout_seed`; names
+    /// by region index; the ones this character has discovered here.
+    Regions {
+        layout_seed: u64,
+        names: Vec<String>,
+        discovered: Vec<u16>,
+    },
+    /// You discovered region `region` (index), the `nth` on this planet, for
+    /// `xp` XP.
+    Discovered {
+        region: u16,
+        nth: u32,
+        xp: u64,
+    },
+    /// A meteor on this planet, as it changes (and on arrival); every player
+    /// on the planet gets these.
+    Meteor(MeteorView),
+    /// A meteor is gone from view (its heart closed, or you left).
+    MeteorGone {
+        id: u32,
+    },
+    /// Your meteor life: the meteor it belongs to, and the ticks left to get
+    /// back into its zone (None: inside); None when you hold no life.
+    MeteorLife {
+        life: Option<(u32, Option<u32>)>,
+    },
+}
+
+/// A meteor's phase.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub enum MeteorPhase {
+    /// In the air: lands at server tick `lands_at`.
+    Falling { lands_at: u64 },
+    /// Landed; waves dropping. `wave` is the current one (1-based), `left`
+    /// its creatures still alive; `lives` the players holding a life.
+    Fighting { wave: u8, waves: u8, left: u16, lives: u16 },
+    /// Every wave cleared: the shell breaks and the heart opens, until
+    /// server tick `until`.
+    Cleared { until: u64 },
+    /// Failed or left too long: the heart pays a little, until `until`.
+    Dormant { until: u64 },
+}
+
+/// A meteor as players see it.
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+pub struct MeteorView {
+    pub id: u32,
+    /// Where it falls from (high in the sky) and where it lands (the heart).
+    pub from: [f32; 3],
+    pub site: BlockPos,
+    pub level: u8,
+    pub phase: MeteorPhase,
+    /// The portals' centres while it is fighting (empty otherwise).
+    pub portals: [[f32; 3]; 3],
+    /// The beam over the site shows until this server tick.
+    pub beam_until: u64,
+    /// You have taken your share of the heart.
+    pub looted: bool,
 }
 
 /// What a flying shot is, for drawing it (and flying it: bombs fall at
@@ -736,6 +798,29 @@ mod tests {
                 pos: BlockPos::new(1, 2, 3),
                 block: BlockState::coloured(bm_core::BlockId(4), bm_core::Colour(9)),
                 accepted: false,
+            },
+            ServerMsg::Regions {
+                layout_seed: 99,
+                names: vec!["Amber Hollows".into()],
+                discovered: vec![0],
+            },
+            ServerMsg::Meteor(MeteorView {
+                id: 3,
+                from: [1.0, 400.0, 2.0],
+                site: BlockPos::new(10, 140, -4),
+                level: 2,
+                phase: MeteorPhase::Fighting {
+                    wave: 1,
+                    waves: 4,
+                    left: 3,
+                    lives: 2,
+                },
+                portals: [[0.0; 3]; 3],
+                beam_until: 1000,
+                looted: false,
+            }),
+            ServerMsg::MeteorLife {
+                life: Some((3, Some(120))),
             },
         ];
         for m in msgs {

@@ -1810,6 +1810,74 @@ pub fn portal_surface(ctx: Ctx) -> Tex {
     tex
 }
 
+// -------------------------------------------------------------- meteors
+
+fn star_iron_ramp() -> Ramp {
+    Ramp::from_hex(&[0x120c1c, 0x1e1630, 0x2c2244, 0x3c3058, 0x50426e, 0x6a5a88, 0x8c7cac])
+}
+
+fn ember_ramp() -> Ramp {
+    Ramp::from_hex(&[0x6a1a10, 0x9c2c14, 0xd04a1a, 0xf07a24, 0xffa83c, 0xffd070, 0xfff0b8])
+}
+
+/// Meteor shell (milestone 14): dark violet star iron in knobbly, lit lumps,
+/// with thin seams still glowing ember-hot between some of them.
+pub fn meteor_shell(ctx: Ctx) -> Tex {
+    let style = RockStyle {
+        salt: seed("meteor_shell"),
+        spacing: 7.0,
+        stretch: 1.0,
+        bevel: 2.2,
+        cracks: 0.0,
+        tone: 0.5,
+        spread: 0.22,
+        tilt: 0.04,
+        rim: 0.3,
+        mottle: 0.16,
+    };
+    let tone = rock(ctx, &style);
+    let sites = ctx.sites_stretched(style.salt, style.spacing, style.stretch);
+    let iron = star_iron_ramp();
+    let ember = ember_ramp();
+    Tex::from_fn(|x, y| {
+        let (fx, fy) = (c(x), c(y));
+        let k = cell(&sites, fx, fy, 1.0);
+        let hot = ctx.value(style.salt ^ 0x5e, 4, 4, fx, fy) < 0.45;
+        if hot && k.edge < 0.6 {
+            ember.pick(0.55 + (0.6 - k.edge) * 0.5, x, y)
+        } else if hot && k.edge < 1.3 {
+            iron.pick(tone.at(x, y), x, y).mix(ember.pick(0.3, x, y), 0.35)
+        } else {
+            iron.pick(tone.at(x, y), x, y)
+        }
+    })
+}
+
+/// Meteor heart (milestone 14): a glowing core of molten gold and ember in
+/// cut facets, brightest at the top left of each, white-hot where they meet
+/// the middle.
+pub fn meteor_heart(ctx: Ctx) -> Tex {
+    let salt = seed("meteor_heart");
+    let facets = ctx.sites(salt, 5.5);
+    let ember = ember_ramp();
+    let tone = Field::from_fn(|x, y| {
+        let (fx, fy) = (c(x), c(y));
+        let k = cell(&facets, fx, fy, 1.0);
+        let f = &facets[k.index];
+        let mut t = 0.55 + (f.r[0] - 0.5) * 0.3;
+        t += ((f.r[1] - 0.5) * k.dx + (f.r[2] - 0.5) * k.dy) * 0.05;
+        t += k.rim(1.6) * 0.25;
+        // Brighter toward the middle of the face: the heat inside.
+        let (mx, my) = (wrap_delta(fx - SIZEF * 0.5), wrap_delta(fy - SIZEF * 0.5));
+        t += (1.0 - (mx * mx + my * my).sqrt() / (SIZEF * 0.5)).max(0.0) * 0.2;
+        if k.edge < 0.5 {
+            t -= 0.25;
+        }
+        t
+    });
+    paint(&ember, &tone)
+}
+
 /// Every texture the game asks for, painted; `variant` is ignored by the
 /// materials that have no variants.
 pub fn paint_named(name: &str, variant: u32) -> Option<Tex> {
@@ -1861,6 +1929,8 @@ pub fn paint_named(name: &str, variant: u32) -> Option<Tex> {
         "furnace_crucible_top" => machines::furnace_crucible_top,
         "furnace_crucible_side" => machines::furnace_crucible_side,
         "relic_seam" => machines::relic_seam,
+        "meteor_shell" => meteor_shell,
+        "meteor_heart" => meteor_heart,
         other => flora::painter(other)?,
     };
     Some(f(ctx))

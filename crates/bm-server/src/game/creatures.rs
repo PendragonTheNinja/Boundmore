@@ -300,6 +300,9 @@ pub(super) struct Creature {
     pub lift: Option<LiftMark>,
     /// No lift before this tick.
     pub next_lift: u64,
+    /// The meteor whose wave it belongs to (milestone 14): it stays while
+    /// the meteor fights, and does not count toward the planet's cap.
+    pub meteor: Option<u32>,
 }
 
 impl Creature {
@@ -341,6 +344,7 @@ impl Creature {
             beam: None,
             lift: None,
             next_lift: 0,
+            meteor: None,
         }
     }
 
@@ -424,6 +428,10 @@ impl Creature {
     pub(super) fn stays(&mut self, seen: &[Seen], shape: PlanetShape, tick: u64) -> bool {
         if self.dead_at.is_some_and(|t| tick >= t + BODY_TICKS) {
             return false;
+        }
+        // Its meteor takes it away when it goes dormant.
+        if self.meteor.is_some() && self.alive() {
+            return true;
         }
         let near = seen
             .iter()
@@ -1638,7 +1646,8 @@ impl Game {
         let planet = &self.planets[pi];
         let shape = planet.world.shape;
         let herd = &self.herds[pi];
-        if herd.list.len() >= self.cfg.creatures_per_planet {
+        let roaming = herd.list.iter().filter(|c| c.meteor.is_none()).count();
+        if roaming >= self.cfg.creatures_per_planet {
             return;
         }
         let near = herd
@@ -1649,7 +1658,7 @@ impl Game {
         let room = spawn_room(
             near,
             self.cfg.creatures_near_player,
-            herd.list.len(),
+            roaming,
             self.cfg.creatures_per_planet,
         );
         if room == 0 {

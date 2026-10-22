@@ -1,0 +1,44 @@
+# Region names (milestone 14, docs/milestones/14-meteorites.md, rule 2).
+# Boundmore's own words. A name is "the"-less `first second`, picked by the
+# land at the region's centre; each planet kind may add its own words, which
+# are mixed in with the shared ones. A name never repeats on one planet.
+#
+#   [land.<class>]  first (adjectives) and second (nouns) for one kind of land:
+#                   sea, shore, plain, hills, mountain, snow
+#   [kind.<name>]   extra first words for every region of that planet kind
+
+[land.sea]
+first = ["Glass", "Drowned", "Tidal", "Silver", "Deep", "Still", "Brine", "Whale"]
+second = ["Reach", "Shallows", "Expanse", "Sound", "Gulf", "Waters", "Mere", "Bay"]
+
+[land.shore]
+first = ["Driftwood", "Gull", "Salt", "Pebble", "Low", "Gentle", "Shell", "Wavebreak"]
+second = ["Strand", "Coast", "Shore", "Beach", "Landing", "Cove", "Spit", "Sands"]
+
+[land.plain]
+first = ["Amber", "Bramble", "Sun", "Honey", "Clover", "Wide", "Lantern", "Thistle", "Meadow", "Quiet"]
+second = ["Fields", "Downs", "Hollows", "Lea", "Flats", "Vale", "Green", "Steppe", "Glade", "Run"]
+
+[land.hills]
+first = ["Rolling", "Fox", "Bracken", "Copper", "Windy", "Barrow", "Moss", "Hawk"]
+second = ["Hills", "Knolls", "Rise", "Tors", "Ridges", "Slopes", "Heights", "Fells"]
+
+[land.mountain]
+first = ["Iron", "Cinder", "Thunder", "Granite", "Broken", "Eagle", "High", "Old"]
+second = ["Peaks", "Crags", "Spires", "Teeth", "Summit", "Horn", "Bluffs", "Scarp"]
+
+[land.snow]
+first = ["Frost", "White", "Rime", "Pale", "Winter", "Hush", "Ice", "Silent"]
+second = ["Wastes", "Drifts", "Fields", "Heights", "Barrens", "Tundra", "Crown", "Hollow"]
+
+[kind.temperate]
+first = ["Willow", "Rain", "Fern"]
+
+[kind.arid]
+first = ["Dust", "Scorched", "Ochre", "Mirage"]
+
+[kind.frozen]
+first = ["Glacier", "Snowfox", "Shiver"]
+
+[kind.lush]
+first = ["Verdant", "Bloom", "Jungle", "Orchid"]

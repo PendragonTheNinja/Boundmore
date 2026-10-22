@@ -1,0 +1,30 @@
+# Meteorite loot (milestone 14, docs/milestones/14-meteorites.md, rule 15).
+# Each player who earns it takes their own share from the meteor heart.
+# Every number here is a guess, to tune in play (Boundless's crate tables
+# are not published); feel.md lists them.
+#
+#   wayshards_base, wayshards_per_level   wayshards = base + per_level x level
+#   tier_bonus        share added per world tier above 3 (0.25: +25% a tier)
+#   rolls_min/max     rolls on `loot` for a cleared meteor, per player
+#   dormant_share     share of the wayshards a dormant meteor pays
+#   dormant_rolls     rolls on `loot` from a dormant meteor
+#   loot              item, weight (relative), min and max per roll
+
+wayshards_base = 4
+wayshards_per_level = 3
+tier_bonus = 0.25
+rolls_min = 1
+rolls_max = 3
+dormant_share = 0.25
+dormant_rolls = 1
+
+loot = [
+  { item = "coal", weight = 6, min = 2, max = 6 },
+  { item = "copper_ore", weight = 6, min = 2, max = 5 },
+  { item = "iron_ore", weight = 4, min = 1, max = 4 },
+  { item = "relic_fragment", weight = 3, min = 1, max = 2 },
+  { item = "bone", weight = 3, min = 1, max = 3 },
+  { item = "volatile_blood", weight = 2, min = 1, max = 2 },
+  { item = "spark_sac", weight = 2, min = 1, max = 1 },
+  { item = "opal", weight = 1, min = 1, max = 1 },
+]

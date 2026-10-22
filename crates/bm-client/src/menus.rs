@@ -452,9 +452,18 @@ pub struct Hud<'a> {
     pub health: (u32, u32),
     /// XP still owed after a defeat: a red stretch on the XP bar.
     pub debt: u64,
+    /// Where we are: "Amber Hollows" or "North of Amber Hollows" (milestone
+    /// 14), at the top.
+    pub region: Option<String>,
+    /// The nearest meteor's status and its bar (the fight left), under it.
+    pub meteor: Option<(String, f32)>,
+    /// The meteor life marker, beside the meteor's status.
+    pub life: Option<String>,
 }
 
 const XP_BAR: Color32 = Color32::from_rgb(132, 196, 236);
+/// A meteor's status and bar.
+const METEOR_EMBER: Color32 = Color32::from_rgb(255, 150, 80);
 /// XP owed after a defeat, on the XP bar and the skill screen.
 pub const DEBT_RED: Color32 = Color32::from_rgb(226, 82, 70);
 /// The health bar's fill: a warm red, darker when low.
@@ -695,9 +704,46 @@ pub fn hud(ctx: &egui::Context, h: &Hud) {
             .interactable(false)
             .order(egui::Order::Background)
     };
+    // The region at the very top; claims and meteors below it.
+    let mut y = 14.0;
+    if let Some(region) = h.region.as_ref().filter(|_| h.claim_mode.is_none()) {
+        top_area("region", 8.0).show(ctx, |ui| {
+            ui.label(
+                egui::RichText::new(region)
+                    .color(Color32::from_rgb(236, 230, 214))
+                    .size(15.0)
+                    .strong(),
+            );
+        });
+        y = 34.0;
+    }
+    if let Some((text, left)) = h.meteor.as_ref().filter(|_| h.claim_mode.is_none()) {
+        let at = if h.owner.is_some() { y + 30.0 } else { y };
+        top_area("meteor", at).show(ctx, |ui| {
+            egui::Frame::new()
+                .fill(Color32::from_black_alpha(140))
+                .corner_radius(CornerRadius::same(10))
+                .inner_margin(egui::Margin::symmetric(12, 5))
+                .show(ui, |ui| {
+                    ui.vertical_centered(|ui| {
+                        ui.label(egui::RichText::new(text).color(METEOR_EMBER).size(14.0));
+                        if *left > 0.0 {
+                            let (rect, _) = ui.allocate_exact_size(vec2(260.0, 6.0), egui::Sense::hover());
+                            ui.painter().rect_filled(rect, 3.0, Color32::from_black_alpha(160));
+                            let mut fill = rect;
+                            fill.set_width(rect.width() * left.clamp(0.0, 1.0));
+                            ui.painter().rect_filled(fill, 3.0, METEOR_EMBER);
+                        }
+                        if let Some(life) = &h.life {
+                            ui.label(egui::RichText::new(life).color(GOLD).size(13.0));
+                        }
+                    });
+                });
+        });
+    }
     // In claim mode the panel says whose land this is instead.
     if let Some((owner, mine)) = h.owner.as_ref().filter(|_| h.claim_mode.is_none()) {
-        top_area("claim-owner", 14.0).show(ctx, |ui| {
+        top_area("claim-owner", y).show(ctx, |ui| {
             egui::Frame::new()
                 .fill(Color32::from_black_alpha(120))
                 .corner_radius(CornerRadius::same(12))

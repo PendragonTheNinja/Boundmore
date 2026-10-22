@@ -126,6 +126,9 @@ impl Game {
                 "The ground around a warp shrine cannot be changed".into(),
             ));
         }
+        if let Some(r) = self.meteor_guards(pi, canon) {
+            return Err(r);
+        }
         if let Some(c) = planet.claims.at_block(canon)
             && c.owner != p.account
         {
@@ -325,6 +328,9 @@ impl Game {
         send_slots(p, &before);
         let xp = super::skills::break_xp(self.planets[pi].world.registry.get(state.id), tier);
         self.block_gone(pi, canon, state.id, Some(id));
+        if state.id == self.meteor_shell_id {
+            self.meteor_shell_broken(id, pi, canon);
+        }
         self.add_xp(id, xp);
         true
     }

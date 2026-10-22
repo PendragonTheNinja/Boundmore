@@ -60,6 +60,11 @@ const RECLAIM: TableDefinition<&str, &[u8]> = TableDefinition::new("reclaim");
 /// Added in M8 without a version bump, as `STORAGE` was; the next portal
 /// number is kept in `META` under "next_portal".
 const PORTALS: TableDefinition<u32, &[u8]> = TableDefinition::new("portals");
+/// Each planet's regions' cooldowns and its meteors, by planet id (save
+/// version 7, milestone 14).
+const SKIES: TableDefinition<u16, &[u8]> = TableDefinition::new("planet_skies");
+/// Regions each account has discovered (save version 7).
+const DISCOVERIES: TableDefinition<&str, &[u8]> = TableDefinition::new("discoveries");
 
 /// Save version 1 and 2 tables, read only to upgrade, then deleted.
 const V1_PLAYERS: TableDefinition<&str, &[u8]> = TableDefinition::new("players");
@@ -84,7 +89,7 @@ const V2_STATIONS: TableDefinition<&[u8], &[u8]> = TableDefinition::new("station
 /// 6 (M13): player data saves the health lost ([`PlayerData::hurt`]) and the
 /// character's XP debt from defeats ([`SavedCharacter::debt`]). Older players
 /// start unhurt with no debt.
-pub const SAVE_VERSION: u32 = 6;
+pub const SAVE_VERSION: u32 = 7;
 
 /// The universe file in the data directory.
 pub const UNIVERSE_FILE: &str = "universe.redb";
@@ -291,6 +296,32 @@ impl From<SavedBody> for PlayerState {
         }
     }
 }
+
+/// A planet's sky as saved (save version 7).
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+pub struct SavedSky {
+    pub rest_until: Vec<u64>,
+    pub squares: Vec<(i64, i64, u64)>,
+    pub meteors: Vec<SavedMeteor>,
+}
+
+/// A meteor as saved: always reopened dormant (rule 16).
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct SavedMeteor {
+    pub id: u32,
+    pub site: BlockPos,
+    pub level: u8,
+    /// The heart closes at this tick.
+    pub until: u64,
+    pub cleared: bool,
+    pub entitled: Vec<String>,
+    pub looted: Vec<String>,
+    pub shell: Vec<BlockPos>,
+    pub broken: u32,
+}
+
+/// Regions each account has discovered, by planet id (save version 7).
+pub type Discoveries = std::collections::BTreeMap<u16, Vec<u16>>;
 
 /// Everything saved about one account's character.
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
@@ -807,10 +838,14 @@ impl Store {
                         4 => upgrade_stations_4_to_5(&tx)?,
                         _ => 0,
                     };
+                    // Version 6 to 7 only adds tables (skies, discoveries),
+                    // which read as empty until written.
                     let players = if from <= 4 {
                         upgrade_players(&tx, from, |b| postcard::from_bytes::<v4::PlayerData>(b).map(Into::into))?
-                    } else {
+                    } else if from == 5 {
                         upgrade_players(&tx, from, |b| postcard::from_bytes::<v5::PlayerData>(b).map(Into::into))?
+                    } else {
+                        0
                     };
                     let u = UniverseMeta {
                         save_version: SAVE_VERSION,
@@ -1086,6 +1121,40 @@ impl Store {
         Ok((out, next))
     }
 
+    /// A planet's saved sky (None before save version 7 or for a new planet).
+    pub fn sky(&self, planet: u16) -> Result<Option<SavedSky>> {
+        let tx = self.db.begin_read()?;
+        let t = match tx.open_table(SKIES) {
+            Ok(t) => t,
+            Err(redb::TableError::TableDoesNotExist(_)) => return Ok(None),
+            Err(e) => return Err(e.into()),
+        };
+        Ok(match t.get(planet)? {
+            Some(v) => match postcard::from_bytes(v.value()) {
+                Ok(s) => Some(s),
+                Err(e) => {
+                    tracing::error!("planet {planet}'s saved meteors are corrupt ({e}); starting fresh");
+                    None
+                }
+            },
+            None => None,
+        })
+    }
+
+    /// The regions an account has discovered, by planet id.
+    pub fn discoveries(&self, key: &str) -> Result<Discoveries> {
+        let tx = self.db.begin_read()?;
+        let t = match tx.open_table(DISCOVERIES) {
+            Ok(t) => t,
+            Err(redb::TableError::TableDoesNotExist(_)) => return Ok(Discoveries::new()),
+            Err(e) => return Err(e.into()),
+        };
+        Ok(match t.get(key)? {
+            Some(v) => postcard::from_bytes(v.value()).context("discoveries are corrupt")?,
+            None => Discoveries::new(),
+        })
+    }
+
     /// The universe clock in ticks (0 for a new universe).
     pub fn clock(&self) -> Result<u64> {
         let tx = self.db.begin_read()?;
@@ -1151,6 +1220,14 @@ impl Store {
             if let Some(next) = batch.next_portal {
                 tx.open_table(META)?
                     .insert("next_portal", postcard::to_stdvec(&next)?.as_slice())?;
+            }
+            let mut skies = tx.open_table(SKIES)?;
+            for (planet, sky) in &batch.skies {
+                skies.insert(*planet, postcard::to_stdvec(sky)?.as_slice())?;
+            }
+            let mut found = tx.open_table(DISCOVERIES)?;
+            for (key, d) in &batch.discoveries {
+                found.insert(key.as_str(), postcard::to_stdvec(d)?.as_slice())?;
             }
         }
         tx.commit()?;
@@ -1449,6 +1526,10 @@ pub struct WriteBatch {
     pub portals: Vec<(u32, Option<SavedPortal>)>,
     /// The next portal number, when it changed.
     pub next_portal: Option<u32>,
+    /// Planet skies that changed (regions' rests, meteors), by planet id.
+    pub skies: Vec<(u16, SavedSky)>,
+    /// Discoveries that changed, by lowercased account name.
+    pub discoveries: Vec<(String, Discoveries)>,
     /// The universe clock, so days and station jobs continue across restarts.
     pub clock: Option<u64>,
     /// Each is signalled once the batch is durable (shutdown waits on one;
@@ -1467,6 +1548,8 @@ impl WriteBatch {
             && self.reclaim.is_empty()
             && self.portals.is_empty()
             && self.next_portal.is_none()
+            && self.skies.is_empty()
+            && self.discoveries.is_empty()
     }
 }
 
@@ -1659,6 +1742,22 @@ mod tests {
             link: Some(4),
             fuel: 499,
         };
+        let sky = SavedSky {
+            rest_until: vec![0, 99, 5],
+            squares: vec![(1, -2, 400)],
+            meteors: vec![SavedMeteor {
+                id: 3,
+                site: BlockPos::new(5, 140, 6),
+                level: 2,
+                until: 9000,
+                cleared: true,
+                entitled: vec!["pendragon".into()],
+                looted: vec![],
+                shell: vec![BlockPos::new(6, 140, 6)],
+                broken: 1,
+            }],
+        };
+        let found: Discoveries = [(2u16, vec![0u16, 4])].into_iter().collect();
         {
             let s = Store::open(&path).unwrap();
             assert_eq!(s.universe(&kinds()).unwrap(), None);
@@ -1700,6 +1799,8 @@ mod tests {
                 )],
                 portals: vec![(9, Some(portal.clone()))],
                 next_portal: Some(12),
+                skies: vec![(2, sky.clone())],
+                discoveries: vec![("pendragon".into(), found.clone())],
                 clock: Some(777),
                 done: Vec::new(),
             })
@@ -1707,6 +1808,10 @@ mod tests {
         }
         let s = Store::open(&path).unwrap();
         assert_eq!(s.universe(&kinds()).unwrap(), None);
+        assert_eq!(s.sky(2).unwrap(), Some(sky), "skies round-trip");
+        assert_eq!(s.sky(3).unwrap(), None);
+        assert_eq!(s.discoveries("pendragon").unwrap(), found);
+        assert!(s.discoveries("nobody").unwrap().is_empty());
         assert_eq!(
             s.planet(2).unwrap(),
             Some(planet("Emberdune")),
