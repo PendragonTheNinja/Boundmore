@@ -327,6 +327,9 @@ pub struct Game {
     portal_surface: BlockId,
     portal_token: ItemId,
     wayshard: ItemId,
+    /// Spark links, and the refund item of a broken generator (milestone 15).
+    spark_link: BlockId,
+    spark_item: ItemId,
     /// Damaged blocks, by planet index (milestone 9; never saved).
     damage: Vec<DamageMap>,
     /// Bonus yields are rolled from this (splitmix64).
@@ -520,7 +523,7 @@ impl Game {
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         cfg: ServerConfig,
-        planets: Vec<Planet>,
+        mut planets: Vec<Planet>,
         start: usize,
         next_claim: u32,
         items: ItemRegistry,
@@ -542,6 +545,8 @@ impl Game {
         let portal_surface = registry.id("portal_surface")?;
         let portal_token = items.id("portal_token")?;
         let wayshard = items.id("wayshard")?;
+        let spark_link = registry.id("spark_link")?;
+        let spark_item = items.id("spark")?;
         let (saved_portals, next_portal) = store.portals()?;
         let portals = Portals::load(saved_portals, next_portal, |id| {
             planets.get(id as usize).map(|p| p.world.shape)
@@ -573,6 +578,11 @@ impl Game {
             .max()
             .unwrap_or(0)
             + 1;
+        if let Some(wear) = cfg.machine_wear_start {
+            for p in &mut planets {
+                p.stations.start_wear = wear.min(bm_core::spark::MACHINE_WEAR);
+            }
+        }
         Ok(Self {
             cfg,
             planets,
@@ -607,6 +617,8 @@ impl Game {
             portal_surface,
             portal_token,
             wayshard,
+            spark_link,
+            spark_item,
             damage: (0..planet_count).map(|_| DamageMap::default()).collect(),
             rng: std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
@@ -1621,6 +1633,11 @@ impl Game {
         };
         self.stats.edits += 1;
         self.change_block(pi, canon, new, Some(id));
+        if matches!(accepted.effect, Effect::Placed { .. })
+            && self.planets[pi].world.registry.get(new.id).station == Some(Station::SparkGenerator)
+        {
+            self.generator_placed(pi, canon);
+        }
         self.add_xp(id, build_xp);
         if let Some(claim) = claim_created {
             if let Some(p) = self.players.get(&id) {
@@ -1809,6 +1826,13 @@ impl Game {
                         "Only 4 {} blocks can touch",
                         bm_core::items::title_case(&reg.get(block).name)
                     )));
+                }
+                if reg.get(block).station == Some(Station::SparkGenerator)
+                    && stations::joins_fuelled_generators(planet, canon, block)
+                {
+                    return Err(Refusal::Told(
+                        "Joined spark generators share one fuel slot: take the fuel out of one first".into(),
+                    ));
                 }
                 if block == self.portal_conduit {
                     if !planet.claims.at_block(canon).is_some_and(|c| c.owner == p.account) {
@@ -2071,7 +2095,9 @@ impl Game {
     /// stations with a job running.
     fn step_stations(&mut self) {
         for pi in 0..self.planets.len() {
-            let changed = self.planets[pi].stations.step(self.tick, &self.items, &self.recipes);
+            let planet = &mut self.planets[pi];
+            let env = stations::PlanetEnv::new(&planet.world, self.spark_link);
+            let changed = planet.stations.step(self.tick, &self.items, &self.recipes, &env);
             for pos in changed {
                 self.push_station(pi, pos);
             }

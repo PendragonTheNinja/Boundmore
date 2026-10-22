@@ -14,12 +14,24 @@
 //! canonical positions), a furnace's base, or the block itself. Any block of
 //! a machine addresses it. These are pure functions over a block lookup, so
 //! the rules are tested without a world.
+//!
+//! - **Spark generators** (milestone 15) joined by faces make one group with
+//!   one store, keyed at its first block like a four-block machine.
+//! - **Spark links** carry spark: [`grid_generators`] finds the generator
+//!   blocks a machine's links reach.
 
 use bm_core::block::Assembly;
 use bm_core::{BlockId, BlockPos, BlockRegistry, PlanetShape, Station};
 
 /// Said by a furnace that is not a crucible on a base.
 pub const FURNACE_IDLE: &str = "A furnace needs its crucible on top";
+
+/// The most generator blocks one group counts (a bound on the search; a
+/// larger cluster still works, as this many).
+pub const GENERATOR_GROUP_LIMIT: usize = 256;
+
+/// The most links one grid search visits, however they branch.
+pub const GRID_SEARCH_LIMIT: usize = 4096;
 
 /// The six face neighbours.
 const FACES: [(i64, i64, i64); 6] = [(1, 0, 0), (-1, 0, 0), (0, 1, 0), (0, -1, 0), (0, 0, 1), (0, 0, -1)];
@@ -176,8 +188,72 @@ pub fn machine_at(
                 },
             })
         }
+        None if def.station == Some(Station::SparkGenerator) => {
+            let mut group = touching(shape, &block, canon, id, GENERATOR_GROUP_LIMIT);
+            group.sort_by_key(order);
+            Some(Machine {
+                key: group[0],
+                kind: Station::SparkGenerator,
+                blocks: group,
+                idle: None,
+            })
+        }
         None => def.station.map(alone),
     }
+}
+
+/// The generator blocks a machine standing on `blocks` reaches through spark
+/// links (`link`): a link touching one of its blocks by a face starts a path,
+/// links touching by faces continue it, and a generator block touching a link
+/// at most [`spark::MAX_LINKS`](bm_core::spark::MAX_LINKS) links along is
+/// reached. Machines never pass spark on: only links are followed. None when
+/// a block the search needs is not resident (the answer is unknown).
+pub fn grid_generators(
+    reg: &BlockRegistry,
+    shape: PlanetShape,
+    block: impl Fn(BlockPos) -> Option<BlockId>,
+    blocks: &[BlockPos],
+    link: BlockId,
+) -> Option<Vec<BlockPos>> {
+    use std::collections::{HashSet, VecDeque};
+    let is_generator = |b: BlockId| reg.get(b).station == Some(Station::SparkGenerator);
+    let mut seen: HashSet<BlockPos> = blocks.iter().copied().collect();
+    let mut queue: VecDeque<(BlockPos, usize)> = VecDeque::new();
+    let mut found = Vec::new();
+    // Distance 0: the machine's own blocks.
+    let mut frontier: Vec<(BlockPos, usize)> = blocks.iter().map(|&b| (b, 0)).collect();
+    let mut visited = 0;
+    loop {
+        for (at, dist) in frontier.drain(..) {
+            for (dx, dy, dz) in FACES {
+                let n = at.offset(dx, dy, dz);
+                if !shape.contains_y(n.y) {
+                    continue;
+                }
+                let n = shape.wrap_block(n);
+                if seen.contains(&n) {
+                    continue;
+                }
+                let b = block(n)?;
+                if dist > 0 && is_generator(b) {
+                    seen.insert(n);
+                    found.push(n);
+                } else if b == link && dist < bm_core::spark::MAX_LINKS {
+                    seen.insert(n);
+                    visited += 1;
+                    if visited <= GRID_SEARCH_LIMIT {
+                        queue.push_back((n, dist + 1));
+                    }
+                }
+            }
+        }
+        match queue.pop_front() {
+            Some(next) => frontier.push(next),
+            None => break,
+        }
+    }
+    found.sort_by_key(order);
+    Some(found)
 }
 
 #[cfg(test)]
@@ -323,5 +399,115 @@ mod tests {
         w.put("stone", p);
         assert_eq!(w.at(p), None);
         assert_eq!(w.at(BlockPos::new(9, 20, 9)), None, "nothing there");
+    }
+
+    impl Patch {
+        /// The generator blocks the machine at `p` reaches (air where nothing
+        /// was put).
+        fn grid(&self, p: BlockPos) -> Vec<BlockPos> {
+            let m = self.at(p).unwrap();
+            let link = self.reg.id("spark_link").unwrap();
+            grid_generators(
+                &self.reg,
+                self.shape,
+                |q| Some(self.blocks.get(&q).copied().unwrap_or(BlockId::AIR)),
+                &m.blocks,
+                link,
+            )
+            .unwrap()
+        }
+    }
+
+    fn mixer_at(w: &mut Patch, x: i64) -> BlockPos {
+        for dx in 0..4 {
+            w.put("mixer", BlockPos::new(x + dx, 20, 0));
+        }
+        BlockPos::new(x, 20, 0)
+    }
+
+    #[test]
+    fn joined_generators_make_one_group_keyed_by_its_first_block() {
+        let mut w = Patch::new();
+        let a = BlockPos::new(3, 21, 3);
+        w.put("spark_generator", a);
+        let m = w.at(a).unwrap();
+        assert_eq!(
+            (m.key, m.kind, m.blocks.len(), m.idle),
+            (a, Station::SparkGenerator, 1, None)
+        );
+        w.put("spark_generator", BlockPos::new(3, 20, 3));
+        w.put("spark_generator", BlockPos::new(4, 20, 3));
+        for p in [a, BlockPos::new(4, 20, 3)] {
+            let m = w.at(p).unwrap();
+            assert_eq!((m.key, m.blocks.len()), (BlockPos::new(3, 20, 3), 3));
+        }
+        w.put("spark_generator", BlockPos::new(6, 20, 3));
+        assert_eq!(
+            w.at(BlockPos::new(6, 20, 3)).unwrap().blocks.len(),
+            1,
+            "one apart is its own"
+        );
+    }
+
+    #[test]
+    fn links_carry_spark_up_to_a_hundred_and_machines_never_pass_it_on() {
+        let run = |w: &mut Patch, n: i64| {
+            for i in 0..n {
+                w.put("spark_link", BlockPos::new(4 + i, 20, 0));
+            }
+            let g = BlockPos::new(4 + n, 20, 0);
+            w.put("spark_generator", g);
+            g
+        };
+        let mut w = Patch::new();
+        let mixer = mixer_at(&mut w, 0);
+        assert!(w.grid(mixer).is_empty(), "no links");
+        // A generator touching the machine itself is not linked.
+        w.put("spark_generator", BlockPos::new(0, 21, 0));
+        assert!(w.grid(mixer).is_empty(), "a generator needs a link between");
+        // A row of links from the mixer's end along +x, a generator at its end.
+        let g = run(&mut w, 100);
+        assert_eq!(w.grid(mixer), vec![g], "100 links reach");
+        let mut w = Patch::new();
+        let mixer = mixer_at(&mut w, 0);
+        run(&mut w, 101);
+        assert!(w.grid(mixer).is_empty(), "101 do not");
+
+        // Two machines side by side: the far one is not on the grid through
+        // the near one.
+        let mut w = Patch::new();
+        let near = mixer_at(&mut w, 0);
+        w.put("spark_link", BlockPos::new(-1, 20, 0));
+        let g = BlockPos::new(-2, 20, 0);
+        w.put("spark_generator", g);
+        for dx in 0..4 {
+            w.put("refinery", BlockPos::new(dx, 21, 0));
+        }
+        let g = w.shape.wrap_block(g);
+        assert_eq!(w.grid(near), vec![g]);
+        assert!(
+            w.grid(BlockPos::new(0, 21, 0)).is_empty(),
+            "machines never pass spark on"
+        );
+        // Its own link to the same line puts it on the grid.
+        w.put("spark_link", BlockPos::new(-1, 21, 0));
+        assert_eq!(w.grid(BlockPos::new(0, 21, 0)), vec![g]);
+
+        // A generator joined to the reached one is in its group.
+        w.put("spark_generator", BlockPos::new(-3, 20, 0));
+        assert_eq!(w.grid(near), vec![g], "only the generator blocks the links touch");
+        assert_eq!(w.at(g).unwrap().blocks.len(), 2, "but they are one group");
+    }
+
+    #[test]
+    fn a_grid_search_over_unloaded_blocks_is_unknown() {
+        let mut w = Patch::new();
+        mixer_at(&mut w, 0);
+        w.put("spark_link", BlockPos::new(4, 20, 0));
+        let m = w.at(BlockPos::new(0, 20, 0)).unwrap();
+        let link = w.reg.id("spark_link").unwrap();
+        // Everything not put is unloaded.
+        let got = grid_generators(&w.reg, w.shape, |q| w.blocks.get(&q).copied(), &m.blocks, link);
+        assert_eq!(got, None);
     }
 }

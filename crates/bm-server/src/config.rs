@@ -136,6 +136,9 @@ pub struct ServerConfig {
     /// arrival point once a player is there, skipping the triggers and the
     /// distance rules (tests).
     pub placed_meteor: Option<[f64; 2]>,
+    /// The wear a machine nobody has used starts with, instead of full
+    /// (tests that wear one out).
+    pub machine_wear_start: Option<u32>,
 
     /// Save version 2 settings, still read so an old `server.toml` keeps its
     /// planet: they apply to the first planet.
@@ -177,6 +180,7 @@ impl Default for ServerConfig {
             placed_creatures: Vec::new(),
             discovery_xp: true,
             placed_meteor: None,
+            machine_wear_start: None,
             planet_name: None,
             seed: None,
             width_chunks: None,

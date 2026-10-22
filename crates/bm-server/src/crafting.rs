@@ -13,14 +13,27 @@
 //! slot as needed; without enough, the craft waits, with no progress, until
 //! fuel arrives.
 //!
-//! A station has data only while it holds jobs, output, fuel or banked heat;
-//! jobs, output and fuel stop it being broken.
+//! Spark (milestone 15): a spark generator burns its fuel slot into spark,
+//! one item at a time over the item's burn time, into its group's store (a
+//! group's record is kept at its first block); burning pauses while the
+//! store is full. A recipe with spark starts only when the generators its
+//! machine's links reach can pay it all, fullest first; short of it, the
+//! craft waits (retried every [`RETRY_EVERY`] ticks). Where the links go is
+//! the world's business: [`Surroundings`] answers for it.
+//!
+//! Wear (milestone 15): machines that wear (`spark::wears`) lose each
+//! recipe's `wear` as a craft starts, and wait at 0 until a spanner repairs
+//! them ([`Stations::repair`]).
+//!
+//! A station has data only while it holds jobs, output, fuel, banked heat,
+//! spark or wear; jobs, output and fuel stop it being broken.
 //!
 //! Hand recipes are instant wherever they are asked for, a crafting table
 //! included (Boundless queued them at a table; instant keeps the hand and the
 //! table the same and costs nothing).
 
 use crate::store::{SavedJob, SavedStack, SavedStation, load_slots, save_slots};
+use bm_core::spark::{self, MACHINE_WEAR};
 use bm_core::{BlockPos, Inventory, ItemRegistry, ItemStack, Recipe, RecipeBook, Station, TICK_HZ};
 use bm_protocol::{JobView, StationView};
 use std::collections::{BTreeSet, HashMap, VecDeque};
@@ -31,6 +44,63 @@ pub const OUTPUT_STACKS: usize = 10;
 pub const MAX_JOBS: usize = 8;
 /// Crafts one request may ask for.
 pub const MAX_CRAFT_COUNT: u16 = 100;
+/// Crafts waiting for spark try again this often (ticks).
+pub const RETRY_EVERY: u64 = 30;
+
+/// Said by a machine whose links reach no generator.
+pub const NO_SPARK: &str = "No spark: link this machine to a spark generator";
+/// Said by a worn-out machine.
+pub const WORN_OUT: &str = "Worn out: repair it with a spanner";
+
+/// What a station's world around it says, which the station records cannot:
+/// where its spark links lead and what its furnace base is. Each answer is
+/// None when the blocks it needs are not resident; the station then uses
+/// what it last heard.
+pub trait Surroundings {
+    /// The keys of the generator groups the machine keyed at `machine`
+    /// reaches through links (empty: none).
+    fn generators(&self, machine: BlockPos) -> Option<Vec<BlockPos>>;
+    /// The share of a recipe's heat the furnace keyed at `furnace` burns.
+    fn heat_share(&self, furnace: BlockPos) -> Option<f32>;
+}
+
+/// No world: no links, stone furnaces (tests, and stations nobody built).
+pub struct Nowhere;
+
+impl Surroundings for Nowhere {
+    fn generators(&self, _: BlockPos) -> Option<Vec<BlockPos>> {
+        Some(Vec::new())
+    }
+    fn heat_share(&self, _: BlockPos) -> Option<f32> {
+        Some(1.0)
+    }
+}
+
+/// Why a station's next craft has not started.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Wait {
+    /// A furnace without the heat; starts when fuel arrives.
+    Heat,
+    /// Its links reach no generator.
+    NoGrid,
+    /// Its generators hold less than the craft's spark.
+    Spark(u32),
+    /// Worn out: waits for a spanner.
+    Worn,
+}
+
+impl Wait {
+    /// In plain words, for the machine's window (None for heat, which the
+    /// furnace window shows by itself).
+    pub fn text(self) -> Option<String> {
+        match self {
+            Wait::Heat => None,
+            Wait::NoGrid => Some(NO_SPARK.into()),
+            Wait::Spark(n) => Some(format!("Not enough spark (needs {n})")),
+            Wait::Worn => Some(WORN_OUT.into()),
+        }
+    }
+}
 
 /// Ticks one craft of `recipe` takes (at least one).
 pub fn craft_ticks(recipe: &Recipe) -> u64 {
@@ -107,16 +177,41 @@ pub struct StationData {
     pub fuel: Option<ItemStack>,
     /// Heat banked from fuel already burnt, drawn by each craft as it starts.
     pub heat: u32,
-    /// The head job's current craft is waiting for heat: it has not started
-    /// (no progress) and starts when fuel arrives.
-    pub waiting: bool,
+    /// The head job's current craft is waiting (for heat, spark or a
+    /// repair): it has not started (no progress).
+    pub wait: Option<Wait>,
     /// Craft XP of the finished output (milestone 12): each finished craft
     /// adds its recipe's `xp`, and whoever next collects output gets it all.
     pub xp: u32,
+    /// Wear left (machines that wear; `MACHINE_WEAR` when repaired).
+    pub wear: u32,
+    /// A generator group's stored spark.
+    pub spark: u32,
+    /// A generator: spark still to come from the item burning, and the ticks
+    /// it takes to give it.
+    pub burn_left: u32,
+    pub burn_ticks: u32,
+    /// A generator group's blocks, for its capacity.
+    pub blocks: u32,
+    /// What the surroundings last said: the generators a machine's links
+    /// reach, a furnace's heat share (not saved; asked again).
+    grid: Heard<Vec<BlockPos>>,
+    heat_share: Heard<f32>,
+}
+
+/// Something a station last heard from its surroundings: kept for when
+/// they cannot answer, never part of what the station is (equal always).
+#[derive(Clone, Debug, Default)]
+struct Heard<T>(Option<T>);
+
+impl<T> PartialEq for Heard<T> {
+    fn eq(&self, _: &Self) -> bool {
+        true
+    }
 }
 
 impl StationData {
-    fn new(kind: Station) -> Self {
+    fn new(kind: Station, wear: u32) -> Self {
         Self {
             kind,
             jobs: VecDeque::new(),
@@ -126,14 +221,73 @@ impl StationData {
             },
             fuel: None,
             heat: 0,
-            waiting: false,
+            wait: None,
             xp: 0,
+            wear: if spark::wears(kind) { wear.min(MACHINE_WEAR) } else { 0 },
+            spark: 0,
+            burn_left: 0,
+            burn_ticks: 0,
+            blocks: 1,
+            grid: Heard(None),
+            heat_share: Heard(None),
         }
     }
 
     /// Nothing worth keeping a record for.
     fn is_empty(&self) -> bool {
-        !self.holds_anything() && self.heat == 0
+        !self.holds_anything()
+            && self.heat == 0
+            && self.spark == 0
+            && self.burn_left == 0
+            && (!spark::wears(self.kind) || self.wear >= MACHINE_WEAR)
+    }
+
+    /// A generator group's store: the most it holds.
+    pub fn capacity(&self) -> u32 {
+        spark::capacity(self.blocks.max(1) as usize)
+    }
+
+    /// A generator: one tick of burning. Takes the next fuel item when the
+    /// last is spent; gives nothing while the store is full. Returns whether
+    /// it took an item (a change worth showing at once).
+    fn burn(&mut self, items: &ItemRegistry) -> bool {
+        let cap = self.capacity();
+        if self.spark >= cap {
+            return false;
+        }
+        let mut took = false;
+        if self.burn_left == 0 {
+            let Some(f) = &mut self.fuel else { return false };
+            let value = items.get(f.item).map_or(0, |d| d.fuel);
+            if value == 0 {
+                return false;
+            }
+            f.count -= 1;
+            if f.count == 0 {
+                self.fuel = None;
+            }
+            self.burn_left = value as u32;
+            self.burn_ticks = ((spark::burn_seconds(value) as f64 * TICK_HZ as f64).round() as u32).max(1);
+            took = true;
+        }
+        // Spread evenly: what is left over the ticks left, the last tick
+        // giving the rest.
+        let due = self.burn_left.div_ceil(self.burn_ticks.max(1));
+        let give = due.min(cap - self.spark);
+        self.spark += give;
+        self.burn_left -= give;
+        if give == due {
+            self.burn_ticks = self.burn_ticks.saturating_sub(1).max(1);
+        }
+        if self.burn_left == 0 {
+            self.burn_ticks = 0;
+        }
+        took
+    }
+
+    /// Whether a generator has anything to burn.
+    fn burns(&self) -> bool {
+        self.kind == Station::SparkGenerator && (self.burn_left > 0 || self.fuel.is_some())
     }
 
     /// Jobs, output or fuel: what stops it being broken. Banked heat alone
@@ -143,17 +297,16 @@ impl StationData {
         !self.jobs.is_empty() || self.output.slots.iter().any(Option::is_some) || self.fuel.is_some()
     }
 
-    /// Starts the head job's next craft at `tick`: it draws its recipe's
-    /// heat from the bank, burning fuel from the slot one item at a time as
-    /// needed. With not enough heat it waits (and keeps what it burnt
-    /// banked). Returns whether the craft is running.
-    fn start_craft(&mut self, tick: u64, items: &ItemRegistry, recipes: &RecipeBook) -> bool {
-        self.started = tick;
+    /// Draws the head job's next craft's heat from the bank (`share` of the
+    /// recipe's: an iron furnace burns half), burning fuel from the slot one
+    /// item at a time as needed. With not enough it keeps what it burnt
+    /// banked and returns false.
+    fn pay_heat(&mut self, items: &ItemRegistry, recipes: &RecipeBook, share: f32) -> bool {
         let need = self
             .jobs
             .front()
             .and_then(|j| recipes.get(j.recipe))
-            .map_or(0, |r| r.heat as u32);
+            .map_or(0, |r| spark::furnace_heat(r.heat, share) as u32);
         while self.heat < need {
             let Some(f) = &mut self.fuel else { break };
             let value = items.get(f.item).map_or(0, |d| d.fuel as u32);
@@ -166,21 +319,28 @@ impl StationData {
                 self.fuel = None;
             }
         }
-        self.waiting = self.heat < need;
-        if !self.waiting {
-            self.heat -= need;
+        if self.heat < need {
+            return false;
         }
-        !self.waiting
+        self.heat -= need;
+        true
     }
 }
 
 pub struct Stations {
     map: HashMap<BlockPos, StationData>,
     /// Stations whose head job is running (not finished-and-waiting for
-    /// room, nor waiting for heat).
+    /// room, nor waiting for heat, spark or a repair).
     active: BTreeSet<BlockPos>,
+    /// Generators with fuel to burn or an item burning.
+    burning: BTreeSet<BlockPos>,
+    /// Stations waiting for spark, tried again every [`RETRY_EVERY`] ticks.
+    retry: BTreeSet<BlockPos>,
     /// Changed since the last save.
     dirty: BTreeSet<BlockPos>,
+    /// The wear a machine without a record has (`MACHINE_WEAR`; tests set
+    /// less).
+    pub start_wear: u32,
 }
 
 impl Stations {
@@ -188,7 +348,10 @@ impl Stations {
         Self {
             map: HashMap::new(),
             active: BTreeSet::new(),
+            burning: BTreeSet::new(),
+            retry: BTreeSet::new(),
             dirty: BTreeSet::new(),
+            start_wear: MACHINE_WEAR,
         }
     }
 
@@ -198,10 +361,20 @@ impl Stations {
     pub fn load(saved: Vec<(BlockPos, SavedStation)>, items: &ItemRegistry, recipes: &RecipeBook) -> Self {
         let mut s = Self::new();
         for (pos, saved) in saved {
-            let mut st = StationData::new(saved.kind);
+            let mut st = StationData::new(saved.kind, saved.wear);
             st.started = saved.started;
             st.heat = saved.heat;
             st.xp = saved.xp;
+            if saved.kind == Station::SparkGenerator {
+                st.blocks = saved.blocks.max(1);
+                st.spark = saved.spark;
+                st.burn_left = saved.burn_left;
+                st.burn_ticks = if saved.burn_left > 0 {
+                    saved.burn_ticks.max(1)
+                } else {
+                    0
+                };
+            }
             let what = format!("station at {pos:?}");
             let valid = |s: &ItemStack| s.count > 0 && items.get(s.item).is_some_and(|d| s.count <= d.stack);
             for (slot, stack) in st.output.slots.iter_mut().zip(load_slots(items, &saved.output, &what)) {
@@ -222,13 +395,27 @@ impl Stations {
                     None => refund(&mut st, &job, items, &what),
                 }
             }
-            st.waiting = saved.waiting && !st.jobs.is_empty();
+            // Why it waited is asked again: heat in a furnace, a repair when
+            // worn out, else spark (tried again soon).
+            st.wait = match st.jobs.front().and_then(|j| recipes.get(j.recipe)) {
+                Some(_) if !saved.waiting => None,
+                None => None,
+                Some(_) if st.kind == Station::Furnace => Some(Wait::Heat),
+                Some(_) if spark::wears(st.kind) && st.wear == 0 => Some(Wait::Worn),
+                Some(r) => {
+                    s.retry.insert(pos);
+                    Some(Wait::Spark(r.spark))
+                }
+            };
             if st.is_empty() {
                 s.dirty.insert(pos);
                 continue;
             }
-            if !st.jobs.is_empty() && !st.waiting {
+            if !st.jobs.is_empty() && st.wait.is_none() {
                 s.active.insert(pos);
+            }
+            if st.burns() {
+                s.burning.insert(pos);
             }
             s.map.insert(pos, st);
         }
@@ -239,7 +426,8 @@ impl Stations {
         self.map.get(&pos)
     }
 
-    /// Whether a record is kept at `pos` (contents, or banked heat).
+    /// Whether a record is kept at `pos` (contents, banked heat, spark or
+    /// wear).
     pub fn exists(&self, pos: BlockPos) -> bool {
         self.map.contains_key(&pos)
     }
@@ -258,16 +446,24 @@ impl Stations {
             return;
         }
         let Some(st) = self.map.remove(&from) else { return };
-        if self.active.remove(&from) {
-            self.active.insert(to);
+        for set in [&mut self.active, &mut self.burning, &mut self.retry] {
+            if set.remove(&from) {
+                set.insert(to);
+            }
         }
         self.map.insert(to, st);
         self.dirty.insert(from);
         self.dirty.insert(to);
     }
 
+    /// A new record for a station of `kind`.
+    fn fresh(&self, kind: Station) -> StationData {
+        StationData::new(kind, self.start_wear)
+    }
+
     /// Queues `times` crafts of recipe `index` (inputs already taken). The
-    /// first craft of an idle station starts at once, drawing its heat.
+    /// first craft of an idle station starts at once, drawing its heat,
+    /// spark and wear.
     #[allow(clippy::too_many_arguments)]
     pub fn queue(
         &mut self,
@@ -278,8 +474,10 @@ impl Stations {
         tick: u64,
         items: &ItemRegistry,
         recipes: &RecipeBook,
+        env: &dyn Surroundings,
     ) -> Result<(), CraftError> {
-        let st = self.map.entry(pos).or_insert_with(|| StationData::new(kind));
+        let fresh = self.fresh(kind);
+        let st = self.map.entry(pos).or_insert(fresh);
         if st.jobs.len() >= MAX_JOBS {
             return Err(CraftError::QueueFull);
         }
@@ -287,11 +485,124 @@ impl Stations {
             recipe: index,
             remaining: times,
         });
-        if st.jobs.len() == 1 && st.start_craft(tick, items, recipes) {
-            self.active.insert(pos);
+        if st.jobs.len() == 1 {
+            self.try_start(pos, tick, items, recipes, env);
         }
         self.dirty.insert(pos);
         Ok(())
+    }
+
+    /// Starts the head job's next craft of the station at `pos` at `tick`,
+    /// or records why it waits. Returns whether it is running.
+    fn try_start(
+        &mut self,
+        pos: BlockPos,
+        tick: u64,
+        items: &ItemRegistry,
+        recipes: &RecipeBook,
+        env: &dyn Surroundings,
+    ) -> bool {
+        let Some(mut st) = self.map.remove(&pos) else {
+            return false;
+        };
+        let wait = self.start(&mut st, pos, items, recipes, env);
+        st.wait = wait;
+        st.started = tick;
+        let running = wait.is_none() && !st.jobs.is_empty();
+        if running {
+            self.active.insert(pos);
+        } else {
+            self.active.remove(&pos);
+        }
+        if matches!(wait, Some(Wait::NoGrid | Wait::Spark(_))) {
+            self.retry.insert(pos);
+        } else {
+            self.retry.remove(&pos);
+        }
+        self.map.insert(pos, st);
+        self.dirty.insert(pos);
+        running
+    }
+
+    /// The checks and costs of starting `st`'s next craft (its record taken
+    /// out of the map, so generators can be drawn from): wear left, then
+    /// heat, then spark; the craft's wear is taken once it starts.
+    fn start(
+        &mut self,
+        st: &mut StationData,
+        pos: BlockPos,
+        items: &ItemRegistry,
+        recipes: &RecipeBook,
+        env: &dyn Surroundings,
+    ) -> Option<Wait> {
+        let recipe = recipes.get(st.jobs.front()?.recipe)?;
+        if spark::wears(st.kind) && st.wear == 0 {
+            return Some(Wait::Worn);
+        }
+        if st.kind == Station::Furnace {
+            if let Some(share) = env.heat_share(pos) {
+                st.heat_share.0 = Some(share);
+            }
+            if !st.pay_heat(items, recipes, st.heat_share.0.unwrap_or(1.0)) {
+                return Some(Wait::Heat);
+            }
+        }
+        if recipe.spark > 0 {
+            if let Some(grid) = env.generators(pos) {
+                st.grid.0 = Some(grid);
+            }
+            let grid = st.grid.0.clone().unwrap_or_default();
+            if grid.is_empty() {
+                return Some(Wait::NoGrid);
+            }
+            if !self.draw_spark(&grid, recipe.spark) {
+                return Some(Wait::Spark(recipe.spark));
+            }
+        }
+        st.wear = st.wear.saturating_sub(recipe.wear as u32);
+        None
+    }
+
+    /// Spark the generator groups keyed at `grid` hold together.
+    pub fn grid_spark(&self, grid: &[BlockPos]) -> u32 {
+        grid.iter()
+            .filter_map(|g| self.map.get(g))
+            .filter(|st| st.kind == Station::SparkGenerator)
+            .fold(0u32, |sum, st| sum.saturating_add(st.spark))
+    }
+
+    /// Takes `need` spark from the generator groups keyed at `grid`, fullest
+    /// first, all or nothing.
+    fn draw_spark(&mut self, grid: &[BlockPos], need: u32) -> bool {
+        if self.grid_spark(grid) < need {
+            return false;
+        }
+        let mut stores: Vec<(u32, BlockPos)> = grid
+            .iter()
+            .filter_map(|g| {
+                self.map
+                    .get(g)
+                    .filter(|st| st.kind == Station::SparkGenerator)
+                    .map(|st| (st.spark, *g))
+            })
+            .collect();
+        stores.sort_by(|a, b| b.0.cmp(&a.0).then(order(&a.1).cmp(&order(&b.1))));
+        stores.dedup_by_key(|s| s.1);
+        let mut left = need;
+        for (_, g) in stores {
+            if left == 0 {
+                break;
+            }
+            let Some(st) = self.map.get_mut(&g) else { continue };
+            let take = st.spark.min(left);
+            st.spark -= take;
+            left -= take;
+            self.dirty.insert(g);
+            if st.is_empty() {
+                self.map.remove(&g);
+            }
+        }
+        true
     }
 
     /// Whether a queue of this station has room for one more job.
@@ -301,7 +612,9 @@ impl Stations {
 
     /// Puts up to `stack.count` of `stack` into the fuel slot of the station
     /// at `pos` (merging with what is there, up to a stack). Returns how many
-    /// went in. A craft waiting for heat starts if it now has enough.
+    /// went in. A craft waiting for heat starts if it now has enough; a
+    /// generator starts burning.
+    #[allow(clippy::too_many_arguments)]
     pub fn add_fuel(
         &mut self,
         pos: BlockPos,
@@ -310,11 +623,13 @@ impl Stations {
         tick: u64,
         items: &ItemRegistry,
         recipes: &RecipeBook,
+        env: &dyn Surroundings,
     ) -> u16 {
         let Some(def) = items.get(stack.item).filter(|d| d.fuel > 0) else {
             return 0;
         };
-        let st = self.map.entry(pos).or_insert_with(|| StationData::new(kind));
+        let fresh = self.fresh(kind);
+        let st = self.map.entry(pos).or_insert(fresh);
         let put = match &mut st.fuel {
             None => {
                 let n = stack.count.min(def.stack);
@@ -332,13 +647,25 @@ impl Stations {
         };
         if put > 0 {
             self.dirty.insert(pos);
-            if st.waiting && st.start_craft(tick, items, recipes) {
-                self.active.insert(pos);
+            if st.burns() {
+                self.burning.insert(pos);
+            }
+            if st.wait == Some(Wait::Heat) {
+                self.try_start(pos, tick, items, recipes, env);
             }
         } else if st.is_empty() {
             self.map.remove(&pos);
         }
         put
+    }
+
+    /// Sets the block count of the generator group keyed at `key` (its
+    /// capacity), if it has a record.
+    pub fn set_generator_blocks(&mut self, key: BlockPos, blocks: usize) {
+        if let Some(st) = self.map.get_mut(&key).filter(|st| st.kind == Station::SparkGenerator) {
+            st.blocks = blocks.max(1) as u32;
+            self.dirty.insert(key);
+        }
     }
 
     /// Takes up to `count` from the fuel slot of the station at `pos`.
@@ -363,29 +690,192 @@ impl Stations {
 
     /// Puts back fuel taken by [`Self::take_fuel`] that found no room.
     pub fn return_fuel(&mut self, pos: BlockPos, kind: Station, stack: ItemStack) {
-        let st = self.map.entry(pos).or_insert_with(|| StationData::new(kind));
+        let fresh = self.fresh(kind);
+        let st = self.map.entry(pos).or_insert(fresh);
         match &mut st.fuel {
             Some(f) => f.count = f.count.saturating_add(stack.count),
             None => st.fuel = Some(stack),
         }
+        if st.burns() {
+            self.burning.insert(pos);
+        }
         self.dirty.insert(pos);
     }
 
-    /// Finishes every craft due by `tick`. Returns the stations that changed.
-    pub fn step(&mut self, tick: u64, items: &ItemRegistry, recipes: &RecipeBook) -> Vec<BlockPos> {
+    /// Repairs the machine keyed at `pos` by `amount` wear (a spanner hit),
+    /// up to `MACHINE_WEAR`; a worn-out queue starts again. Returns the wear
+    /// it has now.
+    #[allow(clippy::too_many_arguments)]
+    pub fn repair(
+        &mut self,
+        pos: BlockPos,
+        kind: Station,
+        amount: u32,
+        tick: u64,
+        items: &ItemRegistry,
+        recipes: &RecipeBook,
+        env: &dyn Surroundings,
+    ) -> u32 {
+        let fresh = self.fresh(kind);
+        let st = self.map.entry(pos).or_insert(fresh);
+        st.wear = st.wear.saturating_add(amount).min(MACHINE_WEAR);
+        let wear = st.wear;
+        let worn = st.wait == Some(Wait::Worn);
+        let empty = st.is_empty();
+        self.dirty.insert(pos);
+        if worn {
+            self.try_start(pos, tick, items, recipes, env);
+        } else if empty {
+            self.map.remove(&pos);
+        }
+        wear
+    }
+
+    /// The wear the machine keyed at `pos` has left.
+    pub fn wear(&self, pos: BlockPos) -> u32 {
+        self.map.get(&pos).map_or(self.start_wear, |st| st.wear)
+    }
+
+    /// Forgets the record of a machine whose block was broken, when nothing
+    /// in it stops that (its wear, banked heat; contents stop a break).
+    pub fn forget(&mut self, pos: BlockPos) {
+        if self.map.get(&pos).is_some_and(|st| !st.holds_anything()) {
+            self.map.remove(&pos);
+            self.active.remove(&pos);
+            self.burning.remove(&pos);
+            self.retry.remove(&pos);
+            self.dirty.insert(pos);
+        }
+    }
+
+    /// Generator blocks have joined into one group keyed at `key`, of
+    /// `blocks` blocks: the records of the groups that joined (kept at
+    /// `others`) add up at the key: spark, fuel, the items burning.
+    pub fn join_generators(&mut self, key: BlockPos, others: &[BlockPos], blocks: usize) {
+        for &o in others {
+            if o == key || !self.map.get(&o).is_some_and(|st| st.kind == Station::SparkGenerator) {
+                continue;
+            }
+            let Some(from) = self.map.remove(&o) else { continue };
+            for set in [&mut self.active, &mut self.burning, &mut self.retry] {
+                set.remove(&o);
+            }
+            self.dirty.insert(o);
+            let fresh = self.fresh(Station::SparkGenerator);
+            let st = self.map.entry(key).or_insert(fresh);
+            st.spark = st.spark.saturating_add(from.spark);
+            st.burn_left = st.burn_left.saturating_add(from.burn_left);
+            st.burn_ticks = st.burn_ticks.max(from.burn_ticks);
+            match (&mut st.fuel, from.fuel) {
+                (_, None) => {}
+                (None, f) => st.fuel = f,
+                (Some(f), Some(g)) => f.count = f.count.saturating_add(g.count),
+            }
+        }
+        self.set_generator_blocks(key, blocks);
+        if self.map.get(&key).is_some_and(StationData::burns) {
+            self.burning.insert(key);
+        }
+    }
+
+    /// A block of the generator group keyed at `key`, of `blocks` blocks,
+    /// has been broken, and what is left stands as `groups` (each key and
+    /// its blocks). The broken block takes its share of the store, returned
+    /// for the refund; the rest is shared by the groups by size, and the
+    /// item burning burns on in the first.
+    pub fn break_generator(&mut self, key: BlockPos, blocks: usize, groups: &[(BlockPos, usize)]) -> u32 {
+        let Some(st) = self.map.remove(&key).filter(|st| st.kind == Station::SparkGenerator) else {
+            return 0;
+        };
+        for set in [&mut self.active, &mut self.burning, &mut self.retry] {
+            set.remove(&key);
+        }
+        self.dirty.insert(key);
+        let share = st.spark / blocks.max(1) as u32;
+        let rest = (st.spark - share) as u64;
+        let total: u64 = groups.iter().map(|g| g.1 as u64).sum();
+        let mut given = 0u64;
+        for (i, &(g, n)) in groups.iter().enumerate() {
+            let part = if i + 1 == groups.len() {
+                rest - given
+            } else {
+                rest * n as u64 / total.max(1)
+            };
+            given += part;
+            let mut new = self.fresh(Station::SparkGenerator);
+            new.blocks = n.max(1) as u32;
+            new.spark = part as u32;
+            if i == 0 {
+                new.burn_left = st.burn_left;
+                new.burn_ticks = st.burn_ticks;
+                new.fuel = st.fuel;
+            }
+            self.dirty.insert(g);
+            if new.is_empty() {
+                continue;
+            }
+            if new.burns() {
+                self.burning.insert(g);
+            }
+            self.map.insert(g, new);
+        }
+        share
+    }
+
+    /// Finishes every craft due by `tick`, burns generators' fuel and tries
+    /// crafts waiting for spark again. Returns the stations that changed
+    /// enough to show at once.
+    pub fn step(
+        &mut self,
+        tick: u64,
+        items: &ItemRegistry,
+        recipes: &RecipeBook,
+        env: &dyn Surroundings,
+    ) -> Vec<BlockPos> {
         let mut changed = Vec::new();
-        let mut idle = Vec::new();
-        for &pos in &self.active {
-            let Some(st) = self.map.get_mut(&pos) else {
-                idle.push(pos);
+        let mut out = Vec::new();
+        for &pos in &self.burning {
+            let Some(st) = self.map.get_mut(&pos).filter(|st| st.burns()) else {
+                out.push(pos);
                 continue;
             };
-            if st.waiting {
-                idle.push(pos);
+            let before = st.spark;
+            if st.burn(items) {
+                changed.push(pos);
+            }
+            if st.spark != before {
+                self.dirty.insert(pos);
+            }
+            if !st.burns() {
+                out.push(pos);
+                changed.push(pos);
+            }
+        }
+        for pos in out {
+            self.burning.remove(&pos);
+        }
+        if tick % RETRY_EVERY == 0 {
+            let waiting: Vec<BlockPos> = self.retry.iter().copied().collect();
+            for pos in waiting {
+                let before = self.map.get(&pos).and_then(|st| st.wait);
+                if self.try_start(pos, tick, items, recipes, env) || self.map.get(&pos).and_then(|st| st.wait) != before
+                {
+                    changed.push(pos);
+                }
+            }
+        }
+        let active: Vec<BlockPos> = self.active.iter().copied().collect();
+        for pos in active {
+            let Some(st) = self.map.get_mut(&pos) else {
+                self.active.remove(&pos);
+                continue;
+            };
+            if st.wait.is_some() {
+                self.active.remove(&pos);
                 continue;
             }
             let Some(job) = st.jobs.front_mut() else {
-                idle.push(pos);
+                self.active.remove(&pos);
                 continue;
             };
             let Some(recipe) = recipes.get(job.recipe) else {
@@ -399,7 +889,7 @@ impl Stations {
             }
             if st.output.add_all(items, recipe.output, recipe.output_count).is_none() {
                 // Full: wait, finished, until someone collects.
-                idle.push(pos);
+                self.active.remove(&pos);
                 continue;
             }
             job.remaining -= 1;
@@ -407,14 +897,15 @@ impl Stations {
             if job.remaining == 0 {
                 st.jobs.pop_front();
             }
-            if st.jobs.is_empty() || !st.start_craft(tick, items, recipes) {
-                idle.push(pos);
+            if st.jobs.is_empty() {
+                self.active.remove(&pos);
+            } else {
+                self.try_start(pos, tick, items, recipes, env);
             }
             changed.push(pos);
         }
-        for pos in idle {
-            self.active.remove(&pos);
-        }
+        changed.sort_by_key(order);
+        changed.dedup();
         self.dirty.extend(changed.iter().copied());
         changed
     }
@@ -445,7 +936,7 @@ impl Stations {
         if moved {
             self.dirty.insert(pos);
             // There may be room now for a craft that was waiting.
-            if !st.jobs.is_empty() && !st.waiting {
+            if !st.jobs.is_empty() && st.wait.is_none() {
                 self.active.insert(pos);
             }
             let xp = std::mem::take(&mut st.xp);
@@ -459,12 +950,14 @@ impl Stations {
 
     /// Removes a station's data, returning everything in it: its output, its
     /// fuel, and the inputs of every craft not yet finished (the one under
-    /// way too). Banked heat is lost. Used when its claim lapses.
+    /// way too). Banked heat and spark are lost. Used when its claim lapses.
     pub fn take(&mut self, pos: BlockPos, recipes: &RecipeBook) -> Vec<ItemStack> {
         let Some(st) = self.map.remove(&pos) else {
             return Vec::new();
         };
-        self.active.remove(&pos);
+        for set in [&mut self.active, &mut self.burning, &mut self.retry] {
+            set.remove(&pos);
+        }
         self.dirty.insert(pos);
         let mut out: Vec<ItemStack> = st.output.slots.iter().flatten().copied().collect();
         out.extend(st.fuel);
@@ -482,13 +975,16 @@ impl Stations {
         out
     }
 
-    /// Stations whose current craft is under way (for progress updates).
+    /// Stations whose current craft is under way, and generators burning
+    /// (for progress updates).
     pub fn running(&self) -> impl Iterator<Item = BlockPos> + '_ {
-        self.active.iter().copied()
+        self.active.iter().chain(self.burning.iter()).copied()
     }
 
     /// What a player sees. `kind` is the machine's station kind, used for an
-    /// empty station; `idle` why the machine does not work, if it does not.
+    /// empty station; `idle` why the machine does not work, if it does not
+    /// (else why its craft waits, if it does). Spark is the caller's to
+    /// fill in: it needs the world.
     pub fn view(
         &self,
         pos: BlockPos,
@@ -497,6 +993,7 @@ impl Stations {
         tick: u64,
         recipes: &RecipeBook,
     ) -> StationView {
+        let wear = spark::wears(kind).then(|| (self.wear(pos), MACHINE_WEAR));
         let Some(st) = self.map.get(&pos) else {
             return StationView {
                 pos,
@@ -506,7 +1003,7 @@ impl Stations {
                 idle,
                 fuel: None,
                 heat: 0,
-                wear: None,
+                wear,
                 spark: None,
             };
         };
@@ -516,7 +1013,7 @@ impl Stations {
             .enumerate()
             .map(|(i, j)| {
                 let progress = match (i, recipes.get(j.recipe)) {
-                    (0, Some(r)) if !st.waiting => {
+                    (0, Some(r)) if st.wait.is_none() => {
                         (tick.saturating_sub(st.started) as f32 / craft_ticks(r) as f32).clamp(0.0, 1.0)
                     }
                     _ => 0.0,
@@ -533,10 +1030,10 @@ impl Stations {
             station: st.kind,
             jobs,
             output: st.output.slots.iter().flatten().copied().collect(),
-            idle,
+            idle: idle.or_else(|| st.wait.and_then(Wait::text)),
             fuel: st.fuel,
             heat: st.heat,
-            wear: None,
+            wear,
             spark: None,
         }
     }
@@ -548,6 +1045,11 @@ impl Stations {
             .map(|pos| (pos, self.map.get(&pos).map(|st| save_station(st, items, recipes))))
             .collect()
     }
+}
+
+/// The order that picks a group's first block (as `machines` does).
+fn order(p: &BlockPos) -> (i64, i64, i64) {
+    (p.y, p.z, p.x)
 }
 
 impl Default for Stations {
@@ -592,8 +1094,13 @@ fn save_station(st: &StationData, items: &ItemRegistry, recipes: &RecipeBook) ->
         output: save_slots(items, &st.output),
         fuel: st.fuel.as_ref().and_then(|f| SavedStack::new(items, f)),
         heat: st.heat,
-        waiting: st.waiting,
+        waiting: st.wait.is_some(),
         xp: st.xp,
+        wear: st.wear,
+        spark: st.spark,
+        burn_left: st.burn_left,
+        burn_ticks: st.burn_ticks,
+        blocks: st.blocks,
     }
 }
 
@@ -690,13 +1197,13 @@ mod tests {
         let ticks = craft_ticks(r);
         let pos = BlockPos::new(1, 2, 3);
         let mut s = Stations::new();
-        s.queue(pos, Station::CraftingTable, stones, 3, 100, &items, &recipes)
+        s.queue(pos, Station::CraftingTable, stones, 3, 100, &items, &recipes, &Nowhere)
             .unwrap();
-        assert!(s.step(100 + ticks - 1, &items, &recipes).is_empty());
+        assert!(s.step(100 + ticks - 1, &items, &recipes, &Nowhere).is_empty());
         let v = s.view(pos, Station::CraftingTable, None, 100 + ticks / 2, &recipes);
         assert!((v.jobs[0].progress - 0.5).abs() < 0.02);
         assert_eq!((v.fuel, v.heat, v.idle), (None, 0, None));
-        assert_eq!(s.step(100 + ticks, &items, &recipes), vec![pos]);
+        assert_eq!(s.step(100 + ticks, &items, &recipes, &Nowhere), vec![pos]);
         let v = s.view(pos, Station::CraftingTable, None, 100 + ticks, &recipes);
         assert_eq!((v.jobs[0].remaining, v.output.len()), (2, 1));
         assert_eq!(v.output[0].count, 2);
@@ -707,7 +1214,7 @@ mod tests {
             *slot = Some(ItemStack::new(items.id("glass").unwrap(), 100));
         }
         st.output.slots[0] = Some(ItemStack::new(items.id("stones").unwrap(), 100));
-        assert!(s.step(100 + 2 * ticks, &items, &recipes).is_empty());
+        assert!(s.step(100 + 2 * ticks, &items, &recipes, &Nowhere).is_empty());
         assert_eq!(s.running().count(), 0, "paused");
         assert_eq!(s.get(pos).unwrap().jobs[0].remaining, 2);
 
@@ -715,9 +1222,9 @@ mod tests {
         let mut inv = Inventory::default();
         assert!(s.collect(pos, &mut inv, &items));
         assert_eq!(inv.count(items.id("stones").unwrap()), 100);
-        assert_eq!(s.step(100 + 5 * ticks, &items, &recipes), vec![pos]);
+        assert_eq!(s.step(100 + 5 * ticks, &items, &recipes, &Nowhere), vec![pos]);
         assert_eq!(s.get(pos).unwrap().jobs[0].remaining, 1);
-        assert_eq!(s.step(100 + 6 * ticks, &items, &recipes), vec![pos]);
+        assert_eq!(s.step(100 + 6 * ticks, &items, &recipes, &Nowhere), vec![pos]);
         assert!(s.get(pos).unwrap().jobs.is_empty());
         assert!(s.has_contents(pos), "output waits");
         let mut inv = Inventory::default();
@@ -738,44 +1245,52 @@ mod tests {
         let ticks = craft_ticks(recipes.get(copper).unwrap());
         let pos = BlockPos::new(0, 30, 0);
         let mut s = Stations::new();
-        s.queue(pos, Station::Furnace, copper, 2, 10, &items, &recipes).unwrap();
+        s.queue(pos, Station::Furnace, copper, 2, 10, &items, &recipes, &Nowhere)
+            .unwrap();
         assert_eq!(s.running().count(), 0, "no heat: it waits");
-        assert!(s.step(10 + 2 * ticks, &items, &recipes).is_empty());
+        assert!(s.step(10 + 2 * ticks, &items, &recipes, &Nowhere).is_empty());
         let v = s.view(pos, Station::Furnace, None, 10 + ticks, &recipes);
         assert_eq!(v.jobs[0].progress, 0.0, "no progress while it waits");
 
         // One coal: the first craft starts now, the bank spent.
         let t = 1000;
         assert_eq!(
-            s.add_fuel(pos, Station::Furnace, coal(&items, 1), t, &items, &recipes),
+            s.add_fuel(pos, Station::Furnace, coal(&items, 1), t, &items, &recipes, &Nowhere),
             1
         );
         let st = s.get(pos).unwrap();
-        assert_eq!((st.fuel, st.heat, st.waiting, st.started), (None, 0, false, t));
+        assert_eq!((st.fuel, st.heat, st.wait.is_some(), st.started), (None, 0, false, t));
         assert_eq!(s.running().collect::<Vec<_>>(), vec![pos]);
         let v = s.view(pos, Station::Furnace, None, t + ticks / 2, &recipes);
         assert!((v.jobs[0].progress - 0.5).abs() < 0.02);
         // It finishes; the second has nothing to burn and waits.
-        assert_eq!(s.step(t + ticks, &items, &recipes), vec![pos]);
+        assert_eq!(s.step(t + ticks, &items, &recipes, &Nowhere), vec![pos]);
         let st = s.get(pos).unwrap();
-        assert!(st.waiting && st.jobs[0].remaining == 1);
+        assert!(st.wait.is_some() && st.jobs[0].remaining == 1);
         assert_eq!(st.output.count(items.id("copper_ingot").unwrap()), 1);
         assert_eq!(s.running().count(), 0);
         // Five more: one burns, four wait in the slot.
         let t = 5000;
         assert_eq!(
-            s.add_fuel(pos, Station::Furnace, coal(&items, 5), t, &items, &recipes),
+            s.add_fuel(pos, Station::Furnace, coal(&items, 5), t, &items, &recipes, &Nowhere),
             5
         );
         let st = s.get(pos).unwrap();
-        assert_eq!((st.fuel.map(|f| f.count), st.heat, st.waiting), (Some(4), 0, false));
-        assert_eq!(s.step(t + ticks, &items, &recipes), vec![pos]);
+        assert_eq!(
+            (st.fuel.map(|f| f.count), st.heat, st.wait.is_some()),
+            (Some(4), 0, false)
+        );
+        assert_eq!(s.step(t + ticks, &items, &recipes, &Nowhere), vec![pos]);
         assert!(s.get(pos).unwrap().jobs.is_empty());
 
         // An iron bar burns two coal and banks the 50 left over.
-        s.queue(pos, Station::Furnace, iron, 1, 9000, &items, &recipes).unwrap();
+        s.queue(pos, Station::Furnace, iron, 1, 9000, &items, &recipes, &Nowhere)
+            .unwrap();
         let st = s.get(pos).unwrap();
-        assert_eq!((st.fuel.map(|f| f.count), st.heat, st.waiting), (Some(2), 50, false));
+        assert_eq!(
+            (st.fuel.map(|f| f.count), st.heat, st.wait.is_some()),
+            (Some(2), 50, false)
+        );
         let v = s.view(pos, Station::Furnace, None, 9000, &recipes);
         assert_eq!((v.fuel.map(|f| f.count), v.heat), (Some(2), 50));
     }
@@ -786,21 +1301,32 @@ mod tests {
         let pos = BlockPos::new(5, 30, 5);
         let mut s = Stations::new();
         let stone = ItemStack::new(items.id("stone").unwrap(), 3);
-        assert_eq!(s.add_fuel(pos, Station::Furnace, stone, 0, &items, &recipes), 0);
+        assert_eq!(
+            s.add_fuel(pos, Station::Furnace, stone, 0, &items, &recipes, &Nowhere),
+            0
+        );
         assert!(!s.exists(pos), "nothing kept for a refusal");
         let cap = items.get(items.id("coal").unwrap()).unwrap().stack;
         assert_eq!(
-            s.add_fuel(pos, Station::Furnace, coal(&items, cap - 2), 0, &items, &recipes),
+            s.add_fuel(
+                pos,
+                Station::Furnace,
+                coal(&items, cap - 2),
+                0,
+                &items,
+                &recipes,
+                &Nowhere
+            ),
             cap - 2
         );
         assert_eq!(
-            s.add_fuel(pos, Station::Furnace, coal(&items, 5), 0, &items, &recipes),
+            s.add_fuel(pos, Station::Furnace, coal(&items, 5), 0, &items, &recipes, &Nowhere),
             2,
             "up to a stack"
         );
         let stick = ItemStack::new(items.id("stick").unwrap(), 4);
         assert_eq!(
-            s.add_fuel(pos, Station::Furnace, stick, 0, &items, &recipes),
+            s.add_fuel(pos, Station::Furnace, stick, 0, &items, &recipes, &Nowhere),
             0,
             "one kind at a time"
         );
@@ -814,8 +1340,9 @@ mod tests {
 
         // Banked heat alone is kept, but does not stop a break.
         let iron = recipe_for(&items, &recipes, "iron_ingot");
-        s.queue(pos, Station::Furnace, iron, 1, 0, &items, &recipes).unwrap();
-        s.step(10_000, &items, &recipes);
+        s.queue(pos, Station::Furnace, iron, 1, 0, &items, &recipes, &Nowhere)
+            .unwrap();
+        s.step(10_000, &items, &recipes, &Nowhere);
         let mut inv = Inventory::default();
         assert!(s.collect(pos, &mut inv, &items));
         assert_eq!(s.get(pos).unwrap().heat, 50);
@@ -830,9 +1357,10 @@ mod tests {
         let ticks = craft_ticks(&r);
         let pos = BlockPos::new(4, 5, 6);
         let mut s = Stations::new();
-        s.add_fuel(pos, Station::Furnace, coal(&items, 4), 0, &items, &recipes);
-        s.queue(pos, Station::Furnace, ingot, 3, 0, &items, &recipes).unwrap();
-        s.step(ticks, &items, &recipes);
+        s.add_fuel(pos, Station::Furnace, coal(&items, 4), 0, &items, &recipes, &Nowhere);
+        s.queue(pos, Station::Furnace, ingot, 3, 0, &items, &recipes, &Nowhere)
+            .unwrap();
+        s.step(ticks, &items, &recipes, &Nowhere);
         s.take_dirty(&items, &recipes);
         let mut got = s.take(pos, &recipes);
         got.sort_by_key(|st| st.item);
@@ -853,10 +1381,12 @@ mod tests {
         let pos = BlockPos::new(-7, 30, 9);
         let waiting = BlockPos::new(1, 30, 9);
         let mut s = Stations::new();
-        s.add_fuel(pos, Station::Furnace, coal(&items, 3), 50, &items, &recipes);
-        s.queue(pos, Station::Furnace, iron, 1, 50, &items, &recipes).unwrap();
-        s.queue(pos, Station::Furnace, glass, 4, 50, &items, &recipes).unwrap();
-        s.queue(waiting, Station::Furnace, glass, 1, 50, &items, &recipes)
+        s.add_fuel(pos, Station::Furnace, coal(&items, 3), 50, &items, &recipes, &Nowhere);
+        s.queue(pos, Station::Furnace, iron, 1, 50, &items, &recipes, &Nowhere)
+            .unwrap();
+        s.queue(pos, Station::Furnace, glass, 4, 50, &items, &recipes, &Nowhere)
+            .unwrap();
+        s.queue(waiting, Station::Furnace, glass, 1, 50, &items, &recipes, &Nowhere)
             .unwrap();
         let saved: Vec<_> = s
             .take_dirty(&items, &recipes)
@@ -869,7 +1399,7 @@ mod tests {
         let t = Stations::load(saved.clone(), &items, &recipes);
         assert_eq!(t.get(pos), s.get(pos));
         assert_eq!(t.get(waiting), s.get(waiting));
-        assert!(t.get(waiting).unwrap().waiting);
+        assert!(t.get(waiting).unwrap().wait.is_some());
         assert_eq!(
             t.running().collect::<Vec<_>>(),
             vec![pos],
@@ -895,11 +1425,12 @@ mod tests {
         let pos = BlockPos::new(0, 0, 0);
         let mut s = Stations::new();
         for _ in 0..MAX_JOBS {
-            s.queue(pos, Station::Furnace, glass, 1, 0, &items, &recipes).unwrap();
+            s.queue(pos, Station::Furnace, glass, 1, 0, &items, &recipes, &Nowhere)
+                .unwrap();
         }
         assert!(!s.has_room(pos));
         assert_eq!(
-            s.queue(pos, Station::Furnace, glass, 1, 0, &items, &recipes),
+            s.queue(pos, Station::Furnace, glass, 1, 0, &items, &recipes, &Nowhere),
             Err(CraftError::QueueFull)
         );
     }
@@ -910,7 +1441,7 @@ mod tests {
         let stones = recipe_for(&items, &recipes, "stones");
         let (from, to) = (BlockPos::new(3, 20, 3), BlockPos::new(2, 20, 3));
         let mut s = Stations::new();
-        s.queue(from, Station::Workbench, stones, 1, 0, &items, &recipes)
+        s.queue(from, Station::Workbench, stones, 1, 0, &items, &recipes, &Nowhere)
             .unwrap();
         s.take_dirty(&items, &recipes);
         s.relocate(from, to);
@@ -923,7 +1454,7 @@ mod tests {
             .collect();
         assert_eq!(dirty, vec![(to, true), (from, false)]);
         // Never over another record.
-        s.queue(from, Station::Workbench, stones, 1, 0, &items, &recipes)
+        s.queue(from, Station::Workbench, stones, 1, 0, &items, &recipes, &Nowhere)
             .unwrap();
         s.relocate(from, to);
         assert!(s.exists(from) && s.exists(to));

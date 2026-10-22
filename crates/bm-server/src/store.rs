@@ -89,7 +89,13 @@ const V2_STATIONS: TableDefinition<&[u8], &[u8]> = TableDefinition::new("station
 /// 6 (M13): player data saves the health lost ([`PlayerData::hurt`]) and the
 /// character's XP debt from defeats ([`SavedCharacter::debt`]). Older players
 /// start unhurt with no debt.
-pub const SAVE_VERSION: u32 = 7;
+///
+/// 7 (M14): regions and meteorites, in new tables only.
+///
+/// 8 (M15): a station saves its wear and a spark generator its spark
+/// ([`SavedStation`]); older stations are rewritten fully repaired with no
+/// spark.
+pub const SAVE_VERSION: u32 = 8;
 
 /// The universe file in the data directory.
 pub const UNIVERSE_FILE: &str = "universe.redb";
@@ -442,7 +448,58 @@ pub struct SavedStation {
     /// Craft XP of the finished output, given to whoever collects it (save
     /// version 5).
     pub xp: u32,
+    /// A machine's wear left (save version 8; `spark::MACHINE_WEAR` when
+    /// repaired, unused by stations that do not wear).
+    pub wear: u32,
+    /// A spark generator group's stored spark, the spark still to come from
+    /// the item burning and the ticks it takes, and its blocks (save
+    /// version 8).
+    pub spark: u32,
+    pub burn_left: u32,
+    pub burn_ticks: u32,
+    pub blocks: u32,
 }
+
+/// The station layout save versions 5 to 7 wrote, kept only to read them
+/// for the upgrade.
+mod v7 {
+    use super::*;
+
+    #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+    pub struct SavedStation {
+        pub kind: Station,
+        pub jobs: Vec<SavedJob>,
+        pub started: u64,
+        pub output: Vec<Option<SavedStack>>,
+        pub fuel: Option<SavedStack>,
+        pub heat: u32,
+        pub waiting: bool,
+        pub xp: u32,
+    }
+
+    impl From<SavedStation> for super::SavedStation {
+        fn from(s: SavedStation) -> Self {
+            Self {
+                kind: s.kind,
+                jobs: s.jobs,
+                started: s.started,
+                output: s.output,
+                fuel: s.fuel,
+                heat: s.heat,
+                waiting: s.waiting,
+                xp: s.xp,
+                // Fully repaired, no spark.
+                wear: bm_core::spark::MACHINE_WEAR,
+                spark: 0,
+                burn_left: 0,
+                burn_ticks: 0,
+                blocks: 1,
+            }
+        }
+    }
+}
+
+pub use v7::SavedStation as V7SavedStation;
 
 /// The layouts save version 3 wrote, kept only to read them for the upgrade.
 mod v3 {
@@ -467,6 +524,11 @@ mod v3 {
                 heat: 0,
                 waiting: false,
                 xp: 0,
+                wear: bm_core::spark::MACHINE_WEAR,
+                spark: 0,
+                burn_left: 0,
+                burn_ticks: 0,
+                blocks: 1,
             }
         }
     }
@@ -501,6 +563,11 @@ mod v4 {
                 heat: s.heat,
                 waiting: s.waiting,
                 xp: 0,
+                wear: bm_core::spark::MACHINE_WEAR,
+                spark: 0,
+                burn_left: 0,
+                burn_ticks: 0,
+                blocks: 1,
             }
         }
     }
@@ -836,7 +903,7 @@ impl Store {
                     let stations = match from {
                         3 => upgrade_3_to_4(&tx)?,
                         4 => upgrade_stations_4_to_5(&tx)?,
-                        _ => 0,
+                        _ => upgrade_stations_7_to_8(&tx)?,
                     };
                     // Version 6 to 7 only adds tables (skies, discoveries),
                     // which read as empty until written.
@@ -856,8 +923,8 @@ impl Store {
                     tx.commit()?;
                     if from >= 6 {
                         tracing::info!(
-                            "upgraded the universe from save version {from} to {SAVE_VERSION} (regions and \
-                             meteorites added; characters, stations and planets as they were)"
+                            "upgraded the universe from save version {from} to {SAVE_VERSION} ({stations} stations \
+                             fully repaired with no spark; characters and planets as they were)"
                         );
                     } else {
                         let characters = if from <= 4 {
@@ -1316,6 +1383,29 @@ fn upgrade_stations_4_to_5(tx: &WriteTransaction) -> Result<usize> {
     Ok(n)
 }
 
+/// Version 8 gives each station its wear and spark: rows of versions 5 to 7
+/// (one layout) are rewritten fully repaired with no spark. (Older rows go
+/// straight to the current layout in the steps above.)
+fn upgrade_stations_7_to_8(tx: &WriteTransaction) -> Result<usize> {
+    let mut t = tx.open_table(STATIONS)?;
+    let old: Vec<(Vec<u8>, Vec<u8>)> = t
+        .iter()?
+        .map(|r| r.map(|(k, v)| (k.value().to_vec(), v.value().to_vec())))
+        .collect::<Result<_, _>>()?;
+    let mut n = 0;
+    for (k, v) in old {
+        match postcard::from_bytes::<v7::SavedStation>(&v) {
+            Ok(s) => {
+                let new: SavedStation = s.into();
+                t.insert(k.as_slice(), postcard::to_stdvec(&new)?.as_slice())?;
+                n += 1;
+            }
+            Err(e) => tracing::error!("a version 7 station is corrupt ({e}); left as it was"),
+        }
+    }
+    Ok(n)
+}
+
 /// Rewrites every player row in the current layout: `read` decodes one in
 /// the layout of save version `from`. Version 5 saved each character's
 /// progression (a version 3 or 4 player, the same layout, becomes level 1
@@ -1730,6 +1820,11 @@ mod tests {
             heat: 50,
             waiting: true,
             xp: 17,
+            wear: bm_core::spark::MACHINE_WEAR,
+            spark: 0,
+            burn_left: 0,
+            burn_ticks: 0,
+            blocks: 1,
         };
         let claim = SavedClaim {
             planet: 2,
@@ -1891,6 +1986,11 @@ mod tests {
             heat: 0,
             waiting: false,
             xp: 0,
+            wear: bm_core::spark::MACHINE_WEAR,
+            spark: 0,
+            burn_left: 0,
+            burn_ticks: 0,
+            blocks: 1,
         };
         s.write(&WriteBatch {
             stations: vec![(u16::MAX, BlockPos::new(1, 1, 1), Some(st.clone()))],
@@ -2217,6 +2317,11 @@ mod tests {
             heat: 40,
             waiting: false,
             xp: 9,
+            wear: bm_core::spark::MACHINE_WEAR,
+            spark: 0,
+            burn_left: 0,
+            burn_ticks: 0,
+            blocks: 1,
         };
         let spot = BlockPos::new(3, -4, 5);
         {

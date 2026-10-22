@@ -533,19 +533,24 @@ mod tests {
         let kinds = PlanetKinds::builtin(&registry);
         let kind = kinds.get("arid").unwrap().generation(5);
         let n = kind.ores.len();
-        assert_eq!(kind.ores[n - 2].block, "wayshard_vein");
-        assert_eq!(kind.ores[n - 1].block, "relic_seam");
-        // A planet made before wayshards gains them and the relic seam, once,
-        // after its own ores in their order.
+        assert_eq!(kind.ores[n - 3].block, "wayshard_vein");
+        assert_eq!(kind.ores[n - 2].block, "relic_seam");
+        assert_eq!(kind.ores[n - 1].block, "relic_cache");
+        // A planet made before wayshards gains them, the relic seam and the
+        // relic cache (milestone 15), once, after its own ores in their order.
         let mut old = kind.clone();
-        old.ores.truncate(n - 2);
+        old.ores.truncate(n - 3);
         let before = old.ores.clone();
         assert_eq!(
             extend_ores(&mut old, &kind.ores),
-            vec!["wayshard_vein".to_string(), "relic_seam".to_string()]
+            vec![
+                "wayshard_vein".to_string(),
+                "relic_seam".to_string(),
+                "relic_cache".to_string()
+            ]
         );
         assert_eq!(old, kind);
-        assert_eq!(old.ores[..n - 2], before[..], "its old ores first, in order");
+        assert_eq!(old.ores[..n - 3], before[..], "its old ores first, in order");
         assert!(extend_ores(&mut old, &kind.ores).is_empty(), "already there");
         // A list that is not a prefix (reordered, or an ore of its own) is left alone.
         let mut odd = kind.clone();
@@ -595,7 +600,10 @@ mod tests {
         let spec = PlanetSpec::new("Old", "lush", 3, 16);
         let mut saved = new_record(0, &spec, 12, &kinds).unwrap();
         let full = saved.generation.clone();
-        saved.generation.ores.pop();
+        // Before the relic seam and milestone 15's relic cache and silver.
+        let n = saved.generation.ores.len();
+        assert_eq!(saved.generation.ores[n - 3].block, "relic_seam");
+        saved.generation.ores.truncate(n - 3);
         saved.generation.flora.clear();
         let old_ores = saved.generation.ores.clone();
         store.put_planet(0, &saved).unwrap();
@@ -609,7 +617,7 @@ mod tests {
         let reopened = store.planet(0).unwrap().unwrap().generation;
         assert_eq!(reopened, full, "saved");
         assert_eq!(reopened.ores[..old_ores.len()], old_ores[..]);
-        assert_eq!(reopened.ores.last().unwrap().block, "relic_seam");
+        assert_eq!(reopened.ores.last().unwrap().block, "silver_seam");
         open(&store, 0, &spec, 12, 4, &cat, Vec::new()).unwrap();
         assert_eq!(store.planet(0).unwrap().unwrap().generation, full, "once");
     }

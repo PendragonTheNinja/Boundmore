@@ -1307,6 +1307,11 @@ async fn a_workbench_saved_at_one_block_joins_its_machine() {
                         heat: 0,
                         waiting: false,
                         xp: 0,
+                        wear: bm_core::spark::MACHINE_WEAR,
+                        spark: 0,
+                        burn_left: 0,
+                        burn_ticks: 0,
+                        blocks: 1,
                     }),
                 )],
                 ..Default::default()

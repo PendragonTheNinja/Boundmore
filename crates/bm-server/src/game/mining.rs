@@ -6,6 +6,7 @@
 use super::{Game, Refusal, in_reach, send_slots, wear_slot};
 use crate::claims::ClaimError;
 use crate::world::World;
+use bm_core::items::ToolClass;
 use bm_core::items::title_case;
 use bm_core::mining::{
     MAX_TIER, aoe_blocks, block_health, bonus_count, is_crit, skilled_tool, swing_damage, swing_ticks,
@@ -191,12 +192,19 @@ impl Game {
             return self.swing_refused(id, seq, pos, "out of reach".into());
         }
         let effects = p.effects;
-        if let Err(r) = self.may_damage(id, pi, canon) {
-            return self.swing_refused(id, seq, pos, r);
-        }
         // The tool is what our copy of the slot holds. A bare hand breaks
         // nothing (Nathan, 2026-10-20: as in Boundless).
         let item = p.inventory.get(slot as usize).map(|s| s.item);
+        let spanner = self
+            .items
+            .swing_tool(item)
+            .filter(|t| t.class == Some(ToolClass::Spanner));
+        if let Some(tool) = spanner {
+            return self.spanner_swing(id, seq, at, pos, canon, slot, tool);
+        }
+        if let Err(r) = self.may_damage(id, pi, canon) {
+            return self.swing_refused(id, seq, pos, r);
+        }
         let Some(tool) = self.items.swing_tool(item) else {
             return self.swing_refused(id, seq, pos, Refusal::Told(NEED_A_TOOL.into()));
         };
@@ -258,18 +266,70 @@ impl Game {
         if full {
             self.notice(id, "Your inventory is full");
         }
-        // One durability per swing, whatever it hit, unless the durability
-        // epic spares it.
+        self.wear_swung_tool(id, slot, &effects);
+    }
+
+    /// One durability per swing, whatever it hit, unless the durability epic
+    /// spares it.
+    fn wear_swung_tool(&mut self, id: u32, slot: u8, effects: &bm_core::skills::Effects) {
         if roll(&mut self.rng) < effects.wear_saved() {
             return;
         }
-        let p = self.players.get_mut(&id).expect("present");
+        let Some(p) = self.players.get_mut(&id) else { return };
         let before = p.inventory.clone();
         let broke = wear_slot(&self.items, &mut p.inventory, slot as usize);
         send_slots(p, &before);
         if let Some(text) = broke {
             p.out.send(&ServerMsg::Notice { text });
         }
+    }
+
+    /// A spanner swung at `canon` (milestone 15): on a machine that wears it
+    /// removes the spanner's wear per hit (more with Spanner Mastery), at
+    /// the swing's cadence, with its energy and durability; it never damages
+    /// a block. Anything else is refused.
+    #[allow(clippy::too_many_arguments)]
+    fn spanner_swing(
+        &mut self,
+        id: u32,
+        seq: u32,
+        at: u32,
+        pos: BlockPos,
+        canon: BlockPos,
+        slot: u8,
+        tool: bm_core::items::ToolStats,
+    ) {
+        let Some(p) = self.players.get(&id) else { return };
+        let pi = p.planet;
+        let effects = p.effects;
+        if let Some(c) = self.planets[pi].claims.at_block(canon)
+            && c.owner != p.account
+        {
+            return self.swing_refused(id, seq, pos, ClaimError::OwnedBy(c.owner_name.clone()).into());
+        }
+        let is_machine = self
+            .machine(pi, canon)
+            .is_some_and(|m| bm_core::spark::wears(m.kind) && m.idle.is_none());
+        if !is_machine {
+            return self.swing_refused(id, seq, pos, Refusal::Told("A spanner repairs machines".into()));
+        }
+        let tool = skilled_tool(&tool, &effects);
+        let p = self.players.get_mut(&id).expect("present");
+        p.last_swing = Some((at, swing_ticks(tool.action_speed)));
+        if !p.state.try_spend(tool.energy) {
+            return self.swing_refused(id, seq, pos, Refusal::Quiet("too tired"));
+        }
+        let amount = bm_core::spark::repair_per_hit(tool.repair, effects.spanner_mastery);
+        if let Some((key, wear)) = self.repair_machine(pi, canon, amount)
+            && let Some(p) = self.players.get(&id)
+        {
+            p.out.send(&ServerMsg::MachineWear {
+                pos: key,
+                wear,
+                max: bm_core::spark::MACHINE_WEAR,
+            });
+        }
+        self.wear_swung_tool(id, slot, &effects);
     }
 
     /// Tells everyone who has the chunk how much damage the block at `canon`
@@ -345,8 +405,18 @@ impl Game {
         } else {
             None
         };
+        // A machine block going: its machine as it stood.
+        let def = self.planets[pi].world.registry.get(old);
+        let machine = if def.station.is_some() || def.assembly.is_some() {
+            self.machine(pi, canon)
+        } else {
+            None
+        };
         self.stats.edits += 1;
         self.change_block(pi, canon, BlockState::AIR, by);
+        if let Some(m) = machine {
+            self.machine_broken(pi, m, canon, by);
+        }
         if storage_gone {
             self.close_storage_at(pi, canon);
         }

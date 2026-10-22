@@ -1,12 +1,76 @@
 //! Crafting stations in play (milestone 11): the crafting table, four-block
 //! machines and the furnace, as `machines` assembles them; queues, output,
 //! fuel and heat live in `crafting::Stations`, at each machine's key block.
+//!
+//! Milestone 15: spark generators (one fuel slot and one store per joined
+//! group), spark links ([`PlanetEnv`] answers where they lead), and wear.
 
 use super::{Game, Refusal, send_slots, station_name};
-use crate::crafting::{self, CraftError, MAX_CRAFT_COUNT};
+use crate::crafting::{self, CraftError, MAX_CRAFT_COUNT, Surroundings};
 use crate::machines::{self, Machine};
-use bm_core::{BlockPos, INVENTORY_SLOTS, ItemStack, Station};
-use bm_protocol::{ServerMsg, StationView};
+use crate::planet::Planet;
+use crate::world::World;
+use bm_core::spark;
+use bm_core::{BlockId, BlockPos, INVENTORY_SLOTS, ItemStack, Station};
+use bm_protocol::{ServerMsg, SparkView, StationView};
+
+/// Whether placing a spark generator `id` at `canon` would join groups that
+/// each hold fuel: joined generators share one fuel slot.
+pub(super) fn joins_fuelled_generators(planet: &Planet, canon: BlockPos, id: BlockId) -> bool {
+    let w = &planet.world;
+    let with = |p: BlockPos| if p == canon { Some(id) } else { w.block(p) };
+    let Some(m) = machines::machine_at(&w.registry, w.shape, with, canon) else {
+        return false;
+    };
+    m.blocks
+        .iter()
+        .filter(|&&b| planet.stations.get(b).is_some_and(|s| s.fuel.is_some()))
+        .count()
+        > 1
+}
+
+/// A planet's world as the stations ask about it: where a machine's links
+/// lead, what a furnace's base is.
+pub(crate) struct PlanetEnv<'a> {
+    world: &'a World,
+    link: BlockId,
+}
+
+impl<'a> PlanetEnv<'a> {
+    pub(crate) fn new(world: &'a World, link: BlockId) -> Self {
+        Self { world, link }
+    }
+
+    fn machine(&self, canon: BlockPos) -> Option<Machine> {
+        let w = self.world;
+        machines::machine_at(&w.registry, w.shape, |p| w.block(p), canon)
+    }
+}
+
+impl Surroundings for PlanetEnv<'_> {
+    fn generators(&self, machine: BlockPos) -> Option<Vec<BlockPos>> {
+        let w = self.world;
+        let m = self.machine(machine)?;
+        let blocks = machines::grid_generators(&w.registry, w.shape, |p| w.block(p), &m.blocks, self.link)?;
+        let mut keys: Vec<BlockPos> = Vec::new();
+        let mut covered: Vec<BlockPos> = Vec::new();
+        for b in blocks {
+            if covered.contains(&b) {
+                continue;
+            }
+            let g = self.machine(b)?;
+            covered.extend(g.blocks.iter().copied());
+            if !keys.contains(&g.key) {
+                keys.push(g.key);
+            }
+        }
+        Some(keys)
+    }
+
+    fn heat_share(&self, furnace: BlockPos) -> Option<f32> {
+        self.world.block(furnace).map(|b| self.world.registry.get(b).heat_share)
+    }
+}
 
 /// "a Workbench", "an Extractor".
 fn a_station(kind: Station) -> String {
@@ -109,10 +173,11 @@ impl Game {
             Some(false) => return self.notice(id, &CraftError::Materials.to_string()),
             None => return,
         }
-        if let Err(e) =
-            self.planets[pi]
-                .stations
-                .queue(key, m.kind, index, count, self.tick, &self.items, &self.recipes)
+        let planet = &mut self.planets[pi];
+        let env = PlanetEnv::new(&planet.world, self.spark_link);
+        if let Err(e) = planet
+            .stations
+            .queue(key, m.kind, index, count, self.tick, &self.items, &self.recipes, &env)
         {
             // Unreachable (room was checked), but never take inputs silently.
             tracing::error!("queueing at {key:?} after taking inputs: {e}");
@@ -161,14 +226,15 @@ impl Game {
         }
     }
 
-    /// Moves fuel between inventory `slot` and a furnace's fuel slot.
+    /// Moves fuel between inventory `slot` and a furnace's or a spark
+    /// generator's fuel slot.
     pub(super) fn station_fuel(&mut self, id: u32, pos: BlockPos, slot: u8, count: u16, into: bool) {
         let (pi, m) = match self.machine_access(id, pos) {
             Ok(found) => found,
             Err(r) => return self.tell(id, r),
         };
-        if m.kind != Station::Furnace {
-            return self.tell(id, "only a furnace takes fuel".into());
+        if !matches!(m.kind, Station::Furnace | Station::SparkGenerator) {
+            return self.tell(id, "only a furnace or a spark generator takes fuel".into());
         }
         let slot = slot as usize;
         if slot >= INVENTORY_SLOTS || count == 0 {
@@ -189,9 +255,14 @@ impl Game {
                 count: count.min(stack.count),
                 ..stack
             };
-            let put = self.planets[pi]
+            let planet = &mut self.planets[pi];
+            let env = PlanetEnv::new(&planet.world, self.spark_link);
+            let put = planet
                 .stations
-                .add_fuel(key, m.kind, offer, self.tick, &self.items, &self.recipes);
+                .add_fuel(key, m.kind, offer, self.tick, &self.items, &self.recipes, &env);
+            if m.kind == Station::SparkGenerator {
+                planet.stations.set_generator_blocks(key, m.blocks.len());
+            }
             if put == 0 {
                 return self.notice(id, "The fuel slot is full");
             }
@@ -252,8 +323,124 @@ impl Game {
             (None, Some(m)) => m.kind,
             (None, None) => return None,
         };
+        let blocks = machine.as_ref().map_or(1, |m| m.blocks.len());
         let idle = machine.and_then(|m| m.idle);
-        Some(planet.stations.view(key, kind, idle, self.tick, &self.recipes))
+        let mut view = planet.stations.view(key, kind, idle, self.tick, &self.recipes);
+        view.spark = self.spark_view(pi, key, kind, blocks);
+        Some(view)
+    }
+
+    /// Spark as the window of the station keyed at `key` shows it: a
+    /// generator's own store, or what a machine that can need spark reaches.
+    fn spark_view(&self, pi: usize, key: BlockPos, kind: Station, blocks: usize) -> Option<SparkView> {
+        let planet = &self.planets[pi];
+        match kind {
+            Station::SparkGenerator => {
+                let st = planet.stations.get(key);
+                Some(SparkView {
+                    stored: st.map_or(0, |s| s.spark),
+                    capacity: spark::capacity(blocks),
+                    linked: true,
+                    burning: st.map_or(0, |s| s.burn_left),
+                })
+            }
+            Station::Workbench | Station::Mixer | Station::Refinery | Station::Compactor => {
+                let env = PlanetEnv::new(&planet.world, self.spark_link);
+                let grid = env.generators(key).unwrap_or_default();
+                let capacity = grid
+                    .iter()
+                    .map(|&g| env.machine(g).map_or(1, |m| m.blocks.len()))
+                    .map(spark::capacity)
+                    .fold(0u32, u32::saturating_add);
+                Some(SparkView {
+                    stored: planet.stations.grid_spark(&grid),
+                    capacity,
+                    linked: !grid.is_empty(),
+                    burning: 0,
+                })
+            }
+            _ => None,
+        }
+    }
+
+    /// A spark generator block was placed at `canon`: the groups it joined
+    /// become one, their stores added up at the new group's key.
+    pub(super) fn generator_placed(&mut self, pi: usize, canon: BlockPos) {
+        let Some(m) = self.machine(pi, canon).filter(|m| m.kind == Station::SparkGenerator) else {
+            return;
+        };
+        let stations = &mut self.planets[pi].stations;
+        stations.join_generators(m.key, &m.blocks, m.blocks.len());
+        // Whoever watched one of the joined groups now watches the whole.
+        for p in self.players.values_mut().filter(|p| p.planet == pi) {
+            if p.watching.is_some_and(|w| m.blocks.contains(&w)) {
+                p.watching = Some(m.key);
+            }
+        }
+        self.push_station(pi, m.key);
+    }
+
+    /// A block of `old` (the machine as it stood) has been broken at
+    /// `canon` by `by`. A generator's share of its group's spark is refunded
+    /// to the breaker as spark items (1,000 each, rounded down; what does
+    /// not fit is lost) and the rest stays with what is left; a machine that
+    /// wears forgets its record.
+    pub(super) fn machine_broken(&mut self, pi: usize, old: Machine, canon: BlockPos, by: Option<u32>) {
+        if old.kind == Station::SparkGenerator {
+            let mut groups: Vec<(BlockPos, usize)> = Vec::new();
+            let mut covered: Vec<BlockPos> = vec![canon];
+            for &b in &old.blocks {
+                if covered.contains(&b) {
+                    continue;
+                }
+                if let Some(g) = self.machine(pi, b) {
+                    covered.extend(g.blocks.iter().copied());
+                    groups.push((g.key, g.blocks.len()));
+                }
+            }
+            let share = self.planets[pi]
+                .stations
+                .break_generator(old.key, old.blocks.len(), &groups);
+            let refund = share / spark::SPARK_PER_ITEM;
+            if refund > 0
+                && let Some(id) = by
+                && let Some(p) = self.players.get_mut(&id)
+            {
+                let before = p.inventory.clone();
+                let mut left = refund;
+                while left > 0 {
+                    let n = left.min(u16::MAX as u32) as u16;
+                    if p.inventory.add(&self.items, self.spark_item, n) > 0 {
+                        break;
+                    }
+                    left -= n as u32;
+                }
+                send_slots(p, &before);
+            }
+            for (g, _) in groups {
+                self.push_station(pi, g);
+            }
+        } else if spark::wears(old.kind) {
+            self.planets[pi].stations.forget(old.key);
+        }
+    }
+
+    /// A spanner swung at the block at `canon`: if it belongs to a working
+    /// machine that wears, removes `amount` of its wear; returns the
+    /// machine's key and the wear it has now, or None if it is no such
+    /// machine.
+    pub(super) fn repair_machine(&mut self, pi: usize, canon: BlockPos, amount: u32) -> Option<(BlockPos, u32)> {
+        let m = self
+            .machine(pi, canon)
+            .filter(|m| spark::wears(m.kind) && m.idle.is_none())?;
+        let key = self.machine_record(pi, &m);
+        let planet = &mut self.planets[pi];
+        let env = PlanetEnv::new(&planet.world, self.spark_link);
+        let wear = planet
+            .stations
+            .repair(key, m.kind, amount, self.tick, &self.items, &self.recipes, &env);
+        self.push_station(pi, key);
+        Some((key, wear))
     }
 
     /// Sends a station's state to everyone on its planet watching it.
