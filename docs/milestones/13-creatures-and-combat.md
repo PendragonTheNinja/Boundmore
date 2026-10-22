@@ -302,7 +302,7 @@ Not published anywhere found; every one is a **guess** until measured:
 
 ## Status
 
-*Spec written and decided 2026-10-21. Part 1 built 2026-10-21; awaiting Nathan's play-test.*
+*Spec written and decided 2026-10-21. Parts 1 and 2 built 2026-10-22; awaiting Nathan's play-test.*
 
 - [x] Research: tuning 3.1 to 3.7 (existing), 3.8 added (recipes, healing, behaviour; boundlexx has no creature data)
 - [x] Spec
@@ -328,7 +328,25 @@ Not published anywhere found; every one is a **guess** until measured:
   - a charge's knockback shows as a prediction correction;
   - no hit effect where a shot lands;
   - grapple hooks do not stick in creatures;
-  - no end-to-end test of a defeat by a fall (it shares the defeat path with creature hits, which is tested).
+  - no end-to-end test of a defeat by a fall (it shares the defeat path with creature hits, which is tested);
+  - poppers cannot be grappled and thrown (hooks do not stick in creatures);
+  - drifters rest on the ground (no docks);
+  - part 2 combat has been checked in tests and the demo, but not yet in a real fight on Wildmere.
 - [x] Part 2 foundation (2026-10-21): creatures, combat, bombs, exotics, data, protocol 19 (Build plan (part 2))
-- [ ] Part 2 server, client and art (agents)
+- [x] Part 2 art: icons for the new parts, the bomb charge and the bags.
+- [x] Part 2 server (`game/creatures.rs`, `game/combat.rs`):
+  - the popper (hops, whistles, leaps, blasts that walls stop, curls, hammer stun);
+  - the drifter (flies, bolts, bombs below 80%, homing below 60%, beam and lift from their tiers);
+  - bombs (throw, fuse, blasts that hurt creatures only and break blocks outside other players' claims for no drops);
+  - exotics on spawn.
+- [x] Part 2 client:
+  - popper and drifter models, exotic markings;
+  - bombs (light, throw, fuse ring);
+  - shots by kind with homing, blasts, beams, camera shake;
+  - `--demo-ui bombs`.
+- [x] Integrated (2026-10-22): 528 tests, fmt and clippy clean.
+  - The held lit bomb is drawn at 40% (it covered a quarter of the screen), with a test.
+  - Debug builds no longer crash on their first UI frame (egui texture changes released each frame), with a test.
+  - Load test: 50 bots over all four planets, about 500 creatures (all five kinds; 28 poppers and 8 drifters on Wildmere), creature work about 1.4 ms a tick, worst tick 6.6 ms.
+  - A real client against the server plays and shows health.
 - [ ] Nathan's play-test
