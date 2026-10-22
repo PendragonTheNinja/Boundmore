@@ -113,6 +113,8 @@ textures = { all = "soil" }
 material = "soil"
 mine_xp = 2
 build_xp = 2
+# Milestone 16: tubers from soil, Boundless's rates (tuning 3.9).
+bonus = [{ item = "tuber", per_tier = [0.015, 0.015, 0.025, 0.015, 0, 0, 0, 0] }, { item = "waxy_tuber", per_tier = [0, 0, 0, 0.015, 0.02, 0.02, 0.02, 0.03] }]
 
 [[block]]
 name = "turf"
@@ -131,6 +133,8 @@ material = "soil"
 drops = "soil"
 mine_xp = 2
 build_xp = 2
+# Milestone 16: tubers from soil, Boundless's rates (tuning 3.9).
+bonus = [{ item = "tuber", per_tier = [0.015, 0.015, 0.025, 0.015, 0, 0, 0, 0] }, { item = "waxy_tuber", per_tier = [0, 0, 0, 0.015, 0.02, 0.02, 0.02, 0.03] }]
 
 [[block]]
 name = "sand"
@@ -222,6 +226,8 @@ textures = { all = "foliage" }
 material = "plant"
 mine_xp = 2
 build_xp = 4
+# Milestone 16: dewberries, 1 in 10 on tier 1 to 3 (tuning 3.9).
+bonus = [{ item = "dewberry", per_tier = [0.1, 0.1, 0.1, 0, 0, 0, 0, 0] }]
 
 [[block]]
 name = "coal_seam"

@@ -188,6 +188,11 @@ pub enum Effect {
     BombEpic,
     /// Milestone 15: spanners remove 10% more wear and swing 2 faster a rank.
     SpannerMastery,
+    /// Milestone 16: cooking levels (+1 a rank; the epics +1 each).
+    FoodCrafting,
+    FoodCraftingEpic,
+    /// +1 cooking (and brewing, with brews); excludes the gear epic.
+    ConsumableCraftingEpic,
     /// On the tree, not built yet ("Comes later"): cannot be bought.
     Later,
 }
@@ -562,6 +567,8 @@ pub struct Effects {
     pub tech_crafting: u8,
     pub machine_crafting: u8,
     pub decoration_crafting: u8,
+    /// Milestone 16.
+    pub food_crafting: u8,
     /// Milestone 13.
     pub vitality: f64,
     pub sling_mastery: u8,
@@ -640,6 +647,9 @@ impl Effects {
                 Effect::BombMastery => e.bomb_mastery += r,
                 Effect::SpannerMastery => e.spanner_mastery += r,
                 Effect::BombEpic => e.bomb_epic |= on,
+                Effect::FoodCrafting | Effect::FoodCraftingEpic | Effect::ConsumableCraftingEpic => {
+                    e.food_crafting += r
+                }
                 Effect::Later => {}
             }
         }
@@ -842,6 +852,7 @@ impl Effects {
             "machine_crafting" => self.machine_crafting,
             "decoration_crafting" => self.decoration_crafting,
             "weapon_crafting" => self.weapon_crafting,
+            "food_crafting" => self.food_crafting,
             _ => 0,
         }
     }

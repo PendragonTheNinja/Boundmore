@@ -225,8 +225,8 @@ name = "Cooking"
 category = "crafting"
 ranks = 3
 cost = 1
-effect = "later"
-text = "Cook food (comes with food)"
+effect = "food_crafting"
+text = "Cook better food: rank 1 soups and broths, rank 2 stews and casseroles"
 
 [[skill]]
 id = "brew_crafting"
@@ -488,8 +488,8 @@ name = "Provisioner"
 category = "epic2"
 ranks = 1
 cost = 5
-effect = "later"
-text = "+1 to Cooking and Brewing (comes with them)"
+effect = "consumable_crafting_epic"
+text = "+1 to Cooking (and Brewing, with brews)"
 excludes = ["gear_crafting_epic"]
 
 [[skill]]
@@ -674,8 +674,8 @@ name = "Master Cook"
 category = "epic3"
 ranks = 1
 cost = 5
-effect = "later"
-text = "Comes with food"
+effect = "food_crafting_epic"
+text = "+1 to Cooking"
 
 [[skill]]
 id = "brew_crafting_epic"

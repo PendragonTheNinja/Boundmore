@@ -1570,7 +1570,7 @@ impl Game {
                 .and_then(|s| self.items.get(s.item))
                 .filter(|d| d.chisel().is_some())
                 .and_then(|d| d.energy())
-            && !p.state.try_spend(cost)
+            && !p.state.try_spend(cost, bm_core::food::Drain::Tool)
         {
             return self.edit_refused(id, seq, pos, "too tired");
         }

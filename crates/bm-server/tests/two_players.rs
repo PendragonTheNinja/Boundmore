@@ -3468,13 +3468,13 @@ async fn torches_stand_and_hang_on_solid_blocks_and_fall_with_them() {
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn swings_cost_energy_and_a_tired_swing_is_refused() {
     let dir = tempfile::tempdir().unwrap();
-    // A tool no recipe makes: 300 energy a swing, so a full bar of 600 holds
-    // two swings.
+    // A tool no recipe makes: 290 energy a swing, so a full bar of 600 holds
+    // two swings (each adds 2.9 hunger, milestone 16, so not 300).
     let items = dir.path().join("test-items.toml");
     std::fs::write(
         &items,
         format!(
-            "{}\n[[item]]\nname = \"heavy_test_hammer\"\nstack = 1\ntool = {{ damage = 100, action_speed = 150.0, durability = 700, energy = 300 }}\n",
+            "{}\n[[item]]\nname = \"heavy_test_hammer\"\nstack = 1\ntool = {{ damage = 100, action_speed = 150.0, durability = 700, energy = 290 }}\n",
             include_str!("../../../assets/items.toml")
         ),
     )
@@ -3500,7 +3500,8 @@ async fn swings_cost_energy_and_a_tired_swing_is_refused() {
         "too tired: nothing happens"
     );
     let state = snapshot_after(&mut alice).await;
-    assert_eq!(state.energy(), 0);
+    assert!(state.energy() < 290);
+    assert_eq!(state.max_energy(), bm_core::energy::MAX_ENERGY - 5, "5.8 hunger");
 
     // The pause (3.5 s) and the refill (2 s), at the real input rate.
     for _ in 0..12 {
@@ -3508,7 +3509,7 @@ async fn swings_cost_energy_and_a_tired_swing_is_refused() {
         tokio::time::sleep(Duration::from_millis(500)).await;
     }
     let state = snapshot_after(&mut alice).await;
-    assert_eq!(state.energy(), bm_core::energy::MAX_ENERGY, "rested");
+    assert_eq!(state.energy(), state.max_energy(), "rested");
     alice.ready();
     assert!(
         !matches!(alice.swing(4, feet, 0).await, Swung::Refused(..)),

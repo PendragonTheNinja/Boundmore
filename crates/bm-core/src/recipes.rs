@@ -199,6 +199,10 @@ mod tests {
         }
         loop {
             let before = have.len();
+            // A bucket fills at water (milestone 16).
+            if have.contains(&items.id("bucket").unwrap()) {
+                have.insert(items.id("water_bucket").unwrap());
+            }
             for r in &book.recipes {
                 if r.inputs.iter().all(|(i, _)| have.contains(i)) {
                     have.insert(r.output);

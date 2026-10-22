@@ -68,7 +68,7 @@ impl Game {
         let pi = p.planet;
         let p = self.players.get_mut(&id).expect("present");
         p.last_swing = Some((at, swing_ticks(bag.action_speed)));
-        if !p.state.try_spend(bag.energy) {
+        if !p.state.try_spend(bag.energy, bm_core::food::Drain::Ranged) {
             return;
         }
         let hold = (hold as u32).min(BOMB_FUSE_TICKS);

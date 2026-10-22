@@ -182,7 +182,7 @@ fuel = 7
 name = "flint"
 
 # Milestone 11: materials of the crafting chain and what gathering objects
-# drop (tuning 4.4a). Beans, tubers and petals wait for food; lamellae and
+# drop (tuning 4.4a). Tubers and edible lamellae are food (milestone 16); lamellae and
 # orbs for forging and bonding agents; opal, salts and fragments for later
 # recipes.
 
@@ -224,12 +224,15 @@ name = "bitter_bean"
 
 [[item]]
 name = "tuber"
+food = { hunger = 50 }
 
 [[item]]
 name = "waxy_tuber"
+food = { hunger = 50 }
 
 [[item]]
 name = "exotic_tuber"
+food = { hunger = 50 }
 
 [[item]]
 name = "opal"
@@ -254,6 +257,7 @@ name = "reactive_lamella"
 
 [[item]]
 name = "edible_lamella"
+food = { hunger = 50 }
 
 [[item]]
 name = "glowing_lamella"
@@ -276,9 +280,11 @@ name = "shimmering_orb"
 # extractor (tuning 3.8).
 [[item]]
 name = "raw_meat"
+food = { hunger = 100, sick = true }
 
 [[item]]
 name = "lean_meat"
+food = { hunger = 150, sick = true }
 
 [[item]]
 name = "bone"
@@ -350,6 +356,7 @@ sling = { damage = 600, action_speed = 10.0, shot_speed = 35.0, range = 20.0, fa
 # Milestone 13 part 2: the popper's and drifter's parts, bombs.
 [[item]]
 name = "prime_meat"
+food = { hunger = 150, sick = true }
 
 [[item]]
 name = "volatile_blood"
@@ -455,3 +462,132 @@ tool = { class = "spanner", action_speed = 70.0, durability = 500, energy = 6, r
 name = "iron_spanner"
 stack = 1
 tool = { class = "spanner", action_speed = 30.0, durability = 900, energy = 8, repair = 700 }
+
+# Milestone 16: food (docs/milestones/16-food.md, tuning 3.9). `food`:
+# hunger taken away, raw meat's sickness, and a dish's buff with its rank and
+# minutes. Boundless's values; Boundmore's names (Boundless's in brackets).
+[[item]]
+name = "dewberry"
+display = "Dewberry"
+food = { hunger = 100 }
+
+[[item]]
+name = "cooked_dewberry"
+food = { hunger = 200 }
+
+[[item]]
+name = "cooked_meat"
+food = { hunger = 400 }
+
+[[item]]
+name = "cooked_lean_meat"
+food = { hunger = 500 }
+
+[[item]]
+name = "cooked_prime_meat"
+food = { hunger = 500 }
+
+[[item]]
+name = "cooked_tuber"
+food = { hunger = 250 }
+
+[[item]]
+name = "cooked_waxy_tuber"
+food = { hunger = 350 }
+
+[[item]]
+name = "cooked_exotic_tuber"
+food = { hunger = 350 }
+
+# Dishes, rank 1 (soup or broth) and 2 (stew or casserole). Ranks 3 to 5 need
+# grain from farming (part 2).
+# Berry (starberry): Refreshed, the Recovery buff of Release 223. Its length
+# is not published: 30 minutes like the others (a guess).
+[[item]]
+name = "dewberry_soup"
+display = "Berry Soup"
+food = { hunger = 600, buff = "refreshed", rank = 1, minutes = 30 }
+
+[[item]]
+name = "stewed_dewberries"
+display = "Stewed Berries"
+food = { hunger = 800, buff = "refreshed", rank = 2, minutes = 30 }
+
+# Tuber (earthyam): the most hunger, no buff (Release 223).
+[[item]]
+name = "tuber_soup"
+food = { hunger = 2000 }
+
+[[item]]
+name = "tuber_stew"
+food = { hunger = 2500 }
+
+# Meat (meaty): Sated, Boundless's Well Fed: no hunger while it lasts.
+[[item]]
+name = "meat_broth"
+food = { hunger = 1200, buff = "sated", rank = 1, minutes = 10 }
+
+[[item]]
+name = "meat_casserole"
+food = { hunger = 1600, buff = "sated", rank = 2, minutes = 20 }
+
+# Waxy tuber (energising): Lively, more max energy.
+[[item]]
+name = "lively_soup"
+food = { hunger = 1000, buff = "lively", rank = 1, minutes = 30 }
+
+[[item]]
+name = "lively_stew"
+food = { hunger = 1400, buff = "lively", rank = 2, minutes = 30 }
+
+# Lean meat (criticaling): Keen, more crits.
+[[item]]
+name = "keen_soup"
+food = { hunger = 1500, buff = "keen", rank = 1, minutes = 30 }
+
+[[item]]
+name = "keen_casserole"
+food = { hunger = 2000, buff = "keen", rank = 2, minutes = 30 }
+
+# Exotic tuber (persisting): Gentle, less tool wear.
+[[item]]
+name = "gentle_broth"
+food = { hunger = 1000, buff = "gentle", rank = 1, minutes = 30 }
+
+[[item]]
+name = "gentle_stew"
+food = { hunger = 1400, buff = "gentle", rank = 2, minutes = 30 }
+
+# Prime meat (shielding): Guarded, armour and resistance.
+[[item]]
+name = "guarding_broth"
+food = { hunger = 1500, buff = "guarded", rank = 1, minutes = 30 }
+
+[[item]]
+name = "guarding_casserole"
+food = { hunger = 2000, buff = "guarded", rank = 2, minutes = 30 }
+
+# Kitchen goods.
+[[item]]
+name = "nail"
+
+[[item]]
+name = "bucket"
+bucket = 10
+
+[[item]]
+name = "water_bucket"
+display = "Bucket of Water"
+returns = "bucket"
+
+[[item]]
+name = "milk_bucket"
+display = "Bucket of Milk"
+returns = "bucket"
+
+[[item]]
+name = "syrup"
+
+[[item]]
+name = "sugar"
+display = "Bag of Sugar"

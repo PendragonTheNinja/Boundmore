@@ -794,8 +794,13 @@ mod tests {
         let mut p = PlayerState::default();
         let shots = run(FireMode::Rapid, ticks, 2000, |_| true);
         // Nothing refills here (that is `movement::step`): a full bar alone.
-        let fired = shots.iter().filter(|_| p.try_spend(6)).count();
-        assert_eq!(fired, 600 / 6, "a full bar is a hundred stone shots");
+        let fired = shots
+            .iter()
+            .filter(|_| p.try_spend(6, bm_core::food::Drain::Ranged))
+            .count();
+        // Each shot adds 0.012 hunger (energy / 500): the 100th finds the bar
+        // a point short.
+        assert_eq!(fired, 99, "a full bar is about a hundred stone shots");
     }
 
     fn open(_: BlockPos) -> bool {
@@ -955,7 +960,10 @@ mod tests {
         let mut p = PlayerState::default();
         let tosses = run_fuse(bm_core::mining::swing_ticks(50.0), 4000, |f| f % 4 == 0);
         assert!(tosses.len() > 20);
-        let thrown = tosses.iter().filter(|_| p.try_spend(90)).count();
+        let thrown = tosses
+            .iter()
+            .filter(|_| p.try_spend(90, bm_core::food::Drain::Ranged))
+            .count();
         assert_eq!(thrown, 600 / 90);
     }
 

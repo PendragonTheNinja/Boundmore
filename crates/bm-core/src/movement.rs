@@ -234,6 +234,14 @@ pub struct PlayerState {
     pub loose: u16,
     /// Defeated: lies still until the server brings them back.
     pub down: bool,
+    /// Hunger, in 1/600 points (milestone 16, `food`). Saved.
+    pub hunger: u32,
+    /// The food buff. Saved.
+    pub buff: crate::food::FoodBuff,
+    /// Ticks of sickness left (raw meat).
+    pub sick: u16,
+    /// Ticks until the next bite.
+    pub chew: u16,
 }
 
 /// What skills change about moving and energy (`skills::Effects::body`).
@@ -388,7 +396,7 @@ pub fn step(
         Some(g) if input.fire => {
             used = true;
             // Too tired to fire: nothing happens but the pause starts again.
-            if s.try_spend(g.energy) {
+            if s.try_spend(g.energy, crate::food::Drain::Ranged) {
                 s.hook = Some(Hook {
                     pos: s.eye(cfg),
                     vel: look_dir(input.yaw, input.pitch) * g.shot_speed,
@@ -414,6 +422,7 @@ pub fn step(
     }
     s.beat = (s.beat + 1) % crate::combat::REGEN_PERIOD_TICKS;
     s.heal_tick(s.beat == 0);
+    s.food_tick(s.beat == 0);
     let hooked = s.anchor().is_some();
     let in_water = world.liquid(BlockPos::containing(s.pos.x, s.pos.y + cfg.height * 0.4, s.pos.z));
 
@@ -424,6 +433,14 @@ pub fn step(
     let wl = wish.length();
     if wl > 0.0 {
         wish /= wl;
+    }
+    // Hunger from moving on foot (milestone 16): running and sprinting.
+    if s.on_ground && !in_water && wl > 0.0 {
+        s.add_hunger(if input.sprint && f > 0.0 {
+            crate::food::SPRINT_HUNGER_PER_TICK
+        } else {
+            crate::food::RUN_HUNGER_PER_TICK
+        });
     }
     let speed = if in_water {
         cfg.swim_speed
@@ -474,15 +491,19 @@ pub fn step(
     } else {
         let fresh = input.jump && !s.jump_held;
         if input.jump && s.on_ground {
-            s.vel.y = if s.body.high_jump {
-                // v^2 = v0^2 + 2 g h: the same jump, two blocks higher.
-                (cfg.jump_velocity * cfg.jump_velocity + 2.0 * cfg.gravity * HIGH_JUMP_EXTRA).sqrt()
+            // v^2 = v0^2 + 2 g h: the same jump, h higher (the high-jump
+            // epic, Springy food).
+            let extra = if s.body.high_jump { HIGH_JUMP_EXTRA } else { 0.0 } + s.jump_extra();
+            s.vel.y = if extra > 0.0 {
+                (cfg.jump_velocity * cfg.jump_velocity + 2.0 * cfg.gravity * extra).sqrt()
             } else {
                 cfg.jump_velocity
             };
+            s.add_hunger(crate::food::JUMP_HUNGER);
         } else if fresh && s.body.double_jump && !s.air_jumped && s.hook.is_none() {
             s.vel.y = cfg.jump_velocity * DOUBLE_JUMP_FRACTION;
             s.air_jumped = true;
+            s.add_hunger(crate::food::JUMP_HUNGER);
         }
         s.vel.y = (s.vel.y - cfg.gravity * dt).max(-cfg.max_fall_speed);
     }
@@ -1267,11 +1288,81 @@ mod tests {
             hold(&mut s, fire(up()), 1, Some(&iron), &w);
         }
         assert_eq!(shots, 7);
-        assert_eq!(s.energy(), 600 - 7 * 80);
+        // Each shot adds 0.16 hunger (energy / 500): one point off the bar.
+        assert_eq!(s.max_energy(), 599);
+        assert_eq!(s.energy(), 599 - 7 * 80);
         assert_eq!(s.rest, crate::energy::PAUSE_TICKS, "the last try restarted the pause");
         // Rested long enough, it fires again.
         hold(&mut s, up(), (crate::energy::PAUSE_TICKS + 60) as u32, Some(&iron), &w);
         assert_eq!(hold(&mut s, fire(up()), 1, Some(&iron), &w), 1);
+    }
+
+    #[test]
+    fn running_sprinting_and_jumping_make_you_hungry() {
+        // Milestone 16 guesses: run 0.5 a second, sprint 1, a jump 1.
+        let w = world();
+        let scale = crate::food::HUNGER_SCALE;
+        let mut s = standing(5.5, 10.0);
+        hold(&mut s, PlayerInput::default(), 600, None, &w);
+        assert_eq!(s.hunger, 0, "standing still costs nothing");
+        let run = PlayerInput {
+            forward: 1,
+            ..Default::default()
+        };
+        hold(&mut s, run, 600, None, &w);
+        assert_eq!(s.hunger, 5 * scale, "10 s running");
+        hold(&mut s, PlayerInput { sprint: true, ..run }, 600, None, &w);
+        assert_eq!(s.hunger, 15 * scale, "then 10 s sprinting");
+        let mut j = standing(5.5, 10.0);
+        hold(
+            &mut j,
+            PlayerInput {
+                jump: true,
+                ..Default::default()
+            },
+            1,
+            None,
+            &w,
+        );
+        assert_eq!(j.hunger, scale, "one jump");
+        // Sated: nothing.
+        let mut f = standing(5.5, 10.0);
+        f.buff = crate::food::FoodBuff {
+            kind: crate::food::Buff::Sated,
+            rank: 1,
+            left: 10_000,
+        };
+        hold(&mut f, run, 600, None, &w);
+        assert_eq!(f.hunger, 0);
+    }
+
+    #[test]
+    fn springy_food_jumps_higher() {
+        let w = world();
+        let mut s = standing(5.5, 10.0);
+        s.buff = crate::food::FoodBuff {
+            kind: crate::food::Buff::Springy,
+            rank: 5,
+            left: 10_000,
+        };
+        let mut peak: f64 = 0.0;
+        hold(
+            &mut s,
+            PlayerInput {
+                jump: true,
+                ..Default::default()
+            },
+            1,
+            None,
+            &w,
+        );
+        for _ in 0..120 {
+            hold(&mut s, PlayerInput::default(), 1, None, &w);
+            peak = peak.max(s.pos.y);
+        }
+        let cfg = MoveConfig::default();
+        let plain = cfg.jump_velocity * cfg.jump_velocity / (2.0 * cfg.gravity);
+        assert!(peak - 10.0 > plain + 1.8, "two metres higher: {}", peak - 10.0);
     }
 
     #[test]

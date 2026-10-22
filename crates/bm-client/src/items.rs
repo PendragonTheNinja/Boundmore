@@ -191,6 +191,11 @@ impl Items {
                     lines.push(format!("{left} of {total} uses left"));
                 }
             }
+            ItemKind::Food(f) => lines.extend(food_lines(&f)),
+            ItemKind::Bucket { fills } => {
+                lines.push("Left click on water fills it".into());
+                lines.push(format!("{} of {fills} fills left", fills.saturating_sub(stack.wear)));
+            }
             ItemKind::Bomb(b) => {
                 lines.push("Hold to light, let go to throw".into());
                 lines.push(format!(
@@ -391,6 +396,33 @@ fn hsv_to_rgb(h: f32, s: f32, v: f32) -> [u8; 3] {
         _ => (c, 0.0, x),
     };
     [r, g, b].map(|v| ((v + m) * 255.0).round() as u8)
+}
+
+/// What eating one does, for its tooltip (milestone 16).
+pub fn food_lines(f: &bm_core::food::FoodStats) -> Vec<String> {
+    let mut lines = vec!["Left click eats one".to_string()];
+    if f.hunger > 0 {
+        lines.push(format!("Takes away {} hunger", f.hunger));
+    }
+    if f.buff != bm_core::food::Buff::None {
+        lines.push(format!(
+            "{} {}: {} for {} minutes",
+            f.buff.name(),
+            roman(f.rank),
+            f.buff.describe(f.rank),
+            f.minutes
+        ));
+        lines.push("Replaces any other food buff".into());
+    }
+    if f.sick {
+        lines.push("Raw: makes you sick for 40 seconds".into());
+    }
+    lines
+}
+
+/// 1 to 5 as I to V, for buff ranks.
+pub fn roman(n: u8) -> &'static str {
+    ["", "I", "II", "III", "IV", "V"].get(n as usize).copied().unwrap_or("")
 }
 
 #[cfg(test)]

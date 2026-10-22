@@ -215,7 +215,7 @@ impl Game {
         p.last_swing = Some((at, swing_ticks(tool.action_speed)));
         // Energy (milestone 10): too tired, the swing does nothing but start
         // the pause again (the client predicts the same, `try_spend`).
-        if !p.state.try_spend(tool.energy) {
+        if !p.state.try_spend(tool.energy, bm_core::food::Drain::Tool) {
             return self.swing_refused(id, seq, pos, Refusal::Quiet("too tired"));
         }
         let tier = self.planets[pi].tier;
@@ -316,7 +316,7 @@ impl Game {
         let tool = skilled_tool(&tool, &effects);
         let p = self.players.get_mut(&id).expect("present");
         p.last_swing = Some((at, swing_ticks(tool.action_speed)));
-        if !p.state.try_spend(tool.energy) {
+        if !p.state.try_spend(tool.energy, bm_core::food::Drain::Tool) {
             return self.swing_refused(id, seq, pos, Refusal::Quiet("too tired"));
         }
         let amount = bm_core::spark::repair_per_hit(tool.repair, effects.spanner_mastery);

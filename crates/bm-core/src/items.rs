@@ -149,6 +149,12 @@ pub enum ItemKind {
     /// A bag of bombs (milestone 13 part 2, tuning 3.1.3): hold to light,
     /// release to throw; one use per throw.
     Bomb(BombStats),
+    /// Eaten with the use button (milestone 16, `food`).
+    Food(crate::food::FoodStats),
+    /// An empty bucket: used on water it fills (milestone 16). A full
+    /// bucket used in a recipe comes back with one more of its `fills`
+    /// used (the stack's `wear`).
+    Bucket { fills: u16 },
 }
 
 /// What a bag of bombs does [tuning 3.1.3]: area (impulse) damage within
@@ -240,9 +246,20 @@ pub struct ItemDef {
     /// 4.7: soft coal 100, trunk 30, timber 15, stick 7).
     #[serde(default)]
     pub fuel: u16,
+    /// A full container (a bucket of water): the empty one a recipe gives
+    /// back when it uses this, by name (milestone 16).
+    #[serde(default)]
+    pub returns: Option<String>,
 }
 
 impl ItemDef {
+    pub fn food(&self) -> Option<crate::food::FoodStats> {
+        match self.kind {
+            ItemKind::Food(f) => Some(f),
+            _ => None,
+        }
+    }
+
     pub fn block(&self) -> Option<BlockId> {
         match self.kind {
             ItemKind::Block(b) => Some(b),
@@ -318,6 +335,14 @@ impl ItemDef {
             | ItemKind::Sling(SlingStats { energy, .. })
             | ItemKind::Bomb(BombStats { energy, .. }) => Some(energy),
             _ => None,
+        }
+    }
+
+    /// How a use of it turns energy into hunger (milestone 16).
+    pub fn drain(&self) -> crate::food::Drain {
+        match self.kind {
+            ItemKind::Grapple { .. } | ItemKind::Sling(_) | ItemKind::Bomb(_) => crate::food::Drain::Ranged,
+            _ => crate::food::Drain::Tool,
         }
     }
 
@@ -431,6 +456,13 @@ struct ItemEntry {
     icon: Option<String>,
     #[serde(default)]
     fuel: u16,
+    #[serde(default)]
+    food: Option<crate::food::FoodStats>,
+    /// An empty bucket's fills.
+    #[serde(default)]
+    bucket: Option<u16>,
+    #[serde(default)]
+    returns: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -595,6 +627,7 @@ impl ItemRegistry {
                         0
                     },
                     fuel: b.fuel,
+                    returns: None,
                 });
             }
         }
@@ -645,6 +678,10 @@ impl ItemRegistry {
                     })
                 }
                 (None, None, None) if e.portal_token => ItemKind::PortalToken,
+                (None, None, None) if e.food.is_some() => ItemKind::Food(e.food.expect("checked")),
+                (None, None, None) if e.bucket.is_some() => ItemKind::Bucket {
+                    fills: e.bucket.expect("checked"),
+                },
                 (None, None, None) => ItemKind::Material,
                 _ => return Err(ItemError::BadTool(e.name)),
             };
@@ -656,6 +693,7 @@ impl ItemRegistry {
                 icon: e.icon,
                 held_light: 0,
                 fuel: e.fuel,
+                returns: e.returns,
             });
         }
         let reg = Self::from_defs(defs, blocks)?;
@@ -705,10 +743,19 @@ impl ItemRegistry {
                 ItemKind::Sling(l) if d.stack != 1 || !l.valid() => return Err(ItemError::BadTool(d.name.clone())),
                 ItemKind::Bomb(b) if d.stack != 1 || !b.valid() => return Err(ItemError::BadTool(d.name.clone())),
                 ItemKind::Block(b) if !blocks.contains(b) => return Err(ItemError::BadBlock(d.name.clone(), b.0)),
+                ItemKind::Food(f) if !f.valid() => return Err(ItemError::BadTool(d.name.clone())),
+                ItemKind::Bucket { fills: 0 } => return Err(ItemError::BadTool(d.name.clone())),
                 _ => {}
             }
             if by_name.insert(d.name.clone(), ItemId(i as u16)).is_some() {
                 return Err(ItemError::Duplicate(d.name.clone()));
+            }
+        }
+        for d in &defs {
+            if let Some(r) = &d.returns
+                && !by_name.contains_key(r)
+            {
+                return Err(ItemError::Unknown(r.clone()));
             }
         }
         let mut drops = Vec::with_capacity(blocks.len());
@@ -886,7 +933,45 @@ mod tests {
                 .iter()
                 .any(|&(item, _)| item == flint)
         );
-        assert!(i.bonus_of(b.id("soil").unwrap()).is_empty());
+        assert!(i.bonus_of(b.id("sand").unwrap()).is_empty());
+        // Milestone 16: tubers from soil, dewberries from foliage.
+        let tuber = i.id("tuber").unwrap();
+        assert!(
+            i.bonus_of(b.id("soil").unwrap())
+                .iter()
+                .any(|&(item, per)| item == tuber && per[2] == 0.025)
+        );
+        let berry = i.id("dewberry").unwrap();
+        assert!(
+            i.bonus_of(b.id("foliage").unwrap())
+                .iter()
+                .any(|&(item, per)| item == berry && per[0] == 0.1)
+        );
+    }
+
+    #[test]
+    fn food_and_buckets_load() {
+        let b = BlockRegistry::builtin();
+        let i = ItemRegistry::builtin(&b);
+        let def = |n: &str| i.get(i.id(n).unwrap()).unwrap().clone();
+        assert_eq!(def("cooked_meat").food().unwrap().hunger, 400);
+        let raw = def("raw_meat").food().unwrap();
+        assert!(raw.sick);
+        let broth = def("meat_broth").food().unwrap();
+        assert_eq!(
+            (broth.buff, broth.rank, broth.minutes),
+            (crate::food::Buff::Sated, 1, 10)
+        );
+        assert!(matches!(def("bucket").kind, ItemKind::Bucket { fills: 10 }));
+        assert_eq!(def("water_bucket").returns.as_deref(), Some("bucket"));
+        assert_eq!(def("copper_grapple").drain(), crate::food::Drain::Ranged);
+        assert_eq!(def("copper_hammer").drain(), crate::food::Drain::Tool);
+        // Every dish's buff is one the HUD knows, at a rank it has.
+        for d in (0..i.len()).filter_map(|n| i.get(ItemId(n as u16))) {
+            if let Some(f) = d.food() {
+                assert!(f.valid(), "{}", d.name);
+            }
+        }
     }
 
     #[test]

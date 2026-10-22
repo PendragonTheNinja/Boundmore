@@ -25,7 +25,7 @@ use glam::DVec3;
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
 
 /// Bump on any change to a message below. Client and server must match.
-pub const PROTOCOL_VERSION: u32 = 21;
+pub const PROTOCOL_VERSION: u32 = 22;
 
 /// QUIC application protocol name; also refuses non-Boundmore peers early.
 pub const ALPN: &[u8] = b"boundmore/1";
@@ -768,8 +768,9 @@ pub struct RemoteCreature {
 pub const CREATURES_PER_SNAPSHOT: usize = 40;
 
 /// Remote players per snapshot datagram, keeping each under the ~1200-byte
-/// path MTU QUIC assumes even when every one of them has a grapple out.
-pub const PLAYERS_PER_SNAPSHOT: usize = 27;
+/// path MTU QUIC assumes even when every one of them has a grapple out
+/// (26 since milestone 16 put hunger and the food buff in our own state).
+pub const PLAYERS_PER_SNAPSHOT: usize = 26;
 
 #[derive(Debug, thiserror::Error)]
 pub enum DecodeError {
@@ -888,6 +889,14 @@ mod tests {
                 beat: u16::MAX,
                 loose: u16::MAX,
                 down: true,
+                hunger: u32::MAX,
+                buff: bm_core::food::FoodBuff {
+                    kind: bm_core::food::Buff::Studious,
+                    rank: u8::MAX,
+                    left: u32::MAX,
+                },
+                sick: u16::MAX,
+                chew: u16::MAX,
                 hook: Some(bm_core::Hook {
                     pos: DVec3::new(1e6, 1e3, 1e6),
                     vel: DVec3::splat(-50.0),

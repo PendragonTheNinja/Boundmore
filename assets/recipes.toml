@@ -718,3 +718,240 @@ seconds = 120.0
 xp = 14
 wear = 11
 skill = { name = "tech_crafting", level = 1 }
+
+# Milestone 16: food (tuning 3.9, Boundless's recipe data, single craft).
+# Cooked singles and rank 1 and 2 dishes at the furnace; a recipe that uses
+# a bucket of water or milk gives the bucket back with one more fill used.
+
+[[recipe]]
+output = "cooked_dewberry"
+inputs = [["dewberry", 1]]
+station = "furnace"
+seconds = 20.0
+heat = 50
+xp = 4
+
+[[recipe]]
+output = "cooked_meat"
+inputs = [["raw_meat", 1]]
+station = "furnace"
+seconds = 60.0
+heat = 100
+xp = 8
+
+[[recipe]]
+output = "cooked_lean_meat"
+inputs = [["lean_meat", 1]]
+station = "furnace"
+seconds = 60.0
+heat = 100
+xp = 9
+
+[[recipe]]
+output = "cooked_prime_meat"
+inputs = [["prime_meat", 1]]
+station = "furnace"
+seconds = 60.0
+heat = 100
+xp = 10
+
+[[recipe]]
+output = "cooked_tuber"
+inputs = [["tuber", 1]]
+station = "furnace"
+seconds = 25.0
+heat = 50
+xp = 6
+
+[[recipe]]
+output = "cooked_waxy_tuber"
+inputs = [["waxy_tuber", 1]]
+station = "furnace"
+seconds = 25.0
+heat = 50
+xp = 6
+
+[[recipe]]
+output = "cooked_exotic_tuber"
+inputs = [["exotic_tuber", 1]]
+station = "furnace"
+seconds = 25.0
+heat = 50
+xp = 8
+
+[[recipe]]
+output = "dewberry_soup"
+inputs = [["dewberry", 3], ["water_bucket", 1]]
+station = "furnace"
+seconds = 60.0
+heat = 100
+xp = 6
+skill = { name = "food_crafting", level = 1 }
+
+[[recipe]]
+output = "stewed_dewberries"
+inputs = [["dewberry", 4], ["syrup", 2]]
+station = "furnace"
+seconds = 60.0
+heat = 100
+xp = 6
+skill = { name = "food_crafting", level = 2 }
+
+[[recipe]]
+output = "tuber_soup"
+inputs = [["tuber", 3], ["water_bucket", 1]]
+station = "furnace"
+seconds = 80.0
+heat = 100
+xp = 7
+skill = { name = "food_crafting", level = 1 }
+
+[[recipe]]
+output = "tuber_stew"
+inputs = [["tuber", 4], ["edible_lamella", 2]]
+station = "furnace"
+seconds = 80.0
+heat = 100
+xp = 7
+skill = { name = "food_crafting", level = 2 }
+
+[[recipe]]
+output = "meat_broth"
+inputs = [["raw_meat", 3], ["water_bucket", 1]]
+station = "furnace"
+seconds = 120.0
+heat = 100
+xp = 10
+skill = { name = "food_crafting", level = 1 }
+
+[[recipe]]
+output = "meat_casserole"
+inputs = [["raw_meat", 4], ["edible_lamella", 2]]
+station = "furnace"
+seconds = 120.0
+heat = 100
+xp = 10
+skill = { name = "food_crafting", level = 2 }
+
+[[recipe]]
+output = "lively_soup"
+inputs = [["waxy_tuber", 3], ["water_bucket", 1]]
+station = "furnace"
+seconds = 80.0
+heat = 100
+xp = 8
+skill = { name = "food_crafting", level = 1 }
+
+[[recipe]]
+output = "lively_stew"
+inputs = [["waxy_tuber", 4], ["edible_lamella", 2]]
+station = "furnace"
+seconds = 80.0
+heat = 100
+xp = 8
+skill = { name = "food_crafting", level = 2 }
+
+[[recipe]]
+output = "keen_soup"
+inputs = [["lean_meat", 3], ["water_bucket", 1]]
+station = "furnace"
+seconds = 80.0
+heat = 100
+xp = 10
+skill = { name = "food_crafting", level = 1 }
+
+[[recipe]]
+output = "keen_casserole"
+inputs = [["lean_meat", 4], ["edible_lamella", 2]]
+station = "furnace"
+seconds = 80.0
+heat = 100
+xp = 10
+skill = { name = "food_crafting", level = 2 }
+
+[[recipe]]
+output = "gentle_broth"
+inputs = [["exotic_tuber", 3], ["water_bucket", 1]]
+station = "furnace"
+seconds = 80.0
+heat = 100
+xp = 10
+skill = { name = "food_crafting", level = 1 }
+
+[[recipe]]
+output = "gentle_stew"
+inputs = [["exotic_tuber", 4], ["edible_lamella", 2]]
+station = "furnace"
+seconds = 80.0
+heat = 100
+xp = 10
+skill = { name = "food_crafting", level = 2 }
+
+[[recipe]]
+output = "guarding_broth"
+inputs = [["prime_meat", 3], ["water_bucket", 1]]
+station = "furnace"
+seconds = 120.0
+heat = 100
+xp = 12
+skill = { name = "food_crafting", level = 1 }
+
+[[recipe]]
+output = "guarding_casserole"
+inputs = [["prime_meat", 4], ["edible_lamella", 4]]
+station = "furnace"
+seconds = 120.0
+heat = 100
+xp = 14
+skill = { name = "food_crafting", level = 2 }
+
+# Kitchen goods.
+[[recipe]]
+output = "nail"
+count = 4
+inputs = [["iron_ingot", 1]]
+station = "workbench"
+seconds = 30.0
+xp = 6
+wear = 6
+
+[[recipe]]
+output = "bucket"
+inputs = [["timber", 1], ["nail", 6]]
+station = "workbench"
+seconds = 30.0
+xp = 6
+wear = 6
+
+[[recipe]]
+output = "syrup"
+inputs = [["sap", 2]]
+station = "extractor"
+seconds = 60.0
+xp = 4
+wear = 7
+
+[[recipe]]
+output = "syrup"
+inputs = [["dewberry", 4]]
+station = "extractor"
+seconds = 60.0
+xp = 4
+wear = 7
+
+[[recipe]]
+output = "milk_bucket"
+inputs = [["milk_gland", 1], ["bucket", 1]]
+station = "extractor"
+seconds = 60.0
+xp = 8
+wear = 7
+
+[[recipe]]
+output = "sugar"
+inputs = [["syrup", 4], ["sackcloth", 1]]
+station = "refinery"
+seconds = 60.0
+xp = 5
+wear = 35
+skill = { name = "food_crafting", level = 2 }

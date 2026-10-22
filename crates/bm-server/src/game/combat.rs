@@ -172,7 +172,7 @@ impl Game {
         p.last_swing = Some((at, swing_ticks(sling.action_speed)));
         // Too tired: nothing fires and nothing wears (the client predicts
         // the same, `try_spend`, whatever the charge).
-        if !p.state.try_spend(sling.energy) {
+        if !p.state.try_spend(sling.energy, bm_core::food::Drain::Ranged) {
             return;
         }
         let charge = if effects.charging {
@@ -429,7 +429,7 @@ impl Game {
         let tool = skilled_tool(&tool, &effects);
         let p = self.players.get_mut(&id).expect("present");
         p.last_swing = Some((at, swing_ticks(tool.action_speed)));
-        if !p.state.try_spend(tool.energy) {
+        if !p.state.try_spend(tool.energy, bm_core::food::Drain::Tool) {
             return;
         }
         if roll(&mut self.rng) >= effects.wear_saved() {

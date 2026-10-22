@@ -486,10 +486,14 @@ impl Session {
         // Energy (milestone 10): spent right after input `at`, as the server
         // will. Too tired, the swing does nothing but restart the pause; it
         // is still sent so the server restarts it too.
-        if !self
-            .me
-            .spend(at, tool.energy, &self.movement, self.world.shape, &self.world)
-        {
+        if !self.me.spend(
+            at,
+            tool.energy,
+            bm_core::food::Drain::Tool,
+            &self.movement,
+            self.world.shape,
+            &self.world,
+        ) {
             return Some(ClientMsg::Swing {
                 seq,
                 at,
@@ -1753,7 +1757,14 @@ impl App {
                             // but cuts nothing.
                             let cost = held.and_then(|h| s.items.def(&h)).and_then(|d| d.energy()).unwrap_or(0);
                             let at = s.me.seq;
-                            if s.me.spend(at, cost, &s.movement, s.world.shape, &s.world) {
+                            if s.me.spend(
+                                at,
+                                cost,
+                                bm_core::food::Drain::Tool,
+                                &s.movement,
+                                s.world.shape,
+                                &s.world,
+                            ) {
                                 s.world
                                     .predict_edit(s.edit_seq, hit.block, BlockState { shape: new, ..state });
                             }
@@ -1805,8 +1816,14 @@ impl App {
                 // Spent at the throw, as the server will; too tired, it is
                 // still sent (the server restarts the pause too) but nothing
                 // is thrown.
-                let spent =
-                    s.me.spend(toss.at, skilled.energy, &s.movement, s.world.shape, &s.world);
+                let spent = s.me.spend(
+                    toss.at,
+                    skilled.energy,
+                    bm_core::food::Drain::Ranged,
+                    &s.movement,
+                    s.world.shape,
+                    &s.world,
+                );
                 link.send(ClientMsg::Throw {
                     at: toss.at,
                     slot: slot as u8,
@@ -1836,8 +1853,14 @@ impl App {
                 // Spent right after its input, as the server will; too tired,
                 // the shot is still sent (the server restarts the pause too)
                 // but nothing flies.
-                let spent =
-                    s.me.spend(fire.at, skilled.energy, &s.movement, s.world.shape, &s.world);
+                let spent = s.me.spend(
+                    fire.at,
+                    skilled.energy,
+                    bm_core::food::Drain::Ranged,
+                    &s.movement,
+                    s.world.shape,
+                    &s.world,
+                );
                 link.send(ClientMsg::Shoot {
                     at: fire.at,
                     slot: slot as u8,
@@ -1874,7 +1897,14 @@ impl App {
                     if let Some(at) = s.swinger.next(first_seq, s.me.seq) {
                         s.swinger
                             .swung(at, swing_ticks(skilled_tool(&tool, &effects).action_speed));
-                        s.me.spend(at, tool.energy, &s.movement, s.world.shape, &s.world);
+                        s.me.spend(
+                            at,
+                            tool.energy,
+                            bm_core::food::Drain::Tool,
+                            &s.movement,
+                            s.world.shape,
+                            &s.world,
+                        );
                         link.send(ClientMsg::Strike {
                             at,
                             creature: id,

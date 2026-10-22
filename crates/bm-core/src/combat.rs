@@ -19,9 +19,10 @@ pub const CALM_TICKS: u16 = (TICK_HZ * 10) as u16;
 /// Regeneration happens in steps every 5 s, as Boundless counted it.
 pub const REGEN_PERIOD_TICKS: u16 = (TICK_HZ * 5) as u16;
 
-/// The stand-in regeneration until food exists (Nathan, 2026-10-21): 7 a
-/// step out of combat, 1.4 a second, a full 600 in about 7 minutes (the one
-/// rate Boundless players reported for being well fed).
+/// Regeneration while Full (milestone 16; M13's stand-in until food, Nathan
+/// 2026-10-21): 7 a step out of combat, 1.4 a second, a full 600 in about 7
+/// minutes (the rate Boundless players reported for being fed; the 2018
+/// food index says 4 a step).
 pub const CALM_REGEN: u32 = 7;
 
 /// Mending (the health regeneration epic): +25 every 5 s, in combat too
@@ -197,8 +198,10 @@ pub fn fall_damage(impact: f64, max: u32, soft: bool) -> u32 {
 
 impl PlayerState {
     /// Health at full (600 plus what skills add, `Body::health_bonus`).
+    /// Hearty (a food buff) adds 20 to 100%.
     pub fn max_health(&self) -> u32 {
-        BASE_HEALTH.saturating_add(self.body.health_bonus)
+        let base = BASE_HEALTH.saturating_add(self.body.health_bonus) as u64;
+        (base * (100 + self.health_up_percent() as u64) / 100) as u32
     }
 
     /// Health left.
@@ -234,7 +237,8 @@ impl PlayerState {
     }
 
     /// One tick of healing: Mending every 5 s, and the calm regeneration
-    /// every 5 s once 10 s have passed without combat.
+    /// every 5 s once 10 s have passed without combat, while Full
+    /// (milestone 16). Sickness stops both.
     pub(crate) fn heal_tick(&mut self, tick_in_period: bool) {
         if self.down {
             return;
@@ -243,11 +247,14 @@ impl PlayerState {
         if !tick_in_period {
             return;
         }
+        if self.sick > 0 {
+            return;
+        }
         let mut heal = 0;
         if self.body.mending {
             heal += MENDING_REGEN;
         }
-        if self.calm >= CALM_TICKS {
+        if self.calm >= CALM_TICKS && self.is_full() {
             heal += CALM_REGEN;
         }
         self.hurt = self.hurt.saturating_sub(heal);
@@ -262,7 +269,7 @@ impl PlayerState {
             return 0;
         }
         let raw = fall_damage(impact, self.max_health(), soft);
-        let d = raw.saturating_sub(self.body.falling_armour as u32);
+        let d = raw.saturating_sub(self.falling_armour());
         if d > 0 {
             self.take(d);
         }

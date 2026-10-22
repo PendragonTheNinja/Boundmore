@@ -9,6 +9,7 @@
 //! we lack, an edit in flight) or an input was lost, and the visible jump is
 //! smoothed away over a few frames.
 
+use bm_core::food::Drain;
 use bm_core::movement::{self, Body, GrappleSpec, MoveConfig, PlayerInput, PlayerState};
 use bm_core::{PhysicsWorld, PlanetShape};
 use glam::DVec3;
@@ -26,7 +27,7 @@ const SMOOTHING_SECONDS: f64 = 0.15;
 /// a swing's or cut's energy, or a skill change's body (milestone 12).
 #[derive(Clone, Copy, Debug, PartialEq)]
 enum After {
-    Spend(u16),
+    Spend(u16, Drain),
     Body(Body),
 }
 
@@ -135,17 +136,18 @@ impl Predictor {
         &mut self,
         at: u32,
         cost: u16,
+        drain: Drain,
         cfg: &MoveConfig,
         shape: PlanetShape,
         world: &impl PhysicsWorld,
     ) -> bool {
         let Some(i) = self.history.iter().position(|e| e.seq == at) else {
             // Older than anything we remember: spend from where we are.
-            return self.state.try_spend(cost);
+            return self.state.try_spend(cost, drain);
         };
         let mut state = self.history[i].state;
-        let spent = state.try_spend(cost);
-        self.history[i].after.push(After::Spend(cost));
+        let spent = state.try_spend(cost, drain);
+        self.history[i].after.push(After::Spend(cost, drain));
         self.history[i].state = state;
         for e in self.history.iter_mut().skip(i + 1) {
             replay(&mut state, e, cfg, shape, world);
@@ -299,8 +301,8 @@ fn replay(state: &mut PlayerState, e: &mut Entry, cfg: &MoveConfig, shape: Plane
     movement::step(state, &e.input, cfg, e.grapple.as_ref(), shape, world);
     for a in &e.after {
         match *a {
-            After::Spend(cost) => {
-                state.try_spend(cost);
+            After::Spend(cost, drain) => {
+                state.try_spend(cost, drain);
             }
             After::Body(body) => state.body = body,
         }
@@ -514,7 +516,7 @@ mod tests {
             .map(|(i, input)| {
                 movement::step(&mut s, input, &cfg, None, shape(), &w);
                 if swings.contains(&(i as u32 + 1)) {
-                    assert!(s.try_spend(8));
+                    assert!(s.try_spend(8, Drain::Tool));
                 }
                 s
             })
@@ -525,7 +527,7 @@ mod tests {
             // We swing a couple of inputs late: the spend lands at its own
             // input and the ones after are replayed.
             if let Some(&at) = swings.iter().find(|&&at| at + 2 == seq) {
-                assert!(p.spend(at, 8, &cfg, shape(), &w));
+                assert!(p.spend(at, 8, Drain::Tool, &cfg, shape(), &w));
             }
             if i >= 5 && i % 3 == 0 {
                 let ack = i as u32 - 4;
@@ -534,9 +536,10 @@ mod tests {
         }
         assert_eq!(p.corrections, 0);
         assert_eq!(p.state, truth[199]);
+        assert!(p.state.hunger > 0, "walking made us hungry, on both sides alike");
         assert_eq!(
             p.state.energy(),
-            600 - 3 * 8,
+            p.state.max_energy() - 3 * 8,
             "each swing restarted the pause: nothing back yet"
         );
     }
