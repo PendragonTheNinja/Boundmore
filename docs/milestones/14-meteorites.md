@@ -113,11 +113,26 @@ Numbers no site has; until measured they stay guesses:
 
 ## Status
 
-*Spec written 2026-10-22; building.*
+*Spec written 2026-10-22. Built 2026-10-22; awaiting Nathan's play-test.*
 
-- [ ] Research (this spec; tuning 3.2.5 extended)
-- [ ] Part 1: `bm-core` regions and meteors, data
-- [ ] Protocol 20
-- [ ] Server
-- [ ] Client and art
-- [ ] Verified, screenshots
+- [x] Research: this spec; tuning 3.2.5 extended (region-centre and square triggers, cooldowns, levels)
+- [x] `bm-core`: `regions` (layout, lookup across the seam, HUD wording, discovery XP, names from `assets/regions.toml`) and `meteors` (levels, waves, tiers, loot from `assets/meteors.toml`)
+- [x] Blocks `meteor_shell` and `meteor_heart`, painted by `bm-texgen`
+- [x] Protocol 20: `Regions`, `Discovered`, `Meteor`, `MeteorGone`, `MeteorLife`; `LootHeart`
+- [x] Server (`crates/bm-server/src/game/meteors.rs`):
+  - regions named from the land at each centre; discovery with 50 x n XP (`ServerConfig::discovery_xp`, off in the XP-counting tests);
+  - the region-centre and square triggers, rests, the planet cap, landing sites clear of claims, shrines and water;
+  - the fall, crater, shell and heart; the shell guarded while it fights (swings and blasts);
+  - waves through three portals, always angry at life holders, kept while the meteor fights, outside the planet's creature cap; stuck creatures drop back in;
+  - meteor lives (zone, 10 s grace, lost on Return or travel), failure and the 20-minute timeout to dormant;
+  - the heart's full share for those who fought, dormant share for the rest, once each; every fourth shell block a portal conduit;
+  - `SAVE_VERSION` 7: new tables `planet_skies` and `discoveries`; a meteor active at shutdown wakes dormant. Upgrade check on a real M13 universe (bots, 2 planets): "upgraded from save version 6 to 7", the bots rejoined where they were.
+- [x] Client (`crates/bm-client/src/meteors.rs`): the region line at the top, discovery notices, the falling meteor and its trail, the beam over a site (from afar), the portals, the meteor bar and life marker, E on an open heart; `--demo-ui meteor`; screenshot `docs/media/m14-meteor.png`.
+- [x] Tests: 547 in all (`regions_are_named_and_discovered_once_for_xp`, `a_meteor_falls_fights_and_pays_each_player_once` end to end, store round trips and the version 6 upgrade, unit tests of the rules and the HUD).
+- [x] Load test: 50 bots over the four planets, 9 slow ticks in the first minute (M13 noted none worse than M12 on the same machine; this sandbox's numbers mean little). **No meteor fell during it**: the bots do not walk to region centres, so meteors under load are not yet measured.
+- Follow-ups:
+  - meteors under load (bots that seek region centres);
+  - Boundless's revive does not exist yet, so a life is lost on Return;
+  - creatures fall from the portals rather than being carried down;
+  - no sound; the beam is a plain glowing shaft;
+  - the region outline map (the atlas) is a later milestone.

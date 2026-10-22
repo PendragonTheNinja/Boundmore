@@ -54,7 +54,7 @@ What a Boundless player expects to find, and where each stands. "Ours" is the Bo
 
 **M13: Creatures and combat** (spec 2026-10-21, `milestones/13-creatures-and-combat.md`). Health, damage and defeat, slings, Boundless's creatures in our own names and models (grazer, pelter, dasher; then popper with bombs, and drifter), per-player drops, bone for the real glue, tallow for the better torch, and the combat skills.
 
-**Soon after M13: meteorite hunts** (Nathan, 2026-10-21): meteors fall as you enter a new region, drop waves of creatures, and every player loots the core afterwards; bigger with world tier and player count. In Boundless they were the main source of portal fuel and "a lot of fun", so they drop wayshards here.
+**M14: Regions and meteorites (built 2026-10-22, `milestones/14-meteorites.md`).** Named regions with discovery XP; meteorite hunts (Nathan, 2026-10-21): meteors fall as you enter a new region, drop waves of creatures, and every player loots the core afterwards; bigger with world tier and player count. In Boundless they were the main source of portal fuel and "a lot of fun", so they drop wayshards here.
 
 *After that, still Boundless first (Nathan, 2026-10-19 and 2026-10-20): creatures and combat (bone, tallow and hide, then glue's real recipe), food and hunger, forging. Each gets its own spec and number when it starts.*
 

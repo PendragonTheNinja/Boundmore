@@ -164,3 +164,22 @@ Boundless's live tree and tables exactly (Nathan, 2026-10-20), in Boundmore's na
 | Grazer charges | 1 per run-up at tier 1, 2 at tier 2, 3 from tier 3; knockback lifts 5 blocks a second | guesses (Boundless: tier 1 once, more at higher tiers) |
 | Pelter distance | keeps 7 to 14 blocks from its target, aims 0.4 s before a volley | guesses |
 | Hit rewind | shots and strikes judged against creatures where you saw them, up to 12 ticks (0.2 s) back | not a feel number: lag fairness |
+
+## Regions and meteorites (M14, `docs/milestones/14-meteorites.md`)
+
+| Number | Value | Source |
+|---|---|---|
+| Region spacing | centres 288 blocks apart (49 on a 2048-block planet) | guess from Boundless's ~50 a world (tuning 5.5); Nathan may count them with an atlas |
+| Region centre | the HUD shows the name alone, and a meteor may be called, within 40 blocks | guess |
+| Discovery XP | 50 x n for the n-th region discovered on a planet | Boundless (tuning 5.5) |
+| Region rest | 2 to 3 hours after a meteor | Boundless (players' reports) |
+| Wandering trigger | entering a 300 x 300 square not entered for 4 hours: a 1 in 4 chance | square: Boundless (players); rest and chance: guesses |
+| Meteors a planet | at most 3 active at once | guess |
+| Level | 1 + log2(players within 80 blocks), 1 to 6 | guess shaped to Boundless's 1 to 100 players and levels 1 to 6 |
+| Waves | 2 + level waves of 2 + level creatures; the last wave leans to the top tier | guess |
+| Fall | 6 s, landing 60 to 140 blocks from the trigger | guess |
+| Zone and lives | 48 blocks; 10 s to come back | zone: guess; 10 s: Boundless |
+| Dormant | 20 minutes after impact if not beaten, or when no life is left | timeout: guess; lives: Boundless |
+| Heart | open 30 minutes; 4 + 3 x level wayshards (+25% a tier above 3), 1 to 3 rolls of ores, relics and creature parts; dormant: a quarter of the wayshards, 1 roll | guess (`assets/meteors.toml`) |
+| Shell | every fourth block broken gives a portal conduit | guess (Boundless's meteorites were made of conduits) |
+| Stuck creatures | a wave creature that moves under half a block in 8 s with nobody within 4 blocks drops back in through a portal | our rule (a creature in a pit by the shell made a meteor unbeatable) |
