@@ -376,7 +376,11 @@ mod tests {
         let m = map();
         assert_eq!(m.len(), 16, "Boundless's 512-block spacing");
         let big = PlanetShape::new(128, 8);
-        assert_eq!(RegionMap::new(big, 1).len(), 64, "a 4 km world: 64, as Boundless's large worlds");
+        assert_eq!(
+            RegionMap::new(big, 1).len(),
+            64,
+            "a 4 km world: 64, as Boundless's large worlds"
+        );
         for i in 0..m.len() {
             let [x, z] = m.centre(i);
             assert!((0.0..2048.0).contains(&x) && (0.0..2048.0).contains(&z));
