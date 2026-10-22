@@ -434,7 +434,7 @@ def main():
         tile = entry.get("tile", "xy") if isinstance(entry, dict) else "xy"
         r = clean(name, args.size, args.nudge, args.variants, tile)
         if r is None:
-            print(f"{name}: no raw image (run generate.py first)", file=sys.stderr)
+            print(f"{name}: no raw image yet (make it in Flow: tools/texture-ai/flow-prompts.md)", file=sys.stderr)
             continue
         for old in (args.out / "blocks").glob(f"{name}_*.png"):
             old.unlink()
