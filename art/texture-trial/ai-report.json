@@ -1,0 +1,44 @@
+{
+  "stone": {
+    "detail_spread": 0.566,
+    "painted_spread": 0.429,
+    "ratio": 1.32,
+    "clipped": 0.0049,
+    "reads_when_recoloured": true
+  },
+  "turf_top": {
+    "detail_spread": 0.621,
+    "painted_spread": 0.426,
+    "ratio": 1.46,
+    "clipped": 0.0059,
+    "reads_when_recoloured": true
+  },
+  "soil": {
+    "detail_spread": 0.67,
+    "painted_spread": 0.689,
+    "ratio": 0.97,
+    "clipped": 0.0223,
+    "reads_when_recoloured": true
+  },
+  "trunk_side": {
+    "detail_spread": 0.959,
+    "painted_spread": 0.806,
+    "ratio": 1.19,
+    "clipped": 0.0486,
+    "reads_when_recoloured": true
+  },
+  "copper_vein": {
+    "detail_spread": 0.654,
+    "painted_spread": 0.848,
+    "ratio": 0.77,
+    "clipped": 0.0112,
+    "reads_when_recoloured": true
+  },
+  "foliage": {
+    "detail_spread": 0.763,
+    "painted_spread": 0.62,
+    "ratio": 1.23,
+    "clipped": 0.0303,
+    "reads_when_recoloured": true
+  }
+}
