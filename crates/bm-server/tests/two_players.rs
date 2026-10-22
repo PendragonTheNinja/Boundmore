@@ -1241,7 +1241,9 @@ async fn station_jobs_fuel_and_heat_continue_across_a_restart() {
         alice.send(ClientMsg::WatchStation { pos: Some(waiting) }).await;
         let r = alice.recipe("copper_ingot");
         craft_at(&mut alice, r, 1, Some(waiting)).await;
-        alice.station(|v| !v.jobs.is_empty()).await;
+        // This furnace's view: the burning one's (which has a job too) can
+        // still arrive after the watch moves.
+        alice.station(|v| v.pos == waiting && !v.jobs.is_empty()).await;
         drop(alice);
         server.stop();
         (burning, waiting)
