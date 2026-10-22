@@ -6,10 +6,14 @@ For each texture with a raw image in `art/texture-trial/ai-raw/`:
 
 1. crops it square: the whole image becomes one face, as Gemini drew it
    (Nathan, 2026-10-22: the AI's own design and colours, not ours);
-2. makes it tile seamlessly: the strip just past each edge is joined into
+2. makes it tile seamlessly (left to right only for a texture marked
+   `"tile": "x"` in prompts.json, such as turf side): the strip just past
+   each edge is joined into
    the opposite edge along the cut where the two agree best (image
    quilting), so stones and joints carry on across the wrap;
-3. downsizes to `--size` pixels (128 by default);
+3. downsizes to `--size` pixels (128 by default), and flattens lighting
+   that drifts across the whole face (Gemini lights the entire image from
+   the top left, which shows as a grid across a field of blocks);
 4. with `--nudge` only, moves its colours part of the way toward the
    painted 32's (mean lightness, hue, colourfulness); off by default;
 5. variants: where Gemini painted extra patches (`<name>.v1` to `.v3`),
@@ -169,15 +173,38 @@ def join(past, near):
     return past * (1 - w) + near * w
 
 
-def seamless(crop, face, overlap):
+def seamless(crop, face, overlap, vertical=True):
     """A `face`-wide square from a (face + overlap) crop that tiles: the strip
     past each far edge is joined into the near edge along a minimum-error
     cut, so the wrap-around continues the image instead of cutting it."""
     h = crop[:, :face].copy()
     h[:, :overlap] = join(crop[:, face:face + overlap], crop[:, :overlap])
+    if not vertical:
+        # Left to right only (turf side: grass on top, soil below): keep the
+        # top `face` rows as painted.
+        return h[:face]
     t = h[:face].copy()
     t[:overlap] = join(h[face:face + overlap].transpose(1, 0, 2), h[:overlap].transpose(1, 0, 2)).transpose(1, 0, 2)
     return t
+
+
+def flatten(face, sigma=0.25):
+    """Takes out lighting and colour that drift across the whole face
+    (Gemini tends to light the entire image from the top left, warm there
+    and cool at the bottom right, so every block in a field gets the same
+    bright corner and the field shows a grid), keeping each shape's own
+    light and shade. In OKLab, subtracts a wrap-around blur `sigma` of the
+    face wide from lightness and hue, keeping their means."""
+    n = face.shape[0]
+    lab = to_oklab(face)
+    f = np.fft.fftfreq(n)
+    # Gaussian blur on the torus through the FFT, so the face still tiles.
+    g = np.exp(-2 * (np.pi * sigma * n) ** 2 * (f[:, None] ** 2 + f[None, :] ** 2))
+    out = lab.copy()
+    for c in range(3):
+        low = np.real(np.fft.ifft2(np.fft.fft2(lab[..., c]) * g))
+        out[..., c] = lab[..., c] - (low - lab[..., c].mean())
+    return np.clip(from_oklab(out), 0.0, 1.0)
 
 
 def resize(a, size):
@@ -287,7 +314,7 @@ def join_variant(base, other):
     return base * (1 - w[..., None]) + other * w[..., None]
 
 
-def clean(name, size, do_nudge=False, variants=False):
+def clean(name, size, do_nudge=False, variants=False, tile="xy"):
     raw_path = raw_image(name)
     if raw_path is None:
         return None
@@ -303,7 +330,9 @@ def clean(name, size, do_nudge=False, variants=False):
     corners = [(0, 0), (WORK - span, 0), (0, WORK - span), (WORK - span, WORK - span)]
     faces = []
     for (cx, cy) in corners[:count]:
-        f = resize(seamless(raw[cy:cy + span, cx:cx + span], face, overlap), size)
+        f = resize(seamless(raw[cy:cy + span, cx:cx + span], face, overlap, tile != "x"), size)
+        if tile != "x":
+            f = flatten(f)
         if do_nudge and target is not None:
             f = nudge(f, target)
         faces.append(f)
@@ -316,7 +345,7 @@ def clean(name, size, do_nudge=False, variants=False):
             vpath = raw_image(f"{name}.v{i}")
             if vpath is None:
                 break
-            v = resize(seamless(load(vpath, WORK), face, overlap), size)
+            v = flatten(resize(seamless(load(vpath, WORK), face, overlap), size))
             if do_nudge and target is not None:
                 v = nudge(v, target)
             faces.append(join_variant(faces[0], v))
@@ -381,7 +410,9 @@ def main():
     names = args.names or list(cfg["textures"])
     results = []
     for name in names:
-        r = clean(name, args.size, args.nudge, args.variants)
+        entry = cfg["textures"].get(name, {})
+        tile = entry.get("tile", "xy") if isinstance(entry, dict) else "xy"
+        r = clean(name, args.size, args.nudge, args.variants, tile)
         if r is None:
             print(f"{name}: no raw image (run generate.py first)", file=sys.stderr)
             continue

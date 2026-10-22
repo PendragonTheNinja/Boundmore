@@ -1,0 +1,11 @@
+{
+  "texture": "stone.v2",
+  "model": "gemini-3-pro-image",
+  "image_size": "2K",
+  "made": "2026-10-22",
+  "uses": [
+    "stone"
+  ],
+  "prompt": "Hand-painted stylised texture for a bright, high-fantasy voxel game. Painterly: soft brush shapes, chunky readable forms, detail gathered in clumps, never photographic and never noisy. One light from the top left: each shape has a highlight on its top-left edge and shade on its bottom-right edge. Shadows lean cool blue-purple, highlights lean warm; colours are rich and saturated. Seen flat and straight on, orthographic, no perspective, evenly lit across the whole frame, no vignette. The material fills the frame edge to edge as a seamless tileable texture. This image is one face of one block in the game, seen from a few steps away, so the forms are bold and readable, never busy. No border, no text, no logo, no objects other than the material. An original look, not copied from any existing game.\n\nThis image is a texture of one material. Paint a new, different patch of exactly the same material: the same style, colours, light, scale and size of shapes, but different shapes in different places, as if from another spot on the same surface. Do not copy any shape from the image. A seamless tileable texture filling the frame edge to edge.",
+  "model_text": []
+}

@@ -77,6 +77,13 @@ The generator also writes the comparison sheets (`docs/media/`). Each painted im
 - **One face per texture repeats visibly** across a field of turf; the variants are needed, and the cut keeps them seamless against each other.
 - **Recolouring holds up:** every face keeps a light-and-shade pattern at least as strong as the painted 32's. A few bright highlights pass the shader's cap (bark and foliage, 3 to 5% of texels); they look fine in the recolour previews.
 
+- **Gemini lights the whole image, not each shape**: bright and warm top left, cool bottom right. Every block repeats it, and a field shows a grid. `cleanup.py` flattens drift across the face in OKLab (lightness and hue); it helps, but not enough for grass.
+- **Grass is the hard one.** Gemini draws grass as a few big radial rosettes; four per face in a regular layout repeat visibly across a field however the variants are cut, and the field reads darker and duller than today's 32 (`docs/media/texture-trial-32-vs-ai.png`: 32 on top, AI below). Foliage has the same rosette habit. The next prompt (in `prompts.json`, not yet run) asks for an even, low-contrast carpet of blades and random leaves with no rosettes.
+
+**Where it stopped (2026-10-22):** after about 50 images the API began refusing every call, text included: `403 PERMISSION_DENIED, "Lightning dunning decision is deny for project 90537199338"`. That is Google's billing system denying the project (credit, spending cap or a failed payment); Nathan needs to check billing on the key's project in Google AI Studio or Cloud Console. Then: `python tools/texture-ai/generate.py turf_top foliage turf_side`, `python tools/texture-ai/cleanup.py`, and new screenshots.
+
+**In game** (`docs/media/texture-trial-32-vs-ai.png`, sheet `docs/media/texture-trial-ai-sheet.png`): stone, soil, bark, turf side and copper ore are clearly better than the 32s up close: painterly, chunky, readable. Grass and foliage are not there yet (above).
+
 **Cost:** about 50 pro images were made over the trial, at roughly US$0.13 to 0.24 each (Google's list price for 1K to 2K images); a full natural set of about 25 textures with variants is about 100 images.
 
 **Next, if Nathan picks the AI direction:** extend the prompts to every natural surface (deep stone, bedrock, sand, gravel, snow, ice, sandstone, ash, the ores, water, trunk top), keep machines, shrines, torches, plants and icons as painted art, and decide whether 128 replaces 32 or becomes a player setting.
