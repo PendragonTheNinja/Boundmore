@@ -1,6 +1,7 @@
 //! End to end: real server, real QUIC, headless players.
 
 use bm_core::skills::{Character, xp_for_level};
+use bm_core::spark;
 use bm_core::{
     BlockId, BlockPos, BlockRegistry, BlockState, Chiselling, Chunk, ChunkPos, Colour, Inventory, ItemRegistry,
     ItemStack, PlayerInput, PlayerState, PlotPos, ShapeFamily, Station,
@@ -5183,5 +5184,184 @@ async fn a_meteor_falls_fights_and_pays_each_player_once() {
         v.phase
     );
     assert!(v.looted, "looters are remembered");
+    server.stop();
+}
+
+/// One spanner hit at `pos` with hotbar `slot`, at the tool's cadence: the
+/// machine's key, wear left and most, as the server reports them.
+async fn spanner_hit(c: &mut TestClient, seq: u32, pos: BlockPos, slot: u8) -> (BlockPos, u32, u32) {
+    c.ready();
+    let at = c.seq;
+    c.last_swing = Some((at, c.swing_ticks(slot)));
+    c.send(ClientMsg::Swing { seq, at, pos, slot }).await;
+    match c.until(|m| matches!(m, ServerMsg::MachineWear { .. })).await {
+        ServerMsg::MachineWear { pos, wear, max } => (pos, wear, max),
+        _ => unreachable!(),
+    }
+}
+
+/// Milestone 15, acceptance 1 and 2: a mixer off the grid waits and says
+/// why; a link to a fuelled generator puts it on the grid; its silver alloy
+/// takes its 100 spark as it starts, and the craft wears the mixer by 12;
+/// joined generators show one store.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn a_generator_burns_coal_into_spark_that_links_carry_to_a_mixer() {
+    let dir = tempfile::tempdir().unwrap();
+    seed(
+        dir.path(),
+        "Alice",
+        &[
+            (0, "mixer", 4, 0),
+            (1, "spark_link", 2, 0),
+            (2, "spark_generator", 2, 0),
+            (3, "coal", 5, 0),
+            (4, "silver_ingot", 2, 0),
+            (5, "iron_ingot", 2, 0),
+        ],
+    );
+    let server = bm_server::start(config(dir.path())).unwrap();
+    let mut alice = TestClient::login(&server, "Alice").await;
+    let shape = alice.shape();
+    let feet = alice.feet();
+    for dx in 0..=4 {
+        for dy in 0..=4 {
+            alice.wait_for_chunk(feet.offset(dx, dy, 2).chunk()).await;
+        }
+    }
+    let at = |dx, dy| shape.wrap_block(feet.offset(dx, dy, 2));
+    let mixer: Vec<BlockPos> = (1..=4).map(|dx| at(dx, 1)).collect();
+    for (i, p) in mixer.iter().enumerate() {
+        assert!(place(&mut alice, 1 + i as u32, *p, 0, None).await.0);
+    }
+    let alloy = alice.recipe("silver_alloy");
+    look_at_station(&mut alice, mixer[1], |_| true).await;
+
+    // Off the grid: queued, but it waits and says why.
+    craft_at(&mut alice, alloy, 1, Some(mixer[1])).await;
+    let v = alice.station(|v| !v.jobs.is_empty()).await;
+    assert_eq!(v.pos, mixer[0]);
+    assert_eq!(
+        v.idle.as_deref(),
+        Some("No spark: link this machine to a spark generator")
+    );
+    assert_eq!(v.jobs[0].progress, 0.0);
+    assert_eq!(v.spark.map(|s| s.linked), Some(false));
+    assert_eq!(v.wear, Some((spark::MACHINE_WEAR, spark::MACHINE_WEAR)));
+
+    // A link on the mixer and a generator on the link.
+    let link = at(1, 2);
+    let generator = at(1, 3);
+    assert!(place(&mut alice, 10, link, 1, None).await.0);
+    assert!(place(&mut alice, 11, generator, 2, None).await.0);
+    let v = look_at_station(&mut alice, mixer[0], |_| true).await;
+    assert_eq!(v.spark.map(|s| (s.linked, s.stored)), Some((true, 0)));
+    assert_eq!(v.idle.as_deref(), Some("Not enough spark (needs 100)"));
+
+    // Coal into the generator: it burns into spark.
+    look_at_station(&mut alice, generator, |_| true).await;
+    fuel(&mut alice, generator, 3, 2, true).await;
+    let g = alice
+        .station(|v| v.pos == generator && v.fuel.is_some_and(|f| f.count == 1))
+        .await;
+    assert_eq!(g.station, Station::SparkGenerator);
+    assert_eq!(g.wear, None, "generators do not wear");
+    let s = g.spark.unwrap();
+    assert_eq!((s.capacity, s.linked), (spark::GENERATOR_CAPACITY, true));
+    alice.settle().await;
+    assert_eq!(alice.count("coal"), 3);
+    look_at_station(&mut alice, generator, |v| v.spark.is_some_and(|s| s.stored > 10)).await;
+
+    // Within a coal's 10 s the mixer has its 100 and starts, taking it.
+    alice.send(ClientMsg::WatchStation { pos: Some(mixer[2]) }).await;
+    let running = alice
+        .station(|v| v.pos == mixer[0] && v.jobs.first().is_some_and(|j| j.progress > 0.0))
+        .await;
+    assert_eq!(running.idle, None);
+    assert_eq!(
+        running.wear,
+        Some((spark::MACHINE_WEAR - 12, spark::MACHINE_WEAR)),
+        "silver alloy wears a mixer by 12"
+    );
+    let left = running.spark.unwrap().stored;
+    let g = look_at_station(&mut alice, generator, |_| true).await.spark.unwrap();
+    assert!(
+        g.stored < 100 && g.stored >= left,
+        "100 taken from what it had: {} now, {left} at the start",
+        g.stored
+    );
+
+    // A second generator joined to the first: one store, twice the size.
+    assert!(place(&mut alice, 12, at(1, 4), 2, None).await.0);
+    let joined = look_at_station(&mut alice, at(1, 4), |_| true).await;
+    assert_eq!(joined.pos, generator, "keyed at its lowest block");
+    assert_eq!(joined.spark.unwrap().capacity, 2 * spark::GENERATOR_CAPACITY);
+    server.stop();
+}
+
+/// Milestone 15, acceptance 5: a worn-out machine stops; a spanner's hit
+/// repairs it by the spanner's stat, and the queue starts again; a spanner
+/// does nothing to other blocks.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn a_worn_out_workbench_waits_for_a_spanner() {
+    let dir = tempfile::tempdir().unwrap();
+    seed(
+        dir.path(),
+        "Alice",
+        &[
+            (0, "workbench", 4, 0),
+            (1, "copper_spanner", 1, 0),
+            (2, "copper_ingot", 2, 0),
+        ],
+    );
+    let cfg = ServerConfig {
+        machine_wear_start: Some(0),
+        ..config(dir.path())
+    };
+    let server = bm_server::start(cfg).unwrap();
+    let mut alice = TestClient::login(&server, "Alice").await;
+    let shape = alice.shape();
+    let feet = alice.feet();
+    for dx in 0..=4 {
+        alice.wait_for_chunk(feet.offset(dx, 1, 2).chunk()).await;
+    }
+    let bench: Vec<BlockPos> = (1..=4).map(|dx| shape.wrap_block(feet.offset(dx, 1, 2))).collect();
+    for (i, p) in bench.iter().enumerate() {
+        assert!(place(&mut alice, 1 + i as u32, *p, 0, None).await.0);
+    }
+    let cog = alice.recipe("cog");
+    look_at_station(&mut alice, bench[1], |_| true).await;
+    craft_at(&mut alice, cog, 2, Some(bench[0])).await;
+    let v = alice.station(|v| !v.jobs.is_empty()).await;
+    assert_eq!(v.idle.as_deref(), Some("Worn out: repair it with a spanner"));
+    assert_eq!(v.wear, Some((0, spark::MACHINE_WEAR)));
+    assert_eq!(v.jobs[0].progress, 0.0);
+
+    // A spanner at anything else is refused, and damages nothing.
+    let ground = shape.wrap_block(feet.offset(0, 0, 2));
+    alice.ready();
+    let swung = alice.swing(10, ground, 1).await;
+    assert!(matches!(swung, Swung::Refused(_, 0)), "{swung:?}");
+    alice.notice("A spanner repairs machines").await;
+
+    // A copper spanner removes 400 wear a hit; the first cog starts and
+    // takes its 6.
+    let (key, wear, max) = spanner_hit(&mut alice, 11, bench[3], 1).await;
+    assert_eq!((key, wear, max), (bench[0], 400 - 6, spark::MACHINE_WEAR));
+    let running = look_at_station(&mut alice, bench[2], |v| {
+        v.jobs.first().is_some_and(|j| j.progress > 0.0)
+    })
+    .await;
+    assert_eq!(running.idle, None);
+    assert_eq!(running.wear, Some((394, spark::MACHINE_WEAR)));
+    let durability = stack(&alice, 1).unwrap().wear;
+    // Another hit, at the spanner's cadence: 400 more.
+    let (_, wear, _) = spanner_hit(&mut alice, 12, bench[1], 1).await;
+    assert_eq!(wear, 794);
+    alice.settle().await;
+    assert_eq!(
+        stack(&alice, 1).unwrap().wear,
+        durability + 1,
+        "spanners wear as they swing"
+    );
     server.stop();
 }
