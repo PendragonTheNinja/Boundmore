@@ -103,4 +103,17 @@ Wild crops on every world (berry vines under foliage; tuber, oat, rice and wheat
 
 ## Status
 
-*Spec written 2026-10-22. Part 1 not started.*
+*Part 1 built 2026-10-22; awaiting Nathan's play-test.* Protocol 22, `SAVE_VERSION` 9 (version 8 universes open with everyone unhungry, no buff, and stations' jobs holding fresh buckets).
+
+- [x] Core (`bm-core/src/food.rs`): hunger in 1/600 points, the usable bar, drains per use (`Drain`), running, sprinting, jumping, Sated, Full healing (replacing M13's stand-in), sickness, starving, defeat hunger, nine buffs and their effects (Lively, Hearty, Refreshed, Keen, Gentle, Guarded, Springy, Studious, Sated)
+- [x] Data: food on raw meats, tubers and edible lamella; dewberries and cooked singles; rank 1 and 2 dishes of six lines; nails, buckets (10 fills), buckets of water and milk, syrup, sugar; Cooking (and its two epics) gates the dishes; dewberries from foliage, tubers from soil and turf
+- [x] Server: `ClientMsg::Eat` at its input, `FillBucket`; full buckets ride with a station's job and come back one fill more worn (`Job::containers`, saved); buffs on XP, crits (mining and strikes), tool wear and armour; defeat hunger
+- [x] Client: eating predicted at its input (no corrections, tested), hunger shading on the energy bar, the buff and Full, Sick or Starving as tags, food and bucket tooltips, 28 new icons, `--demo-ui food`
+- [x] Verified: tests (counts in CLAUDE.md), the upgrade check from version 8 ("upgraded the universe from save version 8 to 9 (0 stations and 2 characters ...)"), load test (50 bots: worst tick 9.8 ms while they joined, the same as M15's server on this sandbox); screenshots `docs/media/m16-food-hud.png`, `m16-food-tooltips.png`, `m16-food-icons.png`, `m16-after-eating.png`
+
+Not covered by an automated test: filling a bucket at water (refused away from water is tested; the success path is a few lines, and the test worlds have no reachable water). Try it in game.
+
+Open (for Nathan):
+- Eating raw meat with no hunger is refused like any plain food ("You are full"). Boundless's rule here is not found.
+- The rates marked guess in `docs/feel.md` (running, sprinting, jumping, starving, defeat) wait for the Measure list above.
+- Next: part 2, farming. It needs a format decision for crop growth (an ADR) and Nathan's view on the farming complaints (random growth, untilling soil, hand replanting, low XP) before it is built.

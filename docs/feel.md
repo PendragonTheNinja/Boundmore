@@ -147,7 +147,7 @@ Boundless's live tree and tables exactly (Nathan, 2026-10-20), in Boundmore's na
 |---|---|---|
 | Health | 600, Vitality curve to 4000, Iron Body x3 | Boundless, exact |
 | Defeat | XP debt 10% of the next level, half XP until paid; nothing lost | **Nathan, 2026-10-21:** Boundless exactly |
-| Regen (stand-in) | 1.4 a second after 10 s out of combat (600 in about 7 min) | **Nathan, 2026-10-21:** stand-in until food. Rate from player reports; the 10 s is a guess |
+| Regen | 1.4 a second after 10 s out of combat, **only while Full** (hunger under 10%; M16) | **Nathan, 2026-10-21:** M13's stand-in, now Boundless's Full Up. Rate from player reports (the 2018 food index says 0.8 a second); the 10 s is a guess |
 | Fall damage | share of max health by impact speed, softer on soft blocks, slightly gentler than Boundless | **Nathan, 2026-10-21.** Curve is a guess: measure 10, 20, 30 block falls in Boundless |
 | Hooked landing | no fall damage while a hook is attached | Boundless, and Nathan |
 | Grace after letting go | the first landing within 3 s of releasing a hook takes no fall damage | **Nathan, 2026-10-21** (momentum deaths from early releases); 3 s is a guess |
@@ -199,3 +199,25 @@ Boundless's live tree and tables exactly (Nathan, 2026-10-20), in Boundmore's na
 | Generator group | at most 256 joined blocks | guess (our limit) |
 | Spark wait | a craft waiting for spark tries again every 30 ticks (0.5 s) | our rule |
 | Machine pickup | breaking a machine forgets its wear (re-placed machines are fully repaired) | guess; ask Nathan |
+
+## Food and hunger (M16, `docs/milestones/16-food.md`, `bm-core/src/food.rs`)
+
+| Value | Now | Source, or guess |
+|---|---|---|
+| Hunger off the energy bar | point for point | Boundless (Release 187, 207) |
+| Hunger per use | tools, chisels, spanners: energy / 100; grapples, slings, bombs: energy / 500 | Boundless's item data, exact |
+| Running | 0.5 hunger a second | **guess** (no published rate; Measure 1) |
+| Sprinting | 1 a second | **guess** |
+| Jumping | 1 a jump (double jumps too) | **guess** |
+| Swimming, standing, hanging on a rope | nothing | **guess** |
+| Defeat | +25% of the full bar | **guess** ("a hunger penalty", size unpublished) |
+| Full (heals out of combat) | hunger under 10% of the bar | Boundless (Full Up) |
+| Starving | at full hunger, 2% of max health every 5 s | **guess** (four minutes from full health) |
+| Sick (raw meat) | 5 damage every 5 s for 40 s, no healing | Boundless (2018 food index) |
+| A bite | at most one a second | **guess** |
+| Food values and buffs | `assets/items.toml` | Boundless (Release 223 and the 2018 food index, tuning 3.9) |
+| Berry dishes' Refreshed buff | 30 minutes | **guess** (unpublished) |
+| Bucket | 10 fills; filling leaves the water | fills: Boundless; the water staying: **guess** |
+| Dewberries from foliage | 0.1 a block on tier 1 to 3 | Boundless's drop data, exact |
+| Tubers from soil and turf | 0.015 a block (0.025 on tier 3) | Boundless's drop data, exact |
+
