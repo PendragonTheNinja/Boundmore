@@ -44,6 +44,52 @@ use winit::window::{CursorGrabMode, Fullscreen, Window, WindowId};
 
 /// Said when the break button is pressed with no tool in hand (the server
 /// says the same if a swing reaches it).
+/// How often the crop under the crosshair is asked about again (its time to
+/// ripe counts down between answers).
+const CROP_ASK_SECONDS: f64 = 5.0;
+
+/// A crop as the server described it (milestone 16, `ServerMsg::CropInfo`).
+#[derive(Clone, Debug, PartialEq)]
+pub struct CropView {
+    pub pos: BlockPos,
+    pub name: String,
+    pub stage: u8,
+    pub stages: u8,
+    pub ripe_in: u32,
+    pub wild: bool,
+    pub tilled: bool,
+    pub dry: bool,
+}
+
+impl CropView {
+    /// One line under the crosshair, `elapsed` seconds after the answer:
+    /// "Oats: ripe in 1 h 20 min, tilled".
+    pub fn line(&self, elapsed: f64) -> String {
+        let left = (self.ripe_in as f64 - elapsed).max(0.0) as u32;
+        let mut text = if self.wild {
+            format!("Wild {}", self.name)
+        } else {
+            self.name.clone()
+        };
+        if self.stage >= self.stages || (!self.wild && left == 0) {
+            text += ": ripe, harvest it";
+        } else if self.wild {
+            text += &format!(": growing ({} of {})", self.stage, self.stages);
+        } else if left >= 3600 {
+            text += &format!(": ripe in {} h {} min", left / 3600, left % 3600 / 60);
+        } else {
+            text += &format!(": ripe in {} min", left.div_ceil(60));
+        }
+        if self.tilled {
+            text += ", tilled";
+        }
+        if self.dry {
+            text += ", needs water beside it to grow well";
+        }
+        text
+    }
+}
+
 const NEED_A_TOOL: &str = "You need a tool to break blocks. A hand stone needs nothing to craft";
 
 /// Said when attacking a creature with nothing to fight with.
@@ -177,6 +223,10 @@ struct Session {
     /// left, the most it holds, and when it came (`App::now`), for the bar
     /// under the crosshair.
     machine_wear: Option<((u32, u32), f64)>,
+    /// The crop last asked about and when (milestone 16), and what the
+    /// server said of it, with when.
+    crop_asked: Option<(BlockPos, f64)>,
+    crop_info: Option<(CropView, f64)>,
     warp_shrine: BlockId,
     portal_conduit: BlockId,
     portal_surface: BlockId,
@@ -291,6 +341,8 @@ impl Session {
             told_no_tool: false,
             damage: DamageMap::default(),
             machine_wear: None,
+            crop_asked: None,
+            crop_info: None,
             warp_shrine,
             portal_conduit,
             portal_surface,
@@ -1475,6 +1527,30 @@ impl App {
             ServerMsg::MeteorGone { id } => s.sky_view.gone(id),
             ServerMsg::MeteorLife { life } => s.sky_view.life(life),
             ServerMsg::MachineWear { wear, max, .. } => s.machine_wear = Some(((wear, max), now)),
+            ServerMsg::CropInfo {
+                pos,
+                name,
+                stage,
+                stages,
+                ripe_in,
+                wild,
+                tilled,
+                dry,
+            } => {
+                s.crop_info = Some((
+                    CropView {
+                        pos,
+                        name,
+                        stage,
+                        stages,
+                        ripe_in,
+                        wild,
+                        tilled,
+                        dry,
+                    },
+                    now,
+                ))
+            }
             ServerMsg::Welcome(_)
             | ServerMsg::Refused { .. }
             | ServerMsg::Travel(_)
@@ -1804,6 +1880,17 @@ impl App {
         let attack_held = mouse[0] || demo_held;
         // Food in hand eats with a press, a bucket fills at water (milestone
         // 16); neither breaks blocks.
+        // Looking at a crop: ask the server about it now and then.
+        if let Some(hit) = s.target
+            && s.world
+                .block(hit.block)
+                .is_some_and(|b| s.world.registry.get(b).crop > 0)
+            && s.crop_asked
+                .is_none_or(|(p, t)| p != hit.block || now_s - t > CROP_ASK_SECONDS)
+        {
+            s.crop_asked = Some((hit.block, now_s));
+            link.send(ClientMsg::LookCrop { pos: hit.block });
+        }
         let food = held.and_then(|h| s.items.def(&h)).and_then(|d| d.food());
         let bucket = held
             .and_then(|h| s.items.def(&h))
@@ -2097,6 +2184,11 @@ impl App {
                     owner,
                     claim_mode: claim_help,
                     aim_hint,
+                    crop: s
+                        .crop_info
+                        .as_ref()
+                        .filter(|(v, _)| menu.is_none() && s.target.is_some_and(|t| t.block == v.pos))
+                        .map(|(v, at)| v.line(now - at)),
                     reclaim_waiting: !s.reclaim.is_empty(),
                     wear_bar: s
                         .machine_wear
@@ -3262,6 +3354,38 @@ impl ApplicationHandler for App {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn crop_lines_count_down_and_say_what_helps() {
+        let v = CropView {
+            pos: BlockPos::new(0, 0, 0),
+            name: "Oats".into(),
+            stage: 2,
+            stages: 4,
+            ripe_in: 3 * 3600 + 20 * 60,
+            wild: false,
+            tilled: true,
+            dry: false,
+        };
+        assert_eq!(v.line(0.0), "Oats: ripe in 3 h 20 min, tilled");
+        assert_eq!(v.line(3.0 * 3600.0), "Oats: ripe in 20 min, tilled");
+        assert_eq!(v.line(4.0 * 3600.0), "Oats: ripe, harvest it, tilled");
+        let wild = CropView {
+            wild: true,
+            tilled: false,
+            stage: 4,
+            ..v.clone()
+        };
+        assert_eq!(wild.line(0.0), "Wild Oats: ripe, harvest it");
+        let dry = CropView {
+            name: "Rice".into(),
+            tilled: false,
+            dry: true,
+            ripe_in: 90,
+            ..v
+        };
+        assert_eq!(dry.line(0.0), "Rice: ripe in 2 min, needs water beside it to grow well");
+    }
+
     use super::*;
     use crate::demo::Demo;
     use crate::net::NetEvent;

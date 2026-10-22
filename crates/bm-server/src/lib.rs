@@ -7,6 +7,7 @@ pub mod claims;
 pub mod config;
 pub mod crafting;
 pub mod damage;
+pub mod farm;
 pub mod game;
 pub mod lapse;
 pub mod machines;

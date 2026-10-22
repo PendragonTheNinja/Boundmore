@@ -63,6 +63,9 @@ const PORTALS: TableDefinition<u32, &[u8]> = TableDefinition::new("portals");
 /// Each planet's regions' cooldowns and its meteors, by planet id (save
 /// version 7, milestone 14).
 const SKIES: TableDefinition<u16, &[u8]> = TableDefinition::new("planet_skies");
+/// Planet id and canonical block position -> [`SavedCrop`]: one growing
+/// crop (save version 10, milestone 16 part 2, ADR-0010).
+const CROPS: TableDefinition<&[u8], &[u8]> = TableDefinition::new("planet_crops");
 /// Regions each account has discovered (save version 7).
 const DISCOVERIES: TableDefinition<&str, &[u8]> = TableDefinition::new("discoveries");
 
@@ -100,7 +103,10 @@ const V2_STATIONS: TableDefinition<&[u8], &[u8]> = TableDefinition::new("station
 /// ([`PlayerData::food`]), and a station the full buckets its jobs hold
 /// ([`SavedStation::containers`]); older players start unhungry with no
 /// buff, older jobs with fresh buckets.
-pub const SAVE_VERSION: u32 = 9;
+///
+/// 10 (M16 part 2): crops in a new table ([`SavedCrop`]); version 9 opens
+/// with none.
+pub const SAVE_VERSION: u32 = 10;
 
 /// The universe file in the data directory.
 pub const UNIVERSE_FILE: &str = "universe.redb";
@@ -352,6 +358,17 @@ pub struct PlayerData {
     pub hurt: u32,
     /// Hunger, the food buff and sickness (milestone 16, save version 9).
     pub food: SavedFood,
+}
+
+/// A growing crop as saved (`bm_core::crops::Crop`), its kind by name.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct SavedCrop {
+    pub crop: String,
+    pub sown_at: u64,
+    pub fertilised_at: Option<u64>,
+    pub tilled: bool,
+    pub wet: bool,
+    pub epic: bool,
 }
 
 /// What food has done to a character (`PlayerState` hunger, buff, sick).
@@ -1009,9 +1026,11 @@ impl Store {
                         5..=7 => upgrade_stations(&tx, from, |b| {
                             postcard::from_bytes::<v7::SavedStation>(b).map(Into::into)
                         })?,
-                        _ => upgrade_stations(&tx, from, |b| {
+                        8 => upgrade_stations(&tx, from, |b| {
                             postcard::from_bytes::<v8::SavedStation>(b).map(Into::into)
                         })?,
+                        // 9 to 10 only adds the crops table.
+                        _ => 0,
                     };
                     // Version 6 to 7 only adds tables (skies, discoveries),
                     // which read as empty until written.
@@ -1019,9 +1038,11 @@ impl Store {
                         upgrade_players(&tx, from, |b| postcard::from_bytes::<v4::PlayerData>(b).map(Into::into))?
                     } else if from == 5 {
                         upgrade_players(&tx, from, |b| postcard::from_bytes::<v5::PlayerData>(b).map(Into::into))?
-                    } else {
+                    } else if from <= 8 {
                         // Versions 6 to 8 share a player layout.
                         upgrade_players(&tx, from, |b| postcard::from_bytes::<v8::PlayerData>(b).map(Into::into))?
+                    } else {
+                        0
                     };
                     let u = UniverseMeta {
                         save_version: SAVE_VERSION,
@@ -1030,7 +1051,11 @@ impl Store {
                     tx.open_table(META)?
                         .insert("universe", postcard::to_stdvec(&u)?.as_slice())?;
                     tx.commit()?;
-                    if from == 8 {
+                    if from == 9 {
+                        tracing::info!(
+                            "upgraded the universe from save version 9 to {SAVE_VERSION} (crops added; nothing changed)"
+                        );
+                    } else if from == 8 {
                         tracing::info!(
                             "upgraded the universe from save version {from} to {SAVE_VERSION} ({stations} stations \
                              and {players} characters; characters start unhungry with no food buff)"
@@ -1309,6 +1334,27 @@ impl Store {
         Ok((out, next))
     }
 
+    /// A planet's growing crops (none before save version 10). A corrupt
+    /// record is reported and skipped (its block reads as wild).
+    pub fn crops(&self, planet: u16) -> Result<Vec<(BlockPos, SavedCrop)>> {
+        let tx = self.db.begin_read()?;
+        let t = match tx.open_table(CROPS) {
+            Ok(t) => t,
+            Err(redb::TableError::TableDoesNotExist(_)) => return Ok(Vec::new()),
+            Err(e) => return Err(e.into()),
+        };
+        let (lo, hi) = planet_range(planet);
+        let mut out = Vec::new();
+        for row in t.range(lo.as_slice()..hi.as_slice())? {
+            let (k, v) = row?;
+            match (block_from_key(k.value()), postcard::from_bytes(v.value())) {
+                (Some(p), Ok(c)) => out.push((p, c)),
+                _ => tracing::error!("a saved crop is corrupt; skipped"),
+            }
+        }
+        Ok(out)
+    }
+
     /// A planet's saved sky (None before save version 7 or for a new planet).
     pub fn sky(&self, planet: u16) -> Result<Option<SavedSky>> {
         let tx = self.db.begin_read()?;
@@ -1376,6 +1422,15 @@ impl Store {
                     None => stations.remove(key.as_slice())?,
                 };
             }
+            let mut crops = tx.open_table(CROPS)?;
+            for (planet, p, c) in &batch.crops {
+                let key = block_key(*planet, *p);
+                match c {
+                    Some(c) => crops.insert(key.as_slice(), postcard::to_stdvec(c)?.as_slice())?,
+                    None => crops.remove(key.as_slice())?,
+                };
+            }
+            drop(crops);
             let mut storage = tx.open_table(STORAGE)?;
             for (planet, p, slots) in &batch.storage {
                 let key = block_key(*planet, *p);
@@ -1736,6 +1791,8 @@ pub struct WriteBatch {
     pub stations: Vec<(u16, BlockPos, Option<SavedStation>)>,
     /// None deletes (the claim was released).
     pub claims: Vec<(u32, Option<SavedClaim>)>,
+    /// Crops by planet id; None deletes (harvested away or broken).
+    pub crops: Vec<(u16, BlockPos, Option<SavedCrop>)>,
     /// Storage block slots by planet id; None deletes (it was emptied).
     pub storage: Vec<(u16, BlockPos, Option<SavedSlots>)>,
     /// Reclaims by lowercased account name; None deletes (it was emptied).
@@ -1763,6 +1820,7 @@ impl WriteBatch {
             && self.stations.is_empty()
             && self.claims.is_empty()
             && self.storage.is_empty()
+            && self.crops.is_empty()
             && self.reclaim.is_empty()
             && self.portals.is_empty()
             && self.next_portal.is_none()
@@ -2015,6 +2073,18 @@ mod tests {
                 stations: vec![(2, spot, Some(station.clone()))],
                 claims: vec![(4, Some(claim.clone()))],
                 storage: vec![(2, spot, Some(vec![None, Some(stack.clone())]))],
+                crops: vec![(
+                    2,
+                    spot,
+                    Some(SavedCrop {
+                        crop: "oats".into(),
+                        sown_at: 77,
+                        fertilised_at: None,
+                        tilled: true,
+                        wet: false,
+                        epic: false,
+                    }),
+                )],
                 reclaim: vec![(
                     "pendragon".into(),
                     Some(SavedReclaim {
@@ -2062,6 +2132,21 @@ mod tests {
         assert_eq!(SavedCharacter::from(c), p.character, "characters round-trip");
         assert_eq!(s.stations(2).unwrap(), vec![(spot, station)]);
         assert_eq!(s.storage(2).unwrap(), vec![(spot, vec![None, Some(stack.clone())])]);
+        assert_eq!(
+            s.crops(2).unwrap(),
+            vec![(
+                spot,
+                SavedCrop {
+                    crop: "oats".into(),
+                    sown_at: 77,
+                    fertilised_at: None,
+                    tilled: true,
+                    wet: false,
+                    epic: false
+                }
+            )]
+        );
+        assert!(s.crops(3).unwrap().is_empty());
         assert!(s.storage(3).unwrap().is_empty());
         assert!(s.stations(1).unwrap().is_empty() && s.stations(3).unwrap().is_empty());
         assert_eq!(s.claims().unwrap(), (vec![(4, claim)], 5));
@@ -2085,6 +2170,7 @@ mod tests {
             stations: vec![(2, spot, None)],
             claims: vec![(4, None)],
             storage: vec![(2, spot, None)],
+            crops: vec![(2, spot, None)],
             reclaim: vec![("pendragon".into(), None)],
             ..Default::default()
         })
@@ -2092,6 +2178,7 @@ mod tests {
         assert!(s.reclaims().unwrap().is_empty());
         assert!(s.stations(2).unwrap().is_empty());
         assert!(s.storage(2).unwrap().is_empty());
+        assert!(s.crops(2).unwrap().is_empty());
         assert_eq!(s.claims().unwrap(), (vec![], 1));
         assert_eq!(s.portals().unwrap(), (vec![], 12), "a number is never used again");
     }

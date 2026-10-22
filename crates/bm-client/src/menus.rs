@@ -439,6 +439,8 @@ pub struct Hud<'a> {
     /// What a key does to the block aimed at ("E", "travel"), shown under
     /// the crosshair.
     pub aim_hint: Option<(&'static str, &'static str)>,
+    /// The crop under the crosshair (milestone 16): "Oats: ripe in 20 min".
+    pub crop: Option<String>,
     /// Something waits in the reclaim (items from a lapsed claim).
     pub reclaim_waiting: bool,
     /// The aimed block's health, shown under the crosshair.
@@ -860,6 +862,22 @@ pub fn hud(ctx: &egui::Context, h: &Hud) {
         wear_bar(ctx, wear);
     } else if let Some(bar) = &h.block_bar {
         block_bar(ctx, bar);
+    }
+    if let Some(line) = &h.crop {
+        let drop = if h.aim_hint.is_some() { 72.0 } else { 44.0 };
+        egui::Area::new(Id::unique("crop-line"))
+            .anchor(Align2::CENTER_CENTER, vec2(0.0, drop))
+            .interactable(false)
+            .order(egui::Order::Background)
+            .show(ctx, |ui| {
+                egui::Frame::new()
+                    .fill(Color32::from_black_alpha(130))
+                    .corner_radius(CornerRadius::same(10))
+                    .inner_margin(egui::Margin::symmetric(8, 4))
+                    .show(ui, |ui| {
+                        ui.label(egui::RichText::new(line).color(FOOD_FULL).size(14.0));
+                    });
+            });
     }
     if let Some((key, what)) = h.aim_hint {
         // Below the health bar when there is one.

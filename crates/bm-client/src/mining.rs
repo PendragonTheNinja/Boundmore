@@ -101,6 +101,13 @@ pub fn predict_swing(s: &SwingInput, map: &DamageMap, block_at: impl Fn(BlockPos
     if s.tool.class == Some(ToolClass::Spanner) {
         return Vec::new();
     }
+    // A tiller tills soil and turf (milestone 16): the server answers with
+    // the tilled block. Only crops take its swing as damage.
+    if s.tool.class == Some(ToolClass::Tiller)
+        && block_at(s.shape.wrap_block(s.hit)).is_none_or(|b| s.registry.get(b).crop == 0)
+    {
+        return Vec::new();
+    }
     let hit = s.shape.wrap_block(s.hit);
     let tool = bm_core::mining::skilled_tool_keen(s.tool, s.effects, s.keen);
     let area = s.tool.aoe.map_or(1.0, Aoe::multiplier);

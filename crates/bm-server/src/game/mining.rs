@@ -104,7 +104,7 @@ impl Game {
         p.out.send(&ServerMsg::BlockHealth { pos: canon, damage });
     }
 
-    fn swing_refused(&mut self, id: u32, seq: u32, pos: BlockPos, why: Refusal) {
+    pub(super) fn swing_refused(&mut self, id: u32, seq: u32, pos: BlockPos, why: Refusal) {
         let text = match why {
             Refusal::Quiet(why) => why.to_string(),
             Refusal::Told(text) => {
@@ -196,6 +196,18 @@ impl Game {
         // The tool is what our copy of the slot holds. A bare hand breaks
         // nothing (Nathan, 2026-10-20: as in Boundless).
         let item = p.inventory.get(slot as usize).map(|s| s.item);
+        // A tiller tills soil and turf; at a crop it harvests like any tool.
+        if let Some(tool) = self
+            .items
+            .swing_tool(item)
+            .filter(|t| t.class == Some(ToolClass::Tiller))
+            && !self.planets[pi]
+                .world
+                .block(canon)
+                .is_some_and(|b| self.crops.of_block(b).is_some())
+        {
+            return self.tiller_swing(id, seq, at, pos, canon, slot, tool);
+        }
         let spanner = self
             .items
             .swing_tool(item)
@@ -273,7 +285,7 @@ impl Game {
 
     /// One durability per swing, whatever it hit, unless the durability epic
     /// spares it.
-    fn wear_swung_tool(&mut self, id: u32, slot: u8, effects: &bm_core::skills::Effects) {
+    pub(super) fn wear_swung_tool(&mut self, id: u32, slot: u8, effects: &bm_core::skills::Effects) {
         let Some(p) = self.players.get_mut(&id) else { return };
         // The durability epic and Gentle food spare some wear.
         if roll(&mut self.rng) < p.state.wear_spared(effects.wear_saved()) {
@@ -362,6 +374,10 @@ impl Game {
         canon: BlockPos,
         state: BlockState,
     ) -> bool {
+        // A ripe sown crop is harvested and replants itself (milestone 16).
+        if self.harvest(id, pi, seq, reply, canon, state.id) {
+            return true;
+        }
         let drop = drop_of(self, pi, state);
         let Some(p) = self.players.get_mut(&id) else {
             return false;

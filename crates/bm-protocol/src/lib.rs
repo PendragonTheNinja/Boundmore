@@ -25,7 +25,7 @@ use glam::DVec3;
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
 
 /// Bump on any change to a message below. Client and server must match.
-pub const PROTOCOL_VERSION: u32 = 22;
+pub const PROTOCOL_VERSION: u32 = 23;
 
 /// QUIC application protocol name; also refuses non-Boundmore peers early.
 pub const ALPN: &[u8] = b"boundmore/1";
@@ -185,6 +185,9 @@ pub enum ClientMsg {
     /// Fills one empty bucket from hotbar `slot` at the water block `pos`,
     /// within reach (milestone 16). Answered with `Slots`, or a `Notice`.
     FillBucket { slot: u8, pos: BlockPos },
+    /// What is the crop at `pos`? (milestone 16) Answered with `CropInfo`
+    /// if it is one.
+    LookCrop { pos: BlockPos },
 }
 
 /// What the portal window's buttons do.
@@ -558,6 +561,20 @@ pub enum ServerMsg {
     /// back into its zone (None: inside); None when you hold no life.
     MeteorLife {
         life: Option<(u32, Option<u32>)>,
+    },
+    /// The crop at `pos` (milestone 16, answering `LookCrop`): its name, its
+    /// stage of `stages`, seconds until ripe (0: ripe), whether it is wild
+    /// (no one sowed it: no replanting), sown on tilled soil, or a water
+    /// crop with none beside it.
+    CropInfo {
+        pos: BlockPos,
+        name: String,
+        stage: u8,
+        stages: u8,
+        ripe_in: u32,
+        wild: bool,
+        tilled: bool,
+        dry: bool,
     },
 }
 

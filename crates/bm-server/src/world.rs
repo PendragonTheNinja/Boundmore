@@ -55,6 +55,9 @@ pub struct World {
     pinned: HashMap<ChunkPos, u32>,
     /// The tick of the last `receive_loaded`.
     last_tick: u64,
+    /// Chunks that came into memory since `take_arrived` (their crops catch
+    /// up, milestone 16).
+    arrived: Vec<ChunkPos>,
 }
 
 impl World {
@@ -81,6 +84,7 @@ impl World {
             saving: HashMap::new(),
             pinned: HashMap::new(),
             last_tick: 0,
+            arrived: Vec::new(),
         }
     }
 
@@ -140,6 +144,7 @@ impl World {
                     wanted_at: tick,
                 },
             );
+            self.arrived.push(p);
             return;
         }
         self.loading.insert(p);
@@ -167,9 +172,15 @@ impl World {
                     wanted_at: tick,
                 },
             );
+            self.arrived.push(p);
             n += 1;
         }
         n
+    }
+
+    /// Chunks that came into memory since the last call.
+    pub fn take_arrived(&mut self) -> Vec<ChunkPos> {
+        std::mem::take(&mut self.arrived)
     }
 
     pub fn block(&self, p: BlockPos) -> Option<BlockId> {

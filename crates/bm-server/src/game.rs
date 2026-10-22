@@ -27,6 +27,7 @@ use crate::store::{PlayerData, SavedFood, Store, WriteBatch, load_slots, save_sl
 mod blasts;
 mod combat;
 mod creatures;
+mod farm;
 mod food;
 mod meteors;
 mod mining;
@@ -342,6 +343,12 @@ pub struct Game {
     spark_item: ItemId,
     /// A bucket of water (milestone 16), what a filled bucket becomes.
     water_bucket: ItemId,
+    /// Crop kinds and the blocks farming turns into one another
+    /// (milestone 16 part 2).
+    crops: bm_core::crops::CropKinds,
+    soil: BlockId,
+    turf: BlockId,
+    tilled_soil: BlockId,
     /// Damaged blocks, by planet index (milestone 9; never saved).
     damage: Vec<DamageMap>,
     /// Bonus yields are rolled from this (splitmix64).
@@ -549,7 +556,7 @@ impl Game {
             tracing::error!("reading the universe clock: {e:#}; starting at 0");
             0
         });
-        let registry = &planets.first().context("no planets")?.world.registry;
+        let registry = planets.first().context("no planets")?.world.registry.clone();
         let claim_stone = registry.id("claim_stone")?;
         let warp_shrine = registry.id("warp_shrine")?;
         let ash = registry.id("ash")?;
@@ -560,6 +567,13 @@ impl Game {
         let spark_link = registry.id("spark_link")?;
         let spark_item = items.id("spark")?;
         let water_bucket = items.id("water_bucket")?;
+        let crops = bm_core::crops::CropKinds::build(include_str!("../../../assets/crops.toml"), &registry, &items)?;
+        let soil = registry.id("soil")?;
+        let turf = registry.id("turf")?;
+        let tilled_soil = registry.id("tilled_soil")?;
+        for p in &mut planets {
+            p.farm = crate::farm::Farm::load(store.crops(p.id)?, &crops);
+        }
         let (saved_portals, next_portal) = store.portals()?;
         let portals = Portals::load(saved_portals, next_portal, |id| {
             planets.get(id as usize).map(|p| p.world.shape)
@@ -633,6 +647,10 @@ impl Game {
             spark_link,
             spark_item,
             water_bucket,
+            crops,
+            soil,
+            turf,
+            tilled_soil,
             damage: (0..planet_count).map(|_| DamageMap::default()).collect(),
             rng: std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
@@ -769,6 +787,7 @@ impl Game {
         for p in &mut self.planets {
             p.world.receive_loaded(self.tick, p.players > 0);
         }
+        self.catch_up_crops();
         // Before streaming: a chunk is never sent with a portal's old look.
         self.sync_portals();
         self.simulate();
@@ -787,6 +806,9 @@ impl Game {
         self.stats.creature_ticks += 1;
         self.step_portals();
         self.step_stations();
+        if self.tick % farm::FARM_EVERY == 0 {
+            self.step_farms();
+        }
         self.step_lapses();
         if self.tick % mining::HEAL_SWEEP_EVERY == 0 {
             self.heal_blocks();
@@ -890,6 +912,7 @@ impl Game {
                 ClientMsg::Skill { at, action } => self.queue(id, at, Queued::Skill { at, action }),
                 ClientMsg::Eat { at, slot } => self.queue(id, at, Queued::Eat { at, slot }),
                 ClientMsg::FillBucket { slot, pos } => self.fill_bucket(id, slot, pos),
+                ClientMsg::LookCrop { pos } => self.look_crop(id, pos),
                 ClientMsg::Throw {
                     at,
                     slot,
@@ -1700,6 +1723,7 @@ impl Game {
     pub(super) fn change_block(&mut self, pi: usize, canon: BlockPos, new: BlockState, by: Option<u32>) {
         let old = self.planets[pi].world.set_state(canon, new);
         let reset = self.damage[pi].clear(canon, self.tick) && !new.id.is_air();
+        self.crop_block_changed(pi, canon, new.id, by);
         // A machine block coming or going can make or unmake a machine
         // nearby: whoever watches one is told how it stands now.
         let reg = &self.planets[pi].world.registry;
@@ -1853,6 +1877,9 @@ impl Game {
                     });
                 if !supported {
                     return Err("nothing to place against".into());
+                }
+                if let Some(kind) = self.crops.sown_as(block) {
+                    Self::sowing_allowed(&self.crops, kind, world, canon, p.effects.farming)?;
                 }
                 if block == self.claim_stone {
                     planet.claims.can_create(&p.account, canon, allowance)?;
@@ -2716,6 +2743,7 @@ impl Game {
         let mut stations = Vec::new();
         let mut claims = Vec::new();
         let mut storage = Vec::new();
+        let mut crops = Vec::new();
         for p in &mut self.planets {
             p.world.forget_saved();
             let id = p.id;
@@ -2727,6 +2755,7 @@ impl Game {
                     .map(|(pos, s)| (id, pos, s)),
             );
             claims.extend(p.claims.take_dirty());
+            crops.extend(p.farm.take_dirty(&self.crops).into_iter().map(|(pos, c)| (id, pos, c)));
             storage.extend(
                 p.storage
                     .take_dirty(&self.items)
@@ -2756,6 +2785,7 @@ impl Game {
             stations,
             claims,
             storage,
+            crops,
             reclaim: self.reclaims.take_dirty(&self.items),
             portals,
             next_portal,

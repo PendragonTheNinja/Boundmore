@@ -46,6 +46,8 @@ pub struct Planet {
     pub stations: Stations,
     /// Storage blocks with something in them.
     pub storage: Storages,
+    /// Growing crops (milestone 16 part 2); filled by `Game::new`.
+    pub farm: crate::farm::Farm,
     pub claims: Claims,
     pub shrine: BlockPos,
     /// What the server built at the shrine, for telling it from what players
@@ -340,6 +342,7 @@ pub fn open(
         world: World::new(id, saved.shape, cat.registry.clone(), generator, store.clone()),
         stations,
         storage,
+        farm: Default::default(),
         claims,
         shrine,
         plaza,
