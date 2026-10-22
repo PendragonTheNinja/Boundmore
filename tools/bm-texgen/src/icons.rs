@@ -432,7 +432,7 @@ fn tiller(metal: Metal) -> Tex {
                 continue;
             }
             let centre = v0 + k.max(0.0).powi(2) * curl;
-            let half = 1.3 - k.max(0.0) * 0.65;
+            let half = 1.55 - k.max(0.0) * 0.8;
             let d = v - centre;
             if d.abs() > half {
                 continue;
