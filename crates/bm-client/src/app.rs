@@ -2198,12 +2198,7 @@ impl App {
     fn render(&mut self) {
         let mut ui = self.run_ui();
         self.render_frame(ui.as_ref());
-        // The renderer has applied (or, with no renderer, skipped) the
-        // texture changes; egui asserts in debug builds that none is dropped
-        // unhandled.
-        if let Some((_, textures, _)) = &mut ui {
-            textures.clear();
-        }
+        release_ui_textures(&mut ui);
     }
 
     fn render_frame(&mut self, ui: Option<&(Vec<egui::ClippedPrimitive>, egui::TexturesDelta, f32)>) {
@@ -2741,6 +2736,15 @@ impl App {
 /// A sling held in hand: a forked frame, its band and pouch, in the
 /// material the sling is made of; `turn` is the camera's, `hand` where it
 /// is held (camera-relative), `light` the light there.
+/// After a frame: the renderer has applied (or, with no renderer, skipped)
+/// egui's texture changes. egui asserts in debug builds that none is dropped
+/// unhandled, which crashed every debug build on its first UI frame.
+fn release_ui_textures(ui: &mut Option<(Vec<egui::ClippedPrimitive>, egui::TexturesDelta, f32)>) {
+    if let Some((_, textures, _)) = ui {
+        textures.clear();
+    }
+}
+
 fn held_sling(name: &str, turn: glam::Quat, hand: Vec3, light: [f32; 4]) -> Vec<BoxInstance> {
     use glam::Quat;
     let srgb = |c: [u8; 3]| {
@@ -3066,6 +3070,22 @@ mod tests {
     use crate::demo::Demo;
     use crate::net::NetEvent;
     use bm_protocol::RemotePlayer;
+
+    #[test]
+    fn a_frames_ui_textures_are_released() {
+        // egui's first frame always uploads its font atlas. Dropping that
+        // change unapplied panics in debug builds (`TexturesDelta`'s check),
+        // as every debug build of the client did before 2026-10-21.
+        let ctx = egui::Context::default();
+        let out = ctx.run_ui(egui::RawInput::default(), |ui| {
+            ui.label("hello");
+        });
+        assert!(!out.textures_delta.set.is_empty(), "the first frame uploads textures");
+        let mut ui = Some((Vec::new(), out.textures_delta, 1.0));
+        release_ui_textures(&mut ui);
+        let (_, textures, _) = ui.unwrap();
+        assert!(textures.set.is_empty() && textures.free.is_empty());
+    }
 
     fn session_on_the_demo() -> (Session, Demo, Vec<ServerMsg>) {
         let mut demo = Demo::new("Tester");

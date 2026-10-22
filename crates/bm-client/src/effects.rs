@@ -424,18 +424,29 @@ pub fn shot_boxes(out: &mut Vec<BoxInstance>, rel: Vec3, s: &Drawn, time: f32, l
                 ));
             }
         }
-        ShotKind::Bomb => bomb_boxes(out, rel, s.burned, time, light, Quat::from_rotation_y(time * 3.0)),
+        ShotKind::Bomb => bomb_boxes(out, rel, s.burned, time, light, Quat::from_rotation_y(time * 3.0), 1.0),
     }
 }
 
 /// A round bomb at `rel` with a sparking fuse; `burned` (0 to 1) shortens the
 /// fuse and quickens the sparks.
-pub fn bomb_boxes(out: &mut Vec<BoxInstance>, rel: Vec3, burned: Option<f32>, time: f32, light: [f32; 4], turn: Quat) {
+/// A bomb at `rel` (camera-relative), `scale` times its size in the world
+/// (1 in flight; smaller in hand, where it sits close to the eye).
+#[allow(clippy::too_many_arguments)]
+pub fn bomb_boxes(
+    out: &mut Vec<BoxInstance>,
+    rel: Vec3,
+    burned: Option<f32>,
+    time: f32,
+    light: [f32; 4],
+    turn: Quat,
+    scale: f32,
+) {
     let lit = |c: Vec3, glow: f32| [c.x, c.y, c.z, glow];
     let shell = srgb(BOMB_SHELL);
     let part = |at: Vec3, half: Vec3, colour: Vec3| BoxInstance {
-        center: (rel + turn * at).to_array(),
-        half_size: half.to_array(),
+        center: (rel + turn * (at * scale)).to_array(),
+        half_size: (half * scale).to_array(),
         color: [colour.x, colour.y, colour.z, 1.0],
         rotation: turn.to_array(),
         light,
@@ -477,6 +488,10 @@ pub fn bomb_boxes(out: &mut Vec<BoxInstance>, rel: Vec3, burned: Option<f32>, ti
         out.push(s);
     }
 }
+
+/// The lit bomb in hand is this much of its size in flight: it sits about
+/// half a block from the eye, so full size covered a quarter of the screen.
+pub const HELD_BOMB_SCALE: f32 = 0.4;
 
 /// The bag of bombs in hand: a tied pouch of the bag's metal colour, and
 /// while a bomb is lit, the bomb held up above it with its fuse burning.
@@ -547,9 +562,9 @@ pub fn held_bombs(
     ];
     if let Some(b) = burned {
         // The lit bomb, held up and trembling more as the fuse runs down.
-        let shake = Vec3::new((time * 41.0).sin(), (time * 37.0).cos(), 0.0) * 0.006 * (1.0 + b * 3.0);
-        let at = hand + turn * (Vec3::new(-0.08, 0.2, -0.05) + shake);
-        bomb_boxes(&mut out, at, Some(b), time, light, turn);
+        let shake = Vec3::new((time * 41.0).sin(), (time * 37.0).cos(), 0.0) * 0.004 * (1.0 + b * 3.0);
+        let at = hand + turn * (Vec3::new(-0.05, 0.1, -0.02) + shake);
+        bomb_boxes(&mut out, at, Some(b), time, light, turn, HELD_BOMB_SCALE);
     }
     out
 }
@@ -557,6 +572,22 @@ pub fn held_bombs(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_lit_bomb_in_hand_stays_hand_sized() {
+        // Every box of the bag and its lit bomb lies within 0.3 of the hand
+        // and none is bigger than 0.1 across half its side (full size, the
+        // fuse rose 0.6 above the hand and covered a quarter of the screen).
+        let hand = Vec3::new(0.3, -0.3, -0.55);
+        for burned in [0.0, 0.5, 0.99] {
+            let boxes = held_bombs("copper_bombs", Some(burned), 1.3, Quat::IDENTITY, hand, [1.0; 4]);
+            for b in &boxes {
+                let c = Vec3::from_array(b.center);
+                assert!((c - hand).length() < 0.3, "a box {:?} from the hand", c - hand);
+                assert!(b.half_size.iter().all(|h| *h <= 0.1), "{:?}", b.half_size);
+            }
+        }
+    }
 
     #[test]
     fn blasts_and_beams_last_their_time() {
