@@ -857,7 +857,7 @@ impl Demo {
         }
         let (_, name, hours) = FARM_CROPS[dx as usize];
         let stage = dz as u8 + 1;
-        let ripe_in = ((3 - dz as i64).max(0) as f64 / 3.0 * hours * 0.75 * 3600.0) as u32;
+        let ripe_in = ((3 - dz).max(0) as f64 / 3.0 * hours * 0.75 * 3600.0) as u32;
         self.events.push_back(NetEvent::Msg(ServerMsg::CropInfo {
             pos,
             name: name.into(),
