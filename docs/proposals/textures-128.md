@@ -103,3 +103,5 @@ The API route costs money per image on top of Nathan's Google AI Pro subscriptio
 `generate.py` stays for the API, should it be wanted again.
 
 **One stone for now** (Nathan, 2026-10-22): the stone made in this pass is one texture; it will later be one of Boundless's three rock kinds (`docs/roadmap.md`, Later art passes).
+
+**No variants for the AI set** (Nathan, 2026-10-22): Flow copies a reference image instead of painting a new patch, and picking matching patches by hand was too much trouble. Each AI texture is one image; when the set is installed, the old 32 variant files of those textures (`NAME_1.png` to `NAME_3.png`) are removed so the game does not mix them in. Repetition across a field (grass above all) is handled by low-contrast prompts and `cleanup.py`'s lighting flattening; `cleanup.py` still joins variants if any are ever supplied.

@@ -31,8 +31,9 @@ HEAD = """# Texture prompts for Google Flow
 2. Paste a texture's whole prompt (the grey block). Where it says **References**, add those images first: your saved files from `art/texture-trial/ai-raw/`.
 3. Keep the best of the four. If none is right, generate again; tell Claude what was wrong if it keeps happening.
 4. Download it at the largest size and save it under the name given, in `art/texture-trial/ai-raw/`. PNG or JPG both work.
-5. **Variants** (textures marked so): do **not** attach a reference image (Flow copies it, Nathan found 2026-10-22). Use the texture's own prompt again, with no image: each run of 4 is four different patches of the same material in the same style. Keep the best as the base and the three that match it best as `NAME.v1`, `NAME.v2`, `NAME.v3`. They need not line up at the edges (`cleanup.py` joins each into the base's edges); they should look like the same material.
-6. Push the folder (or upload the files on GitHub into that folder). Claude runs `cleanup.py`, which makes each image tile, joins the variants, sizes them to 128, and puts them in the game for screenshots.
+5. Push the folder (or upload the files on GitHub into that folder). Claude runs `cleanup.py`, which makes each image tile, sizes it to 128, and puts them in the game for screenshots.
+
+One image per texture, no variants (Nathan, 2026-10-22): the game's 3 extra versions of natural blocks stay out of the AI set.
 
 Not here: water and glass (they need transparency) and anything with an exact layout (machines, shrines, torches, plants, icons), which stay painted in code.
 
@@ -42,7 +43,6 @@ Not here: water and glass (they need transparency) and anything with an exact la
 def main():
     cfg = json.loads((HERE / "prompts.json").read_text())
     textures = cfg["textures"]
-    var = cfg.get("variants", {})
     names = [n for n in ORDER if n in textures] + [n for n in textures if n not in ORDER]
     out = [HEAD]
     for i, name in enumerate(names, 1):
@@ -55,11 +55,6 @@ def main():
         if bases:
             out.append(" References: " + ", ".join(f"`{b}`" for b in bases) + " (your saved images).")
         out.append("\n\n```text\n" + cfg["style"] + "\n\n" + entry["prompt"] + "\n```\n")
-        if name in var.get("names", []):
-            out.append(
-                f"\n**Variants:** the same prompt again, no reference image; from the fours, keep the three that "
-                f"best match your base: `{name}.v1`, `{name}.v2`, `{name}.v3`.\n"
-            )
         out.append("\n")
     (HERE / "flow-prompts.md").write_text("".join(out))
     print(f"wrote flow-prompts.md: {len(names)} textures")
