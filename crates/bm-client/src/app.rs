@@ -1453,6 +1453,8 @@ impl App {
             ServerMsg::Meteor(v) => s.sky_view.meteor(v),
             ServerMsg::MeteorGone { id } => s.sky_view.gone(id),
             ServerMsg::MeteorLife { life } => s.sky_view.life(life),
+            // Milestone 15: the wear bar under the crosshair comes later.
+            ServerMsg::MachineWear { .. } => {}
             ServerMsg::Welcome(_)
             | ServerMsg::Refused { .. }
             | ServerMsg::Travel(_)

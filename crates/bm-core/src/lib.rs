@@ -25,6 +25,7 @@ pub mod recipes;
 pub mod regions;
 pub mod shape;
 pub mod skills;
+pub mod spark;
 pub mod time;
 
 pub use block::{

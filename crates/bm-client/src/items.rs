@@ -320,6 +320,7 @@ fn tool_materials(class: ToolClass) -> &'static str {
         ToolClass::Hammer => "rock, ore and crystal",
         ToolClass::Shovel => "soil, sand, gravel and snow",
         ToolClass::Axe => "wood and leaves",
+        ToolClass::Spanner => "machines (repairs wear)",
     }
 }
 

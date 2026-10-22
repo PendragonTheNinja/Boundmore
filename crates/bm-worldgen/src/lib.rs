@@ -1286,9 +1286,21 @@ mod tests {
         cfg
     }
 
+    /// A kind's settings as planets made before M15 saved them: without the
+    /// relic cache (every kind) and silver (tier 3) appended to the ores.
+    fn before_m15(mut cfg: PlanetGenConfig) -> PlanetGenConfig {
+        if cfg.ores.last().map(|o| o.block.as_str()) == Some("silver_seam") {
+            cfg.ores.pop();
+        }
+        assert_eq!(cfg.ores.last().map(|o| o.block.as_str()), Some("relic_cache"));
+        cfg.ores.pop();
+        cfg
+    }
+
     /// A kind's settings as planets made before M11 saved them: without the
     /// relic seam at the end of the ores, and with no flora.
-    fn before_m11(mut cfg: PlanetGenConfig) -> PlanetGenConfig {
+    fn before_m11(cfg: PlanetGenConfig) -> PlanetGenConfig {
+        let mut cfg = before_m15(cfg);
         assert_eq!(cfg.ores.last().map(|o| o.block.as_str()), Some("relic_seam"));
         assert!(!cfg.flora.is_empty());
         cfg.ores.pop();
@@ -1538,8 +1550,17 @@ mod tests {
     // were changes to the kinds' data alone: the default settings (no flora)
     // keep their pin, and a planet's saved settings still make its old
     // terrain (`appending_m11_only_adds_relic_and_props`).
+    // Re-pinned for M15's appended ores (relic caches, silver) without a
+    // version bump: planets saved before keep their terrain (`PINNED_M14`,
+    // checked in `appending_m15_only_turns_rock_into_relic_caches_and_silver`).
     const PINNED: [(&str, u64); 5] = [
         ("default", 0x6bc9_e59d_8877_7736),
+        ("temperate", 0xa6ab_8a36_dcb2_7da0),
+        ("arid", 0x31a0_b625_c37a_056f),
+        ("frozen", 0xb412_fff4_a47a_bd70),
+        ("lush", 0xab67_cc12_6f1d_84d9),
+    ];
+    const PINNED_M14: [(&str, u64); 4] = [
         ("temperate", 0xb7f4_90e8_ceaf_2736),
         ("arid", 0x143e_1e07_0a9f_c1e7),
         ("frozen", 0xdcae_5ff1_56e3_06b5),
@@ -1562,7 +1583,7 @@ mod tests {
             let props: Vec<BlockId> = with.flora.iter().map(|f| id(&f.block)).collect();
             let shape = PlanetShape::new(64, 12);
             let old = Generator::new(shape, before_m11(with.clone()), &blocks).unwrap();
-            let new = Generator::new(shape, with, &blocks).unwrap();
+            let new = Generator::new(shape, before_m15(with), &blocks).unwrap();
             assert_eq!(fingerprint(&old), pinned, "{name} before M11");
             let (mut relics, mut grown) = (0, 0);
             for x in 0..10 {
@@ -1586,6 +1607,52 @@ mod tests {
             assert!(relics > 0 && grown > 0, "{name}: {relics} relic, {grown} props");
         }
     }
+    /// M15 appended the relic cache to every kind's ores and silver to tier
+    /// 3: on opening, an existing planet's unsaved chunks may only turn rock
+    /// into those ores; silver lies only on tier 3 worlds.
+    #[test]
+    fn appending_m15_only_turns_rock_into_relic_caches_and_silver() {
+        let blocks = BlockRegistry::builtin();
+        let kinds = PlanetKinds::builtin(&blocks);
+        let rock = ["stone", "deep_stone", "sandstone"].map(id);
+        let (cache, silver) = (id("relic_cache"), id("silver_seam"));
+        for k in &kinds.kinds {
+            let with = k.generation(42);
+            let shape = PlanetShape::new(64, 12);
+            let old = Generator::new(shape, before_m15(with.clone()), &blocks).unwrap();
+            let new = Generator::new(shape, with, &blocks).unwrap();
+            let pinned = PINNED_M14.iter().find(|(n, _)| *n == k.name).expect("pinned").1;
+            assert_eq!(fingerprint(&old), pinned, "{} before M15 keeps its terrain", k.name);
+            let (mut caches, mut silvers) = (0, 0);
+            for x in 0..12 {
+                for y in 0..5 {
+                    let pos = ChunkPos::new(x * 5, y, x * 11);
+                    let (a, b) = (old.generate(pos).to_dense_states(), new.generate(pos).to_dense_states());
+                    for (a, b) in a.iter().zip(&b) {
+                        if a == b {
+                            continue;
+                        }
+                        assert!(rock.contains(&a.id), "{}: {a:?} became {b:?}", k.name);
+                        if b.id == cache {
+                            caches += 1;
+                        } else {
+                            assert_eq!(b.id, silver, "{}", k.name);
+                            silvers += 1;
+                        }
+                    }
+                }
+            }
+            assert!(caches > 0, "{}: no relic caches", k.name);
+            assert_eq!(
+                silvers > 0,
+                k.tier >= 3,
+                "{}: {silvers} silver on tier {}",
+                k.name,
+                k.tier
+            );
+        }
+    }
+
     const PINNED_M8: [(&str, u64); 4] = [
         ("temperate", 0x3608_579d_2236_4d0b),
         ("arid", 0x5876_767f_47f6_8745),

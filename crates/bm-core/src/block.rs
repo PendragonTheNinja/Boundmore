@@ -142,6 +142,10 @@ pub struct BlockDef {
     /// Heat it gives burnt in a furnace (its item; 0: not fuel).
     #[serde(default)]
     pub fuel: u16,
+    /// A furnace base's heat multiplier: the share of a recipe's heat it
+    /// burns (milestone 15: stone 1.0, iron 0.5, as in Boundless).
+    #[serde(default = "full_heat")]
+    pub heat_share: f32,
     /// XP for breaking one (milestone 12; gathering objects scale with the
     /// tier's health multiplier).
     #[serde(default)]
@@ -263,6 +267,16 @@ pub enum Station {
     CraftingTable,
     /// Four blocks touching.
     Extractor,
+    /// Four blocks touching; runs on spark (milestone 15). Appended, as
+    /// every new kind is: saved stations keep their kind.
+    Mixer,
+    /// Four blocks touching; runs on spark.
+    Refinery,
+    /// Four blocks touching; runs on spark.
+    Compactor,
+    /// One block; burns fuel into spark and stores it (`spark`). Joined
+    /// generators share one store.
+    SparkGenerator,
 }
 
 /// How a machine's blocks must stand for it to work (milestone 11, as in
@@ -291,6 +305,10 @@ pub enum Model {
     Boulder,
     /// A cap on a stem.
     Fungus,
+}
+
+fn full_heat() -> f32 {
+    1.0
 }
 
 fn full_opacity() -> f32 {

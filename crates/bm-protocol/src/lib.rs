@@ -25,7 +25,7 @@ use glam::DVec3;
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
 
 /// Bump on any change to a message below. Client and server must match.
-pub const PROTOCOL_VERSION: u32 = 20;
+pub const PROTOCOL_VERSION: u32 = 21;
 
 /// QUIC application protocol name; also refuses non-Boundmore peers early.
 pub const ALPN: &[u8] = b"boundmore/1";
@@ -353,8 +353,29 @@ pub struct StationView {
     /// touching", "A furnace needs its crucible on top"); None when it does.
     pub idle: Option<String>,
     /// A furnace's fuel slot, and the heat banked from fuel already burnt.
+    /// A spark generator's fuel slot too (milestone 15).
     pub fuel: Option<ItemStack>,
     pub heat: u32,
+    /// A machine's wear left and the most it holds (milestone 15); None for
+    /// stations that do not wear.
+    pub wear: Option<(u32, u32)>,
+    /// Spark (milestone 15): a generator's own store, or what a spark
+    /// machine's links reach; None for stations without spark.
+    pub spark: Option<SparkView>,
+}
+
+/// Spark as a station's window shows it.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SparkView {
+    /// Spark stored (a generator group), or reachable through links (a
+    /// machine: every generator group its links reach).
+    pub stored: u32,
+    /// The most those generators hold.
+    pub capacity: u32,
+    /// A machine: whether its links reach any generator. A generator: true.
+    pub linked: bool,
+    /// A generator: spark still to come from the fuel burning now.
+    pub burning: u32,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -517,6 +538,13 @@ pub enum ServerMsg {
     /// A meteor is gone from view (its heart closed, or you left).
     MeteorGone {
         id: u32,
+    },
+    /// A spanner hit a machine (milestone 15): its wear left now and the
+    /// most it holds, for the bar under the crosshair.
+    MachineWear {
+        pos: BlockPos,
+        wear: u32,
+        max: u32,
     },
     /// Your meteor life: the meteor it belongs to, and the ticks left to get
     /// back into its zone (None: inside); None when you hold no life.

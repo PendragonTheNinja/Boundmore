@@ -19,6 +19,13 @@ pub struct Recipe {
     /// XP each craft gives (milestone 12).
     #[serde(default)]
     pub xp: u16,
+    /// Spark one craft draws from the machine's grid (milestone 15; 0: none).
+    #[serde(default)]
+    pub spark: u32,
+    /// Wear one craft puts on the machine (milestone 15; 0 at the hand, the
+    /// crafting table and furnaces, which do not wear).
+    #[serde(default)]
+    pub wear: u16,
     /// The crafting skill and level it needs (`skills::Effects::crafting`).
     #[serde(default)]
     pub skill: Option<SkillGate>,
@@ -72,6 +79,10 @@ struct RecipeEntry {
     xp: u16,
     #[serde(default)]
     skill: Option<SkillGate>,
+    #[serde(default)]
+    spark: u32,
+    #[serde(default)]
+    wear: u16,
 }
 
 fn one() -> u16 {
@@ -118,6 +129,8 @@ impl RecipeBook {
                 heat: if e.station == Station::Furnace { e.heat } else { 0 },
                 xp: e.xp,
                 skill: e.skill.clone(),
+                spark: e.spark,
+                wear: if crate::spark::wears(e.station) { e.wear } else { 0 },
             });
         }
         Ok(Self { recipes })

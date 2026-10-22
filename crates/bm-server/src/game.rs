@@ -394,6 +394,10 @@ fn station_name(kind: Station) -> &'static str {
         Station::Furnace => "Furnace",
         Station::CraftingTable => "Crafting Table",
         Station::Extractor => "Extractor",
+        Station::Mixer => "Mixer",
+        Station::Refinery => "Refinery",
+        Station::Compactor => "Compactor",
+        Station::SparkGenerator => "Spark Generator",
     }
 }
 

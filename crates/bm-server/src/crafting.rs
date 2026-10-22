@@ -506,6 +506,8 @@ impl Stations {
                 idle,
                 fuel: None,
                 heat: 0,
+                wear: None,
+                spark: None,
             };
         };
         let jobs = st
@@ -534,6 +536,8 @@ impl Stations {
             idle,
             fuel: st.fuel,
             heat: st.heat,
+            wear: None,
+            spark: None,
         }
     }
 

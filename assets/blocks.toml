@@ -1167,3 +1167,158 @@ light = 12
 textures = { all = "meteor_heart" }
 material = "crystal"
 drops = ""
+
+# Milestone 15: spark. Ores first: silver on tier 3+ worlds and the deeper
+# relic seam that holds components (Boundless's ancient tech component);
+# yields by tier from tuning 4.4.
+[[block]]
+name = "silver_seam"
+colourable = false
+color = [196, 204, 218]
+solid = true
+opaque = true
+translucent = false
+breakable = true
+placeable = false
+health = "seam"
+textures = { all = "silver_seam" }
+material = "rock"
+drops = "silver_ore"
+bonus = [{ item = "silver_ore", per_tier = [0, 0, 0, 0.5, 0.5, 0.7, 0.7, 1.05] }]
+mine_xp = 60
+build_xp = 0
+
+[[block]]
+name = "relic_cache"
+colourable = false
+color = [110, 120, 128]
+solid = true
+opaque = true
+translucent = false
+breakable = true
+placeable = false
+health = "seam"
+textures = { all = "relic_cache" }
+material = "rock"
+drops = "relic_component"
+bonus = [{ item = "relic_component", per_tier = [0, 0, 0.5, 0.5, 0.7, 0.7, 1.05, 1.05] }]
+mine_xp = 40
+build_xp = 0
+
+# Four blocks touching, like the workbench; they draw spark through links.
+[[block]]
+name = "mixer"
+colourable = false
+color = [120, 140, 150]
+solid = true
+opaque = true
+translucent = false
+breakable = true
+placeable = true
+health = "hard"
+textures = { top = "mixer_top", side = "mixer_side", bottom = "stone" }
+material = "rock"
+station = "mixer"
+assembly = "four"
+build_xp = 16
+
+[[block]]
+name = "refinery"
+colourable = false
+color = [150, 120, 110]
+solid = true
+opaque = true
+translucent = false
+breakable = true
+placeable = true
+health = "hard"
+textures = { top = "refinery_top", side = "refinery_side", bottom = "stone" }
+material = "rock"
+station = "refinery"
+assembly = "four"
+build_xp = 16
+
+[[block]]
+name = "compactor"
+colourable = false
+color = [110, 116, 140]
+solid = true
+opaque = true
+translucent = false
+breakable = true
+placeable = true
+health = "hard"
+textures = { top = "compactor_top", side = "compactor_side", bottom = "stone" }
+material = "rock"
+station = "compactor"
+assembly = "four"
+build_xp = 16
+
+# The iron furnace: a crucible on a base like the stone one, burning half
+# the heat (Boundless's heat multiplier 0.5).
+[[block]]
+name = "iron_furnace"
+colourable = false
+color = [88, 96, 112]
+top_color = [110, 118, 136]
+solid = true
+opaque = true
+translucent = false
+breakable = true
+placeable = true
+health = "hard"
+textures = { top = "iron_furnace_top", side = "iron_furnace_side", bottom = "stone" }
+material = "rock"
+station = "furnace"
+light = 7
+assembly = "furnace_base"
+heat_share = 0.5
+build_xp = 16
+
+[[block]]
+name = "iron_furnace_crucible"
+colourable = false
+color = [96, 104, 120]
+solid = true
+opaque = true
+translucent = false
+breakable = true
+placeable = true
+health = "hard"
+textures = { top = "iron_furnace_crucible_top", side = "iron_furnace_crucible_side", bottom = "iron_furnace_crucible_top" }
+material = "rock"
+assembly = "furnace_crucible"
+build_xp = 16
+
+# A spark generator: one block with a fuel slot; joined generators share one
+# store. A spark link carries spark from generators to machines.
+[[block]]
+name = "spark_generator"
+colourable = false
+color = [90, 84, 100]
+top_color = [255, 190, 90]
+solid = true
+opaque = true
+translucent = false
+breakable = true
+placeable = true
+health = "hard"
+textures = { top = "spark_generator_top", side = "spark_generator_side", bottom = "stone" }
+material = "rock"
+station = "spark_generator"
+light = 5
+build_xp = 24
+
+[[block]]
+name = "spark_link"
+colourable = false
+color = [160, 112, 70]
+solid = true
+opaque = true
+translucent = false
+breakable = true
+placeable = true
+health = "soft"
+textures = { all = "spark_link" }
+material = "rock"
+build_xp = 8

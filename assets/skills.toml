@@ -153,8 +153,8 @@ name = "Spanner Skill"
 category = "mastery"
 ranks = 5
 cost = 1
-effect = "later"
-text = "Spanners (comes with machine wear)"
+effect = "spanner_mastery"
+text = "+10% wear removed by spanners and +2 action speed"
 
 [[skill]]
 id = "tool_crafting"

@@ -23,6 +23,9 @@ pub enum ToolClass {
     Shovel,
     /// Wood and leaves.
     Axe,
+    /// Repairs machines (milestone 15): no damage to blocks; each hit on a
+    /// machine removes `ToolStats::repair` wear.
+    Spanner,
 }
 
 impl ToolClass {
@@ -91,11 +94,15 @@ pub struct ToolStats {
     pub energy: u16,
     /// The shape one swing hits; None: one block.
     pub aoe: Option<Aoe>,
+    /// A spanner's machine wear removed per hit (Boundless's "Wear Removed
+    /// Per Hit"); 0 for every other tool.
+    #[serde(default)]
+    pub repair: u32,
 }
 
 impl ToolStats {
     fn valid(&self) -> bool {
-        self.damage > 0
+        (self.damage > 0 || (self.class == Some(ToolClass::Spanner) && self.repair > 0))
             && self.action_speed.is_finite()
             && self.action_speed > 0.0
             && (0.0..=1.0).contains(&self.crit_chance)
@@ -501,6 +508,7 @@ fn chisel_energy() -> u16 {
 struct ToolEntry {
     #[serde(default)]
     class: Option<ToolClass>,
+    #[serde(default)]
     damage: u32,
     action_speed: f32,
     #[serde(default)]
@@ -514,6 +522,9 @@ struct ToolEntry {
     /// Energy per swing; unset, damage / 50 as for every Boundless tool.
     #[serde(default)]
     energy: Option<u16>,
+    /// A spanner's wear removed per hit.
+    #[serde(default)]
+    repair: u32,
 }
 
 impl ToolEntry {
@@ -527,6 +538,7 @@ impl ToolEntry {
             durability: self.durability,
             aoe: self.aoe,
             energy: self.energy.unwrap_or((self.damage / 50) as u16),
+            repair: self.repair,
         }
     }
 }

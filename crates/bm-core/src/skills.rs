@@ -186,6 +186,8 @@ pub enum Effect {
     /// Milestone 13 part 2: bombs.
     BombMastery,
     BombEpic,
+    /// Milestone 15: spanners remove 10% more wear and swing 2 faster a rank.
+    SpannerMastery,
     /// On the tree, not built yet ("Comes later"): cannot be bought.
     Later,
 }
@@ -577,6 +579,7 @@ pub struct Effects {
     pub death_epic: bool,
     pub bomb_mastery: u8,
     pub bomb_epic: bool,
+    pub spanner_mastery: u8,
 }
 
 impl Effects {
@@ -635,6 +638,7 @@ impl Effects {
                 Effect::HealthRegenEpic => e.health_regen_epic |= on,
                 Effect::DeathEpic => e.death_epic |= on,
                 Effect::BombMastery => e.bomb_mastery += r,
+                Effect::SpannerMastery => e.spanner_mastery += r,
                 Effect::BombEpic => e.bomb_epic |= on,
                 Effect::Later => {}
             }
@@ -668,6 +672,8 @@ impl Effects {
             Some(ToolClass::Hammer) => (self.mastery[0], self.hammer_epic),
             Some(ToolClass::Shovel) => (self.mastery[1], self.shovel_axe_epic),
             Some(ToolClass::Axe) => (self.mastery[2], self.shovel_axe_epic),
+            // A spanner deals no damage; its mastery adds repair.
+            Some(ToolClass::Spanner) => (0, false),
         };
         1.0 + power + 0.05 * mastery as f64 + if epic { 0.25 } else { 0.0 }
     }
@@ -682,6 +688,7 @@ impl Effects {
             Some(ToolClass::Hammer) => (self.mastery[0], self.hammer_epic),
             Some(ToolClass::Shovel) => (self.mastery[1], self.shovel_axe_epic),
             Some(ToolClass::Axe) => (self.mastery[2], self.shovel_axe_epic),
+            Some(ToolClass::Spanner) => (self.spanner_mastery, false),
         };
         2.0 * self.dexterity + 2.0 * mastery as f64 + if epic { 10.0 } else { 0.0 }
     }

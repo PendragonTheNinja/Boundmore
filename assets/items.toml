@@ -385,3 +385,73 @@ name = "iron_bombs"
 display = "Bag of Iron Bombs"
 stack = 1
 bomb = { damage = 1500, radius = 2.0, knockback = 10.0 }
+
+# Milestone 15: spark (docs/milestones/15-spark.md).
+[[item]]
+name = "silver_ore"
+
+[[item]]
+name = "silver_ingot"
+display = "Silver Bar"
+
+[[item]]
+name = "silver_alloy"
+
+[[item]]
+name = "relic_component"
+
+[[item]]
+name = "cog"
+
+[[item]]
+name = "compact_copper"
+
+[[item]]
+name = "compact_iron"
+
+[[item]]
+name = "compact_silver_alloy"
+
+[[item]]
+name = "refined_copper"
+
+[[item]]
+name = "refined_iron"
+
+[[item]]
+name = "refined_silver_alloy"
+
+[[item]]
+name = "machined_copper"
+
+[[item]]
+name = "machined_iron"
+
+[[item]]
+name = "machined_silver_alloy"
+
+[[item]]
+name = "cotton_cloth"
+
+# What a broken spark generator gives back: 1,000 spark each (Boundless's
+# Unused Spark).
+[[item]]
+name = "spark"
+display = "Unused Spark"
+
+# Spanners repair machines (Boundless's stats: action speed, durability,
+# energy as Burst Stamina Drain, wear removed per hit).
+[[item]]
+name = "stone_spanner"
+stack = 1
+tool = { class = "spanner", action_speed = 40.0, durability = 600, energy = 4, repair = 100 }
+
+[[item]]
+name = "copper_spanner"
+stack = 1
+tool = { class = "spanner", action_speed = 70.0, durability = 500, energy = 6, repair = 400 }
+
+[[item]]
+name = "iron_spanner"
+stack = 1
+tool = { class = "spanner", action_speed = 30.0, durability = 900, energy = 8, repair = 700 }

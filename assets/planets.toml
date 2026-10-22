@@ -101,6 +101,14 @@ size = 12.0
 threshold = 0.58
 min_y = 20
 min_depth = 3
+[[kind.generation.ores]]
+# Milestone 15: relic components (Boundless's ancient tech component), deeper
+# and rarer than fragments: 40+ above the floor, 5+ below the surface.
+block = "relic_cache"
+size = 9.0
+threshold = 0.63
+min_y = 40
+min_depth = 5
 # Flora (all placement a guess): spikeleaf on the beaches and in dry
 # patches of turf so a new player finds fibrous leaves early, ferns and
 # roots on turf, lilies by the water, snowbells above the snow line,
@@ -246,6 +254,14 @@ size = 12.0
 threshold = 0.58
 min_y = 20
 min_depth = 3
+[[kind.generation.ores]]
+# Milestone 15: relic components (Boundless's ancient tech component), deeper
+# and rarer than fragments: 40+ above the floor, 5+ below the surface.
+block = "relic_cache"
+size = 9.0
+threshold = 0.63
+min_y = 40
+min_depth = 5
 # Flora (a guess): spikeleaf plentiful on the dunes, with cactus and
 # aloe (no turf here, so they take the sand); boulders on sand and rock.
 [[kind.generation.flora]]
@@ -372,6 +388,14 @@ size = 12.0
 threshold = 0.58
 min_y = 20
 min_depth = 3
+[[kind.generation.ores]]
+# Milestone 15: relic components (Boundless's ancient tech component), deeper
+# and rarer than fragments: 40+ above the floor, 5+ below the surface.
+block = "relic_cache"
+size = 9.0
+threshold = 0.63
+min_y = 40
+min_depth = 5
 # Flora (a guess): snowbells on the snow; boulders on snow and rock.
 [[kind.generation.flora]]
 block = "frostbell"
@@ -489,6 +513,23 @@ size = 12.0
 threshold = 0.58
 min_y = 20
 min_depth = 3
+[[kind.generation.ores]]
+# Milestone 15: relic components (Boundless's ancient tech component), deeper
+# and rarer than fragments: 40+ above the floor, 5+ below the surface.
+block = "relic_cache"
+size = 9.0
+threshold = 0.63
+min_y = 40
+min_depth = 5
+[[kind.generation.ores]]
+# Milestone 15: silver, tier 3 and up (Boundless: 10 to 40 above the floor,
+# 20+ below the surface).
+block = "silver_seam"
+size = 8.0
+threshold = 0.6
+min_y = 10
+max_y = 40
+min_depth = 20
 # Flora (a guess): the most plants, lilies by the water, spikeleaf on
 # the beaches, snowbells on the peaks, boulders on rock and turf.
 [[kind.generation.flora]]

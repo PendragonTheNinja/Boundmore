@@ -1157,6 +1157,8 @@ impl Demo {
                 idle: s.idle.clone(),
                 fuel: s.fuel,
                 heat: s.heat,
+                wear: None,
+                spark: None,
             };
             self.events.push_back(NetEvent::Msg(ServerMsg::Station(view)));
         }
