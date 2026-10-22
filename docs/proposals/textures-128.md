@@ -1,6 +1,6 @@
 # Proposal: 128 x 128 textures
 
-*Written 2026-10-21. Status: **trial agreed, not started.** Nathan chose the Gemini API route; the trial runs once milestone 13 part 2 is merged.*
+*Written 2026-10-21. Status: **trial run (2026-10-22), awaiting Nathan's pick of direction.** Results in "Trial results" at the end.*
 
 ## Why
 
@@ -52,3 +52,31 @@ The key is added to requests on the way out and never appears in the session. Ne
    - the 9 hand-placed painters.
 
 The generator also writes the comparison sheets (`docs/media/`). Each painted image, prompt and result goes in the repo, so any session on either account can continue.
+
+## Trial results (2026-10-22)
+
+**Access works.** The key is injected on the way out; `gemini-3-pro-image` (Nano Banana Pro) and `gemini-3.1-flash-image` both answer, with billing on. The pro model is often busy (HTTP 502 or 503); `generate.py` retries with a growing wait.
+
+**What was built** (all on the trial branch, nothing in `assets/textures/` replaced):
+
+- **The client takes any square power-of-two texture from 16 to 256, mixed** (`bm-client/src/textures.rs`). The array uses the largest size; smaller files scale up by whole pixels. Blocks magnify nearest-neighbour and mips are 2x2 boxes, so a 32 beside a 128 looks exactly as it does today (tested). This is the engine half of any size setting, and lets AI art cover natural surfaces while machines keep their painted 32s.
+- **`--demo-ui textures`**: one view of turf, bare soil, a turf step, a stone wall with copper ore, and a tree.
+- **Procedural 128** (`bm-texgen -- --size 128 --out DIR`): painters work in 32 units at any pixel count, so big shapes keep their place and come out smooth; the six trial painters add finer detail at 128 (more octaves, chips in stone, crumbs in soil, four times the grass blades, pebbles, specks and leaves at half size). Output at 32 is byte-identical to before.
+- **The AI pipeline** (`tools/texture-ai/`, Python with Pillow and numpy):
+  - `prompts.json`: one shared style prompt from this file's rules, one line per texture. Copper ore is painted into the AI stone and turf side from the AI soil and grass, so they match.
+  - `generate.py`: calls the API, saves each image with its prompt in `art/texture-trial/ai-raw/`. Varied textures (stone, soil, turf top, foliage) also get three more patches of the same material, painted with the first as reference.
+  - `cleanup.py`: the whole image becomes one face; it is made seamless by joining the strip past each edge into the opposite edge along the cut where the two agree best (image quilting: the cut runs along the dark joints, where a cross-fade ghosted); downsized to 128; the extra patches are set into the base along four such cuts in the edge band, so every variant has the base's edges; and each face is checked against the game's recolouring (ADR-0007). Writes `art/texture-trial/ai/blocks/`, `ai-sheet.png` and `ai-report.json`.
+
+**Nathan's call so far (2026-10-22):** the procedural 128s, upscaled from the 32 painters, are not the way; Gemini should make the textures from scratch. So the AI images use Gemini's own design and colours (the colour nudge toward our palette is off; `--nudge` turns it on).
+
+**What the trial taught:**
+
+- **Scale has to be asked for.** A first full set packed a whole picture into each face (eight stones per block): in game the stone read as small bricks and the foliage as a printed pattern. Asking for bold, readable forms fixed most of it; "big shapes" asked too bluntly turned grass into moss balls.
+- **Gemini draws masonry when asked for stone.** "Slabs" gave walls of bricks even with "not bricks" in the prompt; the prompt now asks for fractured bedrock and lists what not to draw.
+- **Gemini's "seamless" images are not seamless**, and it will not repaint a seam when asked (it returned the shifted image almost unchanged). The quilting cut in `cleanup.py` handles it.
+- **One face per texture repeats visibly** across a field of turf; the variants are needed, and the cut keeps them seamless against each other.
+- **Recolouring holds up:** every face keeps a light-and-shade pattern at least as strong as the painted 32's. A few bright highlights pass the shader's cap (bark and foliage, 3 to 5% of texels); they look fine in the recolour previews.
+
+**Cost:** about 50 pro images were made over the trial, at roughly US$0.13 to 0.24 each (Google's list price for 1K to 2K images); a full natural set of about 25 textures with variants is about 100 images.
+
+**Next, if Nathan picks the AI direction:** extend the prompts to every natural surface (deep stone, bedrock, sand, gravel, snow, ice, sandstone, ash, the ores, water, trunk top), keep machines, shrines, torches, plants and icons as painted art, and decide whether 128 replaces 32 or becomes a player setting.
