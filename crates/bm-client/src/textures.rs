@@ -8,13 +8,23 @@
 //!
 //! A missing file is reported loudly (log and title bar) and that block falls
 //! back to its catalogue colour; it never becomes an invisible or garbage face.
+//!
+//! Files may be any power-of-two square from 16 to 256 pixels, mixed freely
+//! (painted 32s beside 128s for some blocks, as in the texture trial,
+//! `docs/proposals/textures-128.md`). The array takes the largest size and
+//! scales smaller files up by whole pixels. The blocks are magnified
+//! nearest-neighbour and the mips are 2x2 box filters, so a 32 scaled up
+//! looks exactly as it did on its own.
 
 use bm_core::BlockRegistry;
 use std::collections::HashMap;
 use std::path::Path;
 
+/// The size of the textures `bm-texgen` paints, and of the built-in cracks.
 pub const SIZE: u32 = 32;
-pub const MIP_LEVELS: u32 = 6; // 32, 16, 8, 4, 2, 1
+/// The smallest and largest texture sizes accepted.
+pub const MIN_SIZE: u32 = 16;
+pub const MAX_SIZE: u32 = 256;
 const MAX_VARIANTS: u32 = 4;
 pub const CRACK_STAGES: u32 = 8;
 /// Marks a face with no texture: the shader uses the block's colour.
@@ -33,20 +43,52 @@ pub struct TextureSet {
     pub missing: Vec<String>,
 }
 
+/// Mip levels for a square of `size` (down to 1 x 1).
+pub fn mip_levels(size: u32) -> u32 {
+    32 - size.max(1).leading_zeros()
+}
+
+/// The width of a square RGBA8 layer, from its length.
+pub fn layer_size(layer: &[u8]) -> usize {
+    ((layer.len() / 4) as f64).sqrt().round() as usize
+}
+
+/// Scales a square RGBA8 layer up by whole pixels, nearest neighbour.
+pub fn upscale(layer: &[u8], to: usize) -> Layer {
+    let from = layer_size(layer);
+    if from == to {
+        return layer.to_vec();
+    }
+    let k = to / from;
+    let mut out = vec![0u8; to * to * 4];
+    for y in 0..to {
+        for x in 0..to {
+            let s = ((y / k) * from + x / k) * 4;
+            let d = (y * to + x) * 4;
+            out[d..d + 4].copy_from_slice(&layer[s..s + 4]);
+        }
+    }
+    out
+}
+
 fn load_png(path: &Path) -> Result<Layer, String> {
     let img = image::open(path).map_err(|e| format!("{}: {e}", path.display()))?;
-    if img.width() != SIZE || img.height() != SIZE {
+    let (w, h) = (img.width(), img.height());
+    if w != h || !w.is_power_of_two() || !(MIN_SIZE..=MAX_SIZE).contains(&w) {
         return Err(format!(
-            "{} is {}x{}, textures must be {SIZE}x{SIZE}",
+            "{} is {w}x{h}, textures must be square, a power of two, from {MIN_SIZE} to {MAX_SIZE}",
             path.display(),
-            img.width(),
-            img.height()
         ));
     }
     Ok(img.to_rgba8().into_raw())
 }
 
 impl TextureSet {
+    /// The width of every layer (the largest file's).
+    pub fn size(&self) -> u32 {
+        self.layers.first().map_or(SIZE, |l| layer_size(l) as u32)
+    }
+
     /// Loads every texture the catalogue names from `dir` (normally
     /// `assets/textures`).
     pub fn load(registry: &BlockRegistry, dir: &Path) -> Self {
@@ -122,6 +164,13 @@ impl TextureSet {
         if layers.is_empty() {
             // The array needs one layer to exist at all.
             layers.push(vec![255; (SIZE * SIZE * 4) as usize]);
+        }
+        // One array, one size: the largest file's.
+        let size = layers.iter().map(|l| layer_size(l)).max().unwrap_or(SIZE as usize);
+        for l in &mut layers {
+            if layer_size(l) != size {
+                *l = upscale(l, size);
+            }
         }
         Self {
             layers,
@@ -249,6 +298,53 @@ mod tests {
         );
         assert!(set.crack_base.is_some(), "built-in cracks stand in for missing files");
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn mixed_sizes_share_the_largest_and_smaller_ones_scale_up_unchanged() {
+        let dir = std::env::temp_dir().join(format!("bm-tex-mixed-{}", std::process::id()));
+        let blocks = dir.join("blocks");
+        std::fs::create_dir_all(&blocks).unwrap();
+        // A 32 with one odd pixel, a plain 128, and a file of a wrong size.
+        let mut small = image::RgbaImage::from_pixel(32, 32, image::Rgba([10, 20, 30, 255]));
+        small.put_pixel(1, 0, image::Rgba([250, 0, 0, 255]));
+        small.save(blocks.join("soil.png")).unwrap();
+        image::RgbaImage::from_pixel(128, 128, image::Rgba([0, 200, 0, 255]))
+            .save(blocks.join("stone.png"))
+            .unwrap();
+        image::RgbaImage::from_pixel(48, 48, image::Rgba([0, 0, 0, 255]))
+            .save(blocks.join("sand.png"))
+            .unwrap();
+        let reg = BlockRegistry::builtin();
+        let set = TextureSet::load(&reg, &dir);
+        assert_eq!(set.size(), 128);
+        assert!(
+            set.layers.iter().all(|l| l.len() == 128 * 128 * 4),
+            "every layer is 128"
+        );
+        let soil = set.faces[reg.id("soil").unwrap().0 as usize][0] & 0xffff;
+        let l = &set.layers[soil as usize];
+        // The odd pixel at (1, 0) covers (4..8, 0..4) and nothing else.
+        let at = |x: usize, y: usize| &l[(y * 128 + x) * 4..(y * 128 + x) * 4 + 4];
+        assert_eq!(at(4, 0), &[250, 0, 0, 255]);
+        assert_eq!(at(7, 3), &[250, 0, 0, 255]);
+        assert_eq!(at(8, 0), &[10, 20, 30, 255]);
+        assert_eq!(at(3, 3), &[10, 20, 30, 255]);
+        // Its mips at 32 are the original file.
+        let mut m = l.clone();
+        for s in [128, 64] {
+            m = downsample(&m, s);
+        }
+        assert_eq!(m, small.into_raw(), "a 32 scaled up mips back to itself");
+        assert!(set.missing.contains(&"sand".to_string()), "a 48 is refused");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn mip_levels_reach_one_pixel() {
+        assert_eq!(mip_levels(32), 6);
+        assert_eq!(mip_levels(128), 8);
+        assert_eq!(mip_levels(1), 1);
     }
 
     #[test]

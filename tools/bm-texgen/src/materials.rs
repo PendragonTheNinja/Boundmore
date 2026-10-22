@@ -3,7 +3,7 @@
 
 use crate::color::{Ramp, Rgba};
 use crate::noise::{Site, cell, hash, hash2, seed, unit, wrap_delta, wrap_i};
-use crate::tex::{Ctx, Field, SIZE, SIZEF, Tex, c, paint, smoothstep};
+use crate::tex::{Ctx, Field, SIZE, SIZEF, Tex, c, detail, fine_octaves, hires, paint, res, scale, smoothstep};
 use crate::{flora, machines, stations};
 
 // ---------------------------------------------------------------- palettes
@@ -163,6 +163,15 @@ struct RockStyle {
 /// Per-pixel tone of a rock face.
 fn rock(ctx: Ctx, s: &RockStyle) -> Field {
     let sites = ctx.sites_stretched(s.salt, s.spacing, s.stretch);
+    // Above 32 pixels: finer cracks, more octaves of mottling, and chips
+    // (a second, smaller network of faint fractures inside each slab).
+    let fine = fine_octaves();
+    let crack = if hires() { 0.32 } else { 0.55 };
+    let chips = if hires() {
+        ctx.sites_stretched(s.salt ^ 0xc1, s.spacing * 0.36, s.stretch)
+    } else {
+        Vec::new()
+    };
     Field::from_fn(|x, y| {
         let (fx, fy) = (c(x), c(y));
         let k = cell(&sites, fx, fy, s.stretch);
@@ -171,12 +180,20 @@ fn rock(ctx: Ctx, s: &RockStyle) -> Field {
         let mut t = s.tone + (site.r[0] - 0.5) * s.spread;
         t += ((site.r[1] - 0.5) * k.dx + (site.r[2] - 0.5) * k.dy) * s.tilt;
         // Soft mottling inside the slab, in clumps.
-        t += (ctx.fbm(s.salt ^ 0x51, 4, 4, 2, fx, fy) - 0.5) * s.mottle;
+        t += (ctx.fbm(s.salt ^ 0x51, 4, 4, 2 + fine, fx, fy) - 0.5) * s.mottle;
         // Rim light: top-left edges catch light, bottom-right edges fall away.
         t += k.rim(s.bevel) * s.rim;
+        if !chips.is_empty() {
+            let ch = cell(&chips, fx, fy, s.stretch);
+            t += ch.rim(0.9) * s.rim * 0.35;
+            if ch.edge < 0.18 && ctx.value(s.salt ^ 0xc3, 8, 8, fx, fy) < 0.55 {
+                t -= 0.07;
+            }
+            t += (ctx.fbm(s.salt ^ 0x93, 16, 16, 2, fx, fy) - 0.5) * 0.12;
+        }
         // Open cracks along part of the join network; elsewhere a soft groove.
         let open = ctx.value(s.salt ^ 0x77, 4, 4, fx, fy) < s.cracks;
-        if k.edge < 0.55 && open {
+        if k.edge < crack && open {
             t = 0.03;
         } else if k.edge < 1.2 {
             t -= if open { 0.1 } else { 0.06 };
@@ -248,15 +265,29 @@ pub fn bedrock(ctx: Ctx) -> Tex {
 pub fn soil(ctx: Ctx) -> Tex {
     let salt = seed("soil");
     let clods = ctx.sites(salt, 4.6);
+    // Above 32 pixels: crumbs inside the clods, finer gaps between them.
+    let crumbs = if hires() {
+        ctx.sites(salt ^ 5, 4.6 / detail())
+    } else {
+        Vec::new()
+    };
+    let gap = if hires() { 0.4 } else { 0.6 };
     let tone = Field::from_fn(|x, y| {
         let (fx, fy) = (c(x), c(y));
         let k = cell(&clods, fx, fy, 1.0);
         let site = &clods[k.index];
         let mut t = 0.5 + (site.r[0] - 0.5) * 0.16;
-        t += (ctx.fbm(salt ^ 1, 4, 4, 2, fx, fy) - 0.5) * 0.45;
+        t += (ctx.fbm(salt ^ 1, 4, 4, 2 + fine_octaves(), fx, fy) - 0.5) * 0.45;
         t += k.rim(2.2) * 0.2;
+        if !crumbs.is_empty() {
+            let m = cell(&crumbs, fx, fy, 1.0);
+            t += (crumbs[m.index].r[0] - 0.5) * 0.08 + m.rim(1.0) * 0.1;
+            if m.edge < 0.2 && crumbs[m.index].r[1] < 0.5 {
+                t -= 0.08;
+            }
+        }
         let open = ctx.value(salt ^ 2, 8, 8, fx, fy) < 0.3;
-        if k.edge < 0.6 && open {
+        if k.edge < gap && open {
             t = 0.08;
         }
         t
@@ -269,6 +300,28 @@ pub fn soil(ctx: Ctx) -> Tex {
 
 /// Little dark two- and three-pixel clumps.
 fn specks(ctx: Ctx, tex: &mut Tex, salt: u32, spacing: f32, chance: f32, col: Rgba) {
+    if hires() {
+        // More specks, each a block of (scale / detail) pixels per unit.
+        let u = 1.0 / detail();
+        let px = (u * scale()).round() as i32;
+        for s in ctx.sites(salt, spacing * u).into_iter().filter(|s| s.r[0] < chance) {
+            let (x, y) = ((s.x * scale()) as i32, (s.y * scale()) as i32);
+            let shape: &[(i32, i32)] = if s.r[1] < 0.5 {
+                &[(0, 0), (1, 0)]
+            } else {
+                &[(0, 0), (0, 1), (1, 1)]
+            };
+            for &(dx, dy) in shape {
+                for j in 0..px {
+                    for i in 0..px {
+                        let (qx, qy) = (wrap_i(x + dx * px + i), wrap_i(y + dy * px + j));
+                        tex.set(qx, qy, tex.get(qx, qy).mix(col, 0.7));
+                    }
+                }
+            }
+        }
+        return;
+    }
     for s in ctx.sites(salt, spacing).into_iter().filter(|s| s.r[0] < chance) {
         let (x, y) = (s.x as i32, s.y as i32);
         let shape: &[(i32, i32)] = if s.r[1] < 0.5 {
@@ -290,10 +343,20 @@ fn pebbles(ctx: Ctx, tex: &mut Tex, salt: u32, spacing: f32, chance: f32, ramp: 
         .into_iter()
         .filter(|s| s.r[0] < chance)
         .collect();
+    // Above 32 pixels: more pebbles, smaller (in units).
+    let u = 1.0 / detail();
+    let sites: Vec<Site> = if hires() {
+        ctx.sites(salt, spacing * u)
+            .into_iter()
+            .filter(|s| s.r[0] < chance)
+            .collect()
+    } else {
+        sites
+    };
     for s in &sites {
-        let r = 1.0 + s.r[1] * 0.9;
-        for y in 0..SIZE {
-            for x in 0..SIZE {
+        let r = (1.0 + s.r[1] * 0.9) * u;
+        for y in 0..res() {
+            for x in 0..res() {
                 let dx = wrap_delta(c(x) - s.x);
                 let dy = wrap_delta(c(y) - s.y);
                 let d = (dx * dx + dy * dy * 1.3).sqrt();
@@ -301,7 +364,7 @@ fn pebbles(ctx: Ctx, tex: &mut Tex, salt: u32, spacing: f32, chance: f32, ramp: 
                     // Lit from the top left.
                     let l = -(dx + dy) / (r * 2.0);
                     tex.set(x, y, ramp.pick(0.5 + l * 0.9 + (s.r[2] - 0.5) * 0.2, x, y));
-                } else if d < r + 0.9 && dx + dy > 0.4 {
+                } else if d < r + 0.9 * u && dx + dy > 0.4 * u {
                     // Contact shadow on the bottom-right side.
                     let base = tex.get(x, y);
                     tex.set(x, y, base.mix(Rgba::hex(0x2e1a1e), 0.45));
@@ -325,7 +388,7 @@ fn grass(ctx: Ctx, salt: u32) -> Tex {
         let mut t = 0.46 + (site.r[0] - 0.5) * 0.2;
         t += (1.0 - (k.d1 / 4.0).min(1.0)) * 0.1;
         t += k.rim(2.4) * 0.22;
-        t += (ctx.fbm(salt ^ 9, 2, 2, 2, fx, fy) - 0.5) * 0.4;
+        t += (ctx.fbm(salt ^ 9, 2, 2, 2 + fine_octaves(), fx, fy) - 0.5) * 0.4;
         let hollow = ctx.value(salt ^ 4, 8, 8, fx, fy) < 0.4;
         if k.edge < 0.7 && hollow {
             t -= 0.22;
@@ -333,6 +396,10 @@ fn grass(ctx: Ctx, salt: u32) -> Tex {
         t
     });
     let mut tex = paint(&ramp, &tone);
+    if hires() {
+        grass_blades_fine(ctx, &mut tex, salt, &ramp);
+        return tex;
+    }
     // Tufts of three blades standing out of the clumps: a tall middle
     // blade and two shorter ones splaying out, lit tips, a shadow at the foot.
     for b in ctx.sites(salt ^ 0x1234, 5.0) {
@@ -356,6 +423,68 @@ fn grass(ctx: Ctx, salt: u32) -> Tex {
         }
     }
     tex
+}
+
+/// The blades of `grass` above 32 pixels: four times as many tufts at half
+/// the size, each blade a tapered stroke from a shaded foot to a lit tip.
+fn grass_blades_fine(ctx: Ctx, tex: &mut Tex, salt: u32, ramp: &Ramp) {
+    let u = 1.0 / detail();
+    for b in ctx.sites(salt ^ 0x1234, 4.2 * u) {
+        if b.r[0] > 0.75 {
+            continue;
+        }
+        let tall = (4.0 + b.r[1] * 2.5) * u;
+        let lit = 0.72 + b.r[3] * 0.28;
+        let foot_y = b.y + tall + u;
+        // A soft shadow where the tuft meets the ground, on its lower right.
+        stroke(
+            (b.x - 0.4 * u, foot_y + 0.3 * u),
+            (b.x + 1.6 * u, foot_y + 0.5 * u),
+            1.4 * u,
+            0.8 * u,
+            |x, y, _| {
+                tex.set(x, y, tex.get(x, y).mix(ramp.darkest(), 0.35));
+            },
+        );
+        for (dx, len, lean) in [(-1.0, tall - u, -0.8), (0.0, tall, 0.15), (1.0, tall - u, 0.9)] {
+            let foot = (b.x + dx * 0.6 * u, foot_y);
+            let tip = (b.x + dx * 0.6 * u + lean * u, foot_y - len);
+            let shade = if dx > 0.5 { 0.12 } else { 0.0 };
+            stroke(foot, tip, 1.5 * u, 0.35 * u, |x, y, along| {
+                let t = lit + 0.08 - (1.0 - along) * 0.4 - shade;
+                tex.set(x, y, ramp.pick(t, x, y));
+            });
+        }
+    }
+}
+
+/// Paints a tapered stroke, in units, from `a` (width `w0`) to `b` (width
+/// `w1`), wrapping at the edges: `f` gets each covered pixel and how far
+/// along it lies (0 at `a`, 1 at `b`).
+fn stroke(a: (f32, f32), b: (f32, f32), w0: f32, w1: f32, mut f: impl FnMut(usize, usize, f32)) {
+    let k = scale();
+    let half = w0.max(w1) * 0.5;
+    let (x0, x1) = (
+        ((a.0.min(b.0) - half) * k).floor() as i32,
+        ((a.0.max(b.0) + half) * k).ceil() as i32,
+    );
+    let (y0, y1) = (
+        ((a.1.min(b.1) - half) * k).floor() as i32,
+        ((a.1.max(b.1) + half) * k).ceil() as i32,
+    );
+    let (vx, vy) = (b.0 - a.0, b.1 - a.1);
+    let len2 = (vx * vx + vy * vy).max(1e-6);
+    for py in y0..=y1 {
+        for px in x0..=x1 {
+            let (ux, uy) = ((px as f32 + 0.5) / k, (py as f32 + 0.5) / k);
+            let t = (((ux - a.0) * vx + (uy - a.1) * vy) / len2).clamp(0.0, 1.0);
+            let (cx, cy) = (a.0 + vx * t, a.1 + vy * t);
+            let w = (w0 + (w1 - w0) * t) * 0.5;
+            if (ux - cx).hypot(uy - cy) < w {
+                f(wrap_i(px), wrap_i(py), t);
+            }
+        }
+    }
 }
 
 /// Turf top: rich green grass.
@@ -745,10 +874,10 @@ pub fn trunk_side(_ctx: Ctx) -> Tex {
     let plates = Ctx::BASE.sites_stretched(salt, 4.2, stretch);
     let tone = Field::from_fn(|x, y| {
         let (fx, fy) = (c(x), c(y));
-        let wx = fx + (crate::noise::fbm(salt ^ 1, 1, 4, 2, fx, fy) - 0.5) * 3.0;
+        let wx = fx + (crate::noise::fbm(salt ^ 1, 1, 4, 2 + fine_octaves(), fx, fy) - 0.5) * 3.0;
         let k = cell(&plates, wx, fy, stretch);
         let p = &plates[k.index];
-        if k.edge < 0.55 {
+        if k.edge < if hires() { 0.38 } else { 0.55 } {
             return 0.02;
         }
         let mut t = 0.5 + (p.r[0] - 0.5) * 0.25;
@@ -757,6 +886,13 @@ pub fn trunk_side(_ctx: Ctx) -> Tex {
         t += k.rim(1.6) * 0.2;
         // Fine vertical grain inside the plate.
         t += (crate::noise::value(salt ^ 2, 16, 2, wx, fy) - 0.5) * 0.25;
+        if hires() {
+            // Finer fibres, and small cross-checks in the plate surface.
+            t += (crate::noise::fbm(salt ^ 3, 32, 4, 2, wx, fy) - 0.5) * 0.16;
+            if crate::noise::value(salt ^ 4, 8, 32, wx, fy) < 0.12 {
+                t -= 0.08;
+            }
+        }
         t
     });
     paint(&bark_ramp(), &tone)
@@ -892,18 +1028,22 @@ pub fn brick(_ctx: Ctx) -> Tex {
 pub fn foliage(ctx: Ctx) -> Tex {
     let salt = seed("foliage");
     let ramp = foliage_ramp();
-    let mut tone = Field::from_fn(|x, y| 0.08 + ctx.fbm(salt, 4, 4, 2, c(x), c(y)) * 0.15);
+    let mut tone = Field::from_fn(|x, y| 0.08 + ctx.fbm(salt, 4, 4, 2 + fine_octaves(), c(x), c(y)) * 0.15);
     let layers = [(0.32, 4.2), (0.5, 4.6), (0.68, 5.2)];
+    // Above 32 pixels: four times the leaves at half the size, each with a
+    // lit midrib.
+    let du = if hires() { 1.0 / detail() } else { 1.0 };
     for (i, &(base, spacing)) in layers.iter().enumerate() {
-        let leaves = ctx.sites(hash2(salt, i as u32 + 1), spacing);
+        let leaves = ctx.sites(hash2(salt, i as u32 + 1), spacing * du);
         for leaf in &leaves {
             let ang = leaf.r[0] * std::f32::consts::TAU;
             let (ca, sa) = (ang.cos(), ang.sin());
-            let len = 2.6 + leaf.r[1] * 1.4;
-            let wid = 1.4 + leaf.r[2] * 0.6;
+            let len = (2.6 + leaf.r[1] * 1.4) * du;
+            let wid = (1.4 + leaf.r[2] * 0.6) * du;
             let lt = base + (leaf.r[3] - 0.5) * 0.12;
-            for y in 0..SIZE {
-                for x in 0..SIZE {
+            let n = res();
+            for y in 0..n {
+                for x in 0..n {
                     let dx = wrap_delta(c(x) - leaf.x);
                     let dy = wrap_delta(c(y) - leaf.y);
                     let u = dx * ca + dy * sa;
@@ -913,7 +1053,11 @@ pub fn foliage(ctx: Ctx) -> Tex {
                     let q = (u / len).powi(2) + (v / (wid * taper)).powi(2);
                     if q < 1.0 {
                         let l = -(dx + dy) / (len + wid);
-                        tone.v[y * SIZE + x] = lt + l * 0.25 + (1.0 - q) * 0.06;
+                        let mut t = lt + l * 0.25 + (1.0 - q) * 0.06;
+                        if hires() && v.abs() < 0.16 * du && u.abs() < len * 0.8 {
+                            t += 0.07;
+                        }
+                        tone.v[y * n + x] = t;
                     }
                 }
             }
@@ -965,7 +1109,13 @@ fn ore_clusters(ctx: Ctx, style: &OreStyle) -> Vec<Site> {
 /// for ores of two minerals grown together.
 fn ore_with<'a>(ctx: Ctx, host: Tex, style: &OreStyle, ramp_of: impl Fn(usize) -> &'a Ramp) -> Tex {
     let clusters = ore_clusters(ctx, style);
-    let facets = ctx.sites(style.salt ^ 0x0f, style.facet);
+    // Above 32 pixels: smaller facets (more of them per cluster) and rims
+    // and outlines `w` pixels wide.
+    let u = if hires() { 0.7 } else { 1.0 };
+    let facet = style.facet * u;
+    let w = (u * scale()).round().max(1.0) as i32;
+    let n = res();
+    let facets = ctx.sites(style.salt ^ 0x0f, facet);
     let in_cluster: Vec<bool> = facets
         .iter()
         .map(|f| {
@@ -975,39 +1125,37 @@ fn ore_with<'a>(ctx: Ctx, host: Tex, style: &OreStyle, ramp_of: impl Fn(usize) -
             })
         })
         .collect();
-    let cells: Vec<_> = (0..SIZE * SIZE)
-        .map(|i| cell(&facets, c(i % SIZE), c(i / SIZE), 1.0))
-        .collect();
-    let is_ore = |x: i32, y: i32| in_cluster[cells[wrap_i(y) * SIZE + wrap_i(x)].index];
+    let cells: Vec<_> = (0..n * n).map(|i| cell(&facets, c(i % n), c(i / n), 1.0)).collect();
+    let is_ore = |x: i32, y: i32| in_cluster[cells[wrap_i(y) * n + wrap_i(x)].index];
     let mut out = host.clone();
-    for y in 0..SIZE {
-        for x in 0..SIZE {
+    for y in 0..n {
+        for x in 0..n {
             let (ix, iy) = (x as i32, y as i32);
             if is_ore(ix, iy) {
-                let k = cells[y * SIZE + x];
+                let k = cells[y * n + x];
                 let f = &facets[k.index];
                 let mut t = style.tone + (f.r[0] - 0.5) * style.spread;
-                t += ((f.r[1] - 0.5) * k.dx + (f.r[2] - 0.5) * k.dy) * 0.05;
-                t += (1.0 - (k.d1 / style.facet).min(1.0)) * style.glow;
-                t += k.rim(1.3) * 0.2;
-                if k.edge < 0.5 {
+                t += ((f.r[1] - 0.5) * k.dx + (f.r[2] - 0.5) * k.dy) * 0.05 / u;
+                t += (1.0 - (k.d1 / facet).min(1.0)) * style.glow;
+                t += k.rim(1.3 * u) * 0.2;
+                if k.edge < 0.5 * u {
                     t -= 0.12;
                 }
-                if !is_ore(ix - 1, iy) || !is_ore(ix, iy - 1) {
+                if !is_ore(ix - w, iy) || !is_ore(ix, iy - w) {
                     t = style.rim_tone;
-                } else if !is_ore(ix + 1, iy) || !is_ore(ix, iy + 1) {
+                } else if !is_ore(ix + w, iy) || !is_ore(ix, iy + w) {
                     t = 0.1;
                 }
                 // A glint near the top-left corner of some facets.
-                let glint = f.r[3] < style.glints && (k.dx + 1.0).abs() < 0.6 && (k.dy + 1.0).abs() < 0.6;
+                let glint = f.r[3] < style.glints && (k.dx + u).abs() < 0.6 * u && (k.dy + u).abs() < 0.6 * u;
                 let ramp = ramp_of(k.index);
                 let col = if glint { ramp.lightest() } else { ramp.pick(t, x, y) };
                 out.set(x, y, col);
             } else {
-                let touching = is_ore(ix - 1, iy) || is_ore(ix + 1, iy) || is_ore(ix, iy - 1) || is_ore(ix, iy + 1);
+                let touching = is_ore(ix - w, iy) || is_ore(ix + w, iy) || is_ore(ix, iy - w) || is_ore(ix, iy + w);
                 if touching {
                     out.set(x, y, style.outline);
-                } else if is_ore(ix - 1, iy - 1) || is_ore(ix - 2, iy - 1) || is_ore(ix - 1, iy - 2) {
+                } else if is_ore(ix - w, iy - w) || is_ore(ix - 2 * w, iy - w) || is_ore(ix - w, iy - 2 * w) {
                     out.set(x, y, host.get(x, y).mix(style.outline, 0.4));
                 }
             }

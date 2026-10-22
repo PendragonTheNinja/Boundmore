@@ -272,7 +272,8 @@ impl Ramp {
     }
 
     /// The colour for tone `t` in 0..1, quantised to the ramp, with a thin
-    /// band of ordered dither where two steps meet.
+    /// band of ordered dither where two steps meet (at 32 pixels; above,
+    /// soft blends between the steps).
     pub fn pick(&self, t: f32, x: usize, y: usize) -> Rgba {
         let n = self.colors.len();
         let p = t.clamp(0.0, 1.0) * (n - 1) as f32;
@@ -281,6 +282,12 @@ impl Ramp {
             return self.colors[n - 1];
         }
         let f = p - i as f32;
+        if crate::tex::hires() {
+            // Above 32 pixels: soft-edged bands instead of dither, the way
+            // a brush lays one tone into the next.
+            let t = ((f - 0.5) * 2.2 + 0.5).clamp(0.0, 1.0);
+            return self.colors[i].mix(self.colors[i + 1], t * t * (3.0 - 2.0 * t));
+        }
         let threshold = 0.5 + (BAYER[y % 4][x % 4] - 0.5) * DITHER_BAND;
         if f > threshold {
             self.colors[i + 1]

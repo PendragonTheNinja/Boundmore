@@ -1,6 +1,11 @@
 //! `cargo run --release -p bm-texgen` paints every block texture and item
 //! icon into `assets/textures/`, and writes the contact sheet, the icon
 //! sheet and the preview into `docs/media/`.
+//!
+//! `cargo run --release -p bm-texgen -- --size 128 --out DIR [NAME...]`
+//! paints only the named textures (the trial six by default) at that size
+//! into `DIR/blocks/`, for the texture trial
+//! (`docs/proposals/textures-128.md`).
 
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
@@ -69,8 +74,45 @@ fn run() -> Result<(), String> {
     Ok(())
 }
 
+/// `--size N --out DIR [NAME...]`.
+fn run_sized(args: &[String]) -> Result<(), String> {
+    let mut size = None;
+    let mut out = None;
+    let mut names: Vec<String> = Vec::new();
+    let mut it = args.iter();
+    while let Some(a) = it.next() {
+        match a.as_str() {
+            "--size" => size = it.next().and_then(|v| v.parse::<usize>().ok()),
+            "--out" => out = it.next().map(PathBuf::from),
+            _ => names.push(a.clone()),
+        }
+    }
+    let size = size
+        .filter(|n| *n >= 32 && n.is_power_of_two())
+        .ok_or("--size takes 32, 64, 128 or 256")?;
+    let out = out.ok_or("--out DIR is needed with --size")?;
+    let names: Vec<&str> = if names.is_empty() {
+        bm_texgen::TRIAL.to_vec()
+    } else {
+        names.iter().map(String::as_str).collect()
+    };
+    let fams = bm_texgen::families_at(size, &names)?;
+    for fam in &fams {
+        for (i, face) in fam.faces.iter().enumerate() {
+            save(
+                &to_image(face),
+                &out.join("blocks").join(format!("{}.png", fam.file_stem(i))),
+            )?;
+        }
+        println!("{:<14} {} face(s) at {size}", fam.name, fam.faces.len());
+    }
+    Ok(())
+}
+
 fn main() -> ExitCode {
-    match run() {
+    let args: Vec<String> = std::env::args().skip(1).collect();
+    let result = if args.is_empty() { run() } else { run_sized(&args) };
+    match result {
         Ok(()) => ExitCode::SUCCESS,
         Err(e) => {
             eprintln!("bm-texgen: {e}");

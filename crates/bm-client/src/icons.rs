@@ -174,7 +174,7 @@ pub fn block_icon(
                     };
                     let (rgb, alpha) = match layer(entry[f]) {
                         Some(px) => {
-                            let s = textures::SIZE as usize;
+                            let s = textures::layer_size(px);
                             let tx = ((u * s as f32) as usize).min(s - 1);
                             let ty = ((v * s as f32) as usize).min(s - 1);
                             let i = (ty * s + tx) * 4;

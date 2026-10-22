@@ -1,16 +1,69 @@
 //! The 32 x 32 canvas, scalar fields, top-left lighting, and the variant
 //! context every material paints through.
+//!
+//! **Resolution.** Painters work in a 32-unit square whatever the output
+//! size: sites, noise, radii and widths are all in those units. [`at_res`]
+//! paints at more pixels per unit (128 for the texture trial,
+//! `docs/proposals/textures-128.md`), so big shapes stay where they are
+//! and come out smooth; painters that know about it ([`hires`]) then add
+//! finer detail, more of it and smaller ([`detail`]). At 32 nothing changes.
+
+use std::cell::Cell;
 
 use crate::color::{Ramp, Rgba};
 use crate::noise::{self, Site, edge_distance, hash2, scatter_into, wrap_i};
 
+/// Units across a face, and the default output size in pixels.
 pub const SIZE: usize = 32;
 pub const SIZEF: f32 = SIZE as f32;
 
-/// One 32 x 32 RGBA face.
+thread_local! {
+    static RES: Cell<usize> = const { Cell::new(SIZE) };
+}
+
+/// Pixels across a face being painted on this thread (32 unless inside
+/// [`at_res`]).
+pub fn res() -> usize {
+    RES.with(|r| r.get())
+}
+
+/// Pixels per unit.
+pub fn scale() -> f32 {
+    res() as f32 / SIZEF
+}
+
+/// Whether painting above 32: painters add their fine detail.
+pub fn hires() -> bool {
+    res() > SIZE
+}
+
+/// How much finer fine detail gets: the square root of [`scale`], so at 128
+/// a speck, blade or leaf is half its old size in units (twice its old size
+/// in pixels) and there are four times as many.
+pub fn detail() -> f32 {
+    scale().sqrt()
+}
+
+/// Extra noise octaves at this resolution (2 at 128).
+pub fn fine_octaves() -> u32 {
+    (res() / SIZE).trailing_zeros()
+}
+
+/// Paints with `n` pixels across each face (a power of two, at least 32).
+pub fn at_res<T>(n: usize, f: impl FnOnce() -> T) -> T {
+    assert!(n >= SIZE && n.is_power_of_two(), "resolution {n}");
+    let old = RES.with(|r| r.replace(n));
+    let out = f();
+    RES.with(|r| r.set(old));
+    out
+}
+
+/// One square RGBA face, [`res`] pixels across.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Tex {
     pub px: Vec<Rgba>,
+    /// Width in pixels.
+    pub n: usize,
 }
 
 impl Default for Tex {
@@ -21,29 +74,30 @@ impl Default for Tex {
 
 impl Tex {
     pub fn filled(c: Rgba) -> Self {
-        Self {
-            px: vec![c; SIZE * SIZE],
-        }
+        let n = res();
+        Self { px: vec![c; n * n], n }
     }
 
     pub fn get(&self, x: usize, y: usize) -> Rgba {
-        self.px[y * SIZE + x]
+        self.px[y * self.n + x]
     }
 
     /// Reads with wrap-around, for neighbourhood tests that must tile.
     pub fn get_wrapped(&self, x: i32, y: i32) -> Rgba {
-        self.get(wrap_i(x), wrap_i(y))
+        let n = self.n as i32;
+        self.get(x.rem_euclid(n) as usize, y.rem_euclid(n) as usize)
     }
 
     pub fn set(&mut self, x: usize, y: usize, c: Rgba) {
-        self.px[y * SIZE + x] = c;
+        self.px[y * self.n + x] = c;
     }
 
     /// Builds a texture pixel by pixel.
     pub fn from_fn(mut f: impl FnMut(usize, usize) -> Rgba) -> Self {
         let mut t = Self::default();
-        for y in 0..SIZE {
-            for x in 0..SIZE {
+        let n = t.n;
+        for y in 0..n {
+            for x in 0..n {
                 t.set(x, y, f(x, y));
             }
         }
@@ -73,25 +127,28 @@ impl Tex {
 #[derive(Clone, Debug)]
 pub struct Field {
     pub v: Vec<f32>,
+    /// Width in pixels.
+    pub n: usize,
 }
 
 impl Field {
     pub fn from_fn(mut f: impl FnMut(usize, usize) -> f32) -> Self {
-        let mut v = Vec::with_capacity(SIZE * SIZE);
-        for y in 0..SIZE {
-            for x in 0..SIZE {
+        let n = res();
+        let mut v = Vec::with_capacity(n * n);
+        for y in 0..n {
+            for x in 0..n {
                 v.push(f(x, y));
             }
         }
-        Self { v }
+        Self { v, n }
     }
 
     pub fn get(&self, x: i32, y: i32) -> f32 {
-        self.v[wrap_i(y) * SIZE + wrap_i(x)]
+        self.v[wrap_i(y) * self.n + wrap_i(x)]
     }
 
     pub fn at(&self, x: usize, y: usize) -> f32 {
-        self.v[y * SIZE + x]
+        self.v[y * self.n + x]
     }
 
     /// Light from the top left on this height field: positive where the
@@ -104,7 +161,8 @@ impl Field {
             let dy = self.get(x, y + 1) - self.get(x, y - 1);
             // Diagonal neighbours too, for a softer, rounder read.
             let dd = self.get(x + 1, y + 1) - self.get(x - 1, y - 1);
-            (dx + dy) * 0.35 + dd * 0.3
+            // Per unit, not per pixel, so the slope reads the same at 128.
+            ((dx + dy) * 0.35 + dd * 0.3) * scale()
         })
     }
 
@@ -222,7 +280,7 @@ pub fn smoothstep(e0: f32, e1: f32, x: f32) -> f32 {
     t * t * (3.0 - 2.0 * t)
 }
 
-/// Pixel centre.
+/// Pixel centre, in units.
 pub fn c(v: usize) -> f32 {
-    v as f32 + 0.5
+    (v as f32 + 0.5) / scale()
 }

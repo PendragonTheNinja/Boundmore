@@ -79,6 +79,7 @@ fn mix_pattern(fam: &Family, i: usize) -> Vec<Tex> {
 fn over(base: &Tex, top: &Tex) -> Tex {
     Tex {
         px: base.px.iter().zip(&top.px).map(|(b, c)| b.over(*c)).collect(),
+        n: base.n,
     }
 }
 

@@ -132,6 +132,10 @@ pub const TABLE: [i64; 3] = [130, 44, 128];
 pub const WORKBENCH: [[i64; 3]; 4] = [[128, 44, 125], [127, 44, 126], [128, 44, 126], [129, 44, 126]];
 pub const FURNACE: [[i64; 3]; 2] = [[131, 44, 126], [131, 45, 126]];
 pub const EXTRACTOR: [[i64; 3]; 3] = [[133, 44, 124], [134, 44, 124], [135, 44, 124]];
+/// Where `show_textures` puts the player: looking north over turf, a patch
+/// of bare soil, a stone wall with copper in it and a tree.
+pub const TEXTURES_VIEW: [f64; 3] = [128.5, 44.0, 132.5];
+
 /// Where `show_flora` puts the player: on a stone post looking north over
 /// rows of plants and boulders to a cave mouth with fungi in it.
 pub const FLORA_VIEW: [f64; 3] = [128.5, 46.0, 130.5];
@@ -1599,6 +1603,67 @@ impl Demo {
         // The post the player stands on.
         for y in g + 1..=g + 2 {
             put.push((BlockPos::new(128, y, 130), stone));
+        }
+        let planet = &mut self.planets[0];
+        planet.flat = true;
+        planet.edits.clear();
+        planet.edits.extend(put);
+        let chunks = self.chunks_around_spawn();
+        self.events.extend(chunks.into_iter().map(NetEvent::Msg));
+    }
+
+    /// The six textures of the 128 trial (`docs/proposals/textures-128.md`)
+    /// in one view: turf, a patch of bare soil, a stone wall with copper
+    /// ore set in it, and a tree with a crown of foliage.
+    pub fn show_textures(&mut self) {
+        let b = |n: &str| BlockState::plain(self.blocks.id(n).expect("builtin block"));
+        let (stone, soil, copper, trunk, leaves) = (b("stone"), b("soil"), b("copper_vein"), b("trunk"), b("foliage"));
+        let mut put: Vec<(BlockPos, BlockState)> = Vec::new();
+        let g = GROUND;
+        // Bare soil in front, a little to the right.
+        for x in 128..=130 {
+            for z in 126..=127 {
+                put.push((BlockPos::new(x, g, z), soil));
+            }
+        }
+        // The wall: stone, four high, a column of copper and a few lone
+        // pockets; a step at its left end shows a stone top.
+        for x in 127..=133 {
+            for y in g + 1..=g + 4 {
+                let ore = (x == 130 && y <= g + 3)
+                    || (x, y) == (131, g + 1)
+                    || (x, y) == (132, g + 4)
+                    || (x, y) == (128, g + 2);
+                put.push((BlockPos::new(x, y, 121), if ore { copper } else { stone }));
+            }
+        }
+        for x in 127..=128 {
+            put.push((BlockPos::new(x, g + 1, 122), stone));
+        }
+        put.push((BlockPos::new(131, g + 1, 122), copper));
+        // A raised step of turf, for its side.
+        let turf = b("turf");
+        for x in 132..=133 {
+            for z in 125..=126 {
+                put.push((BlockPos::new(x, g + 1, z), turf));
+            }
+        }
+        // The tree: a trunk five high, a crown of foliage around its top.
+        let (tx, tz) = (123, 119);
+        for y in g + 1..=g + 5 {
+            put.push((BlockPos::new(tx, y, tz), trunk));
+        }
+        for y in g + 4..=g + 7 {
+            let r: i64 = if y >= g + 6 { 1 } else { 2 };
+            for x in tx - r..=tx + r {
+                for z in tz - r..=tz + r {
+                    let corner = (x - tx).abs() == r && (z - tz).abs() == r && r > 1;
+                    let core = x == tx && z == tz && y <= g + 5;
+                    if !corner && !core {
+                        put.push((BlockPos::new(x, y, z), leaves));
+                    }
+                }
+            }
         }
         let planet = &mut self.planets[0];
         planet.flat = true;

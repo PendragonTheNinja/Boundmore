@@ -1,10 +1,11 @@
-//! Deterministic, tileable noise on the 32 x 32 torus.
+//! Deterministic, tileable noise on the 32 x 32 torus (in units: see
+//! `tex::at_res` for painting it at more pixels).
 //!
 //! Everything here wraps modulo the texture size, so any texture painted
 //! from it is seamless on all four edges. Hashing is a fixed integer mix,
 //! so every run paints the same pixels on every machine.
 
-use crate::tex::{SIZE, SIZEF};
+use crate::tex::SIZEF;
 
 /// A 32-bit integer mix (Chris Wellons' "lowbias32").
 pub fn hash(mut x: u32) -> u32 {
@@ -102,9 +103,9 @@ pub fn wrap_delta(d: f32) -> f32 {
     (d + SIZEF * 0.5).rem_euclid(SIZEF) - SIZEF * 0.5
 }
 
-/// Wraps a pixel coordinate into 0..32.
+/// Wraps a pixel coordinate into the face (0..32 at the default size).
 pub fn wrap_i(v: i32) -> usize {
-    v.rem_euclid(SIZE as i32) as usize
+    v.rem_euclid(crate::tex::res() as i32) as usize
 }
 
 /// A point of a cellular pattern, with a few random numbers of its own for

@@ -1220,7 +1220,8 @@ fn make_bind_group(
 /// One 2D array texture holding every block texture layer, with mipmaps
 /// made on the CPU in linear light.
 fn make_block_texture(device: &wgpu::Device, queue: &wgpu::Queue, set: &TextureSet) -> wgpu::TextureView {
-    let size = textures::SIZE;
+    let size = set.size();
+    let mips = textures::mip_levels(size);
     let texture = device.create_texture(&wgpu::TextureDescriptor {
         label: Some("blocks"),
         size: wgpu::Extent3d {
@@ -1228,7 +1229,7 @@ fn make_block_texture(device: &wgpu::Device, queue: &wgpu::Queue, set: &TextureS
             height: size,
             depth_or_array_layers: set.layers.len() as u32,
         },
-        mip_level_count: textures::MIP_LEVELS,
+        mip_level_count: mips,
         sample_count: 1,
         dimension: wgpu::TextureDimension::D2,
         format: wgpu::TextureFormat::Rgba8UnormSrgb,
@@ -1238,7 +1239,7 @@ fn make_block_texture(device: &wgpu::Device, queue: &wgpu::Queue, set: &TextureS
     for (layer, pixels) in set.layers.iter().enumerate() {
         let mut level = pixels.clone();
         let mut s = size;
-        for mip in 0..textures::MIP_LEVELS {
+        for mip in 0..mips {
             queue.write_texture(
                 wgpu::TexelCopyTextureInfo {
                     texture: &texture,

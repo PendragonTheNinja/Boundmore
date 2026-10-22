@@ -95,6 +95,30 @@ pub fn families() -> Result<Vec<Family>, String> {
         .collect()
 }
 
+/// Paints the named catalogue textures, with their variants, at `n` pixels
+/// across (the texture trial: `docs/proposals/textures-128.md`).
+pub fn families_at(n: usize, names: &[&str]) -> Result<Vec<Family>, String> {
+    tex::at_res(n, || {
+        names
+            .iter()
+            .map(|&name| {
+                let count = if VARIED.contains(&name) { 1 + VARIANTS } else { 1 };
+                let faces = (0..count)
+                    .map(|v| materials::paint_named(name, v))
+                    .collect::<Option<Vec<_>>>()
+                    .ok_or_else(|| format!("bm-texgen has no painter for `{name}`"))?;
+                Ok(Family {
+                    name: name.to_string(),
+                    faces,
+                })
+            })
+            .collect()
+    })
+}
+
+/// The six textures of the 128 trial.
+pub const TRIAL: [&str; 6] = ["stone", "turf_top", "soil", "trunk_side", "copper_vein", "foliage"];
+
 /// Whether an item shows a painted icon rather than its block as a cube:
 /// every item that is not a block, and props (a torch is no cube).
 pub fn has_icon(def: &bm_core::ItemDef, blocks: &bm_core::BlockRegistry) -> bool {
@@ -140,7 +164,7 @@ pub fn find<'a>(families: &'a [Family], name: &str) -> &'a Family {
 
 /// Converts a face to an 8-bit image.
 pub fn to_image(tex: &Tex) -> image::RgbaImage {
-    let mut img = image::RgbaImage::new(tex::SIZE as u32, tex::SIZE as u32);
+    let mut img = image::RgbaImage::new(tex.n as u32, tex.n as u32);
     for (i, p) in img.pixels_mut().enumerate() {
         *p = image::Rgba(tex.px[i].to_u8());
     }
@@ -209,6 +233,33 @@ mod tests {
         }
         for crack in overlay::cracks() {
             assert_eq!(to_image(&crack).dimensions(), (32, 32));
+        }
+    }
+
+    #[test]
+    fn the_trial_paints_at_128_seamlessly_and_leaves_32_alone() {
+        let before = families().unwrap();
+        let big = families_at(128, &TRIAL).unwrap();
+        for fam in &big {
+            for face in &fam.faces {
+                assert_eq!(face.n, 128, "{}", fam.name);
+                assert_eq!(face.px.len(), 128 * 128, "{}", fam.name);
+                assert!(face.px.iter().all(|p| p.a >= 1.0), "{} is opaque", fam.name);
+            }
+            // Seamless: the step across each wrap is like a step inside.
+            let f = fam.base();
+            let step = |a: color::Rgba, b: color::Rgba| (a.r - b.r).abs() + (a.g - b.g).abs() + (a.b - b.b).abs();
+            let mean = |pairs: &dyn Fn(usize) -> (color::Rgba, color::Rgba)| {
+                (0..128).map(|i| step(pairs(i).0, pairs(i).1)).sum::<f32>() / 128.0
+            };
+            let across = mean(&|i| (f.get(127, i), f.get(0, i))) + mean(&|i| (f.get(i, 127), f.get(i, 0)));
+            let inside = mean(&|i| (f.get(63, i), f.get(64, i))) + mean(&|i| (f.get(i, 63), f.get(i, 64)));
+            assert!(across < inside * 2.0 + 0.05, "{}: seam {across} vs {inside}", fam.name);
+        }
+        // Painting at 128 does not leak into the default size.
+        let after = families().unwrap();
+        for (a, b) in before.iter().zip(&after) {
+            assert_eq!(a.faces, b.faces, "{} changed", a.name);
         }
     }
 

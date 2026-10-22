@@ -105,7 +105,7 @@ pub struct Options {
     /// (`hud`, `inventory`, `crafting`, `station`, `claims`, `shrine`,
     /// `travel`, `travelling`, `sky`, `storage`, `chat`, `colours`,
     /// `coloured-icons`, `reclaim`, `shapes`, `chisel`, `grapple`, `portal`,
-    /// `mining`, `torches`, `table`, `furnace`, `extractor`, `flora`,
+    /// `mining`, `torches`, `table`, `furnace`, `extractor`, `flora`, `textures`,
     /// `creatures`, `defeat`, `skills` or `login`).
     pub demo: Option<String>,
 }
@@ -2488,6 +2488,22 @@ impl App {
                 };
                 (self.yaw, self.pitch) = (yaw, pitch);
                 self.open_menu(Menu::Crafting(Some(BlockPos::new(at[0], at[1], at[2]))));
+            }
+            // The texture trial's six textures in one view.
+            "textures" => {
+                if let Some(Link::Demo(d)) = &mut self.link {
+                    d.show_textures();
+                }
+                if let Some(s) = &mut self.session {
+                    s.me.teleport(bm_core::PlayerState {
+                        pos: DVec3::from_array(crate::demo::TEXTURES_VIEW),
+                        vel: DVec3::ZERO,
+                        on_ground: true,
+                        hook: None,
+                        ..Default::default()
+                    });
+                }
+                (self.yaw, self.pitch) = (0.0, -0.18);
             }
             // Every gathering object in daylight: plants, boulders, and
             // fungi in a cave mouth, seen from a post.
