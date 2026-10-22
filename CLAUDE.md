@@ -52,7 +52,7 @@ cargo clippy --workspace --all-targets -- -D warnings
 cargo test --workspace
 ```
 
-Expected test counts (M16 part 1 built, 2026-10-22): bm-core 164, bm-worldgen 39, bm-mesh 34, bm-protocol 6, bm-server 112 unit + 51 end-to-end, bm-client 170, bm-texgen 9 (585 in all). `a_meteor_falls_fights_and_pays_each_player_once` has twice failed ("the fight did not end") under a loaded full run and passed alone (32 s); watch it. CI (`.github/workflows/ci.yml`) runs the same on Linux and builds on Windows.
+Expected test counts (M16 built, 2026-10-22): bm-core 169, bm-worldgen 40, bm-mesh 34, bm-protocol 6, bm-server 113 unit + 52 end-to-end, bm-client 171, bm-texgen 13 (598 in all). `a_meteor_falls_fights_and_pays_each_player_once` has twice failed ("the fight did not end") under a loaded full run and passed alone (32 s); watch it. CI (`.github/workflows/ci.yml`) runs the same on Linux and builds on Windows.
 
 **Upgrade check (any change to a saved or versioned format):** build the server from `main` in a separate worktree and target dir, let it create a universe (`bots --count 2 --planets 2` to make players), stop it, then open that data dir with the new server and read its log. Unit tests built from the new code missed exactly this once (2026-10-19: chunk format 2 refused every older universe).
 
