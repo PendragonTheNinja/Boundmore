@@ -16,9 +16,11 @@ use serde::Deserialize;
 
 use crate::planet::PlanetShape;
 
-/// Distance between region centres, in blocks: about 50 regions on a
-/// 2048-block planet, Boundless's count (**guess**: tuning 5.5).
-pub const SPACING: i64 = 288;
+/// Distance between region centres, in blocks. Boundless's 3 km worlds
+/// (3072 blocks) had 32 to 34 regions and its 4 km worlds up to 64: a grid
+/// about 512 blocks square (world announcements on the forum, tuning
+/// 3.2.5). A 2048-block planet has 16.
+pub const SPACING: i64 = 512;
 
 /// How far the jitter moves a centre from its grid cell's middle, as a share
 /// of the cell.
@@ -370,9 +372,11 @@ mod tests {
     }
 
     #[test]
-    fn a_2048_planet_has_about_fifty_regions_inside_it() {
+    fn a_2048_planet_has_sixteen_regions_inside_it() {
         let m = map();
-        assert_eq!(m.len(), 49);
+        assert_eq!(m.len(), 16, "Boundless's 512-block spacing");
+        let big = PlanetShape::new(128, 8);
+        assert_eq!(RegionMap::new(big, 1).len(), 64, "a 4 km world: 64, as Boundless's large worlds");
         for i in 0..m.len() {
             let [x, z] = m.centre(i);
             assert!((0.0..2048.0).contains(&x) && (0.0..2048.0).contains(&z));
@@ -440,7 +444,7 @@ mod tests {
     #[test]
     fn names_are_unique_deterministic_and_fit_their_land() {
         let names = RegionNames::builtin();
-        let lands: Vec<LandClass> = (0..49).map(|i| [LandClass::Plain, LandClass::Sea][i % 2]).collect();
+        let lands: Vec<LandClass> = (0..16).map(|i| [LandClass::Plain, LandClass::Sea][i % 2]).collect();
         let a = names.name_all("lush", &lands, 42);
         assert_eq!(a, names.name_all("lush", &lands, 42));
         assert_ne!(a, names.name_all("lush", &lands, 43));

@@ -169,7 +169,7 @@ Boundless's live tree and tables exactly (Nathan, 2026-10-20), in Boundmore's na
 
 | Number | Value | Source |
 |---|---|---|
-| Region spacing | centres 288 blocks apart (49 on a 2048-block planet) | guess from Boundless's ~50 a world (tuning 5.5); Nathan may count them with an atlas |
+| Region spacing | centres 512 blocks apart (16 on a 2048-block planet) | Boundless: 32 to 34 regions on 3 km worlds, up to 64 on 4 km ones (forum world announcements) |
 | Region centre | the HUD shows the name alone, and a meteor may be called, within 40 blocks | guess |
 | Discovery XP | 50 x n for the n-th region discovered on a planet | Boundless (tuning 5.5) |
 | Region rest | 2 to 3 hours after a meteor | Boundless (players' reports) |

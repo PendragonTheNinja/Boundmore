@@ -4964,7 +4964,7 @@ async fn regions_are_named_and_discovered_once_for_xp() {
     let shape = alice.shape();
     let map = bm_core::regions::RegionMap::new(shape, seed);
     assert_eq!(names.len(), map.len(), "a name for every region");
-    assert_eq!(map.len(), 4, "a 512-block test planet has 2 x 2 regions");
+    assert_eq!(map.len(), 1, "a 512-block test planet is one region");
     assert!(found.is_empty(), "nothing discovered before arriving");
     let here = map.locate(alice.spawn.pos.x, alice.spawn.pos.z) as u16;
     alice.until(|m| matches!(m, ServerMsg::Discovered { .. })).await;

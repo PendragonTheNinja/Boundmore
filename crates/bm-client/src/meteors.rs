@@ -328,7 +328,7 @@ mod tests {
     fn the_hud_names_regions_and_meteors_nearby() {
         let shape = PlanetShape::new(64, 8);
         let mut sky = Sky::default();
-        let names: Vec<String> = (0..49).map(|i| format!("Region {i}")).collect();
+        let names: Vec<String> = (0..16).map(|i| format!("Region {i}")).collect();
         sky.regions(shape, 5, names, vec![]);
         let map = RegionMap::new(shape, 5);
         let [x, z] = map.centre(7);

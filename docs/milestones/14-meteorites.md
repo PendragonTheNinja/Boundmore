@@ -10,7 +10,7 @@ Planets get **named regions** that players discover (with Boundless's discovery 
 
 ### Named regions
 
-- Each world was divided into procedurally named, themed regions (dev update, Sept 2016, [F:4931]); about 50 on a world (players' count of the discovery XP: a full 50-region world gives about 63,750 XP, tuning 5.5).
+- Each world was divided into procedurally named, themed regions (dev update, Sept 2016, [F:4931]): 32 to 34 on a 3 km world, up to 64 on a 4 km one (the world announcements players' bots posted, e.g. [F:50726], [F:41213], [F:55933]), so about 512 blocks apart.
 - The HUD names where you are: just the name near a region's centre, "North of ..." (or any direction) farther out [F:61674].
 - **Discovery XP:** the n-th region you discover on a world gives 50 x n XP (R218/219, tuning 5.5).
 
@@ -43,7 +43,7 @@ Region names come from our own word lists, themed by the land they lie in (for e
 
 ### Regions
 
-1. **Layout.** A planet's regions are the cells of a jittered grid, spacing **288 blocks** (about 50 on a 2048-block planet; **guess** from Boundless's count), wrapping with the planet. The layout comes from the planet's id and size, not its terrain seed, so the client may know it (ADR-0003 is about terrain).
+1. **Layout.** A planet's regions are the cells of a jittered grid, spacing **512 blocks** (16 on a 2048-block planet), wrapping with the planet: Boundless's 3 km worlds had 32 to 34 regions and its 4 km worlds up to 64 (world announcements on the forum, 2019 to 2021). The layout comes from the planet's id and size, not its terrain seed, so the client may know it (ADR-0003 is about terrain).
 2. **Names** are made on the server from the planet's kind and the land at the region's centre (sea, shore, plain, hills, mountain, snow), from word lists in `assets/regions.toml`, deterministic, and never repeated on one planet.
 3. **The HUD** shows the region's name within **40 blocks** of its centre (**guess**), else "North of ...", "Southeast of ...", and so on (eight directions).
 4. **Discovery:** entering a region's cell for the first time gives **50 x n XP**, where n counts the regions you have discovered on that planet, with a short notice ("Discovered: Amber Hollows"). Saved per character.
@@ -87,12 +87,11 @@ Region names come from our own word lists, themed by the land they lie in (for e
 
 ## Measure in game (for Nathan, when convenient)
 
-Numbers no site has; until measured they stay guesses:
+Numbers no site has (searched 2026-10-22: boundlessinfo, boundlexx, Mayumi's data, the forum and wiki; they were server-side rules); until measured they stay guesses:
 
-1. On a tier 3 world with an atlas: **how many regions**, and roughly how far apart their centres are.
-2. Walking out from a region's centre: **at what distance** the HUD changes from the name to "North of ...".
-3. A solo meteor on a tier 3 world: its **level**, **how many waves**, roughly **how many creatures per wave**, and **how many rough oortstone** the crate gave.
-4. How long an untouched meteor takes to go **dormant**.
+1. Walking out from a region's centre: **at what distance** the HUD changes from the name to "North of ...".
+2. A solo meteor on a tier 3 world: its **level**, **how many waves**, roughly **how many creatures per wave**, and **how many rough oortstone** the crate gave.
+3. How long an untouched meteor takes to go **dormant**.
 
 ## Non-goals
 
