@@ -58,6 +58,8 @@ What a Boundless player expects to find, and where each stands. "Ours" is the Bo
 
 **M15: Spark (built 2026-10-22, `milestones/15-spark.md`).** Spark generators, spark links, the mixer, refinery and compactor, machine wear and spanners, the iron furnace, silver and silver alloy, the compact, refined and machined metal chain. Power coils wait for gems.
 
+**M16: Food** (spec 2026-10-22, `milestones/16-food.md`; Nathan picked it 2026-10-22). Hunger that eats into the energy bar, eating, cooked dishes with Boundless's food buffs, sickness, starving, being full as the way to heal, buckets; part 2 is farming (crops, seeds, tilling, growth), which brings grains and the rank 3 to 5 dishes.
+
 *After that, still Boundless first (Nathan, 2026-10-19 and 2026-10-20): creatures and combat (bone, tallow and hide, then glue's real recipe), food and hunger, forging. Each gets its own spec and number when it starts.*
 
 **Society.** Shop stands, request baskets, settlements and their ranking, guilds, mail.

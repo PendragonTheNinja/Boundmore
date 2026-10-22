@@ -989,6 +989,155 @@ What each creature part is for, in the final game: **bone** glue, essence; **tal
 - Creatures are tinted from the blocks of the biome they live in.
 - Not published anywhere found (2026-10-21): move speeds, detection and leash ranges, attack cooldowns and damage per attack, spawn counts. The boundlexx API (`/skills/`, `/metals/` work; `/items/`, `/recipes/`, `/worlds/`, `/exports/` return server errors) has no creature data; boundlessinfo's `item-attributes.json` has no creature records.
 
+### 3.9 Food, hunger and farming (checked 2026-10-22)
+
+Sources: **[BI-rec]** recipes (fetched 2026-10-22, high); **[R207]** Release 207 notes (t/22187, 2018-11, high); **[R223]** Release 223 notes (t/30194, 2019-05, high); **[FI]** the players' food index (willcrutchley, t/17271, 2018-09-22, medium: its author warned a patch may have changed values; R223 confirms several); **[PF-drops]** pfiffel `dataBlockDrops.js` (crop and foliage drops, high); **[WIKI]** v244 pages Bucket, Starberry Vine, Farming, Raw Earthyam (medium).
+
+**Hunger.** Points that come off max energy ("the total energy is reduced by the character's current hunger level", Release 187). Grows with item use (each item's "Hunger Stamina Drain": tools, totems, spanners = energy / 100; grapples, slingbows, bombs = energy / 500 [BI]), running, sprinting and jumping. Since R207 it "depletes at an equal rate of points for all players" (the rate is unpublished). **Full Up** below 10% hunger: health back out of combat (4 per 5 s [FI]; about 7 min for 600 [t/16766]). **Starving** at full hunger deals damage until you eat and can defeat you (t/14148, t/15359; amount unpublished). Defeat applies a hunger penalty (Release 195; size unpublished). Pre-R207 complaints: "before 5 minutes is up you've lost 25% of your bar" (t/13212, 2018-07, percentage-based then).
+
+**Eating.** One food buff at a time; a new buff food replaces the old (Release 187). After R223, tuber dishes have no buff, so they restore hunger without touching a buff. Raw meats and raw unbaked dishes give **Sick**: 5 damage per 5 s for 40 s, blocks other regeneration [FI].
+
+**Values** (hunger taken away; [FI] unless noted). Raw / cooked: starberry 100 / 200, glossy and juicy starberry 150 / 300, earthyam 50 / 250, waxy and exotic earthyam 50 / 350, meat 100 sick / 400, lean and prime meat 150 sick / 500, edible lamella 50. Raw dishes (unbaked): porridge or risotto 200, loaf 300, pie 400, all sick.
+
+| Line | Rank 1 to 5 dishes | Hunger taken | Buff and per-rank effect | Duration |
+|---|---|---|---|---|
+| Meat | broth, casserole, risotto, loaf, pie | 1200, 1600, 2400, 3200, 4000 | Well Fed: no hunger gained (R207 fixed it to prevent hunger fully) | 10, 20, 30, 40, 60 min |
+| Earthyam | soup, stew, risotto, loaf, pie | 2000, 2500, 3500, 4500, 5500 [R223] | none since R223 | |
+| Starberry | soup, stewed, porridge, loaf, pie | 600, 800, 1200, 1600, 2000 | Recovery: +10, 20, 40, 120, 300 energy a second [R223] | unpublished |
+| Energising (waxy earthyam) | soup, stew, risotto, loaf, pie | 1000, 1400, 2100, 2800, 3500 | +20..100% max energy | 30 min |
+| Criticaling (lean meat) | soup, casserole, risotto, loaf, pie | 1500, 2000, 3000, 4000, 5000 | x(1 + 0.2..1.0) agility crit [PF] | 30 min |
+| Persisting (exotic earthyam) | broth, stew, risotto, loaf, pie | 1000, 1400, 2100, 2800, 3500 | -5, 10, 15, 30, 40% durability drain | 30 min |
+| Shielding (prime meat) | broth, casserole, risotto, loaf, pie | 1500, 2000, 3000, 4000, 5000 | +10, 20, 40, 70, 100 kinetic and impulse armour; +5..25% resistance | 30 min |
+| Invigorating (glossy starberry) | soup, stew, porridge, loaf, pie | 900, 1200, 1800, 2400, 3000 | +20..100% max health | 30 min |
+| Floating (juicy starberry) | broth, stew, porridge, loaf, pie | 900, 1200, 1800, 2400, 3000 | jump +0.5, 0.8, 1.1, 1.5, 2 m; double jump +0.1..0.5 m; falling armour +50, 75, 100, 150, 200 | 30 min |
+| Teaching (sweet bean) | porridge, pudding, loaf, pie | 1000, 1500, 2000, 2500 | +10, 20, 50, 100% XP | 30 min |
+| Elemental shielding (shielding + amalgam) | as shielding | as shielding | +armour, resistance against one element | 30 min |
+| Atmosphere protecting (prime meat, spicy bean, amalgam) | chilli, biryani, pie | 1500, 2500, 5000 | +1, 2, 3 protection | 30 min |
+
+**Drops** [PF-drops], per block, by world tier T1..T8. Foliage (all three kinds): starberry 0.10 T1-3; glossy 0.03 T4 (listed twice, so 0.06), T5; juicy 0.03 T5-8; fibrous leaf 0.01 T4-6; inky leaf 0.005 T6-8. Silty, clay and peaty soil: earthyam 0.015 T1-4 (plus 0.01 on T3); waxy earthyam 0.015 T4-8 (plus 0.005 T5-7, 0.01 + 0.005 T8). Mud: earthyam 0.02 T1-4 (+0.015 T3-4), waxy 0.004 T3-6 (+0.01 T5-6), exotic 0.004 T5-8 (+0.003 T7-8). Crops (any tier): rice, wheat, oat: seed 1 + 0.35, grain 0.2 + 0.1, plus a seed of the next stage; tuber plants: bulb 1 + 0.35, tuber 1 + 0.1 (waxy and exotic 0.2 + 0.1); starberry vines: seed 1 + 0.35, berry 1 + 0.1 (glossy, juicy 0.2 + 0.1). Wiki: Starberry Vine 80% seed and 100% berry base, modified by sowing level and neighbours (in waxy foliage +10% seed +20% crop; near air +1% / +4% each up to 16; near ancient timber -12% / +10%; near mould +2% / -40%).
+
+**Farming** [WIKI Farming]: seeds sown on their medium (soil for tubers and grains, under foliage for vines); tilled soil (wood or metal hand tiller) grows faster and yields more; crops tick once a game day through up to 8 stages; fertiliser raises the chance of moving to the next stage; harvesting a growing crop gives a seed back, a mature one its yields, a withered one nothing; axes harvest organic crops. Basic crops (starberry vine, tuber plant) need no skill; others need Crop Sowing levels (Farming skill). Player complaints: random growth, tilled soil untilling itself, hand replanting, low XP (`boundless-forum-feedback.md`).
+
+**Buckets** [WIKI Bucket]: filled at any water source; 10 fills before worn out; a machine using a full bucket returns it empty in an output slot if wear remains; full and empty buckets do not stack; coloured by the timber.
+
+**Recipes** [BI-rec], single craft (elemental and atmosphere lines omitted; their inputs are in the data):
+
+| Output (Boundless name) | Makes | Inputs | Machine | Time | Heat / spark / power | XP | Wear | Gate |
+|---|---|---|---|---|---|---|---|---|
+| Nail | 4 | 1 Iron Bar | Workbench | 30 s |  | 6 | 6 | none |
+| Cooked Meat | 1 | 1 Raw Meat | Furnace | 60 s | heat 100 | 8 | 0 | none |
+| Cooked Starberry | 1 | 1 Raw Starberry | Furnace | 20 s | heat 50 | 4 | 0 | none |
+| Bucket | 1 | 1 Any Timber, 6 Nail | Workbench | 30 s |  | 6 | 6 | none |
+| Bucket of Purified Water | 1 | 1 Bucket of Water, 4 Charcoal, 2 Gravel | Extractor | 60 s | spark 100 | 10 | 7 | none |
+| Bucket of Fortified Water | 1 | 1 Bucket of Purified Water, 1 Shimmering Orb | Mixer | 120 s | spark 200 power 1500 | 18 | 21 | none |
+| Bucket of Milk | 1 | 1 Milk Gland, 1 Bucket | Extractor | 60 s |  | 8 | 7 | none |
+| Bucket of Purified Milk | 1 | 1 Bucket of Milk, 4 Charcoal, 2 Gravel | Extractor | 90 s | spark 100 | 12 | 9 | none |
+| Bucket of Fortified Milk | 1 | 1 Bucket of Purified Milk, 1 Shimmering Orb | Mixer | 120 s | spark 200 power 1500 | 18 | 21 | none |
+| Syrup | 1 | 2 Sap | Extractor | 60 s |  | 4 | 7 | none |
+| Bag of Sugar | 1 | 4 Syrup, 1 Sackcloth | Refinery | 60 s |  | 5 | 35 | cooking 2 |
+| Bag of Rice | 1 | 2 Oortian Rice Grain | Extractor | 60 s |  | 4 | 7 | cooking 3 |
+| Bag of Flour | 1 | 2 Oorum Wheat Grain | Extractor | 60 s |  | 4 | 7 | cooking 4 |
+| Bag of Oats | 1 | 2 Ancient Oat Grain | Extractor | 60 s |  | 4 | 7 | cooking 2 |
+| Bag of Baking Powder | 1 | 2 Rock Salt, 1 Sackcloth | Extractor | 60 s |  | 6 | 7 | cooking 4 |
+| Butter | 1 | 1 Bucket of Milk | Mixer | 60 s | spark 100 | 8 | 15 | cooking 5 |
+| Purified Butter | 1 | 1 Bucket of Purified Milk | Mixer | 90 s | spark 200 power 1500 | 14 | 18 | cooking 5 |
+| Fortified Butter | 1 | 1 Bucket of Fortified Milk | Mixer | 120 s | spark 400 power 3000 | 20 | 21 | cooking 5 |
+| Cooked Glossy Starberry | 1 | 1 Raw Glossy Starberry | Furnace | 20 s | heat 50 | 4 | 0 | none |
+| Cooked Juicy Starberry | 1 | 1 Raw Juicy Starberry | Furnace | 20 s | heat 50 | 5 | 0 | none |
+| Cooked Earthyam | 1 | 1 Raw Earthyam | Furnace | 25 s | heat 50 | 6 | 0 | none |
+| Cooked Waxy Earthyam | 1 | 1 Raw Waxy Earthyam | Furnace | 25 s | heat 50 | 6 | 0 | none |
+| Cooked Exotic Earthyam | 1 | 1 Raw Exotic Earthyam | Furnace | 25 s | heat 50 | 8 | 0 | none |
+| Cooked Lean Meat | 1 | 1 Raw Lean Meat | Furnace | 60 s | heat 100 | 9 | 0 | none |
+| Cooked Prime Meat | 1 | 1 Raw Prime Meat | Furnace | 60 s | heat 100 | 10 | 0 | none |
+| Starberry Soup | 1 | 3 Raw Starberry, 1 Bucket of Water | Furnace | 60 s | heat 100 | 6 | 0 | cooking 1 |
+| Stewed Starberry | 1 | 4 Raw Starberry, 2 Syrup | Furnace | 60 s | heat 100 | 6 | 0 | cooking 2 |
+| Raw Starberry Porridge | 1 | 6 Raw Starberry, 1 Bag of Oats | Mixer | 60 s |  | 6 | 15 | cooking 3 |
+| Raw Starberry Loaf | 1 | 8 Raw Starberry, 1 Bag of Flour, 1 Bag of Baking Powder | Mixer | 80 s |  | 8 | 17 | cooking 4 |
+| Raw Starberry Pie | 1 | 10 Raw Starberry, 1 Bag of Flour, 1 Butter, 1 Bag of Sugar | Mixer | 120 s | power 1000 | 12 | 21 | cooking 5 |
+| Starberry Porridge | 1 | 1 Raw Starberry Porridge | Furnace | 120 s | heat 100 | 10 | 0 | cooking 3 |
+| Starberry Loaf | 1 | 1 Raw Starberry Loaf | Furnace | 240 s | heat 200 | 18 | 0 | cooking 4 |
+| Starberry Pie | 1 | 1 Raw Starberry Pie | Furnace | 480 s | heat 300 | 32 | 0 | cooking 5 |
+| Earthyam Soup | 1 | 3 Raw Earthyam, 1 Bucket of Water | Furnace | 80 s | heat 100 | 7 | 0 | cooking 1 |
+| Earthyam Stew | 1 | 4 Raw Earthyam, 2 Edible Lamella | Furnace | 80 s | heat 100 | 7 | 0 | cooking 2 |
+| Raw Earthyam Risotto | 1 | 6 Raw Earthyam, 1 Bag of Rice, 1 Rock Salt | Mixer | 80 s |  | 7 | 17 | cooking 3 |
+| Raw Earthyam Loaf | 1 | 8 Raw Earthyam, 1 Bag of Flour, 1 Bag of Baking Powder | Mixer | 120 s | spark 200 | 12 | 21 | cooking 4 |
+| Raw Earthyam Pie | 1 | 10 Raw Earthyam, 1 Bag of Flour, 2 Butter, 2 Rock Salt | Mixer | 160 s | spark 400 power 1000 | 20 | 26 | cooking 5 |
+| Earthyam Risotto | 1 | 1 Raw Earthyam Risotto | Furnace | 180 s | heat 100 | 12 | 0 | cooking 3 |
+| Earthyam Loaf | 1 | 1 Raw Earthyam Loaf | Furnace | 300 s | heat 200 | 22 | 0 | cooking 4 |
+| Earthyam Pie | 1 | 1 Raw Earthyam Pie | Furnace | 480 s | heat 300 | 32 | 0 | cooking 5 |
+| Meaty Broth | 1 | 3 Raw Meat, 1 Bucket of Water | Furnace | 120 s | heat 100 | 10 | 0 | cooking 1 |
+| Meaty Casserole | 1 | 4 Raw Meat, 2 Edible Lamella | Furnace | 120 s | heat 100 | 10 | 0 | cooking 2 |
+| Raw Meaty Risotto | 1 | 6 Raw Meat, 1 Bag of Rice, 1 Rock Salt | Mixer | 120 s |  | 10 | 21 | cooking 3 |
+| Raw Meat Loaf | 1 | 8 Raw Meat, 1 Bag of Flour, 1 Bag of Baking Powder | Mixer | 160 s | spark 200 | 14 | 26 | cooking 4 |
+| Raw Meat Pie | 1 | 10 Raw Meat, 1 Bag of Flour, 2 Purified Butter, 2 Rock Salt | Mixer | 180 s | spark 400 power 1000 | 20 | 28 | cooking 5 |
+| Meaty Risotto | 1 | 1 Raw Meaty Risotto | Furnace | 240 s | heat 100 | 16 | 0 | cooking 3 |
+| Meat Loaf | 1 | 1 Raw Meat Loaf | Furnace | 360 s | heat 200 | 25 | 0 | cooking 4 |
+| Meat Pie | 1 | 1 Raw Meat Pie | Furnace | 600 s | heat 300 | 42 | 0 | cooking 5 |
+| Invigorating Soup | 1 | 3 Raw Glossy Starberry, 1 Bucket of Water | Furnace | 80 s | heat 100 | 8 | 0 | cooking 1 |
+| Invigorating Stew | 1 | 4 Raw Glossy Starberry, 2 Syrup | Furnace | 80 s | heat 100 | 8 | 0 | cooking 2 |
+| Raw Invigorating Porridge | 1 | 6 Raw Glossy Starberry, 1 Bag of Oats | Mixer | 80 s |  | 8 | 17 | cooking 3 |
+| Raw Invigorating Loaf | 1 | 8 Raw Glossy Starberry, 1 Bag of Flour, 1 Bag of Baking Powder | Mixer | 120 s | spark 200 | 12 | 21 | cooking 4 |
+| Raw Invigorating Pie | 1 | 10 Raw Glossy Starberry, 1 Bag of Flour, 2 Purified Butter, 2 Bag of Sugar | Mixer | 160 s | spark 400 power 1000 | 20 | 26 | cooking 5 |
+| Invigorating Porridge | 1 | 1 Raw Invigorating Porridge | Furnace | 180 s | heat 100 | 12 | 0 | cooking 3 |
+| Invigorating Loaf | 1 | 1 Raw Invigorating Loaf | Furnace | 300 s | heat 200 | 22 | 0 | cooking 4 |
+| Invigorating Pie | 1 | 1 Raw Invigorating Pie | Furnace | 480 s | heat 300 | 34 | 0 | cooking 5 |
+| Energising Soup | 1 | 3 Raw Waxy Earthyam, 1 Bucket of Water | Furnace | 80 s | heat 100 | 8 | 0 | cooking 1 |
+| Energising Stew | 1 | 4 Raw Waxy Earthyam, 2 Edible Lamella | Furnace | 80 s | heat 100 | 8 | 0 | cooking 2 |
+| Raw Energising Risotto | 1 | 6 Raw Waxy Earthyam, 1 Bag of Rice, 1 Rock Salt | Mixer | 80 s |  | 8 | 17 | cooking 3 |
+| Raw Energising Loaf | 1 | 8 Raw Waxy Earthyam, 1 Bag of Flour, 1 Bag of Baking Powder | Mixer | 120 s | spark 200 | 12 | 21 | cooking 4 |
+| Raw Energising Pie | 1 | 10 Raw Waxy Earthyam, 1 Bag of Flour, 2 Purified Butter, 2 Rock Salt | Mixer | 160 s | spark 400 power 1000 | 20 | 26 | cooking 5 |
+| Energising Risotto | 1 | 1 Raw Energising Risotto | Furnace | 180 s | heat 100 | 12 | 0 | cooking 3 |
+| Energising Loaf | 1 | 1 Raw Energising Loaf | Furnace | 300 s | heat 200 | 22 | 0 | cooking 4 |
+| Energising Pie | 1 | 1 Raw Energising Pie | Furnace | 480 s | heat 300 | 34 | 0 | cooking 5 |
+| Shielding Broth | 1 | 3 Raw Prime Meat, 1 Bucket of Water | Furnace | 120 s | heat 100 | 12 | 0 | cooking 1 |
+| Shielding Casserole | 1 | 4 Raw Prime Meat, 4 Edible Lamella | Furnace | 120 s | heat 100 | 14 | 0 | cooking 2 |
+| Raw Shielding Risotto | 1 | 6 Raw Prime Meat, 2 Bag of Rice, 1 Rock Salt | Mixer | 120 s |  | 14 | 21 | cooking 3 |
+| Raw Shielding Loaf | 1 | 8 Raw Prime Meat, 2 Bag of Flour, 2 Bag of Baking Powder | Mixer | 160 s | spark 200 | 20 | 26 | cooking 4 |
+| Raw Shielding Pie | 1 | 10 Raw Prime Meat, 2 Bag of Flour, 3 Fortified Butter, 3 Rock Salt | Mixer | 180 s | spark 400 power 1000 | 24 | 28 | cooking 5 |
+| Shielding Risotto | 1 | 1 Raw Shielding Risotto | Furnace | 240 s | heat 100 | 20 | 0 | cooking 3 |
+| Shielding Loaf | 1 | 1 Raw Shielding Loaf | Furnace | 360 s | heat 200 | 30 | 0 | cooking 4 |
+| Shielding Pie | 1 | 1 Raw Shielding Pie | Furnace | 600 s | heat 300 | 46 | 0 | cooking 5 |
+| Floating Broth | 1 | 3 Raw Juicy Starberry, 1 Bucket of Water | Furnace | 80 s | heat 100 | 10 | 0 | cooking 1 |
+| Floating Stew | 1 | 4 Raw Juicy Starberry, 2 Syrup | Furnace | 80 s | heat 100 | 10 | 0 | cooking 2 |
+| Raw Floating Porridge | 1 | 6 Raw Juicy Starberry, 1 Bag of Oats | Mixer | 80 s |  | 10 | 17 | cooking 3 |
+| Raw Floating Loaf | 1 | 8 Raw Juicy Starberry, 1 Bag of Flour, 1 Bag of Baking Powder | Mixer | 120 s | spark 200 | 15 | 21 | cooking 4 |
+| Raw Floating Pie | 1 | 10 Raw Juicy Starberry, 1 Bag of Flour, 2 Fortified Butter, 2 Bag of Sugar | Mixer | 160 s | spark 400 power 1000 | 20 | 26 | cooking 5 |
+| Floating Porridge | 1 | 1 Raw Floating Porridge | Furnace | 180 s | heat 100 | 14 | 0 | cooking 3 |
+| Floating Loaf | 1 | 1 Raw Floating Loaf | Furnace | 300 s | heat 200 | 24 | 0 | cooking 4 |
+| Floating Pie | 1 | 1 Raw Floating Pie | Furnace | 480 s | heat 300 | 36 | 0 | cooking 5 |
+| Raw Teaching Porridge | 1 | 2 Sweet Bean, 1 Bag of Sugar, 1 Bag of Oats | Mixer | 80 s |  | 8 | 17 | cooking 2 |
+| Raw Teaching Pudding | 1 | 4 Sweet Bean, 1 Bag of Sugar, 1 Bucket of Purified Milk | Mixer | 120 s |  | 10 | 21 | cooking 3 |
+| Raw Teaching Loaf | 1 | 8 Sweet Bean, 2 Bag of Sugar, 2 Bag of Flour, 2 Bag of Baking Powder | Mixer | 160 s | spark 200 | 18 | 26 | cooking 4 |
+| Raw Teaching Pie | 1 | 16 Sweet Bean, 2 Bag of Sugar, 2 Bag of Flour, 2 Purified Butter | Mixer | 180 s | spark 400 power 1000 | 22 | 28 | cooking 5 |
+| Teaching Porridge | 1 | 1 Raw Teaching Porridge | Furnace | 180 s | heat 100 | 12 | 0 | cooking 2 |
+| Teaching Pudding | 1 | 1 Raw Teaching Pudding | Furnace | 240 s | heat 100 | 18 | 0 | cooking 3 |
+| Teaching Loaf | 1 | 1 Raw Teaching Loaf | Furnace | 360 s | heat 200 | 28 | 0 | cooking 4 |
+| Teaching Pie | 1 | 1 Raw Teaching Pie | Furnace | 600 s | heat 300 | 44 | 0 | cooking 5 |
+| Criticaling Soup | 1 | 3 Raw Lean Meat, 1 Bucket of Water | Furnace | 80 s | heat 100 | 10 | 0 | cooking 1 |
+| Criticaling Casserole | 1 | 4 Raw Lean Meat, 2 Edible Lamella | Furnace | 80 s | heat 100 | 10 | 0 | cooking 2 |
+| Raw Criticaling Risotto | 1 | 6 Raw Lean Meat, 1 Bag of Rice, 1 Rock Salt | Mixer | 80 s |  | 10 | 17 | cooking 3 |
+| Raw Criticaling Loaf | 1 | 8 Raw Lean Meat, 1 Bag of Flour, 1 Bag of Baking Powder | Mixer | 120 s | spark 200 | 15 | 21 | cooking 4 |
+| Raw Criticaling Pie | 1 | 10 Raw Lean Meat, 1 Bag of Flour, 2 Fortified Butter, 2 Rock Salt | Mixer | 160 s | spark 400 power 1000 | 20 | 26 | cooking 5 |
+| Criticaling Risotto | 1 | 1 Raw Criticaling Risotto | Furnace | 180 s | heat 100 | 15 | 0 | cooking 3 |
+| Criticaling Loaf | 1 | 1 Raw Criticaling Loaf | Furnace | 300 s | heat 200 | 24 | 0 | cooking 4 |
+| Criticaling Pie | 1 | 1 Raw Criticaling Pie | Furnace | 480 s | heat 300 | 36 | 0 | cooking 5 |
+| Persisting Broth | 1 | 3 Raw Exotic Earthyam, 1 Bucket of Water | Furnace | 80 s | heat 100 | 10 | 0 | cooking 1 |
+| Persisting Stew | 1 | 4 Raw Exotic Earthyam, 2 Edible Lamella | Furnace | 80 s | heat 100 | 10 | 0 | cooking 2 |
+| Raw Persisting Risotto | 1 | 6 Raw Exotic Earthyam, 1 Bag of Rice, 1 Rock Salt | Mixer | 80 s |  | 10 | 17 | cooking 3 |
+| Raw Persisting Loaf | 1 | 8 Raw Exotic Earthyam, 1 Bag of Flour, 1 Bag of Baking Powder | Mixer | 120 s | spark 200 | 15 | 21 | cooking 4 |
+| Raw Persisting Pie | 1 | 10 Raw Exotic Earthyam, 1 Bag of Flour, 2 Fortified Butter, 2 Rock Salt | Mixer | 160 s | spark 400 power 1000 | 18 | 26 | cooking 5 |
+| Persisting Risotto | 1 | 1 Raw Persisting Risotto | Furnace | 180 s | heat 100 | 15 | 0 | cooking 3 |
+| Persisting Loaf | 1 | 1 Raw Persisting Loaf | Furnace | 300 s | heat 200 | 24 | 0 | cooking 4 |
+| Persisting Pie | 1 | 1 Raw Persisting Pie | Furnace | 480 s | heat 300 | 36 | 0 | cooking 5 |
+| Syrup | 1 | 4 Raw Starberry | Extractor | 60 s |  | 4 | 7 | none |
+| Metal Hand Tiller | 1 | 3 Any Base Metal, 4 Stick, 1 Cotton Cloth | Workbench | 240 s | spark 200 | 38 | 17 | tool 1 |
+| Bucket of Milk | 1 | 10 Ancient Oat Grain, 1 Bucket of Water | Extractor | 60 s |  | 8 | 7 | none |
+| Wood Hand Tiller | 1 | 2 Any Timber, 1 Stick, 1 Any Leaves | Crafting Table | 0 s |  | 0 | 1 | none |
+| Gleamberry Jelly | 3 | 1 Mutated Gleambow Sac, 3 Bone, 2 Hide, 3 Raw Juicy Starberry | Mixer | 80 s | spark 100 | 18 | 17 | cooking 1 |
+| GleamPop | 3 | 1 Mutated Gleambow Sac, 1 Chill Shard, 3 Any Frozen Block, 6 Raw Starberry | Mixer | 80 s | spark 100 | 18 | 17 | cooking 1 |
+| Gleamberry Juice | 3 | 1 Mutated Gleambow Sac, 1 Bucket of Water, 1 Glowing Lamella, 4 Raw Glossy Starberry | Mixer | 80 s | spark 100 | 18 | 17 | cooking 1 |
+
+
 ---
 
 ## 4. Materials, worlds and crafting (tuning reference)
