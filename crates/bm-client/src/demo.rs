@@ -24,7 +24,7 @@ use bm_core::{
 };
 use bm_protocol::{
     Channel, ChatLine, ClaimView, ClientMsg, EditAction, JobView, MAX_CHAT_LEN, PlanetInfo, PlanetSummary,
-    PortalAction, PortalView, ServerMsg, StationView, StorageView, Travel, Welcome,
+    PortalAction, PortalView, ServerMsg, SparkView, StationView, StorageView, Travel, Welcome,
 };
 use glam::DVec3;
 use serde::Deserialize;
@@ -109,6 +109,9 @@ struct DemoStation {
     fuel: Option<ItemStack>,
     heat: u32,
     paid: bool,
+    /// Milestone 15: a machine's wear left and most, and its spark.
+    wear: Option<(u32, u32)>,
+    spark: Option<SparkView>,
 }
 
 impl DemoStation {
@@ -121,6 +124,8 @@ impl DemoStation {
             fuel: None,
             heat: 0,
             paid: false,
+            wear: None,
+            spark: None,
         }
     }
 }
@@ -140,6 +145,15 @@ pub const METEOR_VIEW: [f64; 3] = [128.5, 44.0, 131.5];
 /// Where `show_textures` puts the player: looking north over turf, a patch
 /// of bare soil, a stone wall with copper in it and a tree.
 pub const TEXTURES_VIEW: [f64; 3] = [128.5, 44.0, 132.5];
+
+/// `show_spark`: two spark generators joined, three links, and a mixer of
+/// four blocks they feed, in a row to the north; behind them, two blocks
+/// high, a refinery, a compactor, the iron furnace, the new ores and a
+/// column of links, for their textures. The player stands south of them.
+pub const SPARK_GENERATORS: [[i64; 3]; 2] = [[121, 44, 118], [122, 44, 118]];
+pub const SPARK_LINKS: [[i64; 3]; 3] = [[123, 44, 118], [124, 44, 118], [125, 44, 118]];
+pub const MIXER: [[i64; 3]; 4] = [[126, 44, 118], [127, 44, 118], [128, 44, 118], [129, 44, 118]];
+pub const SPARK_VIEW: [f64; 3] = [125.5, 44.0, 123.5];
 
 /// Where `show_flora` puts the player: on a stone post looking north over
 /// rows of plants and boulders to a cave mouth with fungi in it.
@@ -1157,8 +1171,8 @@ impl Demo {
                 idle: s.idle.clone(),
                 fuel: s.fuel,
                 heat: s.heat,
-                wear: None,
-                spark: None,
+                wear: s.wear,
+                spark: s.spark,
             };
             self.events.push_back(NetEvent::Msg(ServerMsg::Station(view)));
         }
@@ -1497,7 +1511,11 @@ impl Demo {
         let m = self.machine(pos);
         let slot = slot as usize;
         let items = &self.items;
-        let Some(st) = self.stations.get_mut(&m).filter(|s| s.station == Station::Furnace) else {
+        let Some(st) = self
+            .stations
+            .get_mut(&m)
+            .filter(|s| matches!(s.station, Station::Furnace | Station::SparkGenerator))
+        else {
             return;
         };
         if slot >= self.inv.slots.len() || count == 0 {
@@ -1787,6 +1805,81 @@ impl Demo {
         self.events.extend(chunks.into_iter().map(NetEvent::Msg));
     }
 
+    /// Spark (milestone 15): generators, links and a working mixer in a
+    /// row, more machines and the new ores behind (`SPARK_*`, `MIXER`), and
+    /// a spanner and the mixer's inputs in the pack.
+    pub fn show_spark(&mut self) {
+        let b = |n: &str| BlockState::plain(self.blocks.id(n).expect("builtin block"));
+        let mut put: Vec<(BlockPos, BlockState)> = Vec::new();
+        for p in SPARK_GENERATORS {
+            put.push((bp(p), b("spark_generator")));
+        }
+        for p in SPARK_LINKS {
+            put.push((bp(p), b("spark_link")));
+        }
+        for p in MIXER {
+            put.push((bp(p), b("mixer")));
+        }
+        // The back row, two high.
+        let g = GROUND;
+        for (x, lower, upper) in [
+            (120, "refinery", "refinery"),
+            (121, "refinery", "refinery"),
+            (123, "compactor", "compactor"),
+            (124, "compactor", "compactor"),
+            (126, "iron_furnace", "iron_furnace_crucible"),
+            (128, "silver_seam", "relic_cache"),
+            (130, "spark_link", "spark_link"),
+            (131, "spark_generator", "furnace_crucible"),
+        ] {
+            put.push((BlockPos::new(x, g + 1, 115), b(lower)));
+            put.push((BlockPos::new(x, g + 2, 115), b(upper)));
+        }
+        let planet = &mut self.planets[0];
+        planet.flat = true;
+        planet.edits.clear();
+        planet.edits.extend(put);
+        let id = |n: &str| self.items.id(n).expect("builtin item");
+        let fuel = Some(ItemStack::new(id("coal"), 12));
+        let alloy = recipe_index(&self.book, &self.items, "silver_alloy");
+        let grid = SparkView {
+            stored: 6_400,
+            capacity: bm_core::spark::capacity(SPARK_GENERATORS.len()),
+            linked: true,
+            burning: 60,
+        };
+        let generator = DemoStation {
+            fuel,
+            spark: Some(grid),
+            ..DemoStation::new(Station::SparkGenerator)
+        };
+        let mixer = DemoStation {
+            jobs: vec![JobView {
+                recipe: alloy,
+                remaining: 4,
+                progress: 0.4,
+            }],
+            output: vec![ItemStack::new(id("silver_alloy"), 2)],
+            wear: Some((8_450, bm_core::spark::MACHINE_WEAR)),
+            spark: Some(SparkView { burning: 0, ..grid }),
+            ..DemoStation::new(Station::Mixer)
+        };
+        for (blocks, st) in [(&SPARK_GENERATORS[..], generator), (&MIXER[..], mixer)] {
+            for p in blocks {
+                self.machine_of.insert(bp(*p), bp(blocks[0]));
+            }
+            self.stations.insert(bp(blocks[0]), st);
+        }
+        let before = self.inv.clone();
+        self.inv.slots[9] = Some(ItemStack::new(id("iron_spanner"), 1));
+        for (n, c) in [("silver_ingot", 6), ("iron_ingot", 6), ("coal", 20)] {
+            self.inv.add(&self.items, id(n), c);
+        }
+        self.slots_since(&before);
+        let chunks = self.chunks_around_spawn();
+        self.events.extend(chunks.into_iter().map(NetEvent::Msg));
+    }
+
     /// One use of the tool or chisel in `slot`; it breaks at its durability.
     fn wear(&mut self, slot: usize) {
         let before = self.inv.clone();
@@ -1836,6 +1929,20 @@ impl Demo {
         let effects = self.character.effects(&self.tree);
         let tool = skilled_tool(&tool, &effects);
         self.last_swing = Some((at, swing_ticks(tool.action_speed)));
+        // A spanner repairs a machine's wear and breaks nothing (milestone 15).
+        if tool.class == Some(bm_core::items::ToolClass::Spanner) {
+            let m = self.machine(hit);
+            if let Some(s) = self.stations.get_mut(&m)
+                && let Some((left, max)) = s.wear.as_mut()
+            {
+                *left = (*left + tool.repair).min(*max);
+                let (wear, max) = (*left, *max);
+                self.events
+                    .push_back(NetEvent::Msg(ServerMsg::MachineWear { pos: m, wear, max }));
+                self.push_view(Some(m));
+            }
+            return;
+        }
         let tier = self.planets[self.here].info.tier;
         let area = tool.aoe.map_or(1.0, bm_core::Aoe::multiplier);
         let mut done = Vec::new();
@@ -2581,6 +2688,52 @@ mod tests {
                 _ => None,
             })
             .collect()
+    }
+
+    #[test]
+    fn the_spark_demo_shows_wear_and_spark_and_a_spanner_repairs() {
+        let mut d = Demo::new("Tester");
+        d.poll();
+        d.show_spark();
+        d.poll();
+        let mixer = bp(MIXER[2]);
+        d.send(ClientMsg::WatchStation { pos: Some(mixer) });
+        let view = d
+            .poll()
+            .into_iter()
+            .find_map(|e| match e {
+                NetEvent::Msg(ServerMsg::Station(v)) => Some(v),
+                _ => None,
+            })
+            .expect("the mixer answers");
+        assert_eq!(view.pos, bp(MIXER[0]), "keyed by its first block");
+        assert_eq!(view.station, Station::Mixer);
+        assert_eq!(view.wear, Some((8_450, 10_000)));
+        assert!(view.spark.is_some_and(|s| s.linked && s.stored == 6_400));
+        // Slot 9 holds an iron spanner: 700 wear a hit, nothing broken.
+        d.send(ClientMsg::Swing {
+            seq: 1,
+            at: 10,
+            pos: mixer,
+            slot: 9,
+        });
+        let ev = d.poll();
+        assert!(
+            ev.iter().any(|e| matches!(
+                e,
+                NetEvent::Msg(ServerMsg::MachineWear {
+                    wear: 9_150,
+                    max: 10_000,
+                    ..
+                })
+            )),
+            "a MachineWear answers the spanner"
+        );
+        assert!(
+            !ev.iter()
+                .any(|e| matches!(e, NetEvent::Msg(ServerMsg::BlockHealth { .. })))
+        );
+        assert_eq!(d.ground(mixer).id, d.blocks.id("mixer").unwrap());
     }
 
     #[test]

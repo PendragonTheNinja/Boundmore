@@ -63,6 +63,8 @@ const MOUSE_SENSITIVITY: f64 = 0.0022;
 /// Seconds between repeated places while the button is held.
 const PLACE_REPEAT: f64 = 0.22;
 const MAX_TICKS_PER_FRAME: u32 = 8;
+/// How long a machine's wear shows under the crosshair after a spanner hit.
+const WEAR_BAR_SECONDS: f64 = 2.5;
 const PLAYER_VISUAL_HEIGHT: f32 = 2.0;
 /// The camera's vertical field of view.
 const FOV_Y: f32 = 75.0 * std::f32::consts::PI / 180.0;
@@ -106,7 +108,7 @@ pub struct Options {
     /// `travel`, `travelling`, `sky`, `storage`, `chat`, `colours`,
     /// `coloured-icons`, `reclaim`, `shapes`, `chisel`, `grapple`, `portal`,
     /// `mining`, `torches`, `table`, `furnace`, `extractor`, `flora`, `textures`, `meteor`,
-    /// `creatures`, `defeat`, `skills` or `login`).
+    /// `creatures`, `defeat`, `bombs`, `spark`, `skills` or `login`).
     pub demo: Option<String>,
 }
 
@@ -171,6 +173,10 @@ struct Session {
     told_no_tool: bool,
     /// Damage blocks have taken, ours predicted and the server's word.
     damage: DamageMap,
+    /// The last spanner hit's answer (milestone 15): the machine's wear
+    /// left, the most it holds, and when it came (`App::now`), for the bar
+    /// under the crosshair.
+    machine_wear: Option<((u32, u32), f64)>,
     warp_shrine: BlockId,
     portal_conduit: BlockId,
     portal_surface: BlockId,
@@ -284,6 +290,7 @@ impl Session {
             swinger: Swinger::default(),
             told_no_tool: false,
             damage: DamageMap::default(),
+            machine_wear: None,
             warp_shrine,
             portal_conduit,
             portal_surface,
@@ -559,6 +566,15 @@ impl Session {
     fn block_changed(&mut self, pos: BlockPos, block: BlockState) {
         self.world.set_block(pos, block);
         self.damage.clear(self.world.shape.wrap_block(pos));
+    }
+
+    /// Whether the selected hotbar item is a spanner, which repairs
+    /// machines and breaks nothing: no block health bar for it.
+    fn holding_spanner(&self) -> bool {
+        self.items
+            .slot(self.selected)
+            .and_then(|h| self.items.registry.swing_tool(Some(h.item)))
+            .is_some_and(|t| t.class == Some(bm_core::items::ToolClass::Spanner))
     }
 
     /// The aimed block's health for the HUD and the cracks: where it is,
@@ -1453,8 +1469,7 @@ impl App {
             ServerMsg::Meteor(v) => s.sky_view.meteor(v),
             ServerMsg::MeteorGone { id } => s.sky_view.gone(id),
             ServerMsg::MeteorLife { life } => s.sky_view.life(life),
-            // Milestone 15: the wear bar under the crosshair comes later.
-            ServerMsg::MachineWear { .. } => {}
+            ServerMsg::MachineWear { wear, max, .. } => s.machine_wear = Some(((wear, max), now)),
             ServerMsg::Welcome(_)
             | ServerMsg::Refused { .. }
             | ServerMsg::Travel(_)
@@ -2016,7 +2031,11 @@ impl App {
                     claim_mode: claim_help,
                     aim_hint,
                     reclaim_waiting: !s.reclaim.is_empty(),
-                    block_bar: (menu.is_none() && !claim_mode && s.chisel.is_none())
+                    wear_bar: s
+                        .machine_wear
+                        .filter(|&(_, at)| menu.is_none() && now - at < WEAR_BAR_SECONDS)
+                        .map(|(w, _)| w),
+                    block_bar: (menu.is_none() && !claim_mode && s.chisel.is_none() && !s.holding_spanner())
                         .then(|| s.target_health())
                         .flatten()
                         .map(|(_, left, shields)| BlockBar { left, shields }),
@@ -2538,6 +2557,26 @@ impl App {
                     });
                 }
                 (self.yaw, self.pitch) = (0.0, 0.12);
+            }
+            // Spark: two generators, links and a running mixer, its window
+            // open with its wear and spark; the other machines behind.
+            "spark" => {
+                if let Some(Link::Demo(d)) = &mut self.link {
+                    d.show_spark();
+                }
+                if let Some(s) = &mut self.session {
+                    s.me.teleport(bm_core::PlayerState {
+                        pos: DVec3::from_array(crate::demo::SPARK_VIEW),
+                        vel: DVec3::ZERO,
+                        on_ground: true,
+                        hook: None,
+                        ..Default::default()
+                    });
+                    s.selected = 9;
+                }
+                (self.yaw, self.pitch) = (0.0, -0.3);
+                let m = crate::demo::MIXER[1];
+                self.open_menu(Menu::Crafting(Some(BlockPos::new(m[0], m[1], m[2]))));
             }
             // The texture trial's six textures in one view.
             "textures" => {

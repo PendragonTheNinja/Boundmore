@@ -7,11 +7,12 @@
 
 use crate::icons::{ICON_SIZE, IconSource};
 use crate::items::Items;
+use crate::skill_screen::grouped;
 use bm_core::block::Assembly;
 use bm_core::{
     BlockDef, BlockPos, BlockRegistry, Colour, HOTBAR_SLOTS, INVENTORY_SLOTS, ItemId, ItemStack, PlanetShape, Station,
 };
-use bm_protocol::{ClientMsg, PlanetSummary, PortalView, SlotRef, StationView};
+use bm_protocol::{ClientMsg, PlanetSummary, PortalView, SlotRef, SparkView, StationView};
 use egui::{
     Align, Align2, Color32, CornerRadius, FontId, Id, Layout, Rect, Sense, Stroke, StrokeKind, Ui, Vec2, pos2, vec2,
 };
@@ -442,6 +443,9 @@ pub struct Hud<'a> {
     pub reclaim_waiting: bool,
     /// The aimed block's health, shown under the crosshair.
     pub block_bar: Option<BlockBar>,
+    /// A machine's wear left and the most it holds, for a moment after a
+    /// spanner hits it (milestone 15); shown in the block bar's place.
+    pub wear_bar: Option<(u32, u32)>,
     /// Energy left, 0 to 1 (milestone 10), shown as a bar over the hotbar.
     pub energy: f32,
     /// Level, XP into it and XP it needs (milestone 12), shown as a thin
@@ -558,6 +562,40 @@ fn block_bar(ctx: &egui::Context, bar: &BlockBar) {
                         Stroke::new(1.0, Color32::from_rgba_unmultiplied(240, 230, 210, 90)),
                         StrokeKind::Outside,
                     );
+                });
+        });
+}
+
+/// A machine's wear under the crosshair after a spanner hit: its bar and
+/// "Wear 8,450 / 10,000" beside it.
+fn wear_bar(ctx: &egui::Context, (left, max): (u32, u32)) {
+    let frac = left as f32 / max.max(1) as f32;
+    egui::Area::new(Id::unique("machine-wear"))
+        .anchor(Align2::CENTER_CENTER, vec2(0.0, BAR_DROP))
+        .interactable(false)
+        .order(egui::Order::Background)
+        .show(ctx, |ui| {
+            egui::Frame::new()
+                .fill(Color32::from_black_alpha(140))
+                .corner_radius(CornerRadius::same(8))
+                .inner_margin(egui::Margin::symmetric(7, 4))
+                .show(ui, |ui| {
+                    ui.horizontal(|ui| {
+                        let (rect, _) = ui.allocate_exact_size(vec2(BAR_WIDTH, BAR_HEIGHT), Sense::hover());
+                        let painter = ui.painter();
+                        painter.rect_filled(rect, CornerRadius::same(3), Color32::from_rgb(38, 34, 32));
+                        let fill = Rect::from_min_size(rect.min, vec2(BAR_WIDTH * frac.clamp(0.0, 1.0), BAR_HEIGHT));
+                        if fill.width() > 0.5 {
+                            painter.rect_filled(fill, CornerRadius::same(3), bar_colour(frac));
+                        }
+                        painter.rect_stroke(
+                            rect,
+                            CornerRadius::same(3),
+                            Stroke::new(1.0, Color32::from_rgba_unmultiplied(240, 230, 210, 90)),
+                            StrokeKind::Outside,
+                        );
+                        ui.label(egui::RichText::new(wear_text((left, max))).color(TEXT).size(13.0));
+                    });
                 });
         });
 }
@@ -758,12 +796,18 @@ pub fn hud(ctx: &egui::Context, h: &Hud) {
                 });
         });
     }
-    if let Some(bar) = &h.block_bar {
+    if let Some(wear) = h.wear_bar {
+        wear_bar(ctx, wear);
+    } else if let Some(bar) = &h.block_bar {
         block_bar(ctx, bar);
     }
     if let Some((key, what)) = h.aim_hint {
         // Below the health bar when there is one.
-        let drop = if h.block_bar.is_some() { 62.0 } else { 44.0 };
+        let drop = if h.block_bar.is_some() || h.wear_bar.is_some() {
+            62.0
+        } else {
+            44.0
+        };
         egui::Area::new(Id::unique("aim-hint"))
             .anchor(Align2::CENTER_CENTER, vec2(0.0, drop))
             .interactable(false)
@@ -1321,6 +1365,9 @@ fn recipe_row(
                         if recipe.heat > 0 {
                             notes.push(format!("heat {}", recipe.heat));
                         }
+                        if recipe.spark > 0 {
+                            notes.push(format!("{} spark", grouped(recipe.spark as u64)));
+                        }
                         if !notes.is_empty() {
                             ui.label(egui::RichText::new(notes.join(", ")).color(MUTED).small());
                         }
@@ -1367,9 +1414,16 @@ fn station_panel(ui: &mut Ui, v: &CraftingView, kind: Station, opened: BlockPos,
     let live = v.live;
     // The machine's own position once the server has said it.
     let pos = live.map(|l| l.view.pos).unwrap_or(opened);
-    if kind == Station::Furnace {
-        fuel_panel(ui, v, pos, live.map(|l| &l.view), actions);
+    if matches!(kind, Station::Furnace | Station::SparkGenerator) {
+        fuel_panel(ui, v, kind, pos, live.map(|l| &l.view), actions);
         ui.add_space(12.0);
+    }
+    if let Some(view) = live.map(|l| &l.view) {
+        machine_panel(ui, kind, view);
+    }
+    if kind == Station::SparkGenerator {
+        // A generator makes nothing: its window is its fuel and its store.
+        return;
     }
     heading(ui, "Queue");
     match live {
@@ -1454,10 +1508,86 @@ fn station_panel(ui: &mut Ui, v: &CraftingView, kind: Station, opened: BlockPos,
     }
 }
 
-/// A furnace's fuel slot and banked heat, and the fuel in the pack to feed
-/// it with: click a pack stack to put it all in (right click: one), click
-/// the fuel slot to take it back out, or drag either way.
-fn fuel_panel(ui: &mut Ui, v: &CraftingView, pos: BlockPos, view: Option<&StationView>, actions: &mut Vec<UiAction>) {
+/// "Wear 8,450 / 10,000": a machine's wear left and the most it holds
+/// (milestone 15).
+pub fn wear_text((left, max): (u32, u32)) -> String {
+    format!("Wear {} / {}", grouped(left as u64), grouped(max as u64))
+}
+
+/// A station window's spark line (milestone 15): a generator's store and
+/// what its fuel still brings, or the spark a linked machine can draw.
+/// None for a machine whose links reach no generator (its idle text says
+/// why).
+pub fn spark_text(kind: Station, s: &SparkView) -> Option<String> {
+    if kind == Station::SparkGenerator {
+        let mut text = format!("Spark {} / {}", grouped(s.stored as u64), grouped(s.capacity as u64));
+        if s.burning > 0 {
+            text.push_str(&format!(" (burning {} more)", grouped(s.burning as u64)));
+        }
+        Some(text)
+    } else {
+        s.linked
+            .then(|| format!("Spark on the grid {}", grouped(s.stored as u64)))
+    }
+}
+
+/// A thin bar `frac` full, coloured like a block's health.
+fn thin_bar(ui: &mut Ui, frac: f32, fill: Color32) {
+    let (rect, _) = ui.allocate_exact_size(vec2(ui.available_width().min(240.0), 8.0), Sense::hover());
+    let painter = ui.painter();
+    painter.rect_filled(rect, CornerRadius::same(3), Color32::from_rgb(38, 34, 32));
+    let full = Rect::from_min_size(rect.min, vec2(rect.width() * frac.clamp(0.0, 1.0), rect.height()));
+    if full.width() > 0.5 {
+        painter.rect_filled(full, CornerRadius::same(3), fill);
+    }
+}
+
+/// The spark ember of the station window's bars.
+const SPARK_GOLD: Color32 = Color32::from_rgb(255, 176, 60);
+
+/// A machine's wear and spark (milestone 15), when it has them. A
+/// generator's spark shows by its fuel instead.
+fn machine_panel(ui: &mut Ui, kind: Station, view: &StationView) {
+    let spark = view
+        .spark
+        .filter(|_| kind != Station::SparkGenerator)
+        .and_then(|s| spark_text(kind, &s).map(|t| (t, s)));
+    if view.wear.is_none() && spark.is_none() {
+        return;
+    }
+    heading(ui, "Machine");
+    if let Some(wear) = view.wear {
+        ui.label(egui::RichText::new(wear_text(wear)).color(TEXT).strong());
+        let frac = wear.0 as f32 / wear.1.max(1) as f32;
+        thin_bar(ui, frac, bar_colour(frac));
+        if wear.0 == 0 {
+            ui.label(
+                egui::RichText::new("Hit it with a spanner to repair it.")
+                    .color(SHORT)
+                    .small(),
+            );
+        }
+        ui.add_space(4.0);
+    }
+    if let Some((text, s)) = spark {
+        ui.label(egui::RichText::new(text).color(SPARK_GOLD).strong());
+        thin_bar(ui, s.stored as f32 / s.capacity.max(1) as f32, SPARK_GOLD);
+    }
+    ui.add_space(12.0);
+}
+
+/// A furnace's (or spark generator's) fuel slot and banked heat (or stored
+/// spark), and the fuel in the pack to feed it with: click a pack stack to
+/// put it all in (right click: one), click the fuel slot to take it back
+/// out, or drag either way.
+fn fuel_panel(
+    ui: &mut Ui,
+    v: &CraftingView,
+    kind: Station,
+    pos: BlockPos,
+    view: Option<&StationView>,
+    actions: &mut Vec<UiAction>,
+) {
     heading(ui, "Fuel");
     let fuel = view.and_then(|w| w.fuel);
     ui.horizontal(|ui| {
@@ -1508,9 +1638,26 @@ fn fuel_panel(ui: &mut Ui, v: &CraftingView, pos: BlockPos, view: Option<&Statio
             actions.push(UiAction::Send(msg));
         }
         ui.vertical(|ui| {
+            let burns = fuel.map(|s| v.items.fuel(s.item) as u32 * s.count as u32).unwrap_or(0);
+            if kind == Station::SparkGenerator {
+                let spark = view.and_then(|w| w.spark).unwrap_or_default();
+                let text = spark_text(kind, &spark).unwrap_or_default();
+                ui.label(egui::RichText::new(text).color(SPARK_GOLD).strong());
+                thin_bar(ui, spark.stored as f32 / spark.capacity.max(1) as f32, SPARK_GOLD);
+                ui.label(
+                    egui::RichText::new(format!("{} spark more in the fuel slot", grouped(burns as u64)))
+                        .color(MUTED)
+                        .small(),
+                );
+                ui.label(
+                    egui::RichText::new("Fuel burns into spark until the store is full.")
+                        .color(MUTED)
+                        .small(),
+                );
+                return;
+            }
             let heat = view.map(|w| w.heat).unwrap_or(0);
             ui.label(egui::RichText::new(format!("Heat {heat}")).color(GOLD).strong());
-            let burns = fuel.map(|s| v.items.fuel(s.item) as u32 * s.count as u32).unwrap_or(0);
             ui.label(
                 egui::RichText::new(format!("{burns} more in the fuel slot"))
                     .color(MUTED)
@@ -2087,6 +2234,48 @@ mod tests {
         assert!(!same_machine(shape, p(15, 5, 10), p(10, 5, 10)));
         // Across the seam, the wrap counts.
         assert!(same_machine(shape, p(0, 5, 10), p(w - 2, 5, 10)));
+    }
+
+    #[test]
+    fn wear_and_spark_read_in_plain_numbers() {
+        assert_eq!(wear_text((8_450, 10_000)), "Wear 8,450 / 10,000");
+        assert_eq!(wear_text((0, 10_000)), "Wear 0 / 10,000");
+        let generator = SparkView {
+            stored: 3_200,
+            capacity: 5_000,
+            linked: true,
+            burning: 60,
+        };
+        assert_eq!(
+            spark_text(Station::SparkGenerator, &generator).as_deref(),
+            Some("Spark 3,200 / 5,000 (burning 60 more)")
+        );
+        let idle = SparkView {
+            burning: 0,
+            ..generator
+        };
+        assert_eq!(
+            spark_text(Station::SparkGenerator, &idle).as_deref(),
+            Some("Spark 3,200 / 5,000")
+        );
+        assert_eq!(
+            spark_text(Station::Mixer, &idle).as_deref(),
+            Some("Spark on the grid 3,200")
+        );
+        let cut_off = SparkView { linked: false, ..idle };
+        assert_eq!(spark_text(Station::Mixer, &cut_off), None, "the idle text says why");
+    }
+
+    #[test]
+    fn spark_machines_are_named_and_opened() {
+        let b = BlockRegistry::builtin();
+        assert_eq!(station_name(&b, Station::Mixer), "Mixer");
+        assert_eq!(station_name(&b, Station::SparkGenerator), "Spark Generator");
+        let of = |n: &str| station_of(b.get(b.id(n).unwrap()));
+        assert_eq!(of("iron_furnace_crucible"), Some(Station::Furnace));
+        assert_eq!(of("iron_furnace"), Some(Station::Furnace));
+        assert_eq!(of("compactor"), Some(Station::Compactor));
+        assert_eq!(of("spark_link"), None);
     }
 
     #[test]

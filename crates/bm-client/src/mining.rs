@@ -22,7 +22,7 @@
 //! while answers are in flight. A block left alone for
 //! `mining::HEAL_TICKS` heals (its entry goes), on our input clock.
 
-use bm_core::items::{Aoe, ToolStats};
+use bm_core::items::{Aoe, ToolClass, ToolStats};
 use bm_core::mining::{HEAL_TICKS, aoe_blocks, block_health, is_crit};
 use bm_core::skills::Effects;
 use bm_core::{BlockDef, BlockId, BlockPos, BlockRegistry, Mount, PlanetShape};
@@ -92,6 +92,12 @@ pub struct SwingInput<'a> {
 /// have taken (`map`) and what each block is (`block_at`, None if unknown:
 /// skipped, as an unloaded block is).
 pub fn predict_swing(s: &SwingInput, map: &DamageMap, block_at: impl Fn(BlockPos) -> Option<BlockId>) -> Vec<BlockHit> {
+    // A spanner repairs machines and damages nothing (milestone 15): the
+    // swing is sent, the server answers a machine's wear, and no block
+    // takes damage to predict.
+    if s.tool.class == Some(ToolClass::Spanner) {
+        return Vec::new();
+    }
     let hit = s.shape.wrap_block(s.hit);
     let tool = skilled_tool(s.tool, s.effects);
     let area = s.tool.aoe.map_or(1.0, Aoe::multiplier);
@@ -361,6 +367,35 @@ mod tests {
             }
         }
         assert_eq!(n, 6);
+    }
+
+    #[test]
+    fn a_spanner_predicts_no_damage_to_anything() {
+        let (b, i) = reg();
+        let shape = PlanetShape::new(8, 4);
+        let map = DamageMap::default();
+        for spanner in ["stone_spanner", "copper_spanner", "iron_spanner"] {
+            let tool = tool(&i, spanner);
+            // At a machine, at rock and at a prop (props take 1 from any tool).
+            for block in ["mixer", "stone", "torch"] {
+                let id = b.id(block).unwrap();
+                let input = SwingInput {
+                    effects: &Effects::default(),
+                    tool: &tool,
+                    hit: BlockPos::new(10, 20, 30),
+                    look: DVec3::X,
+                    player: 1,
+                    at: 1,
+                    tier: 1,
+                    shape,
+                    registry: &b,
+                };
+                assert!(
+                    predict_swing(&input, &map, |_| Some(id)).is_empty(),
+                    "{spanner} at {block}"
+                );
+            }
+        }
     }
 
     #[test]

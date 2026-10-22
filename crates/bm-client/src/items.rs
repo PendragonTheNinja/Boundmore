@@ -132,6 +132,16 @@ impl Items {
         };
         let mut lines = vec![self.name(stack)];
         match def.kind {
+            ItemKind::Tool(t) if t.class == Some(ToolClass::Spanner) => {
+                lines.push(spanner_line(&t));
+                lines.push(format!(
+                    "Breaks nothing; {} hits a second",
+                    trim_float((1.0 / bm_core::mining::seconds_per_hit(t.action_speed)) as f32)
+                ));
+                if let Some((left, total)) = self.durability(stack) {
+                    lines.push(format!("{left} of {total} uses left"));
+                }
+            }
             ItemKind::Tool(t) => {
                 lines.push(match t.class {
                     Some(class) => format!("Best on {}; a quarter of the damage on the rest", tool_materials(class)),
@@ -322,6 +332,14 @@ fn tool_materials(class: ToolClass) -> &'static str {
         ToolClass::Axe => "wood and leaves",
         ToolClass::Spanner => "machines (repairs wear)",
     }
+}
+
+/// A spanner's first tooltip line: "Repairs machines: 700 wear a hit".
+pub fn spanner_line(t: &bm_core::items::ToolStats) -> String {
+    format!(
+        "Repairs machines: {} wear a hit",
+        crate::skill_screen::grouped(t.repair as u64)
+    )
 }
 
 /// `2.5` -> "2.5", `4.0` -> "4".
@@ -605,6 +623,18 @@ mod tests {
         let hand: Vec<String> = i.recipes_for(Station::Hand).iter().map(name).collect();
         assert!(hand.contains(&"crafting_table".to_string()));
         assert!(!hand.contains(&"stones".to_string()), "stones need a table");
+    }
+
+    #[test]
+    fn spanners_say_what_they_repair() {
+        let i = items();
+        for (name, repair) in [("stone_spanner", 100), ("copper_spanner", 400), ("iron_spanner", 700)] {
+            let id = i.registry.id(name).unwrap();
+            let tip = i.tooltip(&ItemStack::new(id, 1));
+            let want = format!("Repairs machines: {repair} wear a hit");
+            assert!(tip.lines().nth(1) == Some(want.as_str()), "{name}: {tip}");
+            assert!(!tip.contains("damage"), "{name}: {tip}");
+        }
     }
 
     #[test]
