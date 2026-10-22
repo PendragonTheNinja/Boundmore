@@ -64,8 +64,8 @@ The generator also writes the comparison sheets (`docs/media/`). Each painted im
 - **Procedural 128** (`bm-texgen -- --size 128 --out DIR`): painters work in 32 units at any pixel count, so big shapes keep their place and come out smooth; the six trial painters add finer detail at 128 (more octaves, chips in stone, crumbs in soil, four times the grass blades, pebbles, specks and leaves at half size). Output at 32 is byte-identical to before.
 - **The AI pipeline** (`tools/texture-ai/`, Python with Pillow and numpy):
   - `prompts.json`: one shared style prompt from this file's rules, one line per texture. Copper ore is painted into the AI stone and turf side from the AI soil and grass, so they match.
-  - `generate.py`: calls the API, saves each image with its prompt in `art/texture-trial/ai-raw/`. Varied textures (stone, soil, turf top, foliage) also get three more patches of the same material, painted with the first as reference.
-  - `cleanup.py`: the whole image becomes one face; it is made seamless by joining the strip past each edge into the opposite edge along the cut where the two agree best (image quilting: the cut runs along the dark joints, where a cross-fade ghosted); downsized to 128; the extra patches are set into the base along four such cuts in the edge band, so every variant has the base's edges; and each face is checked against the game's recolouring (ADR-0007). Writes `art/texture-trial/ai/blocks/`, `ai-sheet.png` and `ai-report.json`.
+  - `generate.py`: calls the API, saves each image with its prompt in `art/texture-trial/ai-raw/` (this trial's are now in `api-raw/`, cleaned into `api/blocks/`). Varied textures (stone, soil, turf top, foliage) also get three more patches of the same material, painted with the first as reference.
+  - `cleanup.py`: the whole image becomes one face; it is made seamless by joining the strip past each edge into the opposite edge along the cut where the two agree best (image quilting: the cut runs along the dark joints, where a cross-fade ghosted); downsized to 128; the extra patches are set into the base along four such cuts in the edge band, so every variant has the base's edges; and each face is checked against the game's recolouring (ADR-0007). Writes `art/texture-trial/ai/blocks/`, `ai-sheet.png` and `ai-report.json` (this trial's: `api/`, `api-sheet.png`, `api-report.json`).
 
 **Nathan's call so far (2026-10-22):** the procedural 128s, upscaled from the 32 painters, are not the way; Gemini should make the textures from scratch. So the AI images use Gemini's own design and colours (the colour nudge toward our palette is off; `--nudge` turns it on).
 
@@ -87,3 +87,17 @@ The generator also writes the comparison sheets (`docs/media/`). Each painted im
 **Cost:** about 50 pro images were made over the trial, at roughly US$0.13 to 0.24 each (Google's list price for 1K to 2K images); a full natural set of about 25 textures with variants is about 100 images.
 
 **Next, if Nathan picks the AI direction:** extend the prompts to every natural surface (deep stone, bedrock, sand, gravel, snow, ice, sandstone, ash, the ores, water, trunk top), keep machines, shrines, torches, plants and icons as painted art, and decide whether 128 replaces 32 or becomes a player setting.
+
+## Decided: Google Flow by hand (Nathan, 2026-10-22)
+
+The API route costs money per image on top of Nathan's Google AI Pro subscription, so **Nathan generates the textures himself in Google Flow** (Nano Banana Pro, included in AI Pro). Flow makes four images per prompt, takes a square shape and adds no visible watermark (the Gemini app puts a mark in a corner). Flow has no Gems, so every prompt carries the whole style text.
+
+**The look** (Nathan, 2026-10-22): the soft, painterly look of Boundless's textures, in our own art. The style prompt asks for blended brushwork, soft edges and no dark outlines (the API trial's images were outlined and harder), and never names Boundless (CLAUDE.md: expression may not be copied, and naming it invites imitation).
+
+**The workflow:**
+
+1. `tools/texture-ai/flow-prompts.md` (written by `make_flow_prompts.py` from `prompts.json`) lists all 24 textures in working order, grass and foliage first, each as one copy-paste prompt with its file name and any reference images (ores are painted into Nathan's chosen stone; turf side from his soil and grass), plus the variant prompt for the 8 varied textures.
+2. Nathan keeps the best of each four, saves it in `art/texture-trial/ai-raw/` under the given name, and pushes.
+3. Claude runs `cleanup.py` (seams, variants, lighting drift, 128, recolour check), puts the set in the game with `--demo-ui textures`, sends screenshots and says which need another try.
+
+`generate.py` stays for the API, should it be wanted again.

@@ -6,46 +6,11 @@
     "clipped": 0.0173,
     "reads_when_recoloured": true
   },
-  "turf_top": {
-    "detail_spread": 0.654,
-    "painted_spread": 0.426,
-    "ratio": 1.54,
-    "clipped": 0.016,
-    "reads_when_recoloured": true
-  },
-  "turf_side": {
-    "detail_spread": 0.722,
-    "painted_spread": 0.785,
-    "ratio": 0.92,
-    "clipped": 0.0236,
-    "reads_when_recoloured": true
-  },
-  "soil": {
-    "detail_spread": 0.732,
-    "painted_spread": 0.689,
-    "ratio": 1.06,
-    "clipped": 0.0259,
-    "reads_when_recoloured": true
-  },
   "trunk_side": {
     "detail_spread": 1.044,
     "painted_spread": 0.806,
     "ratio": 1.3,
     "clipped": 0.0551,
     "reads_when_recoloured": false
-  },
-  "copper_vein": {
-    "detail_spread": 0.803,
-    "painted_spread": 0.848,
-    "ratio": 0.95,
-    "clipped": 0.028,
-    "reads_when_recoloured": true
-  },
-  "foliage": {
-    "detail_spread": 0.826,
-    "painted_spread": 0.62,
-    "ratio": 1.33,
-    "clipped": 0.0374,
-    "reads_when_recoloured": true
   }
 }

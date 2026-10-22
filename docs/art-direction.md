@@ -37,5 +37,5 @@ textures = { top = "turf_top", side = "turf_side", bottom = "soil" }
 ## Who makes them
 
 - **Now:** `tools/bm-texgen` paints every texture procedurally (deterministic, so the same command makes the same files), writes them to `assets/textures/blocks/`, and writes a contact sheet to `docs/media/textures.png` for review.
-- **Trial (2026-10-22):** AI block textures at 128 through the Gemini API, `tools/texture-ai/` (see `docs/proposals/textures-128.md`). The client already accepts 16 to 256 pixel files, mixed with 32s.
+- **Trial (2026-10-22):** AI block textures at 128, `tools/texture-ai/` (see `docs/proposals/textures-128.md`). Decided (Nathan, 2026-10-22): Nathan generates them in Google Flow from `tools/texture-ai/flow-prompts.md`, aiming for a soft, painterly look (blended brushwork, soft edges, no dark outlines); Claude cleans them up and checks them in game. The client already accepts 16 to 256 pixel files, mixed with 32s.
 - **Later:** for hero art (creatures, items, UI frames, icons), the plan is AI image generation run by Nathan with prompts Claude writes, then cleaned up and sized by a script. The pipeline above already accepts drop-in files.

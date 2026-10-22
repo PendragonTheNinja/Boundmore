@@ -7,7 +7,8 @@ For each texture with a raw image in `art/texture-trial/ai-raw/`:
 1. crops it square: the whole image becomes one face, as Gemini drew it
    (Nathan, 2026-10-22: the AI's own design and colours, not ours);
 2. makes it tile seamlessly (left to right only for a texture marked
-   `"tile": "x"` in prompts.json, such as turf side): the strip just past
+   `"tile": "x"` in prompts.json, such as turf side; not at all for
+   `"tile": "none"`, such as trunk top): the strip just past
    each edge is joined into
    the opposite edge along the cut where the two agree best (image
    quilting), so stones and joints carry on across the wrap;
@@ -42,7 +43,7 @@ from PIL import Image
 HERE = Path(__file__).resolve().parent
 ROOT = HERE.parent.parent
 TRIAL = ROOT / "art" / "texture-trial"
-RAW = TRIAL / "ai-raw"
+RAW = TRIAL / "ai-raw"  # `--raw` to read another folder
 PAINTED = ROOT / "assets" / "textures" / "blocks"
 
 # Textures the game gives variants (bm-texgen `VARIED`).
@@ -283,7 +284,10 @@ def recolour(face, rgb):
 
 def raw_image(stem):
     """The raw image saved for `stem` (`stone`, `stone.v1`), if any."""
-    return next((p for p in sorted(RAW.glob(f"{stem}.*")) if p.suffix != ".json" and p.stem == stem), None)
+    found = [p for p in RAW.glob(f"{stem}.*") if p.suffix.lower() in (".png", ".jpg", ".jpeg", ".webp") and p.stem == stem]
+    if len(found) > 1:
+        print(f"{stem}: {len(found)} images, using the newest", file=sys.stderr)
+    return max(found, key=lambda p: p.stat().st_mtime, default=None)
 
 
 def side_cut(base, other, d0, d1):
@@ -321,6 +325,18 @@ def clean(name, size, do_nudge=False, variants=False, tile="xy"):
     raw = load(raw_path, WORK)
     target_faces = painted_faces(name)
     target = target_faces[0] if target_faces else None
+    if tile == "none":
+        # Not a tiling texture (trunk top: rings centred, bark round the
+        # edge): the whole image, sized, nothing joined or flattened.
+        f = resize(raw, size)
+        spread, clipped = recolour_spread(f)
+        painted_spread = recolour_spread(target)[0] if target is not None else spread
+        ratio = spread / max(painted_spread, 1e-6)
+        ok = SPREAD_MIN <= ratio <= SPREAD_MAX and clipped <= CLIP_MAX
+        return {"name": name, "raw": raw_path, "faces": [f], "target": target,
+                "check": {"detail_spread": round(spread, 3), "painted_spread": round(painted_spread, 3),
+                          "ratio": round(ratio, 2), "clipped": round(clipped, 4),
+                          "reads_when_recoloured": bool(ok)}}
     if variants and name in VARIED:
         face, overlap, count = VAR_FACE, VAR_OVERLAP, 4
     else:
@@ -402,10 +418,14 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--size", type=int, default=128)
     ap.add_argument("--out", type=Path, default=TRIAL / "ai")
+    ap.add_argument("--raw", type=Path, help="raw image folder (default art/texture-trial/ai-raw)")
     ap.add_argument("--nudge", action="store_true", help="move colours toward the painted 32s")
     ap.add_argument("--variants", action="store_true", help="cut 3 variants from each varied texture")
     ap.add_argument("names", nargs="*")
     args = ap.parse_args()
+    if args.raw:
+        global RAW
+        RAW = args.raw
     cfg = json.loads((HERE / "prompts.json").read_text())
     names = args.names or list(cfg["textures"])
     results = []

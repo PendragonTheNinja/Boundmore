@@ -1,34 +1,70 @@
 {
   "model": "gemini-3-pro-image",
   "image_size": "2K",
-  "style": "Hand-painted stylised texture for a bright, high-fantasy voxel game. Painterly: soft brush shapes, chunky readable forms, detail gathered in clumps, never photographic and never noisy. One light from the top left: each shape has a highlight on its top-left edge and shade on its bottom-right edge. Shadows lean cool blue-purple, highlights lean warm; colours are rich and saturated. Seen flat and straight on, orthographic, no perspective, evenly lit across the whole frame, no vignette. The material fills the frame edge to edge as a seamless tileable texture. This image is one face of one block in the game, seen from a few steps away, so the forms are bold and readable, never busy. No border, no text, no logo, no objects other than the material. An original look, not copied from any existing game.",
+  "style": "Hand-painted texture for a bright, high-fantasy voxel game, in a soft painterly style: smooth blended brushwork, gentle gradients and soft edges, forms shaped by light and colour rather than by lines, with no black or dark outlines around shapes. A little visible brush texture; never photographic, never noisy, never pixel art. Stylised, gently chunky forms with a little warmth and charm. Rich, saturated, luminous colours. One soft light from the top left: each form is lit on its top-left side and shaded on its bottom-right side; shadows lean cool blue-purple, highlights lean warm. Seen flat and straight on, orthographic, no perspective. The image as a whole is evenly lit: no overall gradient, no vignette, no brighter or darker corner or side. Bold, readable forms, never busy. The material fills the frame edge to edge as a seamless tileable texture. No border, no text, no logo, no objects other than the material. An original look, not copied from any existing game.",
   "textures": {
-    "stone": "The material: cool blue-grey natural bedrock as found in a cliff or quarry face, never built. Jagged, angular, fractured rock: irregular broken faces of many different sizes and shapes, at all angles, separated by uneven branching dark fissures, with chipped edges, small pits and fine cracks. About three or four large rock faces across the image with smaller broken pieces between them. Absolutely no masonry: no bricks, no blocks, no rows, no courses, no rectangles, no straight lines, no mortar.",
     "turf_top": "The material: a lush, rich green grass lawn seen from directly above. An even carpet of countless fine grass blades pointing every which way, gently clumped in soft irregular patches that merge into each other, with small darker gaps between blades and bright yellow-green tips catching the light here and there. Low contrast and uniform across the whole image: this covers whole fields, block after block, so nothing in it may stand out or repeat noticeably. No rosettes, no star shapes, no radial tufts, no round mounds, no moss, no bushes, no flowers, no bare soil.",
-    "soil": "The material: warm reddish-brown loose earth seen from directly above, like freshly turned garden soil. Three or four big soft mounds of crumbly earth with smaller crumbs on them, purple-brown shadow in the hollows between, a few small dark specks and two or three small grey-brown pebbles. Loose and crumbly: no flat slabs, no cobbles, no regular pattern.",
-    "trunk_side": "The material: rough natural tree bark on a living trunk, like old oak. Three or four broad irregular vertical ridges split by deep dark furrows that wander and branch as they run up and down the whole image, each ridge lit on its left side, warm brown with purple-brown shadow deep in the furrows, fibrous grain along the ridges. Organic and uneven: not planks, not boards, not cut wood.",
-    "copper_vein": {
-      "base": "stone",
-      "prompt": "Keep this stone texture exactly as it is, same rock, same light, same framing, and set copper ore into it: two or three big clusters of jewel-like warm orange copper nuggets with cut facets, bright gold rims on their top-left edges, a dark outline where they meet the rock, and a soft shadow below and to the right. The copper glows a little in its own colour. The result is still a seamless tileable texture."
-    },
     "foliage": "The material: a dense mass of tree leaves filling the frame, seen from the side, like the inside of a thick leafy crown. Many small leaves of slightly different sizes overlapping at random angles and depths: deep blue-green in the shadowed back, mid greens, and bright yellow-green leaves in front, each leaf lit on its top left. Irregular and natural, evenly spread across the whole image. No rosettes, no star shapes, no flowers, no radial clusters, no sky, no branches, no gaps.",
+    "stone": "The material: cool blue-grey natural bedrock as found in a cliff or quarry face, never built. Irregular broken rock faces of different sizes and shapes at many angles, separated by soft dark fissures, with softly chipped edges, small pits and faint fine cracks. About three or four large rock faces across the image with smaller pieces between them. No masonry: no bricks, no blocks, no rows, no rectangles, no straight lines, no mortar.",
+    "soil": "The material: warm reddish-brown loose earth seen from directly above, like freshly turned garden soil. Soft crumbly mounds with smaller crumbs on them, purple-brown shadow in the hollows between, a few small dark specks and two or three small grey-brown pebbles. Loose and crumbly: no flat slabs, no cobbles, no regular pattern.",
     "turf_side": {
       "base": [
         "soil",
         "turf_top"
       ],
-      "prompt": "The first image is our soil, the second our grass seen from above. Paint the side of a block of turf: the soil from the first image fills the face, and a thick ragged fringe of the grass from the second image hangs over the top edge, covering about the top quarter, with tufts and blades hanging down unevenly and a soft shadow under the fringe. Same style, same scale, same colours as the two images. The grass fringe touches the top edge all the way across. Tileable left to right.",
-      "tile": "x"
-    }
+      "tile": "x",
+      "prompt": "The material: the side of a block of turf. The first reference image is the soil, the second the grass seen from above; match their style, colours and scale. The soil fills the face, and a thick ragged fringe of the grass hangs over the top edge, covering about the top quarter, with tufts and blades hanging down unevenly and a soft shadow under the fringe. The grass touches the top edge all the way across. Tileable left to right."
+    },
+    "trunk_side": "The material: rough natural tree bark on a living trunk, like old oak. Three or four broad irregular vertical ridges split by deep soft furrows that wander and branch as they run up and down the whole image, each ridge lit on its left side, warm brown with purple-brown shadow deep in the furrows, soft fibrous grain along the ridges. Organic and uneven: not planks, not boards, not cut wood.",
+    "trunk_top": {
+      "tile": "none",
+      "prompt": "The material: the cut end of a tree trunk seen straight on, filling a square: warm golden end grain in concentric growth rings around a darker heart at the centre, one soft radial crack from the heart toward an edge, and a band of rough brown bark along all four edges of the square. Not tileable: the rings are centred and the bark frames the square."
+    },
+    "deep_stone": "The material: deep underground rock, darker than ordinary stone and leaning purple: deep indigo and dusky violet greys. Long, flat, layered strata running roughly level across the image, broken into irregular lengths by soft dark fissures, with faint pale highlights on top-left edges. Heavy and ancient. No bricks, no masonry, no straight ruled lines.",
+    "bedrock": "The material: the unbreakable rock at the bottom of the world: near-black with deep purple, in small tight angular blocks packed together, dense with dark cracks, with only faint cool highlights on their top-left edges. Hard, dense and forbidding, but still painterly and readable.",
+    "sand": "The material: warm golden sand seen from directly above, in soft wind-shaped ripples: each ripple with a lit windward slope and a gently shaded lee, a few darker and paler grains gathered in small clumps. Smooth and soft, sunny and warm. No shells, no footprints, no stones.",
+    "gravel": "The material: a bed of loose rounded pebbles of several kinds, blue-grey, warm grey, tan and slate, packed closely, each pebble softly lit on its top left with soft dark gaps between. Busier and rounder than stone, but still soft and painterly.",
+    "snow": "The material: fresh soft snow seen from above: gentle drifts and hollows, pale blue-lavender in the hollows, near-white on the crests, with a rare small glint of sparkle. Calm and clean, very soft shapes.",
+    "ice": "The material: clear blue ice seen straight on: deep cold blue in the body to white along soft inner cracks and small trapped bubbles, smooth glassy planes catching a soft highlight on their top left. Cold and luminous.",
+    "ash": "The material: soft grey volcanic ash seen from above: fine powdery drifts and gentle hollows, a few small darker cinders and faint hairline cracks. Smoother than sand, softer than gravel, greyer than soil.",
+    "sandstone_side": "The material: the side of a sandstone cliff: warm red-orange and ochre strata in soft layered bands running level across the image, some bands softer and more eroded than others, with a few darker and paler grains. Warmer, redder and darker than loose sand. The bands run level so a cliff reads as one run of strata.",
+    "sandstone_top": "The material: the flat top of sandstone seen from above: warm red-ochre stone with soft swirling grain and faint ripples of old sand, calmer than the side, redder and stiller than loose sand.",
+    "copper_vein": {
+      "base": "stone",
+      "prompt": "The material: copper ore in the stone of the reference image; keep that rock exactly in style, colour, light and scale. Set into it two or three clusters of jewel-like warm orange copper nuggets with softly cut facets, bright gold rims on their top-left edges and a soft shadow below and to the right. The copper glows a little in its own colour."
+    },
+    "iron_vein": {
+      "base": "stone",
+      "prompt": "The material: iron ore in the stone of the reference image; keep that rock exactly in style, colour, light and scale. Set into it two or three patches of dull red-brown rust holding nodules of native iron that shine silver-blue, deeper than copper's orange, with cold metallic glints copper does not have, and a soft shadow below and to the right of each patch."
+    },
+    "coal_seam": {
+      "base": "stone",
+      "prompt": "The material: coal in the stone of the reference image; keep that rock exactly in style, colour, light and scale. Set into it two or three seams of near-black glossy coal lumps, each lump with a faint cold blue-white glint on its top-left edge and a soft shadow below and to the right."
+    },
+    "wayshard_vein": {
+      "base": "deep_stone",
+      "prompt": "The material: a magical crystal ore in the deep rock of the reference image; keep that rock exactly in style, colour, light and scale. Set into it two or three clusters of glowing jade-and-teal crystal shards with bright top-left edges, deep teal joins and a few tiny sparkles, lighting the rock around them a little."
+    },
+    "relic_seam": {
+      "base": "stone",
+      "prompt": "The material: buried relics in the stone of the reference image; keep that rock exactly in style, colour, light and scale. Set into it two or three tarnished bronze plates of some ancient device, broken at a corner, each cut with a line of faint cyan light and touched with green verdigris, softly shaded where the plates meet the rock."
+    },
+    "glow_crystal": "The material: a solid mass of glowing crystal seen straight on: pale cyan and aqua prisms packed together at different angles, each prism luminous from within, bright on its top-left facets, deeper teal in the joins between them.",
+    "timber": "The material: planks of warm golden-brown timber laid side by side, running left to right, with soft wood grain and a few knots, softly shaded gaps between planks and a pair of small dark nail heads where each plank meets the next. Hand-made and warm.",
+    "brick": "The material: a wall of warm red-orange clay bricks in staggered rows, each brick slightly irregular and softly rounded, lit on its top-left edge, with soft warm grey mortar sitting in the bricks' shadow."
   },
   "variants": {
     "count": 3,
     "names": [
       "stone",
+      "deep_stone",
       "soil",
       "turf_top",
+      "sand",
+      "gravel",
+      "snow",
       "foliage"
     ],
-    "prompt": "This image is a texture of one material. Paint a new, different patch of exactly the same material: the same style, colours, light, scale and size of shapes, but different shapes in different places, as if from another spot on the same surface. Do not copy any shape from the image. A seamless tileable texture filling the frame edge to edge."
+    "prompt": "The reference image is a texture of one material. Paint a new, different patch of exactly the same material: the same style, colours, light, scale and size of shapes, but different shapes in different places, as if from another spot on the same surface. Do not copy any shape from the reference."
   }
 }
