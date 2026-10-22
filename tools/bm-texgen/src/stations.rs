@@ -528,8 +528,11 @@ pub fn workbench_side(_ctx: Ctx) -> Tex {
 /// Furnace top: four dressed slabs laid round a square chimney, the chimney
 /// barred with an iron grate and lit from below by the fire.
 pub fn furnace_top(_ctx: Ctx) -> Tex {
-    let salt = seed("furnace_top");
-    let stone = furnace_ramp();
+    furnace_top_in(seed("furnace_top"), &furnace_ramp())
+}
+
+/// [`furnace_top`] in another stone (the iron furnace's dark iron).
+pub(crate) fn furnace_top_in(salt: u32, stone: &Ramp) -> Tex {
     let fire = fire_ramp();
     let iron = iron_ramp();
     // Pinwheel of four slabs round the hole [10, 22).
@@ -661,6 +664,12 @@ pub(crate) fn masonry(salt: u32, stone: &Ramp, x: usize, y: usize) -> Rgba {
 pub fn furnace_side(_ctx: Ctx) -> Tex {
     let salt = seed("furnace_side");
     let stone = furnace_ramp();
+    furnace_side_in(salt, &stone, &|x, y| masonry(salt, &stone, x, y))
+}
+
+/// [`furnace_side`] in another stone, its walls painted by `body` (rows 4
+/// to 28 round the mouth).
+pub(crate) fn furnace_side_in(salt: u32, stone: &Ramp, body: &dyn Fn(usize, usize) -> Rgba) -> Tex {
     let fire = fire_ramp();
     let (ax, ay, ar) = (16.0f32, 21.5f32, 6.5f32);
     let ring = 10.2f32;
@@ -722,7 +731,7 @@ pub fn furnace_side(_ctx: Ctx) -> Tex {
             }
             return stone.pick(t, x, y);
         }
-        masonry(salt, &stone, x, y)
+        body(x, y)
     });
     // The fire: embers on the hearth, flames rising in three tongues, soot
     // at the crown of the arch.

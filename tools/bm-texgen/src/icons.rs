@@ -534,6 +534,67 @@ fn shovel(metal: Metal) -> Tex {
     icon.finish()
 }
 
+// ---------------------------------------------------------------- spanners
+
+/// A spanner (milestone 15): an open jaw at the top right like every
+/// tool's head. Stone: a knapped head lashed to a wooden handle. Cast: one
+/// piece of metal with a leather grip.
+fn spanner(metal: Metal) -> Tex {
+    let salt = metal.salt("spanner");
+    let f = Frame { ox: 6.5, oy: 25.5 };
+    let ramp = metal.ramp();
+    let uc = 22.5f32;
+    let mut icon = Icon::new();
+    if metal.cast() {
+        icon.layer(true, |x, y| {
+            let (u, v) = f.uv(x, y);
+            if u < -0.5 || u > uc - 3.0 || v.abs() > 1.8 {
+                return None;
+            }
+            if u < 7.0 {
+                let band = ((u * FRAC_1_SQRT_2 * 2.0).round() as i32) % 3 == 2;
+                let t = 0.5 - v / 1.8 * 0.32 - if band { 0.24 } else { 0.0 };
+                return Some(leather_ramp().pick(t, x, y));
+            }
+            let mut t = 0.52 - v / 1.8 * 0.3;
+            if (v + 0.9).abs() < 0.4 && u > 9.0 {
+                t += 0.2;
+            }
+            Some(ramp.pick(t, x, y))
+        });
+    } else {
+        handle(&mut icon, f, 0.0, uc - 3.0, salt);
+    }
+    icon.layer(true, |x, y| {
+        let (u, v) = f.uv(x, y);
+        let du = u - uc;
+        let r = du.hypot(v);
+        if r > 6.4 {
+            return None;
+        }
+        // The jaw: a slot open to the top right.
+        if du > -1.2 && v.abs() < 2.2 {
+            return None;
+        }
+        let mut t = 0.52 - v / 6.4 * 0.22 + metal.facet(salt, u, v);
+        if r > 5.3 {
+            t += if v < 0.0 { 0.26 } else { -0.24 };
+        }
+        // The jaw's walls: the far one faces the light.
+        if du > -2.4 && v.abs() < 3.2 {
+            t += if v > 0.0 { 0.2 } else { -0.22 };
+        }
+        if metal.cast() && (du + 2.8).abs() < 0.7 && v < -3.5 {
+            return Some(ramp.lightest());
+        }
+        Some(ramp.pick(t, x, y))
+    });
+    if !metal.cast() {
+        lashing(&mut icon, f, metal, uc - 5.6, 1.6, 1.9);
+    }
+    icon.finish()
+}
+
 // ----------------------------------------------------------------- chisels
 
 #[derive(Clone, Copy, PartialEq)]
@@ -863,7 +924,7 @@ fn copper_ore() -> Tex {
 
 /// A bevelled metal bar in three-quarter view: a tapered top face in the
 /// light, the long front face, the shaded end, a maker's mark on top.
-fn ingot(ramp: Ramp) -> Tex {
+pub(crate) fn ingot(ramp: Ramp) -> Tex {
     let (len, depth, height) = (22.0f32, 9.0f32, 7.5f32);
     let (ox, oy) = (2.0f32, 23.0f32);
     let proj = |x: f32, y: f32, z: f32| (ox + x + z * 0.72, oy - y - z * 0.62);
@@ -1226,6 +1287,13 @@ pub fn paint_icon(name: &str) -> Option<Tex> {
         "iron_grapple" => grapple(Metal::Iron, false),
         "wayshard" => wayshard(),
         "portal_token" => portal_token(),
-        other => return crate::gathered::paint(other).or_else(|| crate::creatures::paint(other)),
+        "stone_spanner" => spanner(Metal::Stone),
+        "copper_spanner" => spanner(Metal::Copper),
+        "iron_spanner" => spanner(Metal::Iron),
+        other => {
+            return crate::gathered::paint(other)
+                .or_else(|| crate::creatures::paint(other))
+                .or_else(|| crate::spark::paint_icon(other));
+        }
     })
 }

@@ -1182,6 +1182,25 @@ pub fn copper_vein(ctx: Ctx) -> Tex {
     ore(ctx, stone(ctx), &style, &copper_ramp())
 }
 
+/// Silver seam: small bright nuggets of cool silver, more and smaller than
+/// copper's, with many glints, set in stone.
+pub fn silver_seam(ctx: Ctx) -> Tex {
+    let style = OreStyle {
+        salt: seed("silver_seam"),
+        spacing: 10.0,
+        radius: 3.9,
+        keep: 0.8,
+        facet: 2.4,
+        tone: 0.6,
+        spread: 0.3,
+        rim_tone: 0.95,
+        glow: 0.2,
+        glints: 0.45,
+        outline: Rgba::hex(0x14121e),
+    };
+    ore(ctx, stone(ctx), &style, &crate::spark::silver_ramp())
+}
+
 /// Coal seam: near-black glossy lumps with a faint cold glint, in stone.
 pub fn coal_seam(ctx: Ctx) -> Tex {
     let style = OreStyle {
@@ -1931,7 +1950,8 @@ pub fn paint_named(name: &str, variant: u32) -> Option<Tex> {
         "relic_seam" => machines::relic_seam,
         "meteor_shell" => meteor_shell,
         "meteor_heart" => meteor_heart,
-        other => flora::painter(other)?,
+        "silver_seam" => silver_seam,
+        other => crate::spark::painter(other).or_else(|| flora::painter(other))?,
     };
     Some(f(ctx))
 }

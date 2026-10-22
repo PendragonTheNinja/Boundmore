@@ -167,7 +167,7 @@ pub fn crafting_table_side(_ctx: Ctx) -> Tex {
 // --------------------------------------------------------------- extractor
 
 /// The extractor's dressed stone: a cool grey, a little bluer than rock.
-fn machine_stone() -> Ramp {
+pub(crate) fn machine_stone() -> Ramp {
     Ramp::from_hex(&[
         0x1e2030, 0x2e3244, 0x424a5c, 0x586274, 0x6e7a8c, 0x8a96a6, 0xaab4c0, 0xd2d8de,
     ])
@@ -306,7 +306,7 @@ pub fn extractor_side(_ctx: Ctx) -> Tex {
 // -------------------------------------------------------- furnace crucible
 
 /// Fired clay: deep brown to a warm terracotta.
-fn clay_ramp() -> Ramp {
+pub(crate) fn clay_ramp() -> Ramp {
     Ramp::from_hex(&[
         0x2a1418, 0x4a2220, 0x6c3426, 0x8e4a30, 0xa8603a, 0xc27a4a, 0xd89a66, 0xecc090,
     ])
@@ -315,9 +315,11 @@ fn clay_ramp() -> Ramp {
 /// Furnace crucible top: dressed stone round a thick clay crucible full of
 /// molten metal, a dark skin of dross drifting on it.
 pub fn furnace_crucible_top(_ctx: Ctx) -> Tex {
-    let salt = seed("furnace_crucible_top");
-    let stone = furnace_ramp();
-    let clay = clay_ramp();
+    crucible_top_in(seed("furnace_crucible_top"), &furnace_ramp(), &clay_ramp())
+}
+
+/// [`furnace_crucible_top`] in another stone and pot (the iron furnace's).
+pub(crate) fn crucible_top_in(salt: u32, stone: &Ramp, clay: &Ramp) -> Tex {
     let fire = fire_ramp();
     Tex::from_fn(|x, y| {
         let (fx, fy) = (c(x), c(y));
@@ -371,11 +373,17 @@ pub fn furnace_crucible_top(_ctx: Ctx) -> Tex {
 /// spout notched in its lip with metal glowing in it, soot and heat cracks
 /// low down, standing on a stone course like the furnace's own cap.
 pub fn furnace_crucible_side(_ctx: Ctx) -> Tex {
-    let salt = seed("furnace_crucible_side");
-    let stone = furnace_ramp();
-    let clay = clay_ramp();
+    crucible_side_in(
+        seed("furnace_crucible_side"),
+        &furnace_ramp(),
+        &clay_ramp(),
+        &iron_ramp(),
+    )
+}
+
+/// [`furnace_crucible_side`] in another stone, pot and hoop metal.
+pub(crate) fn crucible_side_in(salt: u32, stone: &Ramp, clay: &Ramp, iron: &Ramp) -> Tex {
     let fire = fire_ramp();
-    let iron = iron_ramp();
     let mut tex = Tex::from_fn(|x, y| {
         let (fx, fy) = (c(x), c(y));
         if y >= 28 {
@@ -401,8 +409,8 @@ pub fn furnace_crucible_side(_ctx: Ctx) -> Tex {
         col
     });
     for x in (4..SIZE - 4).step_by(9) {
-        rivet(&mut tex, &iron, x, 7);
-        rivet(&mut tex, &iron, x + 4, 21);
+        rivet(&mut tex, iron, x, 7);
+        rivet(&mut tex, iron, x + 4, 21);
     }
     for y in 0..4 {
         for x in 13..19 {
@@ -438,19 +446,26 @@ pub(crate) fn relic_light_ramp() -> Ramp {
 /// faint cyan light and touched with green verdigris; dark where the
 /// plates meet the rock, as ores are.
 pub fn relic_seam(ctx: Ctx) -> Tex {
-    let salt = seed("relic_seam");
-    let mut tex = crate::materials::stone(ctx);
-    let bronze = relic_ramp();
-    let light = relic_light_ramp();
-    let verdigris = Rgba::hex(0x5aa08a);
-    let outline = Rgba::hex(0x1a1220);
     // Plates: centre, half sizes, turn, and whether the light runs along.
-    let plates: [(f32, f32, f32, f32, f32, bool); 4] = [
+    let plates: [Plate; 4] = [
         (9.0, 10.0, 5.5, 3.5, 0.35, true),
         (23.0, 9.0, 3.5, 4.5, -0.2, false),
         (17.0, 24.0, 6.5, 3.0, 0.1, true),
         (4.0, 24.5, 2.6, 2.6, 0.7, false),
     ];
+    relic_plates(seed("relic_seam"), crate::materials::stone(ctx), &plates)
+}
+
+/// A relic plate: centre, half sizes, turn, and whether its light runs
+/// along it.
+pub(crate) type Plate = (f32, f32, f32, f32, f32, bool);
+
+/// Sets broken relic plates into `tex` (the relic seam's look).
+pub(crate) fn relic_plates(salt: u32, mut tex: Tex, plates: &[Plate]) -> Tex {
+    let bronze = relic_ramp();
+    let light = relic_light_ramp();
+    let verdigris = Rgba::hex(0x5aa08a);
+    let outline = Rgba::hex(0x1a1220);
     let inside = |fx: f32, fy: f32| -> Option<(usize, f32, f32)> {
         for (i, &(px, py, hx, hy, turn, _)) in plates.iter().enumerate() {
             let (s, co) = turn.sin_cos();
