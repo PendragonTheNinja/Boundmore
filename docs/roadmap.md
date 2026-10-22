@@ -56,6 +56,8 @@ What a Boundless player expects to find, and where each stands. "Ours" is the Bo
 
 **M14: Regions and meteorites (built 2026-10-22, `milestones/14-meteorites.md`).** Named regions with discovery XP; meteorite hunts (Nathan, 2026-10-21): meteors fall as you enter a new region, drop waves of creatures, and every player loots the core afterwards; bigger with world tier and player count. In Boundless they were the main source of portal fuel and "a lot of fun", so they drop wayshards here.
 
+**M15: Spark (built 2026-10-22, `milestones/15-spark.md`).** Spark generators, spark links, the mixer, refinery and compactor, machine wear and spanners, the iron furnace, silver and silver alloy, the compact, refined and machined metal chain. Power coils wait for gems.
+
 *After that, still Boundless first (Nathan, 2026-10-19 and 2026-10-20): creatures and combat (bone, tallow and hide, then glue's real recipe), food and hunger, forging. Each gets its own spec and number when it starts.*
 
 **Society.** Shop stands, request baskets, settlements and their ranking, guilds, mail.

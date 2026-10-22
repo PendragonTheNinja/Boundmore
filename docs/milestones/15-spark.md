@@ -80,11 +80,19 @@ Machines past the workbench run on **spark**. You burn fuel in a **spark generat
 
 ## Status
 
-*Spec written 2026-10-22; building.*
+*Built 2026-10-22; awaiting Nathan's play-test.* Protocol 21, `SAVE_VERSION` 8 (version 7 universes open with every station fully repaired and no spark).
 
-- [ ] Data and core: blocks, items, recipes (spark, wear), seams; `Station` kinds; spark rules in `bm-core`
-- [ ] Protocol 21
-- [ ] Server: generators, links, spark costs, wear, spanners, iron furnace, saves (version 8)
-- [ ] Worldgen: silver and relic components appended
-- [ ] Client and art
-- [ ] Verified, screenshots
+- [x] Data and core: blocks, items, recipes (spark, wear), seams; `Station` kinds; spark rules in `bm-core/src/spark.rs`
+- [x] Protocol 21: `StationView.wear` and `.spark`, `ServerMsg::MachineWear`
+- [x] Server: generators (fuel slot, even burn, joined groups, spark refund on break), links (`grid_generators`, 100 limit), spark costs with wait reasons, wear, spanners, iron furnace heat, saves (version 8)
+- [x] Worldgen: silver and relic components appended (generator 3 unchanged)
+- [x] Client and art: textures and icons, machine window wear and spark, generator window, recipe spark costs, wear bar after spanner hits, spanner tooltips, `--demo-ui spark`
+- [x] Verified: 568 tests, upgrade check from version 7 (log: "upgraded the universe from save version 7 to 8"), load test (50 bots, worst tick 4.7 ms); screenshots `docs/media/m15-spark.png`, `m15-machines.png`, `m15-wear-bar.png`
+
+Open (for Nathan):
+- **Breaking a machine resets its wear**: picking a machine up and placing it again restores full wear. Boundless's rule is not found; keeping wear on the item would be a format change.
+- Joining two generator groups that both hold fuel is refused ("take the fuel out of one first").
+- The generator spark refund is unit-tested only (1,000 spark takes about 100 s of coal).
+- The tooltip shows a spanner's base repair, not the Spanner Mastery figure.
+
+Measure in game (Nathan): how much spark one generator block holds; how many spanner hits a fully worn machine took; whether a machine kept its wear when picked up.

@@ -196,3 +196,6 @@ Boundless's live tree and tables exactly (Nathan, 2026-10-20), in Boundmore's na
 | Iron furnace | half the heat | Boundless (wiki Furnace) |
 | Silver | tier 3+, 10 to 40 above the floor, 20+ below the surface; one ore a block to tier 3 | Boundless (tuning 4.3, 4.4) |
 | Relic components | every tier, 40+ above the floor, 5+ below; rarer than fragments (size 9, threshold 0.63) | placement: Boundless; richness: guess |
+| Generator group | at most 256 joined blocks | guess (our limit) |
+| Spark wait | a craft waiting for spark tries again every 30 ticks (0.5 s) | our rule |
+| Machine pickup | breaking a machine forgets its wear (re-placed machines are fully repaired) | guess; ask Nathan |
