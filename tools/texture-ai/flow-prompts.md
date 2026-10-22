@@ -8,7 +8,7 @@
 2. Paste a texture's whole prompt (the grey block). Where it says **References**, add those images first: your saved files from `art/texture-trial/ai-raw/`.
 3. Keep the best of the four. If none is right, generate again; tell Claude what was wrong if it keeps happening.
 4. Download it at the largest size and save it under the name given, in `art/texture-trial/ai-raw/`. PNG or JPG both work.
-5. **Variants** (textures marked so): in a new prompt, add your saved base image as the reference and paste the variant prompt. Keep three, saved as `NAME.v1`, `NAME.v2`, `NAME.v3`. They must be different patches of the same material, not copies.
+5. **Variants** (textures marked so): do **not** attach a reference image (Flow copies it, Nathan found 2026-10-22). Use the texture's own prompt again, with no image: each run of 4 is four different patches of the same material in the same style. Keep the best as the base and the three that match it best as `NAME.v1`, `NAME.v2`, `NAME.v3`. They need not line up at the edges (`cleanup.py` joins each into the base's edges); they should look like the same material.
 6. Push the folder (or upload the files on GitHub into that folder). Claude runs `cleanup.py`, which makes each image tile, joins the variants, sizes them to 128, and puts them in the game for screenshots.
 
 Not here: water and glass (they need transparency) and anything with an exact layout (machines, shrines, torches, plants, icons), which stay painted in code.
@@ -22,13 +22,7 @@ Hand-painted texture for a bright, high-fantasy voxel game, in a soft painterly 
 The material: a lush, rich green grass lawn seen from directly above. An even carpet of countless fine grass blades pointing every which way, gently clumped in soft irregular patches that merge into each other, with small darker gaps between blades and bright yellow-green tips catching the light here and there. Low contrast and uniform across the whole image: this covers whole fields, block after block, so nothing in it may stand out or repeat noticeably. No rosettes, no star shapes, no radial tufts, no round mounds, no moss, no bushes, no flowers, no bare soil.
 ```
 
-**Variants:** reference your saved `turf_top`, paste the prompt below, keep three: `turf_top.v1`, `turf_top.v2`, `turf_top.v3`.
-
-```text
-Hand-painted texture for a bright, high-fantasy voxel game, in a soft painterly style: smooth blended brushwork, gentle gradients and soft edges, forms shaped by light and colour rather than by lines, with no black or dark outlines around shapes. A little visible brush texture; never photographic, never noisy, never pixel art. Stylised, gently chunky forms with a little warmth and charm. Rich, saturated, luminous colours. One soft light from the top left: each form is lit on its top-left side and shaded on its bottom-right side; shadows lean cool blue-purple, highlights lean warm. Seen flat and straight on, orthographic, no perspective. The image as a whole is evenly lit: no overall gradient, no vignette, no brighter or darker corner or side. Bold, readable forms, never busy. The material fills the frame edge to edge as a seamless tileable texture. No border, no text, no logo, no objects other than the material. An original look, not copied from any existing game.
-
-The reference image is a texture of one material. Paint a new, different patch of exactly the same material: the same style, colours, light, scale and size of shapes, but different shapes in different places, as if from another spot on the same surface. Do not copy any shape from the reference.
-```
+**Variants:** the same prompt again, no reference image; from the fours, keep the three that best match your base: `turf_top.v1`, `turf_top.v2`, `turf_top.v3`.
 
 ## 2. foliage
 Save as **`foliage`**.
@@ -39,13 +33,7 @@ Hand-painted texture for a bright, high-fantasy voxel game, in a soft painterly 
 The material: a dense mass of tree leaves filling the frame, seen from the side, like the inside of a thick leafy crown. Many small leaves of slightly different sizes overlapping at random angles and depths: deep blue-green in the shadowed back, mid greens, and bright yellow-green leaves in front, each leaf lit on its top left. Irregular and natural, evenly spread across the whole image. No rosettes, no star shapes, no flowers, no radial clusters, no sky, no branches, no gaps.
 ```
 
-**Variants:** reference your saved `foliage`, paste the prompt below, keep three: `foliage.v1`, `foliage.v2`, `foliage.v3`.
-
-```text
-Hand-painted texture for a bright, high-fantasy voxel game, in a soft painterly style: smooth blended brushwork, gentle gradients and soft edges, forms shaped by light and colour rather than by lines, with no black or dark outlines around shapes. A little visible brush texture; never photographic, never noisy, never pixel art. Stylised, gently chunky forms with a little warmth and charm. Rich, saturated, luminous colours. One soft light from the top left: each form is lit on its top-left side and shaded on its bottom-right side; shadows lean cool blue-purple, highlights lean warm. Seen flat and straight on, orthographic, no perspective. The image as a whole is evenly lit: no overall gradient, no vignette, no brighter or darker corner or side. Bold, readable forms, never busy. The material fills the frame edge to edge as a seamless tileable texture. No border, no text, no logo, no objects other than the material. An original look, not copied from any existing game.
-
-The reference image is a texture of one material. Paint a new, different patch of exactly the same material: the same style, colours, light, scale and size of shapes, but different shapes in different places, as if from another spot on the same surface. Do not copy any shape from the reference.
-```
+**Variants:** the same prompt again, no reference image; from the fours, keep the three that best match your base: `foliage.v1`, `foliage.v2`, `foliage.v3`.
 
 ## 3. stone
 Save as **`stone`**.
@@ -56,13 +44,7 @@ Hand-painted texture for a bright, high-fantasy voxel game, in a soft painterly 
 The material: cool blue-grey natural bedrock as found in a cliff or quarry face, never built. Irregular broken rock faces of different sizes and shapes at many angles, separated by soft dark fissures, with softly chipped edges, small pits and faint fine cracks. About three or four large rock faces across the image with smaller pieces between them. No masonry: no bricks, no blocks, no rows, no rectangles, no straight lines, no mortar.
 ```
 
-**Variants:** reference your saved `stone`, paste the prompt below, keep three: `stone.v1`, `stone.v2`, `stone.v3`.
-
-```text
-Hand-painted texture for a bright, high-fantasy voxel game, in a soft painterly style: smooth blended brushwork, gentle gradients and soft edges, forms shaped by light and colour rather than by lines, with no black or dark outlines around shapes. A little visible brush texture; never photographic, never noisy, never pixel art. Stylised, gently chunky forms with a little warmth and charm. Rich, saturated, luminous colours. One soft light from the top left: each form is lit on its top-left side and shaded on its bottom-right side; shadows lean cool blue-purple, highlights lean warm. Seen flat and straight on, orthographic, no perspective. The image as a whole is evenly lit: no overall gradient, no vignette, no brighter or darker corner or side. Bold, readable forms, never busy. The material fills the frame edge to edge as a seamless tileable texture. No border, no text, no logo, no objects other than the material. An original look, not copied from any existing game.
-
-The reference image is a texture of one material. Paint a new, different patch of exactly the same material: the same style, colours, light, scale and size of shapes, but different shapes in different places, as if from another spot on the same surface. Do not copy any shape from the reference.
-```
+**Variants:** the same prompt again, no reference image; from the fours, keep the three that best match your base: `stone.v1`, `stone.v2`, `stone.v3`.
 
 ## 4. soil
 Save as **`soil`**.
@@ -73,13 +55,7 @@ Hand-painted texture for a bright, high-fantasy voxel game, in a soft painterly 
 The material: warm reddish-brown loose earth seen from directly above, like freshly turned garden soil. Soft crumbly mounds with smaller crumbs on them, purple-brown shadow in the hollows between, a few small dark specks and two or three small grey-brown pebbles. Loose and crumbly: no flat slabs, no cobbles, no regular pattern.
 ```
 
-**Variants:** reference your saved `soil`, paste the prompt below, keep three: `soil.v1`, `soil.v2`, `soil.v3`.
-
-```text
-Hand-painted texture for a bright, high-fantasy voxel game, in a soft painterly style: smooth blended brushwork, gentle gradients and soft edges, forms shaped by light and colour rather than by lines, with no black or dark outlines around shapes. A little visible brush texture; never photographic, never noisy, never pixel art. Stylised, gently chunky forms with a little warmth and charm. Rich, saturated, luminous colours. One soft light from the top left: each form is lit on its top-left side and shaded on its bottom-right side; shadows lean cool blue-purple, highlights lean warm. Seen flat and straight on, orthographic, no perspective. The image as a whole is evenly lit: no overall gradient, no vignette, no brighter or darker corner or side. Bold, readable forms, never busy. The material fills the frame edge to edge as a seamless tileable texture. No border, no text, no logo, no objects other than the material. An original look, not copied from any existing game.
-
-The reference image is a texture of one material. Paint a new, different patch of exactly the same material: the same style, colours, light, scale and size of shapes, but different shapes in different places, as if from another spot on the same surface. Do not copy any shape from the reference.
-```
+**Variants:** the same prompt again, no reference image; from the fours, keep the three that best match your base: `soil.v1`, `soil.v2`, `soil.v3`.
 
 ## 5. turf_side
 Save as **`turf_side`**. References: `soil`, `turf_top` (your saved images).
@@ -117,13 +93,7 @@ Hand-painted texture for a bright, high-fantasy voxel game, in a soft painterly 
 The material: deep underground rock, darker than ordinary stone and leaning purple: deep indigo and dusky violet greys. Long, flat, layered strata running roughly level across the image, broken into irregular lengths by soft dark fissures, with faint pale highlights on top-left edges. Heavy and ancient. No bricks, no masonry, no straight ruled lines.
 ```
 
-**Variants:** reference your saved `deep_stone`, paste the prompt below, keep three: `deep_stone.v1`, `deep_stone.v2`, `deep_stone.v3`.
-
-```text
-Hand-painted texture for a bright, high-fantasy voxel game, in a soft painterly style: smooth blended brushwork, gentle gradients and soft edges, forms shaped by light and colour rather than by lines, with no black or dark outlines around shapes. A little visible brush texture; never photographic, never noisy, never pixel art. Stylised, gently chunky forms with a little warmth and charm. Rich, saturated, luminous colours. One soft light from the top left: each form is lit on its top-left side and shaded on its bottom-right side; shadows lean cool blue-purple, highlights lean warm. Seen flat and straight on, orthographic, no perspective. The image as a whole is evenly lit: no overall gradient, no vignette, no brighter or darker corner or side. Bold, readable forms, never busy. The material fills the frame edge to edge as a seamless tileable texture. No border, no text, no logo, no objects other than the material. An original look, not copied from any existing game.
-
-The reference image is a texture of one material. Paint a new, different patch of exactly the same material: the same style, colours, light, scale and size of shapes, but different shapes in different places, as if from another spot on the same surface. Do not copy any shape from the reference.
-```
+**Variants:** the same prompt again, no reference image; from the fours, keep the three that best match your base: `deep_stone.v1`, `deep_stone.v2`, `deep_stone.v3`.
 
 ## 9. bedrock
 Save as **`bedrock`**.
@@ -143,13 +113,7 @@ Hand-painted texture for a bright, high-fantasy voxel game, in a soft painterly 
 The material: warm golden sand seen from directly above, in soft wind-shaped ripples: each ripple with a lit windward slope and a gently shaded lee, a few darker and paler grains gathered in small clumps. Smooth and soft, sunny and warm. No shells, no footprints, no stones.
 ```
 
-**Variants:** reference your saved `sand`, paste the prompt below, keep three: `sand.v1`, `sand.v2`, `sand.v3`.
-
-```text
-Hand-painted texture for a bright, high-fantasy voxel game, in a soft painterly style: smooth blended brushwork, gentle gradients and soft edges, forms shaped by light and colour rather than by lines, with no black or dark outlines around shapes. A little visible brush texture; never photographic, never noisy, never pixel art. Stylised, gently chunky forms with a little warmth and charm. Rich, saturated, luminous colours. One soft light from the top left: each form is lit on its top-left side and shaded on its bottom-right side; shadows lean cool blue-purple, highlights lean warm. Seen flat and straight on, orthographic, no perspective. The image as a whole is evenly lit: no overall gradient, no vignette, no brighter or darker corner or side. Bold, readable forms, never busy. The material fills the frame edge to edge as a seamless tileable texture. No border, no text, no logo, no objects other than the material. An original look, not copied from any existing game.
-
-The reference image is a texture of one material. Paint a new, different patch of exactly the same material: the same style, colours, light, scale and size of shapes, but different shapes in different places, as if from another spot on the same surface. Do not copy any shape from the reference.
-```
+**Variants:** the same prompt again, no reference image; from the fours, keep the three that best match your base: `sand.v1`, `sand.v2`, `sand.v3`.
 
 ## 11. gravel
 Save as **`gravel`**.
@@ -160,13 +124,7 @@ Hand-painted texture for a bright, high-fantasy voxel game, in a soft painterly 
 The material: a bed of loose rounded pebbles of several kinds, blue-grey, warm grey, tan and slate, packed closely, each pebble softly lit on its top left with soft dark gaps between. Busier and rounder than stone, but still soft and painterly.
 ```
 
-**Variants:** reference your saved `gravel`, paste the prompt below, keep three: `gravel.v1`, `gravel.v2`, `gravel.v3`.
-
-```text
-Hand-painted texture for a bright, high-fantasy voxel game, in a soft painterly style: smooth blended brushwork, gentle gradients and soft edges, forms shaped by light and colour rather than by lines, with no black or dark outlines around shapes. A little visible brush texture; never photographic, never noisy, never pixel art. Stylised, gently chunky forms with a little warmth and charm. Rich, saturated, luminous colours. One soft light from the top left: each form is lit on its top-left side and shaded on its bottom-right side; shadows lean cool blue-purple, highlights lean warm. Seen flat and straight on, orthographic, no perspective. The image as a whole is evenly lit: no overall gradient, no vignette, no brighter or darker corner or side. Bold, readable forms, never busy. The material fills the frame edge to edge as a seamless tileable texture. No border, no text, no logo, no objects other than the material. An original look, not copied from any existing game.
-
-The reference image is a texture of one material. Paint a new, different patch of exactly the same material: the same style, colours, light, scale and size of shapes, but different shapes in different places, as if from another spot on the same surface. Do not copy any shape from the reference.
-```
+**Variants:** the same prompt again, no reference image; from the fours, keep the three that best match your base: `gravel.v1`, `gravel.v2`, `gravel.v3`.
 
 ## 12. snow
 Save as **`snow`**.
@@ -177,13 +135,7 @@ Hand-painted texture for a bright, high-fantasy voxel game, in a soft painterly 
 The material: fresh soft snow seen from above: gentle drifts and hollows, pale blue-lavender in the hollows, near-white on the crests, with a rare small glint of sparkle. Calm and clean, very soft shapes.
 ```
 
-**Variants:** reference your saved `snow`, paste the prompt below, keep three: `snow.v1`, `snow.v2`, `snow.v3`.
-
-```text
-Hand-painted texture for a bright, high-fantasy voxel game, in a soft painterly style: smooth blended brushwork, gentle gradients and soft edges, forms shaped by light and colour rather than by lines, with no black or dark outlines around shapes. A little visible brush texture; never photographic, never noisy, never pixel art. Stylised, gently chunky forms with a little warmth and charm. Rich, saturated, luminous colours. One soft light from the top left: each form is lit on its top-left side and shaded on its bottom-right side; shadows lean cool blue-purple, highlights lean warm. Seen flat and straight on, orthographic, no perspective. The image as a whole is evenly lit: no overall gradient, no vignette, no brighter or darker corner or side. Bold, readable forms, never busy. The material fills the frame edge to edge as a seamless tileable texture. No border, no text, no logo, no objects other than the material. An original look, not copied from any existing game.
-
-The reference image is a texture of one material. Paint a new, different patch of exactly the same material: the same style, colours, light, scale and size of shapes, but different shapes in different places, as if from another spot on the same surface. Do not copy any shape from the reference.
-```
+**Variants:** the same prompt again, no reference image; from the fours, keep the three that best match your base: `snow.v1`, `snow.v2`, `snow.v3`.
 
 ## 13. ice
 Save as **`ice`**.
