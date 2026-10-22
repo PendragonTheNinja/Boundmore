@@ -153,7 +153,7 @@ pub const TEXTURES_VIEW: [f64; 3] = [128.5, 44.0, 132.5];
 pub const SPARK_GENERATORS: [[i64; 3]; 2] = [[121, 44, 118], [122, 44, 118]];
 pub const SPARK_LINKS: [[i64; 3]; 3] = [[123, 44, 118], [124, 44, 118], [125, 44, 118]];
 pub const MIXER: [[i64; 3]; 4] = [[126, 44, 118], [127, 44, 118], [128, 44, 118], [129, 44, 118]];
-pub const SPARK_VIEW: [f64; 3] = [125.5, 44.0, 123.5];
+pub const SPARK_VIEW: [f64; 3] = [125.5, 44.0, 122.5];
 
 /// Where `show_flora` puts the player: on a stone post looking north over
 /// rows of plants and boulders to a cave mouth with fungi in it.
@@ -1827,8 +1827,8 @@ impl Demo {
             (121, "refinery", "refinery"),
             (123, "compactor", "compactor"),
             (124, "compactor", "compactor"),
-            (126, "iron_furnace", "iron_furnace_crucible"),
-            (128, "silver_seam", "relic_cache"),
+            (132, "iron_furnace", "iron_furnace_crucible"),
+            (133, "silver_seam", "relic_cache"),
             (130, "spark_link", "spark_link"),
             (131, "spark_generator", "furnace_crucible"),
         ] {
