@@ -101,3 +101,5 @@ The API route costs money per image on top of Nathan's Google AI Pro subscriptio
 3. Claude runs `cleanup.py` (seams, variants, lighting drift, 128, recolour check), puts the set in the game with `--demo-ui textures`, sends screenshots and says which need another try.
 
 `generate.py` stays for the API, should it be wanted again.
+
+**One stone for now** (Nathan, 2026-10-22): the stone made in this pass is one texture; it will later be one of Boundless's three rock kinds (`docs/roadmap.md`, Later art passes).

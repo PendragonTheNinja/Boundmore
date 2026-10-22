@@ -70,4 +70,6 @@ What a Boundless player expects to find, and where each stands. "Ours" is the Bo
 
 ## Later art passes
 
+- **Three kinds of rock** (Nathan, 2026-10-22). Boundless has three rock kinds (igneous, sedimentary, metamorphic), on every world, each recoloured per world and each with its own trace ore (tuning 4: sulphur, saltpetre, olivine). For now Boundmore keeps one stone texture; when planet generation grows, that texture becomes **one** of the three, and the other two get their own textures and placement.
+
 - **Larger textures** (Nathan asked, 2026-10-19). Boundless's block textures were 256x256 (a Wonderstruck developer on the forum, 2015, topic 2404; confirmed by players in 2020), smooth and painterly; ours are 32x32 by choice. Players coming from Boundless may expect more detail. Plan: make the procedural painters resolution-aware so the same recipes paint 64×64 with real added detail; offer a texture-quality setting (32 or 64). Above 64, hand-made or AI-made drop-in replacements fit better than procedural paint.
