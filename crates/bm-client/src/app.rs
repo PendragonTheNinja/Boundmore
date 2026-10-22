@@ -503,6 +503,7 @@ impl Session {
         }
         let world = &self.world;
         let input = SwingInput {
+            keen: self.me.state.crit_multiplier(),
             tool: &tool,
             effects: &effects,
             hit: pos,

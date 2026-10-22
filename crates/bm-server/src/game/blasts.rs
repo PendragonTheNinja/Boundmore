@@ -74,7 +74,7 @@ impl Game {
         let hold = (hold as u32).min(BOMB_FUSE_TICKS);
         let eye = p.state.eye(&self.movement);
         let vel = look_dir(yaw, pitch) * throw_speed(hold, bag.throw_speed);
-        if roll(&mut self.rng) >= effects.wear_saved() {
+        if roll(&mut self.rng) >= p.state.wear_spared(effects.wear_saved()) {
             let before = p.inventory.clone();
             let broke = wear_slot(&self.items, &mut p.inventory, slot as usize);
             send_slots(p, &before);

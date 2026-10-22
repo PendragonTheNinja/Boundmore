@@ -17,7 +17,7 @@ use bm_core::combat::{
 };
 use bm_core::creatures::{Attack, roll_drops};
 use bm_core::items::ToolClass;
-use bm_core::mining::{is_crit, skilled_tool, swing_ticks};
+use bm_core::mining::{is_crit, skilled_tool_keen, swing_ticks};
 use bm_core::movement::{PhysicsWorld, look_dir};
 use bm_core::raycast::raycast_shaped;
 use bm_core::skills::defeat_debt;
@@ -184,7 +184,7 @@ impl Game {
         let eye = p.state.eye(&self.movement);
         let vel = look_dir(yaw, pitch) * sling.shot_speed as f64;
         // One durability a shot, unless Careful Hands spares it.
-        if roll(&mut self.rng) >= effects.wear_saved() {
+        if roll(&mut self.rng) >= p.state.wear_spared(effects.wear_saved()) {
             let before = p.inventory.clone();
             let broke = wear_slot(&self.items, &mut p.inventory, slot as usize);
             send_slots(p, &before);
@@ -426,13 +426,13 @@ impl Game {
             return tracing::debug!("#{id} struck with no tool in slot {slot}");
         };
         let effects = p.effects;
-        let tool = skilled_tool(&tool, &effects);
+        let tool = skilled_tool_keen(&tool, &effects, p.state.crit_multiplier());
         let p = self.players.get_mut(&id).expect("present");
         p.last_swing = Some((at, swing_ticks(tool.action_speed)));
         if !p.state.try_spend(tool.energy, bm_core::food::Drain::Tool) {
             return;
         }
-        if roll(&mut self.rng) >= effects.wear_saved() {
+        if roll(&mut self.rng) >= p.state.wear_spared(effects.wear_saved()) {
             let before = p.inventory.clone();
             let broke = wear_slot(&self.items, &mut p.inventory, slot as usize);
             send_slots(p, &before);
@@ -658,7 +658,7 @@ impl Game {
         if p.state.down || p.planet != pi {
             return;
         }
-        let amount = taken(amount, kind, &p.effects.defence(), r);
+        let amount = taken(amount, kind, &p.state.guarded(p.effects.defence()), r);
         p.state.take(amount);
         p.out.send(&ServerMsg::Hit {
             target: Target::Player(pid),
@@ -724,6 +724,10 @@ impl Game {
             hook: None,
             ..p.state
         };
+        // Boundless's hunger penalty for a defeat (milestone 16), and the
+        // sickness is gone.
+        s.defeat_hunger();
+        s.sick = 0;
         let health = (s.max_health() as f64 * RETURN_HEALTH_SHARE).round() as u32;
         s.revive(health);
         p.state = s;

@@ -315,7 +315,7 @@ impl PlayerState {
 
     /// A buff ending (or hunger shrinking the bar) never leaves more spent
     /// or lost than there is.
-    pub(crate) fn clamp_to_maxima(&mut self) {
+    pub fn clamp_to_maxima(&mut self) {
         self.spent = self.spent.min(self.max_energy());
         self.hunger = self.hunger.min(self.hunger_cap());
         if !self.down {
@@ -351,6 +351,13 @@ impl PlayerState {
     /// Gentle's chance (0..1) a use costs no durability.
     pub fn wear_skip_chance(&self) -> f64 {
         self.buff.rank_of(Buff::Gentle).map_or(0, |r| GENTLE[r]) as f64 / 100.0
+    }
+
+    /// The chance a use costs no durability, with `skill`'s chance (the
+    /// durability epic) and Gentle's both rolled: they multiply, as
+    /// Boundless's buffs and skills do.
+    pub fn wear_spared(&self, skill: f64) -> f64 {
+        1.0 - (1.0 - skill) * (1.0 - self.wear_skip_chance())
     }
 
     /// Studious: percent more XP.

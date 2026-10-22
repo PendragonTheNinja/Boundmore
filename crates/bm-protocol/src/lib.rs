@@ -177,6 +177,14 @@ pub enum ClientMsg {
     /// Takes your own share from the meteor heart at `pos` (milestone 14),
     /// once per meteor.
     LootHeart { pos: BlockPos },
+    /// Eats one of the food in hotbar `slot` right after input `at`
+    /// (milestone 16): its hunger off, its buff on, raw meat's sickness. The
+    /// client applies the same at `at` (`PlayerState::eat`); the server
+    /// answers with `Slots`, or nothing if it refuses.
+    Eat { at: u32, slot: u8 },
+    /// Fills one empty bucket from hotbar `slot` at the water block `pos`,
+    /// within reach (milestone 16). Answered with `Slots`, or a `Notice`.
+    FillBucket { slot: u8, pos: BlockPos },
 }
 
 /// What the portal window's buttons do.

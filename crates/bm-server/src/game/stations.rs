@@ -168,17 +168,26 @@ impl Game {
         if !self.planets[pi].stations.has_room(key) {
             return self.notice(id, &CraftError::QueueFull.to_string());
         }
-        match self.change_inventory(id, |inv, _| crafting::take_inputs(inv, &recipe, count)) {
-            Some(true) => {}
-            Some(false) => return self.notice(id, &CraftError::Materials.to_string()),
+        let containers = match self.change_inventory(id, |inv, items| {
+            crafting::take_inputs_keeping(inv, items, &recipe, count)
+        }) {
+            Some(Some(c)) => c,
+            Some(None) => return self.notice(id, &CraftError::Materials.to_string()),
             None => return,
-        }
+        };
         let planet = &mut self.planets[pi];
         let env = PlanetEnv::new(&planet.world, self.spark_link);
-        if let Err(e) = planet
-            .stations
-            .queue(key, m.kind, index, count, self.tick, &self.items, &self.recipes, &env)
-        {
+        if let Err(e) = planet.stations.queue(
+            key,
+            m.kind,
+            index,
+            count,
+            containers,
+            self.tick,
+            &self.items,
+            &self.recipes,
+            &env,
+        ) {
             // Unreachable (room was checked), but never take inputs silently.
             tracing::error!("queueing at {key:?} after taking inputs: {e}");
         }

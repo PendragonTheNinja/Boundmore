@@ -83,6 +83,8 @@ impl Game {
             return;
         }
         let Some(p) = self.players.get_mut(&id) else { return };
+        // Studious food: 10 to 100% more (milestone 16).
+        let xp = xp * (100 + p.state.xp_bonus_percent() as u64) / 100;
         let before = p.character.level();
         let gained = p.character.add_xp(xp);
         p.character_dirty = true;

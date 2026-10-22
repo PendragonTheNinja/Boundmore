@@ -9,7 +9,8 @@ use crate::world::World;
 use bm_core::items::ToolClass;
 use bm_core::items::title_case;
 use bm_core::mining::{
-    MAX_TIER, aoe_blocks, block_health, bonus_count, is_crit, skilled_tool, swing_damage, swing_ticks,
+    MAX_TIER, aoe_blocks, block_health, bonus_count, is_crit, skilled_tool, skilled_tool_keen, swing_damage,
+    swing_ticks,
 };
 use bm_core::movement::look_dir;
 use bm_core::{BlockId, BlockPos, BlockState, Colour, HOTBAR_SLOTS, ItemId, ItemRegistry, Mount, Shape};
@@ -208,8 +209,9 @@ impl Game {
         let Some(tool) = self.items.swing_tool(item) else {
             return self.swing_refused(id, seq, pos, Refusal::Told(NEED_A_TOOL.into()));
         };
-        // The tool as this character swings it: damage, cadence and crits.
-        let tool = skilled_tool(&tool, &effects);
+        // The tool as this character swings it: damage, cadence and crits
+        // (Keen food multiplies the crits skills add).
+        let tool = skilled_tool_keen(&tool, &effects, p.state.crit_multiplier());
         let look = look_dir(p.last_input.yaw, p.last_input.pitch);
         let p = self.players.get_mut(&id).expect("present");
         p.last_swing = Some((at, swing_ticks(tool.action_speed)));
@@ -272,10 +274,11 @@ impl Game {
     /// One durability per swing, whatever it hit, unless the durability epic
     /// spares it.
     fn wear_swung_tool(&mut self, id: u32, slot: u8, effects: &bm_core::skills::Effects) {
-        if roll(&mut self.rng) < effects.wear_saved() {
+        let Some(p) = self.players.get_mut(&id) else { return };
+        // The durability epic and Gentle food spare some wear.
+        if roll(&mut self.rng) < p.state.wear_spared(effects.wear_saved()) {
             return;
         }
-        let Some(p) = self.players.get_mut(&id) else { return };
         let before = p.inventory.clone();
         let broke = wear_slot(&self.items, &mut p.inventory, slot as usize);
         send_slots(p, &before);

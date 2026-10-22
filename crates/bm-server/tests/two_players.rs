@@ -620,6 +620,7 @@ fn seed_hurt(dir: &Path, name: &str, stacks: &[(usize, &str, u16, u16)], charact
                     last_seen: 0,
                     character: character.into(),
                     hurt,
+                    food: Default::default(),
                 },
             )],
             ..Default::default()
@@ -1313,6 +1314,7 @@ async fn a_workbench_saved_at_one_block_joins_its_machine() {
                         burn_total: 0,
                         burn_elapsed: 0,
                         blocks: 1,
+                        containers: Vec::new(),
                     }),
                 )],
                 ..Default::default()
@@ -5364,5 +5366,111 @@ async fn a_worn_out_workbench_waits_for_a_spanner() {
         durability + 1,
         "spanners wear as they swing"
     );
+    server.stop();
+}
+
+// Milestone 16: food.
+
+/// `n` inputs at the real rate (30 every half second).
+async fn paced(c: &mut TestClient, n: u32, input: PlayerInput) {
+    let mut left = n;
+    while left > 0 {
+        let k = left.min(30);
+        c.send_inputs(k, input);
+        left -= k;
+        tokio::time::sleep(Duration::from_millis(500)).await;
+    }
+}
+
+fn jumping() -> PlayerInput {
+    PlayerInput {
+        jump: true,
+        ..Default::default()
+    }
+}
+
+/// Eats the food in `slot` right after the latest input, as the client does.
+async fn eat(c: &mut TestClient, slot: u8) -> PlayerState {
+    if c.seq == 0 {
+        c.send_inputs(1, PlayerInput::default());
+    }
+    let at = c.seq;
+    c.send(ClientMsg::Eat { at, slot }).await;
+    // An input after it, so the snapshot that acknowledges it shows the meal.
+    c.send_inputs(1, PlayerInput::default());
+    snapshot_after(c).await
+}
+
+/// Milestone 16, acceptance 1 to 4: running and jumping make you hungry,
+/// cooked meat takes 400 off, nothing is eaten at no hunger, raw meat makes
+/// you sick, a broth makes you Sated (and running then costs nothing), and
+/// hunger and the buff survive a restart. A bucket fills only at water.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn hunger_grows_food_takes_it_away_and_buffs_last() {
+    use bm_core::food::{Buff, HUNGER_SCALE};
+    let dir = tempfile::tempdir().unwrap();
+    seed(
+        dir.path(),
+        "Alice",
+        &[
+            (0, "cooked_meat", 2, 0),
+            (1, "raw_meat", 1, 0),
+            (2, "meat_broth", 1, 0),
+            (3, "bucket", 1, 0),
+        ],
+    );
+    let (hunger, buff) = {
+        let server = bm_server::start(config(dir.path())).unwrap();
+        let mut alice = TestClient::login(&server, "Alice").await;
+        let feet = alice.feet();
+        alice.wait_for_chunk(feet.chunk()).await;
+
+        // Nothing to gain: refused, nothing eaten.
+        let s = eat(&mut alice, 0).await;
+        assert_eq!(s.hunger, 0);
+        alice.settle().await;
+        assert_eq!(alice.count("cooked_meat"), 2);
+
+        // Jumping in place for 10 s: a point a jump (a guess, `food`).
+        paced(&mut alice, 600, jumping()).await;
+        let s = snapshot_after(&mut alice).await;
+        assert!(s.hunger_points() >= 10, "hungry after jumping: {}", s.hunger_points());
+        assert_eq!(s.max_energy(), 600 - s.hunger_points());
+        let before = s.hunger;
+
+        // Cooked meat: 400 off (all of it here).
+        let s = eat(&mut alice, 0).await;
+        assert_eq!(s.hunger, before.saturating_sub(400 * HUNGER_SCALE));
+        alice.settle().await;
+        assert_eq!(alice.count("cooked_meat"), 1);
+
+        // Raw meat (hungry again first): sick.
+        paced(&mut alice, 120, jumping()).await;
+        let s = eat(&mut alice, 1).await;
+        assert!(s.sick > 0, "raw meat makes you sick");
+
+        // A meat broth: Sated for 10 minutes.
+        paced(&mut alice, 70, PlayerInput::default()).await;
+        let s = eat(&mut alice, 2).await;
+        assert_eq!((s.buff.kind, s.buff.rank), (Buff::Sated, 1));
+        let sated = s.hunger;
+        paced(&mut alice, 300, jumping()).await;
+        let s = snapshot_after(&mut alice).await;
+        assert_eq!(s.hunger, sated, "Sated: no hunger");
+
+        // A bucket fills only at water.
+        alice.send(ClientMsg::FillBucket { slot: 3, pos: feet }).await;
+        alice.notice("Fill a bucket at water").await;
+
+        drop(alice);
+        server.stop();
+        (s.hunger, s.buff)
+    };
+    let server = bm_server::start(config(dir.path())).unwrap();
+    let alice = TestClient::login(&server, "Alice").await;
+    let s = alice.welcome.spawn;
+    assert_eq!(s.hunger, hunger, "hunger kept");
+    assert_eq!(s.buff.kind, buff.kind, "the buff kept");
+    assert!(s.buff.left > 0 && s.buff.left <= buff.left);
     server.stop();
 }

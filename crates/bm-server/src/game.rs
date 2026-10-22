@@ -22,11 +22,12 @@ use crate::planet::Planet;
 use crate::portals::{PortalRules, Portals};
 use crate::reclaim::Reclaims;
 use crate::storage::move_stack;
-use crate::store::{PlayerData, Store, WriteBatch, load_slots, save_slots};
+use crate::store::{PlayerData, SavedFood, Store, WriteBatch, load_slots, save_slots};
 
 mod blasts;
 mod combat;
 mod creatures;
+mod food;
 mod meteors;
 mod mining;
 mod portal;
@@ -138,6 +139,11 @@ enum Queued {
         pitch: i16,
         hold: u16,
     },
+    /// Food eaten (milestone 16): it changes the body from its input on.
+    Eat {
+        at: u32,
+        slot: u8,
+    },
 }
 
 impl Queued {
@@ -146,7 +152,11 @@ impl Queued {
     fn seq_pos(&self) -> Option<(u32, BlockPos)> {
         match *self {
             Queued::Edit { seq, pos, .. } | Queued::Swing { seq, pos, .. } => Some((seq, pos)),
-            Queued::Skill { .. } | Queued::Shoot { .. } | Queued::Strike { .. } | Queued::Throw { .. } => None,
+            Queued::Skill { .. }
+            | Queued::Shoot { .. }
+            | Queued::Strike { .. }
+            | Queued::Throw { .. }
+            | Queued::Eat { .. } => None,
         }
     }
 
@@ -154,7 +164,7 @@ impl Queued {
     fn attack(&self) -> bool {
         matches!(
             self,
-            Queued::Shoot { .. } | Queued::Strike { .. } | Queued::Throw { .. }
+            Queued::Shoot { .. } | Queued::Strike { .. } | Queued::Throw { .. } | Queued::Eat { .. }
         )
     }
 }
@@ -330,6 +340,8 @@ pub struct Game {
     /// Spark links, and the refund item of a broken generator (milestone 15).
     spark_link: BlockId,
     spark_item: ItemId,
+    /// A bucket of water (milestone 16), what a filled bucket becomes.
+    water_bucket: ItemId,
     /// Damaged blocks, by planet index (milestone 9; never saved).
     damage: Vec<DamageMap>,
     /// Bonus yields are rolled from this (splitmix64).
@@ -547,6 +559,7 @@ impl Game {
         let wayshard = items.id("wayshard")?;
         let spark_link = registry.id("spark_link")?;
         let spark_item = items.id("spark")?;
+        let water_bucket = items.id("water_bucket")?;
         let (saved_portals, next_portal) = store.portals()?;
         let portals = Portals::load(saved_portals, next_portal, |id| {
             planets.get(id as usize).map(|p| p.world.shape)
@@ -619,6 +632,7 @@ impl Game {
             wayshard,
             spark_link,
             spark_item,
+            water_bucket,
             damage: (0..planet_count).map(|_| DamageMap::default()).collect(),
             rng: std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
@@ -874,6 +888,8 @@ impl Game {
             }
             Event::Msg { id, msg } => match msg {
                 ClientMsg::Skill { at, action } => self.queue(id, at, Queued::Skill { at, action }),
+                ClientMsg::Eat { at, slot } => self.queue(id, at, Queued::Eat { at, slot }),
+                ClientMsg::FillBucket { slot, pos } => self.fill_bucket(id, slot, pos),
                 ClientMsg::Throw {
                     at,
                     slot,
@@ -961,8 +977,15 @@ impl Game {
             out.close("this server is full");
             return;
         }
-        let (planet, saved, mut inventory, character, hurt) = match self.departed.remove(&account) {
-            Some(d) => (d.planet, Some(d.state), d.inventory, d.character, d.state.hurt),
+        let (planet, saved, mut inventory, character, hurt, food) = match self.departed.remove(&account) {
+            Some(d) => (
+                d.planet,
+                Some(d.state),
+                d.inventory,
+                d.character,
+                d.state.hurt,
+                SavedFood::from(&d.state),
+            ),
             None => match self.store.player(&account) {
                 Ok(Some(data)) => (
                     data.planet as usize,
@@ -972,8 +995,16 @@ impl Game {
                     },
                     skills::sanitize(data.character.into(), &self.skills),
                     data.hurt,
+                    data.food,
                 ),
-                Ok(None) => (self.start, None, self.starting_inventory(), Character::default(), 0),
+                Ok(None) => (
+                    self.start,
+                    None,
+                    self.starting_inventory(),
+                    Character::default(),
+                    0,
+                    SavedFood::default(),
+                ),
                 Err(e) => {
                     // Never start them afresh: the empty inventory would be
                     // saved over the real one.
@@ -1003,8 +1034,12 @@ impl Game {
         let effects = character.effects(&self.skills);
         let mut state = PlayerState {
             body: effects.body(),
-            // Health lost goes with the character, wherever they start.
+            // Health lost and hunger go with the character, wherever they
+            // start (milestone 16: the food buff and sickness too).
             hurt,
+            hunger: food.hunger,
+            buff: food.buff,
+            sick: food.sick,
             // Never left lying defeated: one who left down comes back up.
             down: false,
             ..state
@@ -1013,6 +1048,7 @@ impl Game {
             let back = (state.max_health() as f64 * combat::RETURN_HEALTH_SHARE).round() as u32;
             state.hurt = state.max_health() - back.max(1);
         }
+        state.clamp_to_maxima();
         out.send(&ServerMsg::Welcome(Box::new(Welcome {
             player_id: id,
             account: name.clone(),
@@ -1231,7 +1267,9 @@ impl Game {
                 p.last_input = input;
                 p.bank -= 1.0;
                 let fell = p.state.down && !p.defeated;
-                if (events.fired || events.released) && mining::roll(&mut self.rng) >= p.effects.wear_saved() {
+                if (events.fired || events.released)
+                    && mining::roll(&mut self.rng) >= p.state.wear_spared(p.effects.wear_saved())
+                {
                     let before = p.inventory.clone();
                     let mut broke = None;
                     if let Some(s) = p.inventory.slots[slot].as_mut() {
@@ -1324,6 +1362,7 @@ impl Game {
                 pitch,
                 hold,
             } => self.throw(id, at, slot, yaw, pitch, hold),
+            Queued::Eat { at, slot } => self.eat(id, at, slot),
         }
     }
 
@@ -1615,7 +1654,7 @@ impl Game {
             }
             Effect::Chiselled { slot } => {
                 // The durability epic spares some wear.
-                if mining::roll(&mut self.rng) >= p.effects.wear_saved() {
+                if mining::roll(&mut self.rng) >= p.state.wear_spared(p.effects.wear_saved()) {
                     broke = wear_slot(&self.items, &mut p.inventory, slot);
                 }
             }
@@ -2651,6 +2690,7 @@ impl Game {
             last_seen: now,
             character: c.clone().into(),
             hurt: state.hurt,
+            food: SavedFood::from(&state),
         };
         let mut players: Vec<(String, PlayerData)> = self
             .players

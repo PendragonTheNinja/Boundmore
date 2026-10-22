@@ -121,12 +121,19 @@ pub fn swing_damage(tool: &ToolStats, def: &BlockDef, tier: u8, crit: bool, area
 /// `Effects::crit_bonus` (at most 1). Client and server both pass the result
 /// to [`swing_ticks`], [`is_crit`] and [`swing_damage`].
 pub fn skilled_tool(tool: &ToolStats, effects: &Effects) -> ToolStats {
+    skilled_tool_keen(tool, effects, 1.0)
+}
+
+/// [`skilled_tool`] with Keen food (milestone 16): it multiplies the crit
+/// chance skills add (Boundless's criticaling food multiplies the agility
+/// crit, tuning 3.3), `keen` from `PlayerState::crit_multiplier`.
+pub fn skilled_tool_keen(tool: &ToolStats, effects: &Effects, keen: f32) -> ToolStats {
     // A hair under, so 400 x 2.85 is 1140, not 1141 from rounding error.
     let damage = (tool.damage as f64 * effects.damage_multiplier(tool.class) - 1e-9).ceil();
     ToolStats {
         damage: damage.max(0.0) as u32,
         action_speed: tool.action_speed + effects.action_speed_bonus(tool.class) as f32,
-        crit_chance: (tool.crit_chance + effects.crit_bonus() as f32).min(1.0),
+        crit_chance: (tool.crit_chance + effects.crit_bonus() as f32 * keen).min(1.0),
         ..*tool
     }
 }

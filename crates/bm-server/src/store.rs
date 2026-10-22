@@ -95,7 +95,12 @@ const V2_STATIONS: TableDefinition<&[u8], &[u8]> = TableDefinition::new("station
 /// 8 (M15): a station saves its wear and a spark generator its spark
 /// ([`SavedStation`]); older stations are rewritten fully repaired with no
 /// spark.
-pub const SAVE_VERSION: u32 = 8;
+///
+/// 9 (M16): a player saves hunger, the food buff and sickness
+/// ([`PlayerData::food`]), and a station the full buckets its jobs hold
+/// ([`SavedStation::containers`]); older players start unhungry with no
+/// buff, older jobs with fresh buckets.
+pub const SAVE_VERSION: u32 = 9;
 
 /// The universe file in the data directory.
 pub const UNIVERSE_FILE: &str = "universe.redb";
@@ -345,6 +350,26 @@ pub struct PlayerData {
     pub character: SavedCharacter,
     /// Health lost (milestone 13, save version 6; 0: unhurt).
     pub hurt: u32,
+    /// Hunger, the food buff and sickness (milestone 16, save version 9).
+    pub food: SavedFood,
+}
+
+/// What food has done to a character (`PlayerState` hunger, buff, sick).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Serialize, Deserialize)]
+pub struct SavedFood {
+    pub hunger: u32,
+    pub buff: bm_core::food::FoodBuff,
+    pub sick: u16,
+}
+
+impl From<&PlayerState> for SavedFood {
+    fn from(s: &PlayerState) -> Self {
+        Self {
+            hunger: s.hunger,
+            buff: s.buff,
+            sick: s.sick,
+        }
+    }
 }
 
 /// A character's progression as saved (`bm_core::skills::Character`).
@@ -457,7 +482,81 @@ pub struct SavedStation {
     pub burn_total: u32,
     pub burn_elapsed: u32,
     pub blocks: u32,
+    /// Each job's full containers (buckets of water or milk), one list per
+    /// job in order (save version 9).
+    pub containers: Vec<Vec<SavedStack>>,
 }
+
+/// The station and player layouts save version 8 wrote, kept only to read
+/// them for the upgrade.
+mod v8 {
+    use super::*;
+
+    #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+    pub struct SavedStation {
+        pub kind: Station,
+        pub jobs: Vec<SavedJob>,
+        pub started: u64,
+        pub output: Vec<Option<SavedStack>>,
+        pub fuel: Option<SavedStack>,
+        pub heat: u32,
+        pub waiting: bool,
+        pub xp: u32,
+        pub wear: u32,
+        pub spark: u32,
+        pub burn_total: u32,
+        pub burn_elapsed: u32,
+        pub blocks: u32,
+    }
+
+    impl From<SavedStation> for super::SavedStation {
+        fn from(s: SavedStation) -> Self {
+            Self {
+                kind: s.kind,
+                jobs: s.jobs,
+                started: s.started,
+                output: s.output,
+                fuel: s.fuel,
+                heat: s.heat,
+                waiting: s.waiting,
+                xp: s.xp,
+                wear: s.wear,
+                spark: s.spark,
+                burn_total: s.burn_total,
+                burn_elapsed: s.burn_elapsed,
+                blocks: s.blocks,
+                containers: Vec::new(),
+            }
+        }
+    }
+
+    #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+    pub struct PlayerData {
+        pub planet: u16,
+        pub state: Option<SavedBody>,
+        pub inventory: Vec<Option<SavedStack>>,
+        pub last_seen: u64,
+        pub character: SavedCharacter,
+        pub hurt: u32,
+    }
+
+    impl From<PlayerData> for super::PlayerData {
+        fn from(p: PlayerData) -> Self {
+            Self {
+                planet: p.planet,
+                state: p.state,
+                inventory: p.inventory,
+                last_seen: p.last_seen,
+                character: p.character,
+                hurt: p.hurt,
+                // No hunger, no buff.
+                food: SavedFood::default(),
+            }
+        }
+    }
+}
+
+pub use v8::{PlayerData as V8PlayerData, SavedStation as V8SavedStation};
 
 /// The station layout save versions 5 to 7 wrote, kept only to read them
 /// for the upgrade.
@@ -493,6 +592,7 @@ mod v7 {
                 burn_total: 0,
                 burn_elapsed: 0,
                 blocks: 1,
+                containers: Vec::new(),
             }
         }
     }
@@ -528,6 +628,7 @@ mod v3 {
                 burn_total: 0,
                 burn_elapsed: 0,
                 blocks: 1,
+                containers: Vec::new(),
             }
         }
     }
@@ -567,6 +668,7 @@ mod v4 {
                 burn_total: 0,
                 burn_elapsed: 0,
                 blocks: 1,
+                containers: Vec::new(),
             }
         }
     }
@@ -589,6 +691,7 @@ mod v4 {
                 // An untrained character: level 1, no XP.
                 character: SavedCharacter::default(),
                 hurt: 0,
+                food: SavedFood::default(),
             }
         }
     }
@@ -642,6 +745,7 @@ mod v5 {
                 },
                 // Unhurt: there was no health before.
                 hurt: 0,
+                food: SavedFood::default(),
             }
         }
     }
@@ -902,7 +1006,12 @@ impl Store {
                     let stations = match from {
                         3 => upgrade_3_to_4(&tx)?,
                         4 => upgrade_stations_4_to_5(&tx)?,
-                        _ => upgrade_stations_7_to_8(&tx)?,
+                        5..=7 => upgrade_stations(&tx, from, |b| {
+                            postcard::from_bytes::<v7::SavedStation>(b).map(Into::into)
+                        })?,
+                        _ => upgrade_stations(&tx, from, |b| {
+                            postcard::from_bytes::<v8::SavedStation>(b).map(Into::into)
+                        })?,
                     };
                     // Version 6 to 7 only adds tables (skies, discoveries),
                     // which read as empty until written.
@@ -911,7 +1020,8 @@ impl Store {
                     } else if from == 5 {
                         upgrade_players(&tx, from, |b| postcard::from_bytes::<v5::PlayerData>(b).map(Into::into))?
                     } else {
-                        0
+                        // Versions 6 to 8 share a player layout.
+                        upgrade_players(&tx, from, |b| postcard::from_bytes::<v8::PlayerData>(b).map(Into::into))?
                     };
                     let u = UniverseMeta {
                         save_version: SAVE_VERSION,
@@ -920,10 +1030,15 @@ impl Store {
                     tx.open_table(META)?
                         .insert("universe", postcard::to_stdvec(&u)?.as_slice())?;
                     tx.commit()?;
-                    if from >= 6 {
+                    if from == 8 {
                         tracing::info!(
                             "upgraded the universe from save version {from} to {SAVE_VERSION} ({stations} stations \
-                             fully repaired with no spark; characters and planets as they were)"
+                             and {players} characters; characters start unhungry with no food buff)"
+                        );
+                    } else if from >= 6 {
+                        tracing::info!(
+                            "upgraded the universe from save version {from} to {SAVE_VERSION} ({stations} stations \
+                             fully repaired with no spark; {players} characters unhungry; planets as they were)"
                         );
                     } else {
                         let characters = if from <= 4 {
@@ -1385,7 +1500,14 @@ fn upgrade_stations_4_to_5(tx: &WriteTransaction) -> Result<usize> {
 /// Version 8 gives each station its wear and spark: rows of versions 5 to 7
 /// (one layout) are rewritten fully repaired with no spark. (Older rows go
 /// straight to the current layout in the steps above.)
-fn upgrade_stations_7_to_8(tx: &WriteTransaction) -> Result<usize> {
+/// Rewrites every station row in the current layout: `read` decodes one in
+/// the layout of save version `from` (5 to 7: no wear or spark, so fully
+/// repaired with none; 8: no containers, so jobs get fresh buckets).
+fn upgrade_stations(
+    tx: &WriteTransaction,
+    from: u32,
+    read: impl Fn(&[u8]) -> Result<SavedStation, postcard::Error>,
+) -> Result<usize> {
     let mut t = tx.open_table(STATIONS)?;
     let old: Vec<(Vec<u8>, Vec<u8>)> = t
         .iter()?
@@ -1393,13 +1515,12 @@ fn upgrade_stations_7_to_8(tx: &WriteTransaction) -> Result<usize> {
         .collect::<Result<_, _>>()?;
     let mut n = 0;
     for (k, v) in old {
-        match postcard::from_bytes::<v7::SavedStation>(&v) {
-            Ok(s) => {
-                let new: SavedStation = s.into();
+        match read(&v) {
+            Ok(new) => {
                 t.insert(k.as_slice(), postcard::to_stdvec(&new)?.as_slice())?;
                 n += 1;
             }
-            Err(e) => tracing::error!("a version 7 station is corrupt ({e}); left as it was"),
+            Err(e) => tracing::error!("a version {from} station is corrupt ({e}); left as it was"),
         }
     }
     Ok(n)
@@ -1558,6 +1679,7 @@ fn upgrade_2_to_3(tx: &WriteTransaction, meta: &v2::PlanetMeta, kinds: &PlanetKi
                         last_seen: p.last_seen,
                         character: SavedCharacter::default(),
                         hurt: 0,
+                        food: SavedFood::default(),
                     };
                     t.insert(key.as_str(), postcard::to_stdvec(&new)?.as_slice())?;
                     report.players += 1;
@@ -1824,6 +1946,7 @@ mod tests {
             burn_total: 0,
             burn_elapsed: 0,
             blocks: 1,
+            containers: Vec::new(),
         };
         let claim = SavedClaim {
             planet: 2,
@@ -1886,6 +2009,7 @@ mod tests {
                             debt: 321,
                         },
                         hurt: 77,
+                        food: Default::default(),
                     },
                 )],
                 stations: vec![(2, spot, Some(station.clone()))],
@@ -1990,6 +2114,7 @@ mod tests {
             burn_total: 0,
             burn_elapsed: 0,
             blocks: 1,
+            containers: Vec::new(),
         };
         s.write(&WriteBatch {
             stations: vec![(u16::MAX, BlockPos::new(1, 1, 1), Some(st.clone()))],
@@ -2243,6 +2368,7 @@ mod tests {
                 debt: 321,
             },
             hurt: 77,
+            food: Default::default(),
         };
         {
             let s = Store::open(&path).unwrap();
@@ -2344,7 +2470,92 @@ mod tests {
         let tx = s.db.begin_read().unwrap();
         let meta = tx.open_table(META).unwrap();
         let u: UniverseMeta = postcard::from_bytes(meta.get("universe").unwrap().unwrap().value()).unwrap();
-        assert_eq!(u.save_version, 8);
+        assert_eq!(u.save_version, SAVE_VERSION);
+    }
+
+    /// A version 8 universe (M15) opens: characters keep everything and
+    /// start unhungry with no food buff; stations keep everything, their
+    /// jobs holding no buckets; it is marked version 9.
+    #[test]
+    fn a_version_8_universe_starts_everyone_unhungry() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("u.redb");
+        let stack = SavedStack {
+            item: "stone".into(),
+            count: 3,
+            wear: 0,
+        };
+        let old_player = V8PlayerData {
+            planet: 1,
+            state: None,
+            inventory: vec![Some(stack.clone()), None],
+            last_seen: 1_700_000_123,
+            character: SavedCharacter::default(),
+            hurt: 77,
+        };
+        let old_station = V8SavedStation {
+            kind: Station::Workbench,
+            jobs: vec![SavedJob {
+                output: "cog".into(),
+                output_count: 1,
+                inputs: vec![("copper_ingot".into(), 1)],
+                remaining: 2,
+            }],
+            started: 5,
+            output: vec![Some(stack.clone())],
+            fuel: None,
+            heat: 0,
+            waiting: false,
+            xp: 33,
+            wear: 1234,
+            spark: 0,
+            burn_total: 0,
+            burn_elapsed: 0,
+            blocks: 1,
+        };
+        let spot = BlockPos::new(3, 40, 5);
+        {
+            let s = Store::open(&path).unwrap();
+            let tx = s.db.begin_write().unwrap();
+            tx.open_table(META)
+                .unwrap()
+                .insert(
+                    "universe",
+                    postcard::to_stdvec(&UniverseMeta {
+                        save_version: 8,
+                        chunk_format: CHUNK_FORMAT_VERSION,
+                    })
+                    .unwrap()
+                    .as_slice(),
+                )
+                .unwrap();
+            tx.open_table(PLAYER_DATA)
+                .unwrap()
+                .insert("alice", postcard::to_stdvec(&old_player).unwrap().as_slice())
+                .unwrap();
+            tx.open_table(STATIONS)
+                .unwrap()
+                .insert(
+                    block_key(1, spot).as_slice(),
+                    postcard::to_stdvec(&old_station).unwrap().as_slice(),
+                )
+                .unwrap();
+            tx.commit().unwrap();
+        }
+        let s = Store::open(&path).unwrap();
+        assert!(s.universe(&kinds()).unwrap().is_none());
+        let p = s.player("alice").unwrap().unwrap();
+        assert_eq!(
+            (p.hurt, p.inventory.clone(), p.food),
+            (77, old_player.inventory.clone(), SavedFood::default())
+        );
+        let st = s.stations(1).unwrap();
+        assert_eq!(st, vec![(spot, old_station.clone().into())]);
+        assert_eq!((st[0].1.wear, st[0].1.containers.len()), (1234, 0));
+        drop(s);
+        let s = Store::open(&path).unwrap();
+        assert!(s.universe(&kinds()).unwrap().is_none(), "reopens as it is");
+        assert_eq!(s.player("alice").unwrap().unwrap(), p);
     }
 
     /// A version 5 universe (M12) opens: every character keeps its level,
@@ -2392,6 +2603,7 @@ mod tests {
             burn_total: 0,
             burn_elapsed: 0,
             blocks: 1,
+            containers: Vec::new(),
         };
         let spot = BlockPos::new(3, -4, 5);
         {

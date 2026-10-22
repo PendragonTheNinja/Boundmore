@@ -77,6 +77,9 @@ pub struct SwingInput<'a> {
     pub tool: &'a ToolStats,
     /// What the active skill page does.
     pub effects: &'a Effects,
+    /// Keen food's crit multiplier (`PlayerState::crit_multiplier`, 1.0
+    /// without it).
+    pub keen: f32,
     /// The block aimed at.
     pub hit: BlockPos,
     /// Look direction at input `at` (`movement::look_dir`).
@@ -99,7 +102,7 @@ pub fn predict_swing(s: &SwingInput, map: &DamageMap, block_at: impl Fn(BlockPos
         return Vec::new();
     }
     let hit = s.shape.wrap_block(s.hit);
-    let tool = skilled_tool(s.tool, s.effects);
+    let tool = bm_core::mining::skilled_tool_keen(s.tool, s.effects, s.keen);
     let area = s.tool.aoe.map_or(1.0, Aoe::multiplier);
     let mut out: Vec<BlockHit> = Vec::new();
     for p in aoe_blocks(s.tool.aoe, hit, s.look, s.player, s.at) {
@@ -326,6 +329,7 @@ mod tests {
         let mut broke = Vec::new();
         for (n, at) in [1u32, 36, 71].into_iter().enumerate() {
             let input = SwingInput {
+                keen: 1.0,
                 effects: &Effects::default(),
                 tool: &copper,
                 hit: pos,
@@ -350,6 +354,7 @@ mod tests {
         loop {
             n += 1;
             let input = SwingInput {
+                keen: 1.0,
                 effects: &Effects::default(),
                 tool: &copper,
                 hit: pos,
@@ -380,6 +385,7 @@ mod tests {
             for block in ["mixer", "stone", "torch"] {
                 let id = b.id(block).unwrap();
                 let input = SwingInput {
+                    keen: 1.0,
                     effects: &Effects::default(),
                     tool: &tool,
                     hit: BlockPos::new(10, 20, 30),
@@ -412,6 +418,7 @@ mod tests {
         };
         // Aimed across the seam: the row runs along z at x = width.
         let input = SwingInput {
+            keen: 1.0,
             effects: &Effects::default(),
             tool: &wide,
             hit: BlockPos::new(w, 20, 0),
