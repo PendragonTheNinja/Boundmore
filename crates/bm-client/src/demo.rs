@@ -789,6 +789,40 @@ impl Demo {
         self.events.extend(chunks.into_iter().map(NetEvent::Msg));
     }
 
+    /// Milestone 16: a hotbar of food, buckets and berries, on the spawn.
+    pub fn show_food(&mut self) {
+        let id = |n: &str| self.items.id(n).expect("builtin item");
+        let before = self.inv.clone();
+        for (slot, name, n) in [
+            (0, "meat_broth", 2),
+            (1, "cooked_meat", 6),
+            (2, "raw_meat", 3),
+            (3, "dewberry_soup", 1),
+            (4, "tuber_soup", 2),
+            (5, "keen_soup", 1),
+            (6, "guarding_broth", 1),
+            (7, "dewberry", 14),
+            (8, "bucket", 2),
+            (9, "water_bucket", 1),
+        ] {
+            self.inv.slots[slot] = Some(ItemStack::new(id(name), n));
+        }
+        self.slots_since(&before);
+    }
+
+    /// Eats one from `slot`, as the server would (the client has applied
+    /// the meal to its own body already; the demo does not simulate it).
+    fn eat(&mut self, slot: u8) {
+        let edible = self
+            .inv
+            .get(slot as usize)
+            .and_then(|s| self.items.get(s.item))
+            .is_some_and(|d| d.food().is_some());
+        if edible {
+            self.inv.take_one(slot as usize);
+        }
+    }
+
     /// Two open portals ahead of the spawn, linked to each other, in a brick
     /// surround (the surround is only a look: a portal is its own blocks),
     /// two more elsewhere to link with, and a pack with tokens for them and
@@ -1331,6 +1365,7 @@ impl Demo {
                 hold,
             } => self.throw(at, slot, yaw, pitch, hold),
             ClientMsg::Loot { creature } => self.loot(creature),
+            ClientMsg::Eat { slot, .. } => self.eat(slot),
             ClientMsg::Return => self.come_back(),
             ClientMsg::Hello { .. } => {}
             // The old hold-to-break message, until the protocol drops it.

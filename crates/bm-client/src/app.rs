@@ -1802,6 +1802,42 @@ impl App {
         .map_or(CREATURE_AIM, |h| h.distance);
         s.aim_creature = s.creatures.pick(&s.seen, eye, dir, terrain, s.world.shape, false);
         let attack_held = mouse[0] || demo_held;
+        // Food in hand eats with a press, a bucket fills at water (milestone
+        // 16); neither breaks blocks.
+        let food = held.and_then(|h| s.items.def(&h)).and_then(|d| d.food());
+        let bucket = held
+            .and_then(|h| s.items.def(&h))
+            .is_some_and(|d| matches!(d.kind, bm_core::items::ItemKind::Bucket { .. }));
+        if food.is_some() || bucket {
+            mouse[0] = false;
+        }
+        if let Some(food) = food.filter(|_| pressed && !s.travelling() && !claim_mode) {
+            match s.me.state.can_eat(&food) {
+                Ok(()) => {
+                    // Right after the latest input, on both sides.
+                    let at = s.me.seq;
+                    s.me.eat(at, food, &s.movement, s.world.shape, &s.world);
+                    link.send(ClientMsg::Eat { at, slot: slot as u8 });
+                }
+                Err(bm_core::food::Refusal::Full) => self.notices.push("You are full".into(), now_s),
+                Err(_) => {}
+            }
+        }
+        if bucket && pressed && !s.travelling() && !claim_mode {
+            let world = &s.world;
+            let reach = s.reach();
+            match raycast(eye, dir, reach, |p| {
+                world
+                    .block(p)
+                    .is_some_and(|b| world.flags.solid(b) || bm_core::PhysicsWorld::liquid(world, p))
+            }) {
+                Some(hit) if bm_core::PhysicsWorld::liquid(world, hit.block) => link.send(ClientMsg::FillBucket {
+                    slot: slot as u8,
+                    pos: hit.block,
+                }),
+                _ => self.notices.push("Fill a bucket at water".into(), now_s),
+            }
+        }
         let bomb = held.and_then(|h| s.items.def(&h)).and_then(|d| d.bomb());
         if let Some(b) = bomb.filter(|_| !s.me.state.down && !s.travelling() && !claim_mode) {
             // A bag of bombs: hold to light, let go to throw (a fuse run out
@@ -2070,7 +2106,9 @@ impl App {
                         .then(|| s.target_health())
                         .flatten()
                         .map(|(_, left, shields)| BlockBar { left, shields }),
-                    energy: s.me.state.energy() as f32 / s.me.state.max_energy().max(1) as f32,
+                    energy: s.me.state.energy() as f32 / s.me.state.full_energy().max(1) as f32,
+                    hunger: s.me.state.hunger_points() as f32 / s.me.state.full_energy().max(1) as f32,
+                    food: crate::menus::food_tags(&s.me.state),
                     level: Some(bm_core::skills::level_of(s.progress.character().xp)),
                     health: (s.me.state.health(), s.me.state.max_health()),
                     debt: s.progress.character().debt,
@@ -2742,6 +2780,26 @@ impl App {
             }
             // A dark stone hall lit by a standing torch and two wall
             // torches at its far end, a torch in hand (slot 0 holds none).
+            // Milestone 16: hungry, Sated, a hotbar of food; the HUD shows
+            // the shaded energy bar and the food tags.
+            "food" => {
+                if let Some(Link::Demo(d)) = &mut self.link {
+                    d.show_food();
+                }
+                if let Some(s) = &mut self.session {
+                    let mut st = s.me.state;
+                    st.hunger = 220 * bm_core::food::HUNGER_SCALE;
+                    st.spent = 120;
+                    st.buff = bm_core::food::FoodBuff {
+                        kind: bm_core::food::Buff::Sated,
+                        rank: 1,
+                        left: (9 * 60 + 41) * bm_core::TICK_HZ,
+                    };
+                    s.me.teleport(st);
+                    s.selected = 0;
+                }
+                (self.yaw, self.pitch) = (0.4, -0.1);
+            }
             "torches" => {
                 if let Some(Link::Demo(d)) = &mut self.link {
                     d.show_torches();

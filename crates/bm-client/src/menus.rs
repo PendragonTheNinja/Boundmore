@@ -446,8 +446,15 @@ pub struct Hud<'a> {
     /// A machine's wear left and the most it holds, for a moment after a
     /// spanner hits it (milestone 15); shown in the block bar's place.
     pub wear_bar: Option<(u32, u32)>,
-    /// Energy left, 0 to 1 (milestone 10), shown as a bar over the hotbar.
+    /// Energy left, 0 to 1 of the bar with no hunger (milestone 10), shown
+    /// as a bar over the hotbar.
     pub energy: f32,
+    /// Hunger's share of that bar, 0 to 1 (milestone 16): its right end,
+    /// shaded.
+    pub hunger: f32,
+    /// The food buff with its time left, and Full, Sick or Starving, as
+    /// tags over the bars (`food_tags`).
+    pub food: Vec<(String, Color32)>,
     /// Level, XP into it and XP it needs (milestone 12), shown as a thin
     /// bar under the hotbar.
     pub level: Option<(u32, u64, u64)>,
@@ -477,6 +484,38 @@ const HEALTH_LOW: Color32 = Color32::from_rgb(150, 34, 34);
 /// The energy bar's fill: a warm yellow, turning red when nearly empty.
 const ENERGY_FULL: Color32 = Color32::from_rgb(238, 200, 96);
 const ENERGY_LOW: Color32 = Color32::from_rgb(214, 96, 70);
+/// Hunger's end of the energy bar, and the food tags.
+const HUNGER: Color32 = Color32::from_rgb(92, 64, 44);
+const FOOD_BUFF: Color32 = Color32::from_rgb(150, 220, 140);
+const FOOD_FULL: Color32 = Color32::from_rgb(196, 230, 150);
+const FOOD_BAD: Color32 = Color32::from_rgb(230, 120, 96);
+
+/// What food is doing, for the HUD (milestone 16): the buff ("Sated I
+/// 9:41"), then Full, Sick or Starving.
+pub fn food_tags(s: &bm_core::PlayerState) -> Vec<(String, Color32)> {
+    let mut tags = Vec::new();
+    if s.buff.left > 0 && s.buff.kind != bm_core::food::Buff::None {
+        let secs = s.buff.left / bm_core::TICK_HZ;
+        tags.push((
+            format!(
+                "{} {} {}:{:02}",
+                s.buff.kind.name(),
+                crate::items::roman(s.buff.rank),
+                secs / 60,
+                secs % 60
+            ),
+            FOOD_BUFF,
+        ));
+    }
+    if s.starving() {
+        tags.push(("Starving: eat something".into(), FOOD_BAD));
+    } else if s.sick > 0 {
+        tags.push(("Sick".into(), FOOD_BAD));
+    } else if s.is_full() {
+        tags.push(("Full".into(), FOOD_FULL));
+    }
+    tags
+}
 
 /// A block's health bar: what is left (0 to 1), and one shield per 100
 /// armour of the planet's tier, as Boundless showed it.
@@ -667,10 +706,31 @@ pub fn hud(ctx: &egui::Context, h: &Hud) {
                 Color32::from_rgb(255, 240, 232),
             );
             let left = h.energy.clamp(0.0, 1.0);
+            let usable = (1.0 - h.hunger).clamp(0.0, 1.0);
             if left > 0.0 {
                 let fill = Rect::from_min_size(energy.min, vec2(energy.width() * left, energy.height()));
-                let colour = if left < 0.2 { ENERGY_LOW } else { ENERGY_FULL };
+                let colour = if left < 0.2 * usable { ENERGY_LOW } else { ENERGY_FULL };
                 painter.rect_filled(fill, CornerRadius::same(3), colour);
+            }
+            // Hunger eats the bar from its right end.
+            if h.hunger > 0.0 {
+                let w = energy.width() * h.hunger.clamp(0.0, 1.0);
+                let shade = Rect::from_min_size(pos2(energy.right() - w, energy.top()), vec2(w, energy.height()));
+                painter.rect_filled(shade, CornerRadius::same(3), HUNGER);
+            }
+            // Food tags over the energy bar, right-aligned.
+            let mut x = energy.right();
+            for (text, colour) in h.food.iter().rev() {
+                let galley = painter.layout_no_wrap(text.clone(), FontId::proportional(11.0), *colour);
+                let w = galley.size().x;
+                let at = pos2(x - w, energy.top() - 16.0);
+                painter.rect_filled(
+                    Rect::from_min_size(at - vec2(4.0, 1.0), vec2(w + 8.0, galley.size().y + 2.0)),
+                    CornerRadius::same(3),
+                    Color32::from_black_alpha(140),
+                );
+                painter.galley(at, galley, *colour);
+                x -= w + 14.0;
             }
         });
 

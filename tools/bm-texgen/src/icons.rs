@@ -1292,6 +1292,7 @@ pub fn paint_icon(name: &str) -> Option<Tex> {
         "iron_spanner" => spanner(Metal::Iron),
         other => {
             return crate::gathered::paint(other)
+                .or_else(|| crate::food::paint(other))
                 .or_else(|| crate::creatures::paint(other))
                 .or_else(|| crate::spark::paint_icon(other));
         }

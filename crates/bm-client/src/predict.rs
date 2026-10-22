@@ -9,7 +9,7 @@
 //! we lack, an edit in flight) or an input was lost, and the visible jump is
 //! smoothed away over a few frames.
 
-use bm_core::food::Drain;
+use bm_core::food::{Drain, FoodStats};
 use bm_core::movement::{self, Body, GrappleSpec, MoveConfig, PlayerInput, PlayerState};
 use bm_core::{PhysicsWorld, PlanetShape};
 use glam::DVec3;
@@ -29,6 +29,8 @@ const SMOOTHING_SECONDS: f64 = 0.15;
 enum After {
     Spend(u16, Drain),
     Body(Body),
+    /// Food eaten (milestone 16).
+    Eat(FoodStats),
 }
 
 struct Entry {
@@ -154,6 +156,23 @@ impl Predictor {
         }
         self.state = state;
         spent
+    }
+
+    /// `food` is eaten right after input `at` (milestone 16), as the server
+    /// eats it: eaten there, and the inputs after it replayed.
+    pub fn eat(&mut self, at: u32, food: FoodStats, cfg: &MoveConfig, shape: PlanetShape, world: &impl PhysicsWorld) {
+        let Some(i) = self.history.iter().position(|e| e.seq == at) else {
+            let _ = self.state.eat(&food);
+            return;
+        };
+        let mut state = self.history[i].state;
+        let _ = state.eat(&food);
+        self.history[i].after.push(After::Eat(food));
+        self.history[i].state = state;
+        for e in self.history.iter_mut().skip(i + 1) {
+            replay(&mut state, e, cfg, shape, world);
+        }
+        self.state = state;
     }
 
     /// The body (what skills do to moving and energy, milestone 12) is
@@ -305,6 +324,9 @@ fn replay(state: &mut PlayerState, e: &mut Entry, cfg: &MoveConfig, shape: Plane
                 state.try_spend(cost, drain);
             }
             After::Body(body) => state.body = body,
+            After::Eat(food) => {
+                let _ = state.eat(&food);
+            }
         }
     }
     e.state = *state;
@@ -330,7 +352,8 @@ fn server_led(ours: &PlayerState, server: &PlayerState, shape: PlanetShape) -> b
     (same_body(ours, server, shape) && !same_health(ours, server)) || (server.down && !ours.down)
 }
 
-/// Everything movement predicts: position, velocity, hook, energy, body.
+/// Everything movement predicts: position, velocity, hook, energy, body,
+/// hunger and food (milestone 16).
 fn same_body(a: &PlayerState, b: &PlayerState, shape: PlanetShape) -> bool {
     let hooks = match (a.hook, b.hook) {
         (None, None) => true,
@@ -347,6 +370,10 @@ fn same_body(a: &PlayerState, b: &PlayerState, shape: PlanetShape) -> bool {
         && a.body == b.body
         && a.jump_held == b.jump_held
         && a.air_jumped == b.air_jumped
+        && a.hunger == b.hunger
+        && a.buff == b.buff
+        && a.sick == b.sick
+        && a.chew == b.chew
         && hooks
 }
 
@@ -499,6 +526,48 @@ mod tests {
                 s
             })
             .collect()
+    }
+
+    #[test]
+    fn eating_lands_where_the_server_eats_with_no_correction() {
+        // Walking makes us hungry; a meal follows input 120, which we act on
+        // two inputs late; a Sated broth then stops the hunger on both sides.
+        let (cfg, w) = (MoveConfig::default(), Floor(10));
+        let broth = FoodStats {
+            hunger: 1200,
+            buff: bm_core::food::Buff::Sated,
+            rank: 1,
+            minutes: 10,
+            ..Default::default()
+        };
+        let inputs: Vec<PlayerInput> = (1..=240).map(walk).collect();
+        let mut s = spawn();
+        let truth: Vec<PlayerState> = inputs
+            .iter()
+            .enumerate()
+            .map(|(i, input)| {
+                movement::step(&mut s, input, &cfg, None, shape(), &w);
+                if i as u32 + 1 == 120 {
+                    s.eat(&broth).unwrap();
+                }
+                s
+            })
+            .collect();
+        assert!(truth[118].hunger > 0 && truth[119].hunger == 0);
+        assert_eq!(truth[239].hunger, 0, "Sated");
+        let mut p = Predictor::new(spawn());
+        for (i, input) in inputs.iter().enumerate() {
+            let seq = p.tick(*input, None, &cfg, shape(), &w);
+            if seq == 122 {
+                p.eat(120, broth, &cfg, shape(), &w);
+            }
+            if i >= 5 && i % 3 == 0 {
+                let ack = i as u32 - 4;
+                p.reconcile(i as u64, ack, truth[ack as usize - 1], &cfg, shape(), &w);
+            }
+        }
+        assert_eq!(p.corrections, 0);
+        assert_eq!(p.state, truth[239]);
     }
 
     #[test]
