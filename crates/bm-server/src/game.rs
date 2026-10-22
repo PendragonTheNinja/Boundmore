@@ -630,9 +630,20 @@ impl Game {
                 )
             })
             .collect();
+        // Creatures by kind ("12 grazer, 3 popper").
+        let mut kinds = vec![0usize; self.creature_kinds.defs().len()];
+        for c in self.herds.iter().flat_map(|h| &h.list) {
+            kinds[c.kind as usize] += 1;
+        }
+        let kinds: Vec<String> = self
+            .creature_kinds
+            .iter()
+            .filter(|(id, _)| kinds[*id as usize] > 0)
+            .map(|(id, d)| format!("{} {}", kinds[id as usize], d.name))
+            .collect();
         tracing::info!(
             "tick {} | {} players | {} | sent {} chunks ({} KiB) | edits {} ok {} refused | {} slow ticks | \
-             {} creatures, {} shots: {:.0} us a tick ({:.0} us views), worst {:.1} ms",
+             {} creatures ({}), {} shots: {:.0} us a tick ({:.0} us views), worst {:.1} ms",
             self.tick,
             self.players.len(),
             planets.join(", "),
@@ -642,6 +653,7 @@ impl Game {
             s.refused_edits,
             s.slow_ticks,
             self.herds.iter().map(|h| h.list.len()).sum::<usize>(),
+            kinds.join(", "),
             self.shots.len(),
             s.creature_time.as_secs_f64() * 1e6 / s.creature_ticks.max(1) as f64,
             s.view_time.as_secs_f64() * 1e6 / s.creature_ticks.max(1) as f64,
