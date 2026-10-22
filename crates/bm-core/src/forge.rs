@@ -440,6 +440,20 @@ pub struct Held {
     pub hunger: Option<f64>,
 }
 
+impl Held {
+    /// The holder's conditions, judged the same way on server and client:
+    /// night when the sun is below the horizon at `tick`, health and hunger
+    /// as fractions.
+    pub fn of(state: &crate::movement::PlayerState, day: &crate::time::DayCycle, tick: f64) -> Held {
+        let full = state.full_energy().max(1) as f64;
+        Held {
+            night: Some(day.sun_direction(tick)[1] < 0.0),
+            health: Some(state.health() as f64 / state.max_health().max(1) as f64),
+            hunger: Some(state.hunger_points() as f64 / full),
+        }
+    }
+}
+
 impl Forged {
     pub fn is_plain(&self) -> bool {
         *self == Forged::default()
