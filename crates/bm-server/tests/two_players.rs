@@ -5259,8 +5259,13 @@ async fn a_generator_burns_coal_into_spark_that_links_carry_to_a_mixer() {
     let generator = at(1, 3);
     assert!(place(&mut alice, 10, link, 1, None).await.0);
     assert!(place(&mut alice, 11, generator, 2, None).await.0);
-    // Under load a view from before the link can still be on its way.
-    let v = look_at_station(&mut alice, mixer[0], |v| v.spark.is_some_and(|s| s.linked)).await;
+    // Under load a view from before the link can still be on its way, and
+    // the machine's idle reason catches up on its next tick.
+    let v = look_at_station(&mut alice, mixer[0], |v| {
+        v.spark.is_some_and(|s| s.linked)
+            && v.idle.as_deref() != Some("No spark: link this machine to a spark generator")
+    })
+    .await;
     assert_eq!(v.spark.map(|s| (s.linked, s.stored)), Some((true, 0)));
     assert_eq!(v.idle.as_deref(), Some("Not enough spark (needs 100)"));
 
