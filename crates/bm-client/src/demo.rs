@@ -1310,6 +1310,8 @@ impl Demo {
 
     fn run_stations(&mut self, dt: f64) {
         let mut changed = false;
+        // Something came out: told at once, as nothing may change after.
+        let mut finished = false;
         for s in self.stations.values_mut() {
             if s.idle.is_some() {
                 continue;
@@ -1323,6 +1325,7 @@ impl Demo {
                 if *done >= *total {
                     s.output.push(*item);
                     f.queued = None;
+                    finished = true;
                 }
             }
             let Some(job) = s.jobs.first_mut() else { continue };
@@ -1357,13 +1360,14 @@ impl Demo {
                     Some(o) => o.count += n,
                     None => s.output.push(ItemStack::new(out, n)),
                 }
+                finished = true;
                 if job.remaining == 0 {
                     s.jobs.remove(0);
                 }
             }
         }
         self.push_timer += dt;
-        if changed && self.push_timer > 0.5 {
+        if changed && self.push_timer > 0.5 || finished {
             self.push_timer = 0.0;
             self.push_station();
         }
@@ -3930,6 +3934,24 @@ mod tests {
         d.send(ClientMsg::CollectStation { pos });
         d.poll();
         assert!(d.inv.slots.contains(&Some(sealed)), "collected with its traits");
+    }
+
+    #[test]
+    fn the_demo_forge_queue_runs_out_into_the_output() {
+        let mut d = Demo::new("Tester");
+        d.poll();
+        d.show_forge(true);
+        let pos = bp(FORGE[0]);
+        d.send(ClientMsg::WatchStation { pos: Some(pos) });
+        d.send(ClientMsg::CollectStation { pos });
+        d.poll();
+        for _ in 0..300 {
+            d.run_stations(0.5);
+        }
+        let v = station_views(&d.events.drain(..).collect::<Vec<_>>()).pop().unwrap();
+        let f = v.forge.unwrap();
+        assert!(f.queued.is_none(), "{:?}", f.queued);
+        assert_eq!(v.output.len(), 1);
     }
 
     #[test]

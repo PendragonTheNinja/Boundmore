@@ -288,7 +288,6 @@ pub fn forge(ctx: &egui::Context, v: &ForgeWindow, state: &mut ForgeUi, actions:
     let empty = ForgeView::default();
     let forge = v.live.and_then(|l| l.view.forge.as_deref()).unwrap_or(&empty);
     window(&v.title).open(&mut open).show(ctx, |ui| {
-        ui.set_width(780.0);
         let Some(live) = v.live else {
             ui.horizontal(|ui| {
                 ui.spinner();
@@ -299,7 +298,16 @@ pub fn forge(ctx: &egui::Context, v: &ForgeWindow, state: &mut ForgeUi, actions:
         if let Some(why) = &live.view.idle {
             idle_banner(ui, why);
         }
-        machine_panel(ui, Station::Forge, &live.view);
+        if forge.session.is_some() && forge.forger.is_none() {
+            // A session needs the room: the machine is one line.
+            ui.set_width(960.0);
+            if let Some(wear) = live.view.wear {
+                ui.label(egui::RichText::new(crate::menus::wear_text(wear)).color(MUTED).small());
+            }
+        } else {
+            ui.set_width(780.0);
+            machine_panel(ui, Station::Forge, &live.view);
+        }
         if let Some(name) = &forge.forger {
             ui.label(egui::RichText::new(format!("{name} is forging")).color(TEXT).strong());
             ui.label(
@@ -594,7 +602,7 @@ fn pool_bar(ui: &mut Ui, kind: TraitKind, points: i32, roll: Option<(f64, bool)>
             );
         }
     });
-    let (rect, _) = ui.allocate_exact_size(vec2(ui.available_width().min(330.0), 14.0), Sense::hover());
+    let (rect, _) = ui.allocate_exact_size(vec2(ui.available_width().min(320.0), 14.0), Sense::hover());
     let painter = ui.painter();
     painter.rect_filled(rect, CornerRadius::same(4), Color32::from_rgb(38, 34, 32));
     let frac = (points as f32 / POOL_MAX as f32).clamp(0.0, 1.0);
@@ -630,7 +638,7 @@ fn session_panel(
     let waiting = state.sent == Some(s.rounds);
     ui.horizontal_top(|ui| {
         ui.vertical(|ui| {
-            ui.set_width(350.0);
+            ui.set_width(330.0);
             item_chip(
                 ui,
                 &s.item,
@@ -667,19 +675,10 @@ fn session_panel(
             }
             ui.add_space(4.0);
             ui.label(egui::RichText::new(last_round_text(s)).color(MUTED).small());
-            ui.add_space(6.0);
-            heading(ui, "Buffs");
-            if s.buffs.is_empty() {
-                ui.label(egui::RichText::new("None").color(MUTED).small());
-            }
-            for b in &s.buffs {
-                let colour = if b.kind.is_bad() { SHORT } else { TEXT };
-                ui.label(egui::RichText::new(buff_text(b)).color(colour).small());
-            }
         });
         ui.separator();
         ui.vertical(|ui| {
-            ui.set_width(400.0);
+            ui.set_width(300.0);
             heading(ui, "Traits");
             let mut any = false;
             for kind in TraitKind::ALL {
@@ -699,8 +698,25 @@ fn session_panel(
                 ui.label(egui::RichText::new("None yet").color(MUTED).small());
             }
             ui.add_space(6.0);
+            heading(ui, "Buffs");
+            if s.buffs.is_empty() {
+                ui.label(egui::RichText::new("None").color(MUTED).small());
+            }
+            for b in &s.buffs {
+                let colour = if b.kind.is_bad() { SHORT } else { TEXT };
+                ui.label(egui::RichText::new(buff_text(b)).color(colour).small());
+            }
+        });
+        ui.separator();
+        ui.vertical(|ui| {
+            ui.set_width(300.0);
             heading(ui, "Deck");
-            egui::ScrollArea::vertical().max_height(300.0).show(ui, |ui| {
+            ui.label(
+                egui::RichText::new("Click one to use it: one round.")
+                    .color(MUTED)
+                    .small(),
+            );
+            egui::ScrollArea::vertical().max_height(380.0).show(ui, |ui| {
                 for (i, slot) in s.deck.iter().enumerate() {
                     deck_button(ui, v, s, i, slot, waiting, pos, state, actions);
                 }
