@@ -26,7 +26,7 @@ pub(crate) const SHORT: Color32 = Color32::from_rgb(235, 104, 92);
 const RED: Color32 = Color32::from_rgb(226, 82, 70);
 const PANEL: Color32 = Color32::from_rgba_premultiplied(13, 12, 19, 222);
 const SLOT_FILL: Color32 = Color32::from_rgba_premultiplied(5, 5, 9, 150);
-const SLOT_RIM: Color32 = Color32::from_rgba_unmultiplied_const(120, 110, 92, 140);
+pub(crate) const SLOT_RIM: Color32 = Color32::from_rgba_unmultiplied_const(120, 110, 92, 140);
 
 const SLOT: f32 = 54.0;
 const GAP: f32 = 6.0;
@@ -247,7 +247,7 @@ pub fn install_style(ctx: &egui::Context) {
     });
 }
 
-fn heading(ui: &mut Ui, text: &str) {
+pub(crate) fn heading(ui: &mut Ui, text: &str) {
     ui.label(egui::RichText::new(text).heading().color(GOLD));
 }
 
@@ -366,7 +366,14 @@ fn paint_icon(painter: &egui::Painter, rect: Rect, icon: Option<&Icon>, tint: f3
 }
 
 /// Draws one stack in a slot-sized rect: icon, count and wear.
-fn paint_stack(painter: &egui::Painter, rect: Rect, stack: &ItemStack, items: &Items, icons: &ItemIcons, tint: f32) {
+pub(crate) fn paint_stack(
+    painter: &egui::Painter,
+    rect: Rect,
+    stack: &ItemStack,
+    items: &Items,
+    icons: &ItemIcons,
+    tint: f32,
+) {
     let inset = rect.width() * 0.13;
     paint_icon(painter, rect.shrink(inset), icons.get(stack), tint);
     if stack.count > 1 {
@@ -409,13 +416,20 @@ fn paint_stack(painter: &egui::Painter, rect: Rect, stack: &ItemStack, items: &I
     }
 }
 
-fn paint_slot_back(painter: &egui::Painter, rect: Rect, rim: Stroke) {
+pub(crate) fn paint_slot_back(painter: &egui::Painter, rect: Rect, rim: Stroke) {
     painter.rect_filled(rect, CornerRadius::same(8), SLOT_FILL);
     painter.rect_stroke(rect, CornerRadius::same(8), rim, StrokeKind::Inside);
 }
 
 /// A small icon with a label beside it, for recipe rows.
-fn item_chip(ui: &mut Ui, stack: &ItemStack, items: &Items, icons: &ItemIcons, size: f32, label: egui::RichText) {
+pub(crate) fn item_chip(
+    ui: &mut Ui,
+    stack: &ItemStack,
+    items: &Items,
+    icons: &ItemIcons,
+    size: f32,
+    label: egui::RichText,
+) {
     ui.horizontal(|ui| {
         ui.spacing_mut().item_spacing.x = 4.0;
         let (rect, resp) = ui.allocate_exact_size(Vec2::splat(size), Sense::hover());
@@ -1372,7 +1386,7 @@ pub fn crafting(ctx: &egui::Context, v: &CraftingView, actions: &mut Vec<UiActio
 }
 
 /// Why the machine does not work, in a red-edged box.
-fn idle_banner(ui: &mut Ui, why: &str) {
+pub(crate) fn idle_banner(ui: &mut Ui, why: &str) {
     egui::Frame::new()
         .fill(Color32::from_rgba_unmultiplied(80, 26, 24, 170))
         .stroke(Stroke::new(1.5, Color32::from_rgb(150, 70, 60)))
@@ -1610,7 +1624,7 @@ pub fn spark_text(kind: Station, s: &SparkView) -> Option<String> {
 }
 
 /// A thin bar `frac` full, coloured like a block's health.
-fn thin_bar(ui: &mut Ui, frac: f32, fill: Color32) {
+pub(crate) fn thin_bar(ui: &mut Ui, frac: f32, fill: Color32) {
     let (rect, _) = ui.allocate_exact_size(vec2(ui.available_width().min(240.0), 8.0), Sense::hover());
     let painter = ui.painter();
     painter.rect_filled(rect, CornerRadius::same(3), Color32::from_rgb(38, 34, 32));
@@ -1625,7 +1639,7 @@ const SPARK_GOLD: Color32 = Color32::from_rgb(255, 176, 60);
 
 /// A machine's wear and spark (milestone 15), when it has them. A
 /// generator's spark shows by its fuel instead.
-fn machine_panel(ui: &mut Ui, kind: Station, view: &StationView) {
+pub(crate) fn machine_panel(ui: &mut Ui, kind: Station, view: &StationView) {
     let spark = view
         .spark
         .filter(|_| kind != Station::SparkGenerator)

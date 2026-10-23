@@ -5,6 +5,7 @@ use crate::chat::{ChatAction, ChatBox};
 use crate::claims::{Claims, outline};
 use crate::combat::{Anchor, Defeat, FireMode, Floaters, Fuse, Losses, Shots, Trigger};
 use crate::creatures::{Creatures, Seen};
+use crate::forge_screen::{ForgeUi, ForgeWindow};
 use crate::icons::icon_for;
 use crate::items::Items;
 use crate::menus::{
@@ -21,6 +22,7 @@ use crate::skills::Progress;
 use crate::sky::Sky;
 use crate::textures::TextureSet;
 use crate::world::ClientWorld;
+use bm_core::forge::Held;
 use bm_core::mining::swing_ticks;
 use bm_core::movement::{MoveConfig, PlayerInput};
 use bm_core::{
@@ -445,6 +447,13 @@ impl Session {
         crate::skills::reach(self.base_reach, self.progress.effects())
     }
 
+    /// The conditions some quirks need (night, health, hunger), judged as
+    /// the server judges them when it applies an action: our state now, at
+    /// the server tick we map now to (milestone 17).
+    fn held_now(&self, local: f64) -> Held {
+        Held::of(&self.me.state, &self.planet.day, self.server_tick(local) as f64)
+    }
+
     /// Our best estimate of the server's tick now.
     fn server_tick(&self, local: f64) -> u64 {
         self.remotes
@@ -521,14 +530,14 @@ impl Session {
     /// `slot` and looking along `look`: starts the cooldown and predicts the
     /// damage and breaks the server will rule (`crate::mining`). Returns the
     /// message to send, or None when there is nothing breakable to swing at.
-    fn swing(&mut self, pos: BlockPos, at: u32, slot: usize, look: DVec3) -> Option<ClientMsg> {
+    fn swing(&mut self, pos: BlockPos, at: u32, slot: usize, look: DVec3, held: &Held) -> Option<ClientMsg> {
         let block = self.world.block(pos)?;
         if block.is_air() || !self.world.registry.get(block).breakable {
             return None;
         }
-        let item = self.items.slot(slot).map(|h| h.item);
         // A bare hand breaks nothing (Nathan, 2026-10-20: as in Boundless).
-        let tool = self.items.registry.swing_tool(item)?;
+        // The tool through its traits (milestone 17), as the server reads it.
+        let tool = self.items.tool_of(self.items.slot(slot).as_ref(), held)?;
         let effects = *self.progress.effects();
         // Skills quicken the cadence (Deftness, mastery, the tool's epic).
         self.swinger
@@ -629,8 +638,7 @@ impl Session {
     /// machines and breaks nothing: no block health bar for it.
     fn holding_spanner(&self) -> bool {
         self.items
-            .slot(self.selected)
-            .and_then(|h| self.items.registry.swing_tool(Some(h.item)))
+            .tool_of(self.items.slot(self.selected).as_ref(), &Held::default())
             .is_some_and(|t| t.class == Some(bm_core::items::ToolClass::Spanner))
     }
 
@@ -750,11 +758,8 @@ impl Session {
     /// Held torches as point lights (`Renderer::set_point_lights`): ours at
     /// the hand (where the rope starts), everyone else's at their hands.
     fn held_lights(&self, remotes: &[(u32, RemoteSample)], camera: &Camera) -> Vec<(DVec3, u8)> {
-        let held = self
-            .items
-            .slot(self.selected)
-            .and_then(|h| self.items.def(&h))
-            .map_or(0, |d| d.held_light);
+        // A torch, or a Glowing tool (milestone 17).
+        let held = self.items.held_light_of(self.items.slot(self.selected).as_ref());
         // The light-source epic lights around us like a held torch.
         let mine = crate::skills::carried_light(held, self.progress.effects());
         let forward = camera.forward();
@@ -904,6 +909,8 @@ pub struct App {
     shrine_tab: ShrineTab,
     /// The skill screen's chosen category and reset question.
     skill_ui: SkillUi,
+    /// The forge window's chosen gear and deck (milestone 17).
+    forge_ui: ForgeUi,
     /// Storage blocks we closed whose `closed` answer has not come back yet:
     /// that answer must not close the same block opened again meanwhile.
     storage_closing: Vec<BlockPos>,
@@ -968,6 +975,7 @@ impl App {
             portal_view: None,
             shrine_tab: ShrineTab::Worlds,
             skill_ui: SkillUi::default(),
+            forge_ui: ForgeUi::default(),
             storage_closing: Vec::new(),
             chat: ChatBox::default(),
             claim_mode: false,
@@ -1075,6 +1083,7 @@ impl App {
         self.close_menu(false);
         if let Menu::Crafting(Some(pos)) = menu {
             self.live_station = None;
+            self.forge_ui = ForgeUi::default();
             self.send(ClientMsg::WatchStation { pos: Some(pos) });
         }
         if let Menu::Storage(pos) = menu {
@@ -1465,8 +1474,11 @@ impl App {
         let now = self.now();
         let Some(s) = &mut self.session else { return };
         match m {
-            // Milestone 17: forging (not shown yet).
-            ServerMsg::Forged { .. } => {}
+            // Milestone 17: a session of ours ended.
+            ServerMsg::Forged { outcome, .. } => {
+                let text = crate::forge_screen::outcome_text(&s.items, &outcome);
+                self.notices.push(text, now);
+            }
             ServerMsg::Creature(v) => s.creatures.view(v),
             ServerMsg::Blast { pos, radius } => {
                 let pos = DVec3::from_array(pos.map(|v| v as f64));
@@ -1663,11 +1675,8 @@ impl App {
         let mouse = if s.travelling() { [false; 2] } else { mouse };
         // A grapple in hand fires (and lets go) with the left button, inside
         // the simulation, instead of breaking or placing.
-        let grapple = s
-            .items
-            .slot(s.selected)
-            .and_then(|h| s.items.def(&h))
-            .and_then(|d| d.grapple());
+        // Through its traits with no quirk conditions, as the server steps it.
+        let grapple = s.items.grapple_of(s.items.slot(s.selected).as_ref());
         if grapple.is_none() || !playing || claim_mode || s.travelling() {
             self.fire_pending = false;
         }
@@ -1788,6 +1797,9 @@ impl App {
 
         let slot = s.selected;
         let held = s.items.slot(slot);
+        // What the held stack does goes through its traits (milestone 17),
+        // with the quirks' conditions as the server will judge them.
+        let held_by = s.held_now(local);
         // A chisel in hand cuts with the left button and fills with the
         // right, instead of breaking and placing.
         let chisel = held.and_then(|h| s.items.def(&h)).and_then(|d| d.chisel());
@@ -1834,7 +1846,7 @@ impl App {
                             // Energy: a cut is spent before anything else is
                             // ruled, as the server does; too tired, it is sent
                             // but cuts nothing.
-                            let cost = held.and_then(|h| s.items.def(&h)).and_then(|d| d.energy()).unwrap_or(0);
+                            let cost = s.items.energy_of(held.as_ref(), &held_by).unwrap_or(0);
                             let at = s.me.seq;
                             if s.me.spend(
                                 at,
@@ -1871,8 +1883,8 @@ impl App {
         // is looted once a press. Slings, strikes and swings share one
         // cooldown (`swinger`), as on the server.
         let effects = *s.progress.effects();
-        let sling = held.and_then(|h| s.items.def(&h)).and_then(|d| d.sling());
-        let tool = s.items.registry.swing_tool(held.map(|h| h.item));
+        let sling = s.items.sling_of(held.as_ref(), &held_by);
+        let tool = s.items.tool_of(held.as_ref(), &held_by);
         let world = &s.world;
         let terrain = raycast(eye, dir, CREATURE_AIM, |p| {
             world.block(p).is_some_and(|b| world.flags.solid(b))
@@ -1927,7 +1939,7 @@ impl App {
                 _ => self.notices.push("Fill a bucket at water".into(), now_s),
             }
         }
-        let bomb = held.and_then(|h| s.items.def(&h)).and_then(|d| d.bomb());
+        let bomb = s.items.bomb_of(held.as_ref(), &held_by);
         if let Some(b) = bomb.filter(|_| !s.me.state.down && !s.travelling() && !claim_mode) {
             // A bag of bombs: hold to light, let go to throw (a fuse run out
             // in hand throws it too), on the shared cooldown.
@@ -2052,7 +2064,7 @@ impl App {
         // hand, or a non-tool, breaks nothing: say so once per press). The server rules each swing on the same input
         // timeline (ADR-0004); `Session::swing` predicts what it will do.
         s.damage.heal(s.me.seq);
-        let has_tool = s.items.registry.swing_tool(held.map(|h| h.item)).is_some();
+        let has_tool = tool.is_some();
         if !mouse[0] {
             s.told_no_tool = false;
         } else if !has_tool && s.target.is_some() && !s.told_no_tool {
@@ -2062,7 +2074,13 @@ impl App {
         if mouse[0]
             && let Some(hit) = s.target
             && let Some(at) = s.swinger.next(first_seq, s.me.seq)
-            && let Some(msg) = s.swing(hit.block, at, slot, bm_core::movement::look_dir(input.yaw, input.pitch))
+            && let Some(msg) = s.swing(
+                hit.block,
+                at,
+                slot,
+                bm_core::movement::look_dir(input.yaw, input.pitch),
+                &held_by,
+            )
         {
             link.send(msg);
         }
@@ -2142,6 +2160,7 @@ impl App {
         let claim_mode = self.claim_mode;
         let shrine_tab = &mut self.shrine_tab;
         let skill_ui = &mut self.skill_ui;
+        let forge_ui = &mut self.forge_ui;
         let alpha = self.accumulator / TICK_DT;
         let (yaw, pitch) = (self.yaw, self.pitch);
         let mut return_pressed = false;
@@ -2256,6 +2275,24 @@ impl App {
                         let kind = menus::station_of(s.world.registry.get(block))?;
                         Some((pos, kind, menus::station_name(&s.world.registry, kind)))
                     });
+                    // A forge has its own window (milestone 17).
+                    if let Some((opened, bm_core::Station::Forge, title)) = station.clone() {
+                        crate::forge_screen::forge(
+                            &ctx,
+                            &ForgeWindow {
+                                items: &s.items,
+                                icons: &s.icons,
+                                title,
+                                opened,
+                                live,
+                                now,
+                                forger: s.progress.effects().forger(),
+                            },
+                            forge_ui,
+                            &mut actions,
+                        );
+                        return;
+                    }
                     menus::crafting(
                         &ctx,
                         &CraftingView {
@@ -3603,7 +3640,7 @@ mod tests {
         let mut at = 5;
         for n in 0..3 {
             let swing_at = s.swinger.next(at, at + 1).unwrap();
-            let msg = s.swing(pos, swing_at, 0, DVec3::NEG_Z).unwrap();
+            let msg = s.swing(pos, swing_at, 0, DVec3::NEG_Z, &Held::default()).unwrap();
             assert_eq!(s.swinger.next(swing_at, swing_at + 48), None, "cooling down");
             let predicted = s.damage.damage(pos);
             // Broken at once on the third, before the answer.
@@ -3622,7 +3659,7 @@ mod tests {
 
         // A swing at nothing breakable makes none, and starts no cooldown.
         let ready = s.swinger.ready_at();
-        assert!(s.swing(pos, ready, 0, DVec3::NEG_Z).is_none());
+        assert!(s.swing(pos, ready, 0, DVec3::NEG_Z, &Held::default()).is_none());
         assert_eq!(s.swinger.ready_at(), ready);
     }
 

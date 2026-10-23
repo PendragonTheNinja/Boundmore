@@ -6,6 +6,8 @@
 //! the answer (`Slots`). The checks here exist to avoid asking for moves the
 //! server would refuse, using the same `Inventory` rules it runs.
 
+use bm_core::forge::{Action, Gear, Held, IngredientDef, TraitKind};
+use bm_core::items::{BombStats, SlingStats, ToolStats};
 use bm_core::{
     BlockPos, BlockRegistry, Colour, ColourPalette, INVENTORY_SLOTS, Inventory, ItemDef, ItemError, ItemId, ItemKind,
     ItemRegistry, ItemStack, Recipe, RecipeBook, ShapeFamily, Station, ToolClass,
@@ -102,10 +104,45 @@ impl Items {
         })
     }
 
-    /// Uses left and in all, for a tool.
+    /// Uses left and in all, for a tool (Sturdy and Brittle counted).
     pub fn durability(&self, stack: &ItemStack) -> Option<(u16, u16)> {
-        let total = self.def(stack)?.durability()?;
+        let total = self.def(stack)?.durability_of(stack)?;
         Some((total.saturating_sub(stack.wear), total))
+    }
+
+    /// What a held stack does, through its traits (milestone 17): every
+    /// prediction reads gear stats here, with `held` built as the server
+    /// builds it (`Held::of`), so forged gear predicts exactly.
+    pub fn tool_of(&self, stack: Option<&ItemStack>, held: &Held) -> Option<ToolStats> {
+        let s = stack?;
+        self.def(s)?.tool_of(s, held)
+    }
+
+    pub fn sling_of(&self, stack: Option<&ItemStack>, held: &Held) -> Option<SlingStats> {
+        let s = stack?;
+        self.def(s)?.sling_of(s, held)
+    }
+
+    pub fn bomb_of(&self, stack: Option<&ItemStack>, held: &Held) -> Option<BombStats> {
+        let s = stack?;
+        self.def(s)?.bomb_of(s, held)
+    }
+
+    pub fn energy_of(&self, stack: Option<&ItemStack>, held: &Held) -> Option<u16> {
+        let s = stack?;
+        self.def(s)?.energy_of(s, held)
+    }
+
+    /// The grapple spec the movement step is given: through the stack's
+    /// traits with no quirk conditions (`Held::default`), on both sides.
+    pub fn grapple_of(&self, stack: Option<&ItemStack>) -> Option<bm_core::movement::GrappleSpec> {
+        let s = stack?;
+        self.def(s)?.grapple_of(s, &Held::default())
+    }
+
+    /// Light a held stack gives (a torch, a Glowing tool).
+    pub fn held_light_of(&self, stack: Option<&ItemStack>) -> u8 {
+        stack.and_then(|s| self.def(s).map(|d| d.held_light_of(s))).unwrap_or(0)
     }
 
     /// A stack's name with its colour: "Stone, Rich Azure", or plain
@@ -131,8 +168,12 @@ impl Items {
             return "Unknown item".into();
         };
         let mut lines = vec![self.name(stack)];
+        // The stats a tooltip shows are the stack's own, through its traits;
+        // quirks that need a time of day, health or hunger are left out.
+        let held = Held::default();
         match def.kind {
             ItemKind::Tool(t) if t.class == Some(ToolClass::Spanner) => {
+                let t = def.tool_of(stack, &held).unwrap_or(t);
                 lines.push(spanner_line(&t));
                 lines.push(format!(
                     "Breaks nothing; {} hits a second",
@@ -143,6 +184,7 @@ impl Items {
                 }
             }
             ItemKind::Tool(t) => {
+                let t = def.tool_of(stack, &held).unwrap_or(t);
                 lines.push(match t.class {
                     Some(class) => format!("Best on {}; a quarter of the damage on the rest", tool_materials(class)),
                     None => "Works on everything".into(),
@@ -178,6 +220,9 @@ impl Items {
                 }
             }
             ItemKind::Grapple { range, hookshot, .. } => {
+                let (range, hookshot) = def
+                    .grapple_of(stack, &held)
+                    .map_or((range, hookshot), |g| (g.range as f32, g.hookshot));
                 lines.push(format!(
                     "Fires a hook up to {} blocks with left click",
                     trim_float(range)
@@ -192,12 +237,16 @@ impl Items {
                 }
             }
             ItemKind::Food(f) => lines.extend(food_lines(&f)),
-            ItemKind::Ingredient(_) => lines.push("Used in a forge".into()),
+            ItemKind::Ingredient(i) => match bm_core::forge::ingredient(i) {
+                Some(d) => lines.extend(ingredient_lines(d)),
+                None => lines.push("Used in a forge".into()),
+            },
             ItemKind::Bucket { fills } => {
                 lines.push("Left click on water fills it".into());
                 lines.push(format!("{} of {fills} fills left", fills.saturating_sub(stack.wear)));
             }
             ItemKind::Bomb(b) => {
+                let b = def.bomb_of(stack, &held).unwrap_or(b);
                 lines.push("Hold to light, let go to throw".into());
                 lines.push(format!(
                     "{} damage within {} blocks, half at the edge",
@@ -224,6 +273,7 @@ impl Items {
                 }
             }
             ItemKind::Sling(l) => {
+                let l = def.sling_of(stack, &held).unwrap_or(l);
                 lines.push(format!(
                     "Shoots {} damage up to {} blocks with left click",
                     l.damage,
@@ -259,6 +309,7 @@ impl Items {
             ItemKind::Block(_) => lines.push("A block you can place".into()),
             ItemKind::Material => lines.push("A crafting material".into()),
         }
+        lines.extend(forge_lines(def, stack));
         if stack.count > 1 {
             lines.push(format!("{} in this stack", stack.count));
         }
@@ -420,6 +471,140 @@ pub fn food_lines(f: &bm_core::food::FoodStats) -> Vec<String> {
         lines.push("Raw: makes you sick for 40 seconds".into());
     }
     lines
+}
+
+/// What forging did to a piece of gear, for its tooltip (milestone 17): its
+/// rank and its traits by kind ("Mighty 5: +250 damage and +30%"), or that
+/// it can still be forged once. Nothing for what cannot be forged.
+pub fn forge_lines(def: &ItemDef, stack: &ItemStack) -> Vec<String> {
+    if Gear::of(def).is_none() {
+        return Vec::new();
+    }
+    let f = &stack.forge;
+    if !f.done {
+        return vec![format!("Rank {}. Can be forged once", def.rank)];
+    }
+    let mut lines = vec![format!("Forged, rank {}", f.rank(def.rank))];
+    let mut any = false;
+    for kind in TraitKind::ALL {
+        let of_kind: Vec<String> = f
+            .traits()
+            .filter(|(id, _)| id.def().kind == kind)
+            .map(|(id, level)| trait_line(id, level))
+            .collect();
+        if of_kind.is_empty() {
+            continue;
+        }
+        any = true;
+        lines.push(format!("{}:", kind_title(kind)));
+        lines.extend(of_kind.into_iter().map(|l| format!("  {l}")));
+    }
+    if !any {
+        lines.push("No traits".into());
+    }
+    lines
+}
+
+/// "Mighty 5: +250 damage and +30%"; a one-level trait has no number.
+pub fn trait_line(id: bm_core::forge::TraitId, level: u8) -> String {
+    let d = id.def();
+    if d.levels.len() == 1 {
+        format!("{}: {}", d.display, d.describe(level))
+    } else {
+        format!("{} {level}: {}", d.display, d.describe(level))
+    }
+}
+
+/// "Boons", "Quirks", "Flaws".
+pub fn kind_title(kind: TraitKind) -> &'static str {
+    match kind {
+        TraitKind::Boon => "Boons",
+        TraitKind::Quirk => "Quirks",
+        TraitKind::Flaw => "Flaws",
+    }
+}
+
+/// "100 boon points", "200 boon, 100 quirk and 50 flaw points".
+fn points_text(parts: &[(i32, &str)]) -> String {
+    let words: Vec<String> = parts.iter().map(|(n, k)| format!("{} {k}", n.abs())).collect();
+    match words.as_slice() {
+        [] => String::new(),
+        [one] => format!("{one} points"),
+        [rest @ .., last] => format!("{} and {last} points", rest.join(", ")),
+    }
+}
+
+/// What a forging ingredient does and costs, in plain words, for its
+/// tooltip and the forge's deck (milestone 17).
+pub fn ingredient_lines(d: &IngredientDef) -> Vec<String> {
+    vec![ingredient_effect(d), ingredient_cost(d)]
+}
+
+/// The ingredient's effect in one line.
+pub fn ingredient_effect(d: &IngredientDef) -> String {
+    match d.action {
+        Action::Tincture {
+            boon,
+            quirk,
+            flaw,
+            after,
+        } => {
+            let named = [(boon, "boon"), (quirk, "quirk"), (flaw, "flaw")];
+            let adds: Vec<(i32, &str)> = named.iter().copied().filter(|(n, _)| *n > 0).collect();
+            let takes: Vec<(i32, &str)> = named.iter().copied().filter(|(n, _)| *n < 0).collect();
+            let mut parts = Vec::new();
+            if !adds.is_empty() {
+                parts.push(format!("Adds {}", points_text(&adds)));
+            }
+            if !takes.is_empty() {
+                let verb = if parts.is_empty() { "Takes" } else { "takes" };
+                parts.push(format!("{verb} away {}", points_text(&takes)));
+            }
+            let mut text = parts.join(" and ");
+            text.push_str(", then every pool rolls");
+            if let Some((buff, rounds)) = after {
+                text.push_str(&format!("; then {} for {rounds} rounds", buff.describe()));
+            }
+            text
+        }
+        Action::Glaze(buff) => format!("For the rest of the session: {} (each one adds more)", buff.describe()),
+        Action::Salve(buff, rounds) => format!("For {rounds} rounds: {}", buff.describe()),
+        Action::VigourSpur(per) => format!("Ends every buff, giving {per} vigour for each round it had left"),
+        Action::PointsSpur(per) => format!("Turns each round of second chances into {per} boon points"),
+        Action::BoostSpur => "Turns rounds of second chances into rounds of boon points +50%".into(),
+        Action::FlawTurningSpur => "Moves half the flaw pool to the boon pool".into(),
+        Action::Wash(kind, share) => format!(
+            "Takes the newest {} off, {}% of its points back into the pool, then that pool rolls",
+            kind.word(),
+            (share * 100.0).round()
+        ),
+        Action::ShiftWash(kind) => format!("Moves the newest {}'s points to another {}", kind.word(), kind.word()),
+        Action::Seal => "Ends the session: the gear goes into the forge's queue with its traits".into(),
+        Action::Unmake(chance) => format!(
+            "Ends the session: the gear comes back unforged, and each kind of ingredient used comes back with a {}% chance",
+            (chance * 100.0).round()
+        ),
+    }
+}
+
+/// "Costs 50 vigour and 100 to 110 stability", "Costs nothing".
+pub fn ingredient_cost(d: &IngredientDef) -> String {
+    let mut parts = Vec::new();
+    if d.vigour > 0 {
+        parts.push(format!("{} vigour", d.vigour));
+    }
+    if d.stability > 0 {
+        parts.push(format!(
+            "{} to {} stability",
+            d.stability,
+            (d.stability as f64 * 1.1).round() as i32
+        ));
+    }
+    if parts.is_empty() {
+        "Costs nothing".into()
+    } else {
+        format!("Costs {}", parts.join(" and "))
+    }
 }
 
 /// 1 to 5 as I to V, for buff ranks.

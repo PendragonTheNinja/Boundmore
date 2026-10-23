@@ -15,6 +15,7 @@
 //! travelling screen can be seen.
 
 use crate::net::NetEvent;
+use bm_core::forge::Held;
 use bm_core::portal::{PortalAxis, PortalFrame};
 use bm_core::skills::{Character, SkillTree};
 use bm_core::{
@@ -2004,7 +2005,7 @@ impl Demo {
         if let Some(s) = self.inv.slots[slot].as_mut() {
             s.wear += 1;
             if let Some(def) = self.items.get(s.item)
-                && def.durability().is_some_and(|d| s.wear >= d)
+                && def.durability_of(s).is_some_and(|d| s.wear >= d)
             {
                 let text = format!("Your {} broke", def.display);
                 self.inv.slots[slot] = None;
@@ -2036,9 +2037,10 @@ impl Demo {
                 .push_back(NetEvent::Msg(ServerMsg::BlockHealth { pos: hit, damage }));
             return;
         }
-        let item = self.inv.get(slot as usize).map(|s| s.item);
-        // A bare hand breaks nothing (Nathan, 2026-10-20).
-        let Some(tool) = self.items.swing_tool(item) else {
+        // A bare hand breaks nothing (Nathan, 2026-10-20). The tool through
+        // its traits; the demo knows no time, health or hunger for quirks.
+        let held = self.inv.get(slot as usize);
+        let Some(tool) = held.and_then(|s| self.items.get(s.item)?.tool_of(&s, &Held::default())) else {
             let damage = health_of(self, hit);
             self.events
                 .push_back(NetEvent::Msg(ServerMsg::BlockHealth { pos: hit, damage }));
@@ -2092,7 +2094,7 @@ impl Demo {
             }
             self.break_block(seq, p, state, at);
         }
-        if item.is_some_and(|i| self.items.get(i).is_some_and(|d| d.tool().is_some())) {
+        if held.is_some_and(|s| self.items.get(s.item).is_some_and(|d| d.tool().is_some())) {
             self.wear(slot as usize);
         }
     }
@@ -2518,8 +2520,7 @@ impl Demo {
         let Some(sling) = self
             .inv
             .get(slot as usize)
-            .and_then(|s| self.items.get(s.item))
-            .and_then(|d| d.sling())
+            .and_then(|s| self.items.get(s.item)?.sling_of(&s, &Held::default()))
         else {
             return;
         };
@@ -2562,8 +2563,7 @@ impl Demo {
         let Some(bag) = self
             .inv
             .get(slot as usize)
-            .and_then(|s| self.items.get(s.item))
-            .and_then(|d| d.bomb())
+            .and_then(|s| self.items.get(s.item)?.bomb_of(&s, &Held::default()))
         else {
             return;
         };
@@ -2620,8 +2620,8 @@ impl Demo {
     /// hand stone 200, iron 700), a crit roll, the creature's armour, one
     /// wear. Unlike the server it checks no reach.
     fn strike(&mut self, at: u32, creature: u32, slot: u8) {
-        let item = self.inv.get(slot as usize).map(|s| s.item);
-        let Some(tool) = self.items.swing_tool(item) else {
+        let held = self.inv.get(slot as usize);
+        let Some(tool) = held.and_then(|s| self.items.get(s.item)?.tool_of(&s, &Held::default())) else {
             return;
         };
         let effects = self.character.effects(&self.tree);
@@ -3496,7 +3496,7 @@ mod tests {
         assert_eq!((c.page().rank("agility"), at), (1, 7));
         d.send(ClientMsg::Skill {
             at: 8,
-            action: learn("intelligence"),
+            action: learn("augment_crafting"),
         });
         assert_eq!(notices(&d.poll()), vec!["That skill comes later".to_string()]);
         let marks = d.character.marks;

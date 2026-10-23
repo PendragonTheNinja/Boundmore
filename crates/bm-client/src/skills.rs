@@ -339,10 +339,12 @@ mod tests {
         let mut c = at_level(8);
         c.learn(&t, "hammer_epic").unwrap();
         let attrs = cards(&t, &c, Category::Attributes);
-        // Open, learnable; and Insight comes later.
+        // Open, learnable; and Augments come later (Insight is real since
+        // milestone 17).
         assert!(card(&attrs, "power").learnable);
         assert_eq!(card(&attrs, "power").look, Look::Open);
-        let v = card(&attrs, "intelligence");
+        let crafting = cards(&t, &c, Category::Crafting);
+        let v = card(&crafting, "augment_crafting");
         assert_eq!((v.look, v.learnable), (Look::Greyed, false));
         assert_eq!(v.why.as_deref(), Some("Comes later"));
         // The partner of a learned epic is greyed and says why.
@@ -383,7 +385,7 @@ mod tests {
         assert_eq!(p.character().page().rank("agility"), 2);
         // Something we would refuse is not predicted.
         assert_eq!(
-            p.act(7, SkillAction::Learn("intelligence".into()), 0, false),
+            p.act(7, SkillAction::Learn("augment_crafting".into()), 0, false),
             Err(Refused::ComesLater)
         );
         // The server answers the first: both still show, the second pending.
