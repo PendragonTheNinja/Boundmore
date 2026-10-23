@@ -11,11 +11,12 @@ use super::creatures::{
     provoke, segment_hits_box,
 };
 use super::mining::roll;
-use super::{Game, send_slots, wear_slot};
+use super::{Game, send_slots, swing_tool_of, wear_slot};
 use bm_core::combat::{
     CHARGE_TICKS, DamageKind, HOMING_TURN_PER_TICK, charge_multiplier, dealt, homing_step, shot_step, taken,
 };
 use bm_core::creatures::{Attack, roll_drops};
+use bm_core::forge::{Held, MANY_SHOTS_SPREAD, TraitId, many_shots};
 use bm_core::items::ToolClass;
 use bm_core::mining::{is_crit, skilled_tool_keen, swing_ticks};
 use bm_core::movement::{PhysicsWorld, look_dir};
@@ -155,14 +156,15 @@ impl Game {
         if p.state.down || slot as usize >= HOTBAR_SLOTS || !self.ready_at(id, at) {
             return tracing::debug!("refused shot from #{id} at {at}");
         }
-        let Some(sling) = p
-            .inventory
-            .get(slot as usize)
-            .and_then(|s| self.items.get(s.item))
-            .and_then(|d| d.sling())
-        else {
+        // Through its traits (milestone 17), as the holder stands now.
+        let held = Held::of(&p.state, &self.planets[p.planet].day, self.tick as f64);
+        let stack = p.inventory.get(slot as usize);
+        let Some(sling) = stack.and_then(|s| self.items.get(s.item)?.sling_of(&s, &held)) else {
             return tracing::debug!("#{id} shot with no sling in slot {slot}");
         };
+        // Many Shots: several pellets a trigger, each a share of the damage,
+        // fanned out sideways; one energy and one wear for them all.
+        let (shots, share) = many_shots(stack.map_or(0, |s| s.forge.level(TraitId::ManyShots)));
         let effects = p.effects;
         let sling = effects.skilled_sling(&sling);
         let rewind = rewind_for(p.pending.len());
@@ -180,9 +182,11 @@ impl Game {
         } else {
             0
         };
-        let damage = (sling.damage as f64 * charge_multiplier(charge)).round() as u32;
+        let damage = (sling.damage as f64 * charge_multiplier(charge) * share)
+            .round()
+            .max(1.0) as u32;
         let eye = p.state.eye(&self.movement);
-        let vel = look_dir(yaw, pitch) * sling.shot_speed as f64;
+        let dir = look_dir(yaw, pitch);
         // One durability a shot, unless Careful Hands spares it.
         if roll(&mut self.rng) >= p.state.wear_spared(effects.wear_saved()) {
             let before = p.inventory.clone();
@@ -192,21 +196,26 @@ impl Game {
                 p.out.send(&ServerMsg::Notice { text });
             }
         }
-        let shot = Shot {
-            crit_chance: sling.crit_chance,
-            crit_effect: sling.crit_effect,
-            ..Shot::new(
-                pi,
-                Shooter::Player { id, at, rewind },
-                ShotKind::Pellet,
-                eye,
-                vel,
-                sling.falloff,
-                sling.range,
-                damage,
-            )
-        };
-        self.launch(shot);
+        for i in 0..shots {
+            let angle = (i as f64 - (shots - 1) as f64 * 0.5) * MANY_SHOTS_SPREAD;
+            let (sin, cos) = angle.sin_cos();
+            let d = DVec3::new(dir.x * cos - dir.z * sin, dir.y, dir.x * sin + dir.z * cos);
+            let shot = Shot {
+                crit_chance: sling.crit_chance,
+                crit_effect: sling.crit_effect,
+                ..Shot::new(
+                    pi,
+                    Shooter::Player { id, at, rewind },
+                    ShotKind::Pellet,
+                    eye,
+                    d * sling.shot_speed as f64,
+                    sling.falloff,
+                    sling.range,
+                    damage,
+                )
+            };
+            self.launch(shot);
+        }
         self.weapon_fired_near(pi, id, eye);
     }
 
@@ -421,8 +430,8 @@ impl Game {
         if shape.delta(p.state.eye(&self.movement), centre).length() > reach + 0.5 {
             return tracing::debug!("#{id} struck at creature {cid} out of reach");
         }
-        let item = p.inventory.get(slot as usize).map(|s| s.item);
-        let Some(tool) = self.items.swing_tool(item) else {
+        let held = Held::of(&p.state, &self.planets[pi].day, self.tick as f64);
+        let Some(tool) = swing_tool_of(&self.items, p.inventory.get(slot as usize), &held) else {
             return tracing::debug!("#{id} struck with no tool in slot {slot}");
         };
         let effects = p.effects;

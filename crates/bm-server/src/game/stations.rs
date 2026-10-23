@@ -91,7 +91,7 @@ impl Game {
 
     /// The machine at `pos` if this player may use it (the rules of
     /// `block_access`), with the planet it is on.
-    fn machine_access(&self, id: u32, pos: BlockPos) -> Result<(usize, Machine), Refusal> {
+    pub(super) fn machine_access(&self, id: u32, pos: BlockPos) -> Result<(usize, Machine), Refusal> {
         let (canon, _) = self.block_access(id, pos)?;
         let pi = self.planet_of(id).ok_or("no such player")?;
         let m = self.machine(pi, canon).ok_or("not a station")?;
@@ -102,7 +102,7 @@ impl Game {
     /// block of a four-block machine before milestone 11 moves there when
     /// its group forms (if the key has none; any other waits its turn, its
     /// block unbreakable, and its jobs keep running).
-    fn machine_record(&mut self, pi: usize, m: &Machine) -> BlockPos {
+    pub(super) fn machine_record(&mut self, pi: usize, m: &Machine) -> BlockPos {
         let stations = &mut self.planets[pi].stations;
         if m.idle.is_none()
             && !stations.exists(m.key)
@@ -204,7 +204,8 @@ impl Game {
             }
         };
         let Some(pi) = self.planet_of(id) else { return };
-        let view = target.and_then(|key| self.station_view(pi, key));
+        let account = self.players.get(&id).map(|p| p.account.clone());
+        let view = target.and_then(|key| self.station_view(pi, key, account.as_deref()));
         let Some(p) = self.players.get_mut(&id) else { return };
         p.watching = target;
         if let Some(view) = view {
@@ -324,7 +325,9 @@ impl Game {
         self.push_station(pi, key);
     }
 
-    pub(super) fn station_view(&self, pi: usize, key: BlockPos) -> Option<StationView> {
+    /// A station's window as the player with account `viewer` sees it (a
+    /// forge's session shows only to its forger).
+    pub(super) fn station_view(&self, pi: usize, key: BlockPos, viewer: Option<&str>) -> Option<StationView> {
         let planet = &self.planets[pi];
         let machine = planet.world.block(key).and_then(|_| self.machine(pi, key));
         let kind = match (planet.stations.get(key), &machine) {
@@ -336,6 +339,9 @@ impl Game {
         let idle = machine.and_then(|m| m.idle);
         let mut view = planet.stations.view(key, kind, idle, self.tick, &self.recipes);
         view.spark = self.spark_view(pi, key, kind, blocks);
+        if kind == Station::Forge {
+            view.forge = Some(Box::new(self.forge_view(pi, key, viewer)));
+        }
         Some(view)
     }
 
@@ -353,7 +359,7 @@ impl Game {
                     burning: st.map_or(0, |s| s.burn_left()),
                 })
             }
-            Station::Workbench | Station::Mixer | Station::Refinery | Station::Compactor => {
+            Station::Workbench | Station::Mixer | Station::Refinery | Station::Compactor | Station::Forge => {
                 let env = PlanetEnv::new(&planet.world, self.spark_link);
                 let grid = env.generators(key).unwrap_or_default();
                 let capacity = grid
@@ -454,18 +460,21 @@ impl Game {
 
     /// Sends a station's state to everyone on its planet watching it.
     pub(super) fn push_station(&self, pi: usize, key: BlockPos) {
-        let mut view = None;
+        let mut view: Option<StationView> = None;
         for p in self
             .players
             .values()
             .filter(|p| p.planet == pi && p.watching == Some(key))
         {
             if view.is_none() {
-                view = self.station_view(pi, key);
+                view = self.station_view(pi, key, Some(&p.account));
             }
-            if let Some(v) = &view {
-                p.out.send(&ServerMsg::Station(v.clone()));
+            let Some(v) = &mut view else { continue };
+            // Only a forge's view differs by who watches.
+            if let Some(f) = &mut v.forge {
+                **f = self.forge_view(pi, key, Some(&p.account));
             }
+            p.out.send(&ServerMsg::Station(v.clone()));
         }
     }
 }

@@ -8,6 +8,7 @@ pub mod config;
 pub mod crafting;
 pub mod damage;
 pub mod farm;
+pub mod forging;
 pub mod game;
 pub mod lapse;
 pub mod machines;

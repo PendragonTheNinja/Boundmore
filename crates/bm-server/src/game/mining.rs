@@ -3,9 +3,10 @@
 //! (torches) that fall with what held them up. The rules themselves are
 //! pure functions in `bm_core::mining`; this applies them.
 
-use super::{Game, Refusal, in_reach, send_slots, wear_slot};
+use super::{Game, Refusal, in_reach, send_slots, swing_tool_of, wear_slot};
 use crate::claims::ClaimError;
 use crate::world::World;
+use bm_core::forge::Held;
 use bm_core::items::ToolClass;
 use bm_core::items::title_case;
 use bm_core::mining::{
@@ -195,12 +196,11 @@ impl Game {
         let effects = p.effects;
         // The tool is what our copy of the slot holds. A bare hand breaks
         // nothing (Nathan, 2026-10-20: as in Boundless).
-        let item = p.inventory.get(slot as usize).map(|s| s.item);
+        let stack = p.inventory.get(slot as usize);
+        // Through its traits (milestone 17), as the holder stands now.
+        let held = Held::of(&p.state, &self.planets[pi].day, self.tick as f64);
         // A tiller tills soil and turf; at a crop it harvests like any tool.
-        if let Some(tool) = self
-            .items
-            .swing_tool(item)
-            .filter(|t| t.class == Some(ToolClass::Tiller))
+        if let Some(tool) = swing_tool_of(&self.items, stack, &held).filter(|t| t.class == Some(ToolClass::Tiller))
             && !self.planets[pi]
                 .world
                 .block(canon)
@@ -208,17 +208,14 @@ impl Game {
         {
             return self.tiller_swing(id, seq, at, pos, canon, slot, tool);
         }
-        let spanner = self
-            .items
-            .swing_tool(item)
-            .filter(|t| t.class == Some(ToolClass::Spanner));
+        let spanner = swing_tool_of(&self.items, stack, &held).filter(|t| t.class == Some(ToolClass::Spanner));
         if let Some(tool) = spanner {
             return self.spanner_swing(id, seq, at, pos, canon, slot, tool);
         }
         if let Err(r) = self.may_damage(id, pi, canon) {
             return self.swing_refused(id, seq, pos, r);
         }
-        let Some(tool) = self.items.swing_tool(item) else {
+        let Some(tool) = swing_tool_of(&self.items, stack, &held) else {
             return self.swing_refused(id, seq, pos, Refusal::Told(NEED_A_TOOL.into()));
         };
         // The tool as this character swings it: damage, cadence and crits

@@ -54,11 +54,12 @@ impl Game {
         if p.state.down || slot as usize >= HOTBAR_SLOTS || !self.ready_at(id, at) {
             return tracing::debug!("refused throw from #{id} at {at}");
         }
+        // Through its traits (milestone 17), as the holder stands now.
+        let held = bm_core::forge::Held::of(&p.state, &self.planets[p.planet].day, self.tick as f64);
         let Some(bag) = p
             .inventory
             .get(slot as usize)
-            .and_then(|s| self.items.get(s.item))
-            .and_then(|d| d.bomb())
+            .and_then(|s| self.items.get(s.item)?.bomb_of(&s, &held))
         else {
             return tracing::debug!("#{id} threw with no bombs in slot {slot}");
         };

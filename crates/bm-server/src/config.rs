@@ -139,6 +139,9 @@ pub struct ServerConfig {
     /// The wear a machine nobody has used starts with, instead of full
     /// (tests that wear one out).
     pub machine_wear_start: Option<u32>,
+    /// Seconds a sealed item waits in a forge's queue, instead of its
+    /// rank's (tests).
+    pub forge_queue_seconds: Option<u32>,
 
     /// Save version 2 settings, still read so an old `server.toml` keeps its
     /// planet: they apply to the first planet.
@@ -181,6 +184,7 @@ impl Default for ServerConfig {
             discovery_xp: true,
             placed_meteor: None,
             machine_wear_start: None,
+            forge_queue_seconds: None,
             planet_name: None,
             seed: None,
             width_chunks: None,

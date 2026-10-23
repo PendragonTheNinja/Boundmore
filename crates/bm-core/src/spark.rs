@@ -32,7 +32,12 @@ pub const SPANNER_MASTERY_REPAIR: f64 = 0.10;
 pub fn wears(station: Station) -> bool {
     matches!(
         station,
-        Station::Workbench | Station::Extractor | Station::Mixer | Station::Refinery | Station::Compactor
+        Station::Workbench
+            | Station::Extractor
+            | Station::Mixer
+            | Station::Refinery
+            | Station::Compactor
+            | Station::Forge
     )
 }
 
@@ -96,6 +101,7 @@ mod tests {
             Station::Mixer,
             Station::Refinery,
             Station::Compactor,
+            Station::Forge,
         ] {
             assert!(wears(s), "{s:?}");
         }

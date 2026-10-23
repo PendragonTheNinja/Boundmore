@@ -29,6 +29,7 @@ mod combat;
 mod creatures;
 mod farm;
 mod food;
+mod forge;
 mod meteors;
 mod mining;
 mod portal;
@@ -36,11 +37,12 @@ mod skills;
 mod stations;
 use anyhow::{Context, Result};
 use bm_core::creatures::CreatureKinds;
+use bm_core::forge::Held;
 use bm_core::movement::{self, MoveConfig, PlayerInput, PlayerState};
 use bm_core::skills::{Character, Effects, SkillTree};
 use bm_core::{
     BlockId, BlockPos, BlockState, CHUNK_SIZE, ChunkPos, Colour, ColourPalette, HOTBAR_SLOTS, Inventory, ItemId,
-    ItemRegistry, ItemStack, Mount, PlanetShape, PlotPos, RecipeBook, Shape, Station, TICK_DT, chisel,
+    ItemRegistry, ItemStack, Mount, PlanetShape, PlotPos, RecipeBook, Shape, Station, TICK_DT, ToolStats, chisel,
 };
 use bm_net::quinn::Connection;
 use bm_protocol::{
@@ -512,7 +514,7 @@ fn send_slots(p: &Player, before: &Inventory) {
 fn wear_slot(items: &ItemRegistry, inv: &mut Inventory, slot: usize) -> Option<String> {
     let s = inv.slots.get_mut(slot)?.as_mut()?;
     let def = items.get(s.item)?;
-    let durability = def.durability()?;
+    let durability = def.durability_of(s)?;
     s.wear += 1;
     if s.wear >= durability {
         let text = format!("Your {} broke", def.display);
@@ -522,6 +524,14 @@ fn wear_slot(items: &ItemRegistry, inv: &mut Inventory, slot: usize) -> Option<S
     None
 }
 
+/// The stats a swing uses holding `stack`, through its traits (milestone
+/// 17); None for a bare hand or anything not a tool, which cannot break
+/// blocks.
+fn swing_tool_of(items: &ItemRegistry, stack: Option<ItemStack>, held: &Held) -> Option<ToolStats> {
+    let s = stack?;
+    items.get(s.item)?.tool_of(&s, held)
+}
+
 /// Makes a stored inventory safe: impossible stacks and spent tools go.
 fn sanitize(inv: &mut Inventory, items: &ItemRegistry) {
     inv.sanitize(items);
@@ -529,7 +539,7 @@ fn sanitize(inv: &mut Inventory, items: &ItemRegistry) {
         if let Some(s) = slot {
             let spent = items
                 .get(s.item)
-                .and_then(|d| d.durability())
+                .and_then(|d| d.durability_of(s))
                 .is_some_and(|d| s.wear >= d);
             let worn_material = s.wear > 0 && items.get(s.item).is_some_and(|d| d.durability().is_none());
             if spent || worn_material {
@@ -610,6 +620,9 @@ impl Game {
             for p in &mut planets {
                 p.stations.start_wear = wear.min(bm_core::spark::MACHINE_WEAR);
             }
+        }
+        for p in &mut planets {
+            p.stations.forge_seconds = cfg.forge_queue_seconds;
         }
         Ok(Self {
             cfg,
@@ -914,8 +927,8 @@ impl Game {
                 ClientMsg::Eat { at, slot } => self.queue(id, at, Queued::Eat { at, slot }),
                 ClientMsg::FillBucket { slot, pos } => self.fill_bucket(id, slot, pos),
                 ClientMsg::LookCrop { pos } => self.look_crop(id, pos),
-                // Milestone 17: forging (not handled yet).
-                ClientMsg::ForgeBegin { .. } | ClientMsg::ForgeUse { .. } => {}
+                ClientMsg::ForgeBegin { pos, gear, deck } => self.forge_begin(id, pos, gear, deck),
+                ClientMsg::ForgeUse { pos, slot, round } => self.forge_use(id, pos, slot, round),
                 ClientMsg::Throw {
                     at,
                     slot,
@@ -1262,6 +1275,10 @@ impl Game {
                 // The grapple in the hand the input names, from our own copy
                 // of the inventory: the client's word is only which slot.
                 let slot = input.slot as usize;
+                // Through its traits (milestone 17): the spec as the client
+                // builds it, its energy by the holder as they stand before
+                // this input's step.
+                let held = Held::of(&p.state, &self.planets[p.planet].day, self.tick as f64);
                 let grapple = p
                     .inventory
                     .slots
@@ -1269,8 +1286,12 @@ impl Game {
                     .filter(|_| slot < HOTBAR_SLOTS)
                     .copied()
                     .flatten()
-                    .and_then(|s| self.items.get(s.item))
-                    .and_then(|d| d.grapple());
+                    .and_then(|s| {
+                        let d = self.items.get(s.item)?;
+                        let mut g = d.grapple_of(&s, &Held::default())?;
+                        g.energy = d.energy_of(&s, &held).unwrap_or(g.energy);
+                        Some(g)
+                    });
                 let world = &self.planets[p.planet].world;
                 // Held at a portal while its far side loads.
                 let held = p.trip.as_ref().map(|t| t.held);
@@ -1301,7 +1322,7 @@ impl Game {
                     if let Some(s) = p.inventory.slots[slot].as_mut() {
                         s.wear += 1;
                         if let Some(def) = self.items.get(s.item)
-                            && def.durability().is_some_and(|d| s.wear >= d)
+                            && def.durability_of(s).is_some_and(|d| s.wear >= d)
                         {
                             broke = Some(format!("Your {} broke", def.display));
                             p.inventory.slots[slot] = None;
@@ -1528,8 +1549,7 @@ impl Game {
                                     .inventory
                                     .get(o.last_input.slot as usize)
                                     .filter(|_| (o.last_input.slot as usize) < HOTBAR_SLOTS)
-                                    .and_then(|s| self.items.get(s.item))
-                                    .map_or(0, |d| d.held_light)
+                                    .map_or(0, |s| self.items.get(s.item).map_or(0, |d| d.held_light_of(&s)))
                                     .max(if o.inner_light { skills::INNER_LIGHT } else { 0 }),
                             },
                         ))
@@ -1629,12 +1649,13 @@ impl Game {
         // it does nothing but start the pause again.
         if let EditAction::Chisel { slot, .. } = action
             && let Some(p) = self.players.get_mut(&id)
-            && let Some(cost) = p
-                .inventory
-                .get(slot as usize)
-                .and_then(|s| self.items.get(s.item))
-                .filter(|d| d.chisel().is_some())
-                .and_then(|d| d.energy())
+            && let Some(cost) = p.inventory.get(slot as usize).and_then(|s| {
+                let held = Held::of(&p.state, &self.planets[p.planet].day, self.tick as f64);
+                self.items
+                    .get(s.item)
+                    .filter(|d| d.chisel().is_some())
+                    .and_then(|d| d.energy_of(&s, &held))
+            })
             && !p.state.try_spend(cost, bm_core::food::Drain::Tool)
         {
             return self.edit_refused(id, seq, pos, "too tired");

@@ -93,6 +93,35 @@ impl Inventory {
         left
     }
 
+    /// Adds as much of `stack` as fits, keeping everything it carries
+    /// (colour, tag, wear, forged traits): onto stacks it stacks with first
+    /// (never a worn one), then empty slots. Returns what did not fit.
+    pub fn add_stack(&mut self, items: &ItemRegistry, stack: ItemStack) -> u16 {
+        let max = limit(items, stack.item);
+        let mut left = stack.count;
+        for s in self.slots.iter_mut().flatten() {
+            if left == 0 {
+                break;
+            }
+            if s.stacks_with(&stack) && s.count < max {
+                let n = left.min(max - s.count);
+                s.count += n;
+                left -= n;
+            }
+        }
+        for slot in self.slots.iter_mut() {
+            if left == 0 {
+                break;
+            }
+            if slot.is_none() {
+                let n = left.min(max);
+                *slot = Some(ItemStack { count: n, ..stack });
+                left -= n;
+            }
+        }
+        left
+    }
+
     /// Adds, all or nothing. Returns the changed slots, or None if it does
     /// not fit (and nothing changed).
     pub fn add_all(&mut self, items: &ItemRegistry, item: ItemId, count: u16) -> Option<Vec<usize>> {
@@ -225,6 +254,25 @@ mod tests {
 
     fn items() -> ItemRegistry {
         ItemRegistry::builtin(&BlockRegistry::builtin())
+    }
+
+    #[test]
+    fn adding_a_stack_keeps_its_traits_wear_and_tag() {
+        let i = items();
+        let stone = i.id("stone").unwrap();
+        let mut inv = Inventory::default();
+        let mut forged = ItemStack::new(stone, 1);
+        forged.forge.done = true;
+        forged.wear = 3;
+        assert_eq!(inv.add_stack(&i, forged), 0);
+        assert_eq!(inv.get(0), Some(forged));
+        let tagged = ItemStack::tagged(stone, 7);
+        assert_eq!(inv.add_stack(&i, tagged), 0);
+        assert_eq!(inv.get(1), Some(tagged));
+        assert_eq!(inv.add_stack(&i, ItemStack::new(stone, 5)), 0);
+        assert_eq!(inv.get(2).unwrap().count, 5);
+        assert_eq!(inv.add_stack(&i, ItemStack::new(stone, 5)), 0);
+        assert_eq!(inv.get(2).unwrap().count, 10);
     }
 
     #[test]

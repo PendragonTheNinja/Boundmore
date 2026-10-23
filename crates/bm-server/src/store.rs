@@ -107,7 +107,11 @@ const V2_STATIONS: TableDefinition<&[u8], &[u8]> = TableDefinition::new("station
 ///
 /// 10 (M16 part 2): crops in a new table ([`SavedCrop`]); version 9 opens
 /// with none.
-pub const SAVE_VERSION: u32 = 10;
+///
+/// 11 (M17): a forge's station record saves its session and queued item
+/// ([`SavedStation::forge`]); older stations are rewritten with none (no
+/// forges existed).
+pub const SAVE_VERSION: u32 = 11;
 
 /// The universe file in the data directory.
 pub const UNIVERSE_FILE: &str = "universe.redb";
@@ -514,7 +518,58 @@ pub struct SavedStation {
     /// Each job's full containers (buckets of water or milk), one list per
     /// job in order (save version 9).
     pub containers: Vec<Vec<SavedStack>>,
+    /// A forge's session and queued item (save version 11).
+    pub forge: Option<crate::forging::SavedForge>,
 }
+
+/// The station layout save versions 9 and 10 wrote, kept only to read them
+/// for the upgrade.
+mod v10 {
+    use super::*;
+
+    #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+    pub struct SavedStation {
+        pub kind: Station,
+        pub jobs: Vec<SavedJob>,
+        pub started: u64,
+        pub output: Vec<Option<SavedStack>>,
+        pub fuel: Option<SavedStack>,
+        pub heat: u32,
+        pub waiting: bool,
+        pub xp: u32,
+        pub wear: u32,
+        pub spark: u32,
+        pub burn_total: u32,
+        pub burn_elapsed: u32,
+        pub blocks: u32,
+        pub containers: Vec<Vec<SavedStack>>,
+    }
+
+    impl From<SavedStation> for super::SavedStation {
+        fn from(s: SavedStation) -> Self {
+            Self {
+                kind: s.kind,
+                jobs: s.jobs,
+                started: s.started,
+                output: s.output,
+                fuel: s.fuel,
+                heat: s.heat,
+                waiting: s.waiting,
+                xp: s.xp,
+                wear: s.wear,
+                spark: s.spark,
+                burn_total: s.burn_total,
+                burn_elapsed: s.burn_elapsed,
+                blocks: s.blocks,
+                containers: s.containers,
+                // No forges existed.
+                forge: None,
+            }
+        }
+    }
+}
+
+pub use v10::SavedStation as V10SavedStation;
 
 /// The station and player layouts save version 8 wrote, kept only to read
 /// them for the upgrade.
@@ -555,6 +610,7 @@ mod v8 {
                 burn_elapsed: s.burn_elapsed,
                 blocks: s.blocks,
                 containers: Vec::new(),
+                forge: None,
             }
         }
     }
@@ -622,6 +678,7 @@ mod v7 {
                 burn_elapsed: 0,
                 blocks: 1,
                 containers: Vec::new(),
+                forge: None,
             }
         }
     }
@@ -658,6 +715,7 @@ mod v3 {
                 burn_elapsed: 0,
                 blocks: 1,
                 containers: Vec::new(),
+                forge: None,
             }
         }
     }
@@ -698,6 +756,7 @@ mod v4 {
                 burn_elapsed: 0,
                 blocks: 1,
                 containers: Vec::new(),
+                forge: None,
             }
         }
     }
@@ -1041,8 +1100,10 @@ impl Store {
                         8 => upgrade_stations(&tx, from, |b| {
                             postcard::from_bytes::<v8::SavedStation>(b).map(Into::into)
                         })?,
-                        // 9 to 10 only adds the crops table.
-                        _ => 0,
+                        // 9 to 10 only added the crops table.
+                        _ => upgrade_stations(&tx, from, |b| {
+                            postcard::from_bytes::<v10::SavedStation>(b).map(Into::into)
+                        })?,
                     };
                     // Version 6 to 7 only adds tables (skies, discoveries),
                     // which read as empty until written.
@@ -1063,9 +1124,15 @@ impl Store {
                     tx.open_table(META)?
                         .insert("universe", postcard::to_stdvec(&u)?.as_slice())?;
                     tx.commit()?;
-                    if from == 9 {
+                    if from == 10 {
                         tracing::info!(
-                            "upgraded the universe from save version 9 to {SAVE_VERSION} (crops added; nothing changed)"
+                            "upgraded the universe from save version 10 to {SAVE_VERSION} ({stations} stations \
+                             rewritten with no forge sessions; characters as they were)"
+                        );
+                    } else if from == 9 {
+                        tracing::info!(
+                            "upgraded the universe from save version 9 to {SAVE_VERSION} (crops added; {stations} \
+                             stations rewritten with no forge sessions)"
                         );
                     } else if from == 8 {
                         tracing::info!(
@@ -2017,6 +2084,7 @@ mod tests {
             burn_elapsed: 0,
             blocks: 1,
             containers: Vec::new(),
+            forge: None,
         };
         let claim = SavedClaim {
             planet: 2,
@@ -2214,6 +2282,7 @@ mod tests {
             burn_elapsed: 0,
             blocks: 1,
             containers: Vec::new(),
+            forge: None,
         };
         s.write(&WriteBatch {
             stations: vec![(u16::MAX, BlockPos::new(1, 1, 1), Some(st.clone()))],
@@ -2703,6 +2772,7 @@ mod tests {
             burn_elapsed: 0,
             blocks: 1,
             containers: Vec::new(),
+            forge: None,
         };
         let spot = BlockPos::new(3, -4, 5);
         {

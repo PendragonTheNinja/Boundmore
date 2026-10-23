@@ -1317,6 +1317,7 @@ async fn a_workbench_saved_at_one_block_joins_its_machine() {
                         burn_elapsed: 0,
                         blocks: 1,
                         containers: Vec::new(),
+                        forge: None,
                     }),
                 )],
                 ..Default::default()
@@ -3695,7 +3696,7 @@ async fn skills_are_spent_by_the_rules_and_change_swings_reach_and_chisels() {
 
     // Refusals change nothing and say why.
     alice
-        .skill_refused(SkillAction::Learn("intelligence".into()), "That skill comes later")
+        .skill_refused(SkillAction::Learn("augment_crafting".into()), "That skill comes later")
         .await;
     alice
         .skill_refused(SkillAction::Learn("nonsense".into()), "There is no such skill")
@@ -5623,4 +5624,483 @@ async fn crops_grow_by_the_clock_and_replant_when_harvested() {
     server.stop();
     let store = Store::open(&dir.path().join(UNIVERSE_FILE)).unwrap();
     assert!(store.crops(0).unwrap().is_empty(), "the record went with its block");
+}
+
+// Milestone 17: forging.
+
+/// A forger: 8 ranks of Insight and Toughness (Effectiveness 99% on iron,
+/// Stability 1,700) and one of Might (200 Vigour, four glazes).
+fn forger() -> Character {
+    let mut c = at_level(50, 0);
+    c.pages = vec![bm_core::skills::Page {
+        ranks: [("intelligence", 8), ("vitality", 8), ("power", 1)]
+            .into_iter()
+            .map(|(k, v)| (k.to_string(), v))
+            .collect(),
+    }];
+    c
+}
+
+/// The first inventory slot holding `name`.
+fn slot_of(c: &TestClient, name: &str) -> u8 {
+    let id = c.item(name);
+    c.inv
+        .slots
+        .iter()
+        .position(|s| s.is_some_and(|s| s.item == id))
+        .unwrap() as u8
+}
+
+/// Four forge blocks in a row beside the arrival point, from hotbar `slot`;
+/// the forge's key (its first block) and its blocks.
+async fn build_forge(c: &mut TestClient, slot: u8) -> Vec<BlockPos> {
+    let shape = c.shape();
+    let feet = c.feet();
+    for dx in 0..=4 {
+        for dy in 0..=3 {
+            c.wait_for_chunk(feet.offset(dx, dy, 2).chunk()).await;
+        }
+    }
+    let blocks: Vec<BlockPos> = (1..=4).map(|dx| shape.wrap_block(feet.offset(dx, 1, 2))).collect();
+    for (i, p) in blocks.iter().enumerate() {
+        assert!(place(c, 100 + i as u32, *p, slot, None).await.0);
+    }
+    blocks
+}
+
+/// The forge's view at `key` once `pred` holds for it.
+async fn forge_view(
+    c: &mut TestClient,
+    key: BlockPos,
+    mut pred: impl FnMut(&bm_protocol::ForgeView) -> bool,
+) -> bm_protocol::ForgeView {
+    *c.station(|v| v.pos == key && v.forge.as_ref().is_some_and(|f| pred(f)))
+        .await
+        .forge
+        .unwrap()
+}
+
+/// Starts a session with the gear in `gear` and a deck of (item, count),
+/// taken from wherever the inventory holds them; the session as its forger
+/// sees it.
+async fn forge_begin(c: &mut TestClient, key: BlockPos, gear: u8, deck: &[(&str, u16)]) -> bm_protocol::SessionView {
+    let deck = deck.iter().map(|&(name, n)| (slot_of(c, name), n)).collect();
+    c.send(ClientMsg::ForgeBegin { pos: key, gear, deck }).await;
+    forge_view(c, key, |f| f.session.as_ref().is_some_and(|s| s.rounds == 0))
+        .await
+        .session
+        .unwrap()
+}
+
+/// One round with deck slot `slot`: the session after it, or how it ended.
+async fn forge_use(
+    c: &mut TestClient,
+    key: BlockPos,
+    slot: u8,
+    round: u32,
+) -> Result<bm_protocol::SessionView, bm_protocol::ForgeOutcome> {
+    c.send(ClientMsg::ForgeUse { pos: key, slot, round }).await;
+    let m = c
+        .until(|m| match m {
+            ServerMsg::Forged { pos, .. } => *pos == key,
+            ServerMsg::Station(v) => {
+                v.pos == key
+                    && v.forge
+                        .as_ref()
+                        .and_then(|f| f.session.as_ref())
+                        .is_some_and(|s| s.rounds == round + 1)
+            }
+            _ => false,
+        })
+        .await;
+    c.settle().await;
+    match m {
+        ServerMsg::Forged { outcome, .. } => Err(outcome),
+        ServerMsg::Station(v) => Ok(v.forge.unwrap().session.unwrap()),
+        _ => unreachable!(),
+    }
+}
+
+fn level(s: &bm_protocol::SessionView, id: bm_core::forge::TraitId) -> u8 {
+    s.traits
+        .iter()
+        .flatten()
+        .find(|(t, _)| *t == id)
+        .map_or(0, |&(_, points)| id.def().level_of(points))
+}
+
+/// A forge on the grid: a link on its first block and a generator burning
+/// coal on the link.
+async fn power_forge(c: &mut TestClient, key: BlockPos) {
+    let link = key.offset(0, 1, 0);
+    let generator = key.offset(0, 2, 0);
+    let (l, g) = (slot_of(c, "spark_link"), slot_of(c, "spark_generator"));
+    assert!(place(c, 110, link, l, None).await.0);
+    assert!(place(c, 111, generator, g, None).await.0);
+    look_at_station(c, generator, |v| v.pos == generator).await;
+    let coal = slot_of(c, "coal");
+    fuel(c, generator, coal, 3, true).await;
+    c.station(|v| v.pos == generator && v.fuel.is_some()).await;
+}
+
+/// Milestone 17, acceptance 1, 2 and 5: four forge blocks make a forge; a
+/// session with an iron hammer, swift glazes and pure tinctures plays until
+/// Quick lands (unmaking and starting again when Stability runs low, which
+/// gives the hammer back unforged); sealed, the hammer waits in the queue
+/// for its spark and time (the forge unbreakable meanwhile), comes out with
+/// Quick and its XP, and swings faster on the server.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn a_forged_hammer_comes_out_quick_and_swings_faster() {
+    use bm_core::forge::{Held, TraitId};
+    let dir = tempfile::tempdir().unwrap();
+    seed_character(
+        dir.path(),
+        "Alice",
+        &[
+            (0, "forge", 4, 0),
+            (1, "iron_hammer", 1, 0),
+            (2, "stone", 10, 0),
+            (3, "spark_link", 1, 0),
+            (4, "spark_generator", 1, 0),
+            (5, "coal", 5, 0),
+            (10, "pure_tincture_1", 100, 0),
+            (11, "pure_tincture_1", 100, 0),
+            (12, "swift_glaze", 100, 0),
+            (13, "sealing_wax", 4, 0),
+            (14, "unmaking_wax_1", 40, 0),
+        ],
+        forger(),
+    );
+    let cfg = ServerConfig {
+        forge_queue_seconds: Some(2),
+        ..config(dir.path())
+    };
+    let server = bm_server::start(cfg).unwrap();
+    let mut alice = TestClient::login(&server, "Alice").await;
+    let forge = build_forge(&mut alice, 0).await;
+    let key = forge[0];
+    let v = look_at_station(&mut alice, forge[2], |v| v.pos == key).await;
+    assert_eq!((v.station, v.idle.clone()), (Station::Forge, None));
+    assert_eq!(v.forge.as_deref(), Some(&bm_protocol::ForgeView::default()));
+    assert_eq!(v.wear, Some((spark::MACHINE_WEAR, spark::MACHINE_WEAR)), "forges wear");
+    power_forge(&mut alice, key).await;
+    look_at_station(&mut alice, key, |v| v.pos == key).await;
+
+    let hammer = alice.item("iron_hammer");
+    let deck = [
+        ("pure_tincture_1", 60),
+        ("swift_glaze", 8),
+        ("sealing_wax", 1),
+        ("unmaking_wax_1", 1),
+    ];
+    let mut sealed = None;
+    for _ in 0..25 {
+        let gear = slot_of(&alice, "iron_hammer");
+        let s = forge_begin(&mut alice, key, gear, &deck).await;
+        assert!(alice.inv.slots[gear as usize].is_none(), "the gear went into the forge");
+        assert_eq!((s.stability, s.vigour), (1700, 200));
+        assert!((s.stats.effectiveness - 0.99).abs() < 0.01, "{}", s.stats.effectiveness);
+        let mut s = s;
+        // Four swift glazes lean the dice to Quick.
+        for _ in 0..4 {
+            s = forge_use(&mut alice, key, 1, s.rounds).await.unwrap();
+        }
+        assert_eq!(s.vigour, 0);
+        // A fifth costs vigour that is not there.
+        alice.notices.clear();
+        alice
+            .send(ClientMsg::ForgeUse {
+                pos: key,
+                slot: 1,
+                round: s.rounds,
+            })
+            .await;
+        alice.notice("Not enough vigour for that").await;
+        loop {
+            if level(&s, TraitId::Quick) >= 1 {
+                match forge_use(&mut alice, key, 2, s.rounds).await {
+                    Err(bm_protocol::ForgeOutcome::Sealed(item)) => sealed = Some(item),
+                    other => panic!("sealing: {other:?}"),
+                }
+                break;
+            }
+            if s.stability < 115 {
+                match forge_use(&mut alice, key, 3, s.rounds).await {
+                    Err(bm_protocol::ForgeOutcome::Unmade { gear, .. }) => {
+                        assert!(gear.forge.is_plain(), "unmade: the hammer back unforged");
+                    }
+                    other => panic!("unmaking: {other:?}"),
+                }
+                assert!(
+                    alice
+                        .inv
+                        .slots
+                        .iter()
+                        .flatten()
+                        .any(|s| s.item == hammer && s.forge.is_plain())
+                );
+                break;
+            }
+            s = match forge_use(&mut alice, key, 0, s.rounds).await {
+                Ok(s) => s,
+                Err(e) => panic!("a tincture ended it: {e:?}"),
+            };
+        }
+        if sealed.is_some() {
+            break;
+        }
+    }
+    let sealed = sealed.expect("Quick landed in 25 sessions");
+    assert!(sealed.forge.done && sealed.forge.level(TraitId::Quick) >= 1);
+    alice.settle().await;
+    assert!(
+        !alice.inv.slots.iter().flatten().any(|s| s.item == hammer),
+        "the hammer is in the queue"
+    );
+    assert_eq!(alice.count("sealing_wax"), 3, "the deck came back but the wax used");
+    // In the queue: the forge cannot be broken.
+    let v = forge_view(&mut alice, key, |f| f.queued.is_some()).await;
+    assert_eq!(v.queued.unwrap().0, sealed);
+    assert!(!alice.dig(120, forge[3]).await.0, "a forge with a queued item stands");
+    alice.notice("Empty the Forge before breaking it").await;
+    // Out after its spark and time, its XP to whoever collects.
+    let done = alice
+        .station(|v| v.pos == key && v.output.first().is_some_and(|o| o.item == hammer))
+        .await;
+    assert_eq!(done.output[0], sealed);
+    let band = bm_core::forge::queue_band(sealed.forge.rank(alice.items.get(hammer).unwrap().rank));
+    assert_eq!(
+        done.wear,
+        Some((spark::MACHINE_WEAR - band.wear, spark::MACHINE_WEAR)),
+        "the queue wears the forge"
+    );
+    let xp = alice.character.xp;
+    alice.send(ClientMsg::CollectStation { pos: key }).await;
+    alice.until_xp(xp + band.xp as u64).await;
+    alice.settle().await;
+    let slot = slot_of(&alice, "iron_hammer");
+    assert!(slot < 10, "in the hotbar");
+    assert_eq!(stack(&alice, slot as usize), Some(sealed));
+
+    // It swings at its forged cadence: one input sooner is refused.
+    let def = alice.items.get(hammer).unwrap();
+    let forged = bm_core::mining::swing_ticks(def.tool_of(&sealed, &Held::default()).unwrap().action_speed);
+    let plain = bm_core::mining::swing_ticks(def.tool().unwrap().action_speed);
+    assert!(forged < plain, "Quick swings sooner: {forged} against {plain}");
+    let stone = alice.block("stone");
+    let s = alice.shape().wrap_block(alice.feet().offset(-1, 1, 0));
+    alice.wait_for_chunk(s.chunk()).await;
+    let stones = slot_of(&alice, "stone");
+    assert!(place(&mut alice, 130, s, stones, None).await.0);
+    alice.ready();
+    // Might adds 5%, and any Mighty more.
+    let Swung::Damaged(hit) = alice.swing(131, s, slot).await else {
+        panic!("one swing breaks no stone")
+    };
+    alice.send_inputs(forged - 1, PlayerInput::default());
+    assert_eq!(alice.swing(132, s, slot).await, Swung::Refused(stone, hit), "too soon");
+    alice.send_inputs(1, PlayerInput::default());
+    assert_eq!(alice.swing(133, s, slot).await, Swung::Broke, "at the forged cadence");
+    server.stop();
+}
+
+/// Milestone 17, acceptance 3 and 5, rule 2: a session survives a restart
+/// mid-way with the same pools, traits and stats; only its forger sees it
+/// and goes on with it; the forge stands while it runs; a forged item is
+/// refused; three forge blocks do nothing.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn a_forge_session_survives_a_restart_and_belongs_to_its_forger() {
+    let dir = tempfile::tempdir().unwrap();
+    seed_character(
+        dir.path(),
+        "Alice",
+        &[
+            (0, "forge", 4, 0),
+            (1, "iron_hammer", 1, 0),
+            (10, "pure_tincture_1", 20, 0),
+            (11, "sealing_wax", 2, 0),
+        ],
+        forger(),
+    );
+    seed(
+        dir.path(),
+        "Bob",
+        &[(1, "iron_hammer!", 1, 0), (10, "pure_tincture_1", 5, 0)],
+    );
+    let (key, before) = {
+        let server = bm_server::start(config(dir.path())).unwrap();
+        let mut alice = TestClient::login(&server, "Alice").await;
+        let shape = alice.shape();
+        let feet = alice.feet();
+        for dx in 0..=4 {
+            alice.wait_for_chunk(feet.offset(dx, 1, 2).chunk()).await;
+        }
+        let blocks: Vec<BlockPos> = (1..=4).map(|dx| shape.wrap_block(feet.offset(dx, 1, 2))).collect();
+        for (i, p) in blocks[..3].iter().enumerate() {
+            assert!(place(&mut alice, 1 + i as u32, *p, 0, None).await.0);
+        }
+        // Three blocks do nothing.
+        let idle = look_at_station(&mut alice, blocks[1], |v| v.pos == blocks[1]).await;
+        assert_eq!(idle.idle.as_deref(), Some("A forge needs 4 blocks touching"));
+        alice
+            .send(ClientMsg::ForgeBegin {
+                pos: blocks[1],
+                gear: 1,
+                deck: vec![(10, 5)],
+            })
+            .await;
+        alice.notice("A forge needs 4 blocks touching").await;
+        assert!(place(&mut alice, 4, blocks[3], 0, None).await.0);
+        let key = blocks[0];
+        look_at_station(&mut alice, key, |v| v.pos == key && v.idle.is_none()).await;
+        let mut s = forge_begin(&mut alice, key, 1, &[("pure_tincture_1", 20), ("sealing_wax", 1)]).await;
+        for _ in 0..4 {
+            s = forge_use(&mut alice, key, 0, s.rounds).await.unwrap();
+        }
+        // A repeat of a round already played is ignored.
+        alice
+            .send(ClientMsg::ForgeUse {
+                pos: key,
+                slot: 0,
+                round: 3,
+            })
+            .await;
+        // A session stops the forge being broken.
+        assert!(!alice.dig(10, blocks[2]).await.0);
+        alice.notice("Empty the Forge before breaking it").await;
+        let s = look_at_station(&mut alice, key, |v| v.pos == key)
+            .await
+            .forge
+            .unwrap()
+            .session
+            .unwrap();
+        assert_eq!(s.rounds, 4, "the repeat was ignored");
+        drop(alice);
+        server.stop();
+        (key, s)
+    };
+    let server = bm_server::start(config(dir.path())).unwrap();
+    let mut alice = TestClient::login(&server, "Alice").await;
+    alice.wait_for_chunk(key.chunk()).await;
+    let after = look_at_station(&mut alice, key, |v| v.pos == key)
+        .await
+        .forge
+        .unwrap()
+        .session
+        .unwrap();
+    assert_eq!(after, before, "the same session after a restart");
+    assert_eq!(alice.count("pure_tincture_1"), 0, "the deck stays in the forge");
+    let next = forge_use(&mut alice, key, 0, after.rounds).await.unwrap();
+    assert_eq!(next.rounds, 5);
+
+    // Bob sees who forges, not the session, and cannot go on with it.
+    let mut bob = TestClient::login(&server, "Bob").await;
+    bob.wait_for_chunk(key.chunk()).await;
+    let v = look_at_station(&mut bob, key, |v| v.pos == key).await.forge.unwrap();
+    assert_eq!((v.session, v.forger.as_deref()), (None, Some("Alice")));
+    bob.send(ClientMsg::ForgeUse {
+        pos: key,
+        slot: 0,
+        round: 5,
+    })
+    .await;
+    bob.notice("Alice is forging here").await;
+    bob.send(ClientMsg::ForgeBegin {
+        pos: key,
+        gear: 1,
+        deck: vec![(10, 5)],
+    })
+    .await;
+    bob.notice("Alice is forging here").await;
+
+    // Sealed, the forge is free; Bob's forged hammer is refused.
+    match forge_use(&mut alice, key, 1, 5).await {
+        Err(bm_protocol::ForgeOutcome::Sealed(_)) => {}
+        other => panic!("{other:?}"),
+    }
+    assert_eq!(alice.count("pure_tincture_1"), 15, "the rest of the deck back");
+    assert!(stack(&bob, 1).unwrap().forge.done);
+    bob.send(ClientMsg::ForgeBegin {
+        pos: key,
+        gear: 1,
+        deck: vec![(10, 5)],
+    })
+    .await;
+    bob.notice("The forge is busy with a sealed item: wait for it").await;
+    server.stop();
+}
+
+/// Milestone 17, acceptance 4: Stability running out destroys the gear and
+/// the ingredients used; the rest of the deck comes back; a forged item is
+/// refused.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn stability_running_out_destroys_the_gear_and_returns_the_rest() {
+    let dir = tempfile::tempdir().unwrap();
+    // An untrained forger: Stability 900, no Vigour.
+    seed(
+        dir.path(),
+        "Alice",
+        &[
+            (0, "forge", 4, 0),
+            (1, "iron_hammer", 1, 0),
+            (2, "iron_hammer!quick1", 1, 0),
+            (10, "pure_tincture_1", 30, 0),
+            (11, "swift_glaze", 3, 0),
+        ],
+    );
+    let server = bm_server::start(config(dir.path())).unwrap();
+    let mut alice = TestClient::login(&server, "Alice").await;
+    let forge = build_forge(&mut alice, 0).await;
+    let key = forge[0];
+    look_at_station(&mut alice, key, |v| v.pos == key).await;
+    alice
+        .send(ClientMsg::ForgeBegin {
+            pos: key,
+            gear: 2,
+            deck: vec![(10, 5)],
+        })
+        .await;
+    alice.notice("That has been forged already").await;
+    alice
+        .send(ClientMsg::ForgeBegin {
+            pos: key,
+            gear: 10,
+            deck: vec![(11, 1)],
+        })
+        .await;
+    alice.notice("That cannot be forged").await;
+    let mut s = forge_begin(&mut alice, key, 1, &[("pure_tincture_1", 20), ("swift_glaze", 3)]).await;
+    assert_eq!((s.stability, s.vigour), (900, 0));
+    // A glaze costs vigour there is none of.
+    alice
+        .send(ClientMsg::ForgeUse {
+            pos: key,
+            slot: 1,
+            round: 0,
+        })
+        .await;
+    alice.notice("Not enough vigour for that").await;
+    let mut used = 0;
+    let outcome = loop {
+        used += 1;
+        match forge_use(&mut alice, key, 0, s.rounds).await {
+            Ok(next) => s = next,
+            Err(e) => break e,
+        }
+        assert!(used < 20, "100 stability a tincture runs out in 10");
+    };
+    let bm_protocol::ForgeOutcome::Destroyed(gear) = outcome else {
+        panic!("{outcome:?}")
+    };
+    assert_eq!(gear.item, alice.item("iron_hammer"));
+    assert!((9..=10).contains(&used), "{used} rounds");
+    alice.settle().await;
+    assert_eq!(alice.count("pure_tincture_1"), 30 - used, "the unused deck back");
+    assert_eq!(alice.count("swift_glaze"), 3);
+    assert_eq!(alice.count("iron_hammer"), 1, "only the forged one is left");
+    let v = look_at_station(&mut alice, key, |v| v.pos == key).await.forge.unwrap();
+    assert!(v.session.is_none() && v.queued.is_none());
+    // Nothing in it: the forge breaks.
+    assert!(alice.dig(20, forge[3]).await.0);
+    server.stop();
 }

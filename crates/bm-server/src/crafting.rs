@@ -32,7 +32,9 @@
 //! included (Boundless queued them at a table; instant keeps the hand and the
 //! table the same and costs nothing).
 
+use crate::forging::{self, ForgeData, Forging, Sealed};
 use crate::store::{SavedJob, SavedStack, SavedStation, load_slots, save_slots};
+use bm_core::forge::QueueBand;
 use bm_core::spark::{self, MACHINE_WEAR};
 use bm_core::{BlockPos, Inventory, ItemRegistry, ItemStack, Recipe, RecipeBook, Station, TICK_HZ};
 use bm_protocol::{JobView, StationView};
@@ -265,6 +267,8 @@ pub struct StationData {
     pub burn_elapsed: u32,
     /// A generator group's blocks, for its capacity.
     pub blocks: u32,
+    /// A forge's session and queue (milestone 17).
+    pub forge: Option<Box<ForgeData>>,
     /// What the surroundings last said: the generators a machine's links
     /// reach, a furnace's heat share (not saved; asked again).
     grid: Heard<Vec<BlockPos>>,
@@ -300,6 +304,7 @@ impl StationData {
             burn_total: 0,
             burn_elapsed: 0,
             blocks: 1,
+            forge: None,
             grid: Heard(None),
             heat_share: Heard(None),
         }
@@ -376,7 +381,14 @@ impl StationData {
     /// does not (a fire going out loses it): a furnace's leftover heat is
     /// rarely exactly what any recipe takes, so it would never come free.
     fn holds_anything(&self) -> bool {
-        !self.jobs.is_empty() || self.output.slots.iter().any(Option::is_some) || self.fuel.is_some()
+        !self.jobs.is_empty()
+            || self.output.slots.iter().any(Option::is_some)
+            || self.fuel.is_some()
+            || self.forge.as_ref().is_some_and(|f| !f.is_empty())
+    }
+
+    fn sealed(&self) -> Option<&Sealed> {
+        self.forge.as_ref()?.queued.as_ref()
     }
 
     /// Draws the head job's next craft's heat from the bank (`share` of the
@@ -420,9 +432,14 @@ pub struct Stations {
     retry: BTreeSet<BlockPos>,
     /// Changed since the last save.
     dirty: BTreeSet<BlockPos>,
+    /// Forges with a sealed item in their queue (milestone 17).
+    forging: BTreeSet<BlockPos>,
     /// The wear a machine without a record has (`MACHINE_WEAR`; tests set
     /// less).
     pub start_wear: u32,
+    /// Seconds a sealed item takes in the queue, instead of its band's
+    /// (tests).
+    pub forge_seconds: Option<u32>,
 }
 
 impl Stations {
@@ -433,7 +450,9 @@ impl Stations {
             burning: BTreeSet::new(),
             retry: BTreeSet::new(),
             dirty: BTreeSet::new(),
+            forging: BTreeSet::new(),
             start_wear: MACHINE_WEAR,
+            forge_seconds: None,
         }
     }
 
@@ -463,6 +482,18 @@ impl Stations {
                 .next()
                 .flatten()
                 .filter(|s| valid(s) && items.get(s.item).is_some_and(|d| d.fuel > 0));
+            if let Some(f) = &saved.forge {
+                let f = forging::load_forge(f, items, &what);
+                if let Some(q) = &f.queued {
+                    s.forging.insert(pos);
+                    if q.started.is_none() {
+                        st.wait = Some(Wait::Spark(q.band.spark));
+                    }
+                }
+                if !f.is_empty() {
+                    st.forge = Some(Box::new(f));
+                }
+            }
             let containers = &saved.containers;
             for (j, job) in saved.jobs.into_iter().enumerate() {
                 match find_recipe(&job, saved.kind, items, recipes) {
@@ -479,7 +510,7 @@ impl Stations {
             // worn out, else spark (tried again soon).
             st.wait = match st.jobs.front().and_then(|j| recipes.get(j.recipe)) {
                 Some(_) if !saved.waiting => None,
-                None => None,
+                None => st.wait,
                 Some(_) if st.kind == Station::Furnace => Some(Wait::Heat),
                 Some(_) if spark::wears(st.kind) && st.wear == 0 => Some(Wait::Worn),
                 Some(r) => {
@@ -526,7 +557,7 @@ impl Stations {
             return;
         }
         let Some(st) = self.map.remove(&from) else { return };
-        for set in [&mut self.active, &mut self.burning, &mut self.retry] {
+        for set in [&mut self.active, &mut self.burning, &mut self.retry, &mut self.forging] {
             if set.remove(&from) {
                 set.insert(to);
             }
@@ -829,6 +860,7 @@ impl Stations {
             self.active.remove(&pos);
             self.burning.remove(&pos);
             self.retry.remove(&pos);
+            self.forging.remove(&pos);
             self.dirty.insert(pos);
         }
     }
@@ -1003,10 +1035,181 @@ impl Stations {
             }
             changed.push(pos);
         }
+        let forging: Vec<BlockPos> = self.forging.iter().copied().collect();
+        for pos in forging {
+            if self.step_forge(pos, tick, items, env, false) {
+                changed.push(pos);
+            }
+        }
         changed.sort_by_key(order);
         changed.dedup();
         self.dirty.extend(changed.iter().copied());
         changed
+    }
+
+    /// One tick of the forge at `pos`'s queue: a sealed item waiting to be
+    /// paid for tries again every [`RETRY_EVERY`] ticks (or at once, with
+    /// `now`); one whose time is up goes into the output, its XP with it,
+    /// when it fits. Returns whether anything changed.
+    fn step_forge(
+        &mut self,
+        pos: BlockPos,
+        tick: u64,
+        items: &ItemRegistry,
+        env: &dyn Surroundings,
+        now: bool,
+    ) -> bool {
+        let Some(mut st) = self.map.remove(&pos) else {
+            self.forging.remove(&pos);
+            return false;
+        };
+        let mut changed = false;
+        match st.sealed().map(|q| (q.started, q.ticks(), q.band, q.item)) {
+            None => {
+                self.forging.remove(&pos);
+            }
+            Some((None, _, band, _)) => {
+                if now || tick % RETRY_EVERY == 0 {
+                    let before = st.wait;
+                    let wait = self.pay_forge(&mut st, pos, band, env);
+                    st.wait = wait;
+                    if wait.is_none()
+                        && let Some(q) = st.forge.as_mut().and_then(|f| f.queued.as_mut())
+                    {
+                        q.started = Some(tick);
+                    }
+                    changed = wait != before || wait.is_none();
+                }
+            }
+            Some((Some(started), ticks, band, item)) => {
+                if tick >= started + ticks && add_stack(&mut st.output, items, item) == 0 {
+                    st.xp = st.xp.saturating_add(band.xp);
+                    if let Some(f) = &mut st.forge {
+                        f.queued = None;
+                    }
+                    self.forging.remove(&pos);
+                    changed = true;
+                }
+            }
+        }
+        if changed {
+            self.dirty.insert(pos);
+        }
+        self.map.insert(pos, st);
+        if changed {
+            self.tidy(pos);
+        }
+        changed
+    }
+
+    /// The costs of a sealed item's time: wear left, then spark from the
+    /// forge's links; its wear is taken once paid. Why it waits, if it does.
+    fn pay_forge(
+        &mut self,
+        st: &mut StationData,
+        pos: BlockPos,
+        band: QueueBand,
+        env: &dyn Surroundings,
+    ) -> Option<Wait> {
+        if st.wear == 0 {
+            return Some(Wait::Worn);
+        }
+        if band.spark > 0 {
+            if let Some(grid) = env.generators(pos) {
+                st.grid.0 = Some(grid);
+            }
+            let grid = st.grid.0.clone().unwrap_or_default();
+            if grid.is_empty() {
+                return Some(Wait::NoGrid);
+            }
+            if !self.draw_spark(&grid, band.spark) {
+                return Some(Wait::Spark(band.spark));
+            }
+        }
+        st.wear = st.wear.saturating_sub(band.wear);
+        None
+    }
+
+    /// The forge's session and queue at `pos`, if it has any.
+    pub fn forge(&self, pos: BlockPos) -> Option<&ForgeData> {
+        self.map.get(&pos)?.forge.as_deref()
+    }
+
+    /// Starts a session in the forge at `pos` (it has none: the caller
+    /// checked).
+    pub fn begin_forge(&mut self, pos: BlockPos, forging: Forging) {
+        let fresh = self.fresh(Station::Forge);
+        let st = self.map.entry(pos).or_insert(fresh);
+        st.forge.get_or_insert_with(Default::default).session = Some(forging);
+        self.dirty.insert(pos);
+    }
+
+    /// The session in the forge at `pos`, to play a round (marked changed).
+    pub fn forging_mut(&mut self, pos: BlockPos) -> Option<&mut Forging> {
+        let f = self.map.get_mut(&pos)?.forge.as_mut()?.session.as_mut()?;
+        self.dirty.insert(pos);
+        Some(f)
+    }
+
+    /// Ends the session in the forge at `pos`, returning it.
+    pub fn end_forge(&mut self, pos: BlockPos) -> Option<Forging> {
+        let st = self.map.get_mut(&pos)?;
+        let f = st.forge.as_mut()?.session.take();
+        self.tidy(pos);
+        f
+    }
+
+    /// Puts a sealed item into the forge at `pos`'s queue for its band's
+    /// time (or the test's [`Stations::forge_seconds`]), paying at once if
+    /// it can.
+    pub fn seal(
+        &mut self,
+        pos: BlockPos,
+        item: ItemStack,
+        mut band: QueueBand,
+        tick: u64,
+        items: &ItemRegistry,
+        env: &dyn Surroundings,
+    ) {
+        if let Some(s) = self.forge_seconds {
+            band.seconds = s;
+        }
+        let fresh = self.fresh(Station::Forge);
+        let st = self.map.entry(pos).or_insert(fresh);
+        st.forge.get_or_insert_with(Default::default).queued = Some(Sealed {
+            item,
+            band,
+            started: None,
+        });
+        self.forging.insert(pos);
+        self.dirty.insert(pos);
+        self.step_forge(pos, tick, items, env, true);
+    }
+
+    /// Adds to a station's output (what a forge gives back that its forger
+    /// has no room for). Returns what did not fit.
+    pub fn add_output(&mut self, pos: BlockPos, kind: Station, stack: ItemStack, items: &ItemRegistry) -> u16 {
+        let fresh = self.fresh(kind);
+        let st = self.map.entry(pos).or_insert(fresh);
+        let left = add_stack(&mut st.output, items, stack);
+        self.dirty.insert(pos);
+        self.tidy(pos);
+        left
+    }
+
+    /// Drops a record left with nothing worth keeping.
+    fn tidy(&mut self, pos: BlockPos) {
+        let Some(st) = self.map.get_mut(&pos) else { return };
+        if st.forge.as_ref().is_some_and(|f| f.is_empty()) {
+            st.forge = None;
+        }
+        if st.is_empty() {
+            self.map.remove(&pos);
+            for set in [&mut self.active, &mut self.burning, &mut self.retry, &mut self.forging] {
+                set.remove(&pos);
+            }
+        }
+        self.dirty.insert(pos);
     }
 
     /// Moves as much output as fits into `inv`. Returns whether anything moved.
@@ -1054,12 +1257,13 @@ impl Stations {
         let Some(st) = self.map.remove(&pos) else {
             return Vec::new();
         };
-        for set in [&mut self.active, &mut self.burning, &mut self.retry] {
+        for set in [&mut self.active, &mut self.burning, &mut self.retry, &mut self.forging] {
             set.remove(&pos);
         }
         self.dirty.insert(pos);
         let mut out: Vec<ItemStack> = st.output.slots.iter().flatten().copied().collect();
         out.extend(st.fuel);
+        out.extend(st.forge.iter().flat_map(|f| f.items()));
         for job in &st.jobs {
             let Some(r) = recipes.get(job.recipe) else { continue };
             // Full containers come back as they went in.
@@ -1082,7 +1286,11 @@ impl Stations {
     /// Stations whose current craft is under way, and generators burning
     /// (for progress updates).
     pub fn running(&self) -> impl Iterator<Item = BlockPos> + '_ {
-        self.active.iter().chain(self.burning.iter()).copied()
+        self.active
+            .iter()
+            .chain(self.burning.iter())
+            .chain(self.forging.iter())
+            .copied()
     }
 
     /// What a player sees. `kind` is the machine's station kind, used for an
@@ -1167,16 +1375,7 @@ impl Default for Stations {
 /// Adds a stack, keeping its wear (a tool is never merged). Returns what did
 /// not fit.
 fn add_stack(inv: &mut Inventory, items: &ItemRegistry, s: ItemStack) -> u16 {
-    if s.wear == 0 {
-        return inv.add(items, s.item, s.count);
-    }
-    match inv.slots.iter_mut().find(|slot| slot.is_none()) {
-        Some(slot) => {
-            *slot = Some(s);
-            0
-        }
-        None => s.count,
-    }
+    inv.add_stack(items, s)
 }
 
 /// A job's saved containers, checked against what its crafts need: any
@@ -1243,6 +1442,7 @@ fn save_station(st: &StationData, items: &ItemRegistry, recipes: &RecipeBook) ->
             .filter(|j| recipes.get(j.recipe).is_some())
             .map(|j| j.containers.iter().filter_map(|c| SavedStack::new(items, c)).collect())
             .collect(),
+        forge: st.forge.as_ref().map(|f| forging::save_forge(f, items)),
     }
 }
 
@@ -2118,5 +2318,121 @@ mod tests {
         assert_eq!(t.get(bench).unwrap().wait, Some(Wait::Worn), "still worn out");
         assert_eq!(t.get(g), s.get(g));
         assert_eq!((t.get(g).unwrap().spark, t.get(g).unwrap().blocks), (200, 2));
+    }
+
+    fn session(items: &ItemRegistry) -> crate::forging::Forging {
+        use bm_core::forge::{Forger, Gear, Session};
+        let hammer = ItemStack::new(items.id("iron_hammer").unwrap(), 1);
+        let deck = ["pure_tincture_1", "sealing_wax"]
+            .iter()
+            .map(|n| crate::forging::deck_slot(items, ItemStack::new(items.id(n).unwrap(), 5)).unwrap())
+            .collect();
+        let forger = Forger::default();
+        let session = Session::new(hammer, Gear::Tool, forger.stats(110, 0.0), deck, 42);
+        crate::forging::Forging {
+            account: "alice".into(),
+            name: "Alice".into(),
+            session,
+        }
+    }
+
+    fn reload(s: &mut Stations, items: &ItemRegistry, recipes: &RecipeBook) -> Stations {
+        let saved: Vec<_> = s
+            .take_dirty(items, recipes)
+            .into_iter()
+            .filter_map(|(p, st)| Some((p, st?)))
+            .collect();
+        Stations::load(saved, items, recipes)
+    }
+
+    #[test]
+    fn a_forge_session_holds_the_forge_and_survives_a_save_with_its_dice() {
+        let (items, recipes) = setup();
+        let forge = BlockPos::new(0, 30, 0);
+        let mut s = Stations::new();
+        assert!(!s.has_contents(forge));
+        s.begin_forge(forge, session(&items));
+        assert!(s.has_contents(forge), "a session stops the forge being broken");
+        // A few rounds in, so pools, traits, buffs, the dice and the last
+        // report all hold something.
+        for _ in 0..3 {
+            let f = s.forging_mut(forge).unwrap();
+            assert_eq!(f.session.use_ingredient(0), Ok(None));
+        }
+        let mut t = reload(&mut s, &items, &recipes);
+        assert_eq!(t.get(forge), s.get(forge), "the same session, dice and all");
+        // The same next round on both.
+        let a = s.forging_mut(forge).unwrap().session.use_ingredient(0);
+        let b = t.forging_mut(forge).unwrap().session.use_ingredient(0);
+        assert_eq!(a, b);
+        assert_eq!(t.forge(forge), s.forge(forge));
+        assert_eq!(t.forge(forge).unwrap().session.as_ref().unwrap().session.rounds, 4);
+        // Ended, the record goes (nothing else in it).
+        let f = t.end_forge(forge).unwrap();
+        assert_eq!(f.account, "alice");
+        assert!(!t.has_contents(forge));
+        assert!(t.get(forge).is_none());
+    }
+
+    #[test]
+    fn a_sealed_item_waits_for_spark_then_its_time_then_comes_out_with_its_xp() {
+        use bm_core::forge::{Forged, TraitId, TraitLevel, queue_band};
+        let (items, recipes) = setup();
+        let (forge, g) = (BlockPos::new(0, 30, 0), BlockPos::new(5, 30, 0));
+        let mut s = Stations::new();
+        s.forge_seconds = Some(2);
+        let mut hammer = ItemStack::new(items.id("iron_hammer").unwrap(), 1);
+        hammer.forge = Forged {
+            done: true,
+            ..Default::default()
+        };
+        hammer.forge.traits[0] = TraitLevel {
+            id: TraitId::Quick as u8,
+            level: 2,
+        };
+        let band = queue_band(hammer.forge.rank(30));
+        assert_eq!(band.spark, 90);
+        let env = linked(&[g]);
+        s.seal(forge, hammer, band, 0, &items, &env);
+        assert!(s.has_contents(forge), "a queued item stops the forge being broken");
+        assert_eq!(s.get(forge).unwrap().wait, Some(Wait::Spark(90)), "no spark yet");
+        // Saved while it waits.
+        let mut s = reload(&mut s, &items, &recipes);
+        s.forge_seconds = Some(2);
+        s.add_fuel(g, Station::SparkGenerator, coal(&items, 1), 1, &items, &recipes, &env);
+        s.set_generator_blocks(g, 4);
+        run(&mut s, 1, 2000, &items, &recipes, &env);
+        let st = s.get(forge).unwrap();
+        assert_eq!(st.output.slots[0], Some(hammer), "out with its traits");
+        assert_eq!(st.xp, band.xp);
+        assert_eq!(st.wear, MACHINE_WEAR - band.wear);
+        assert!(st.forge.is_none());
+        let mut inv = Inventory::default();
+        assert_eq!(s.collect_xp(forge, &mut inv, &items), Some(band.xp));
+        assert_eq!(inv.slots[0], Some(hammer));
+    }
+
+    #[test]
+    fn a_sealed_item_mid_queue_survives_a_save() {
+        let (items, recipes) = setup();
+        let forge = BlockPos::new(0, 30, 0);
+        let mut s = Stations::new();
+        let hammer = ItemStack::new(items.id("iron_hammer").unwrap(), 1);
+        let band = bm_core::forge::QueueBand {
+            seconds: 120,
+            spark: 0,
+            wear: 4,
+            xp: 5,
+        };
+        s.seal(forge, hammer, band, 10, &items, &Nowhere);
+        run(&mut s, 11, 600, &items, &recipes, &Nowhere);
+        let t = reload(&mut s, &items, &recipes);
+        assert_eq!(t.get(forge), s.get(forge));
+        let q = t.forge(forge).unwrap().queued.as_ref().unwrap();
+        assert_eq!(q.started, Some(10));
+        assert_eq!(q.progress(610), (600.0 / 7200.0, 110));
+        // Lapsing gives the item back.
+        let mut t = t;
+        assert_eq!(t.take(forge, &recipes), vec![hammer]);
     }
 }

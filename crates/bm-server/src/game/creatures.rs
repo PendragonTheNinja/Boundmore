@@ -1572,13 +1572,21 @@ impl Game {
             let mut seen = std::mem::take(&mut self.seen_buf);
             seen.clear();
             let m = self.movement;
-            seen.extend(self.players.iter().filter(|(_, p)| p.planet == pi).map(|(id, p)| Seen {
-                id: *id,
-                pos: p.state.pos,
-                eye: p.state.eye(&m),
-                down: p.state.down,
-                protected: p.character.level() < PROTECTED_BELOW_LEVEL,
-                noticed_at: p.effects.noticed_at(),
+            seen.extend(self.players.iter().filter(|(_, p)| p.planet == pi).map(|(id, p)| {
+                Seen {
+                    id: *id,
+                    pos: p.state.pos,
+                    eye: p.state.eye(&m),
+                    down: p.state.down,
+                    protected: p.character.level() < PROTECTED_BELOW_LEVEL,
+                    // Loud (a forged quirk) on what they hold: noticed from
+                    // further away.
+                    noticed_at: p.effects.noticed_at()
+                        * p.inventory
+                            .get(p.last_input.slot as usize)
+                            .filter(|_| (p.last_input.slot as usize) < bm_core::HOTBAR_SLOTS)
+                            .map_or(1.0, |s| s.forge.notice_scale()),
+                }
             }));
             let mut acts = std::mem::take(&mut self.acts_buf);
             acts.clear();
