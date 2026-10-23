@@ -387,6 +387,8 @@ pub struct StationView {
     /// Spark (milestone 15): a generator's own store, or what a spark
     /// machine's links reach; None for stations without spark.
     pub spark: Option<SparkView>,
+    /// A forge's session and queue (milestone 17); None for other stations.
+    pub forge: Option<ForgeView>,
 }
 
 /// Spark as a station's window shows it.

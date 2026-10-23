@@ -1109,6 +1109,7 @@ impl Stations {
                 heat: 0,
                 wear,
                 spark: None,
+                forge: None,
             };
         };
         let jobs = st
@@ -1139,6 +1140,7 @@ impl Stations {
             heat: st.heat,
             wear,
             spark: None,
+            forge: None,
         }
     }
 

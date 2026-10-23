@@ -1288,6 +1288,7 @@ impl Demo {
                 heat: s.heat,
                 wear: s.wear,
                 spark: s.spark,
+                forge: None,
             };
             self.events.push_back(NetEvent::Msg(ServerMsg::Station(view)));
         }
