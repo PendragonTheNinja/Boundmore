@@ -1354,7 +1354,8 @@ pub fn paint_icon(name: &str) -> Option<Tex> {
                 .or_else(|| crate::food::paint(other))
                 .or_else(|| crate::farming::paint_icon(other))
                 .or_else(|| crate::creatures::paint(other))
-                .or_else(|| crate::spark::paint_icon(other));
+                .or_else(|| crate::spark::paint_icon(other))
+                .or_else(|| crate::forge::paint_icon(other));
         }
     })
 }

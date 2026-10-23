@@ -1991,7 +1991,9 @@ pub fn paint_named(name: &str, variant: u32) -> Option<Tex> {
             if let Some(t) = crate::farming::paint_crop(other) {
                 return Some(t);
             }
-            crate::spark::painter(other).or_else(|| flora::painter(other))?
+            crate::spark::painter(other)
+                .or_else(|| crate::forge::painter(other))
+                .or_else(|| flora::painter(other))?
         }
     };
     Some(f(ctx))

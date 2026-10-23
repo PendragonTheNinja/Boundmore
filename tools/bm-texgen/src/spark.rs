@@ -70,7 +70,7 @@ fn compactor_stone() -> Ramp {
 
 /// A stone rim in four quarters round a feature in the middle (the top of
 /// a four-block machine), lit on its outer top-left edges.
-fn quarters(salt: u32, stone: &Ramp, x: usize, y: usize) -> Rgba {
+pub(crate) fn quarters(salt: u32, stone: &Ramp, x: usize, y: usize) -> Rgba {
     let (fx, fy) = (c(x), c(y));
     if x == 15 || y == 15 {
         return stone.at(0);
@@ -89,7 +89,7 @@ fn quarters(salt: u32, stone: &Ramp, x: usize, y: usize) -> Rgba {
 
 /// A machine's side: a metal band along the top (rows 0..4), coursed
 /// stone, and a plinth (rows 28..32) with the spark socket in its middle.
-fn machine_side(salt: u32, stone: &Ramp, band: &Ramp) -> Tex {
+pub(crate) fn machine_side(salt: u32, stone: &Ramp, band: &Ramp) -> Tex {
     let mut tex = Tex::from_fn(|x, y| {
         if y < 4 {
             let t = 0.55 + [0.3, 0.1, 0.0, -0.3][y] + (fbm(salt ^ 3, 4, 2, 2, c(x), c(y)) - 0.5) * 0.12;

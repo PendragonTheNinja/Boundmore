@@ -12,6 +12,7 @@ pub mod creatures;
 pub mod farming;
 pub mod flora;
 pub mod food;
+pub mod forge;
 pub mod gathered;
 pub mod icons;
 pub mod machines;
