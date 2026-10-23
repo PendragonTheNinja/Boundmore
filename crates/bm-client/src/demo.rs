@@ -127,6 +127,16 @@ struct DemoStation {
     /// Milestone 15: a machine's wear left and most, and its spark.
     wear: Option<(u32, u32)>,
     spark: Option<SparkView>,
+    /// Milestone 17: a forge's session and queue.
+    forge: Option<DemoForge>,
+}
+
+/// A forge as the demo keeps it: a session (the real rules, run here) and
+/// a sealed item in the queue with its seconds in all and done.
+#[derive(Default)]
+struct DemoForge {
+    session: Option<bm_core::forge::Session>,
+    queued: Option<(ItemStack, f64, f64)>,
 }
 
 impl DemoStation {
@@ -141,6 +151,7 @@ impl DemoStation {
             paid: false,
             wear: None,
             spark: None,
+            forge: None,
         }
     }
 }
@@ -151,6 +162,8 @@ impl DemoStation {
 pub const TABLE: [i64; 3] = [130, 44, 128];
 pub const WORKBENCH: [[i64; 3]; 4] = [[128, 44, 125], [127, 44, 126], [128, 44, 126], [129, 44, 126]];
 pub const FURNACE: [[i64; 3]; 2] = [[131, 44, 126], [131, 45, 126]];
+/// `show_forge`: a forge of four blocks in a row ahead of the spawn.
+pub const FORGE: [[i64; 3]; 4] = [[127, 44, 123], [128, 44, 123], [129, 44, 123], [130, 44, 123]];
 pub const EXTRACTOR: [[i64; 3]; 3] = [[133, 44, 124], [134, 44, 124], [135, 44, 124]];
 /// Where `show_meteor` drops its meteor (x, z), and where the player stands
 /// to watch it.
@@ -1289,7 +1302,7 @@ impl Demo {
                 heat: s.heat,
                 wear: s.wear,
                 spark: s.spark,
-                forge: None,
+                forge: s.forge.as_ref().map(|f| Box::new(Self::forge_view(f))),
             };
             self.events.push_back(NetEvent::Msg(ServerMsg::Station(view)));
         }
@@ -1300,6 +1313,17 @@ impl Demo {
         for s in self.stations.values_mut() {
             if s.idle.is_some() {
                 continue;
+            }
+            // A sealed item in a forge's queue comes out when its time is up.
+            if let Some(f) = s.forge.as_mut()
+                && let Some((item, total, done)) = f.queued.as_mut()
+            {
+                *done += dt;
+                changed = true;
+                if *done >= *total {
+                    s.output.push(*item);
+                    f.queued = None;
+                }
             }
             let Some(job) = s.jobs.first_mut() else { continue };
             let Some(r) = self.book.get(job.recipe) else { continue };
@@ -1365,6 +1389,14 @@ impl Demo {
                 if let Some(s) = self.stations.get_mut(&pos) {
                     let mut left = Vec::new();
                     for o in s.output.drain(..) {
+                        if !o.forge.is_plain() {
+                            // Forged gear keeps its traits (milestone 17).
+                            match self.inv.slots.iter_mut().find(|s| s.is_none()) {
+                                Some(slot) => *slot = Some(o),
+                                None => left.push(o),
+                            }
+                            continue;
+                        }
                         let rest = self.inv.add(&self.items, o.item, o.count);
                         if rest > 0 {
                             left.push(ItemStack::new(o.item, rest));
@@ -1450,6 +1482,8 @@ impl Demo {
             ClientMsg::Loot { creature } => self.loot(creature),
             ClientMsg::Eat { slot, .. } => self.eat(slot),
             ClientMsg::LookCrop { pos } => self.look_crop(pos),
+            ClientMsg::ForgeBegin { pos, gear, deck } => self.forge_begin(pos, gear, deck),
+            ClientMsg::ForgeUse { pos, slot, round } => self.forge_use(pos, slot, round),
             ClientMsg::Return => self.come_back(),
             ClientMsg::Hello { .. } => {}
             // The old hold-to-break message, until the protocol drops it.
@@ -1927,6 +1961,250 @@ impl Demo {
     /// Spark (milestone 15): generators, links and a working mixer in a
     /// row, more machines and the new ores behind (`SPARK_*`, `MIXER`), and
     /// a spanner and the mixer's inputs in the pack.
+    /// `--demo-ui forge`: a forge of four blocks ahead of the spawn with a
+    /// session under way on an iron hammer (a few rounds played: traits,
+    /// buffs, a deck), answering `ForgeUse` by running the real
+    /// `bm_core::forge::Session`; `queue` instead shows a sealed hammer in
+    /// the queue and a finished one waiting (milestone 17). A forged hammer
+    /// and some ingredients go in the pack either way.
+    pub fn show_forge(&mut self, queue: bool) {
+        use bm_core::forge::{Forged, Forger, Gear};
+        let b = |n: &str| BlockState::plain(self.blocks.id(n).expect("builtin block"));
+        let planet = &mut self.planets[0];
+        planet.flat = true;
+        planet.edits.clear();
+        for p in FORGE {
+            planet.edits.insert(bp(p), b("forge"));
+        }
+        let id = |n: &str| self.items.id(n).expect("builtin item");
+        let hammer = ItemStack::new(id("iron_hammer"), 1);
+        let forged = ItemStack {
+            forge: Forged::from_suffix("mighty5,quick3,wide_swing2,night_owl1,unlucky1"),
+            ..hammer
+        };
+        let mut forge = DemoForge::default();
+        if queue {
+            let mut sealed = hammer;
+            sealed.forge = Forged::from_suffix("mighty2,sturdy3,glowing1");
+            forge.queued = Some((sealed, 240.0, 96.0));
+        } else {
+            let deck = [
+                ("pure_tincture_1", 30),
+                ("rough_tincture_1", 20),
+                ("wild_tincture_1", 12),
+                ("force_glaze", 4),
+                ("boost_salve_1", 3),
+                ("sealing_wax", 2),
+            ];
+            let deck = deck
+                .iter()
+                .map(|&(n, c)| bm_core::forge::DeckSlot {
+                    stack: ItemStack::new(id(n), c),
+                    ingredient: bm_core::forge::ingredient_by_name(n).expect("an ingredient"),
+                })
+                .collect();
+            // A practised forger: Vitality 4, Power 3, Insight 5.
+            let forger = Forger {
+                vitality: 4.0,
+                power: 3.0,
+                insight: 5.0,
+                epic: false,
+            };
+            let flex = self.items.get(hammer.item).map_or(0, |d| d.flex);
+            let mut s = bm_core::forge::Session::new(hammer, Gear::Tool, forger.stats(flex, 0.0), deck, 17);
+            for slot in [3, 3, 0, 1, 2, 0, 4, 1] {
+                let _ = s.use_ingredient(slot);
+            }
+            forge.session = Some(s);
+        }
+        let first = bp(FORGE[0]);
+        for p in FORGE {
+            self.machine_of.insert(bp(p), first);
+        }
+        let mut station = DemoStation {
+            forge: Some(forge),
+            wear: Some((4_120, bm_core::spark::MACHINE_WEAR)),
+            ..DemoStation::new(Station::Forge)
+        };
+        if queue {
+            station.output.push(forged);
+        }
+        self.stations.insert(first, station);
+        let before = self.inv.clone();
+        self.inv.slots[1] = Some(forged);
+        self.inv.slots[8] = Some(ItemStack::new(id("copper_grapple"), 1));
+        for (n, c) in [
+            ("pure_tincture_1", 24),
+            ("rough_tincture_1", 8),
+            ("force_glaze", 2),
+            ("sealing_wax", 3),
+            ("unmaking_wax_1", 1),
+        ] {
+            self.inv.add(&self.items, id(n), c);
+        }
+        self.slots_since(&before);
+        let chunks = self.chunks_around_spawn();
+        self.events.extend(chunks.into_iter().map(NetEvent::Msg));
+    }
+
+    /// The forge's view for its window.
+    fn forge_view(f: &DemoForge) -> bm_protocol::ForgeView {
+        bm_protocol::ForgeView {
+            session: f.session.as_ref().map(bm_protocol::SessionView::of),
+            forger: None,
+            queued: f.queued.map(|(item, total, done)| {
+                (
+                    item,
+                    (done / total).clamp(0.0, 1.0) as f32,
+                    (total - done).max(0.0).ceil() as u32,
+                )
+            }),
+        }
+    }
+
+    /// Puts a stack in the pack: onto a matching stack, else the first
+    /// empty slot. What does not fit is lost (the demo keeps no reclaim).
+    fn give(&mut self, stack: ItemStack) {
+        if stack.forge.is_plain() && stack.tag == 0 {
+            self.inv
+                .add_coloured(&self.items, stack.item, stack.colour, stack.count);
+        } else if let Some(slot) = self.inv.slots.iter_mut().find(|s| s.is_none()) {
+            *slot = Some(stack);
+        }
+    }
+
+    /// `ForgeBegin`, as the server rules it: unforged gear the forge takes,
+    /// a deck of ingredient stacks (at most the forger's slots, 100 each),
+    /// moved out of the pack; the session's stats from the character.
+    fn forge_begin(&mut self, pos: BlockPos, gear: u8, deck: Vec<(u8, u16)>) {
+        use bm_core::forge::{DECK_STACK, DeckSlot, Gear, Session};
+        let pos = self.machine(pos);
+        let forger = self.character.effects(&self.tree).forger();
+        let Some(st) = self.stations.get(&pos).filter(|s| s.station == Station::Forge) else {
+            return;
+        };
+        if st
+            .forge
+            .as_ref()
+            .is_some_and(|f| f.session.is_some() || f.queued.is_some())
+            || !st.output.is_empty()
+        {
+            return self.notice("The forge is busy");
+        }
+        let Some(item) = self.inv.get(gear as usize) else {
+            return;
+        };
+        let Some(def) = self.items.get(item.item) else { return };
+        let (Some(kind), false) = (Gear::of(def), item.forge.done) else {
+            return self.notice("That cannot be forged");
+        };
+        let flex = def.flex;
+        if deck.is_empty() || deck.len() > forger.deck_slots() {
+            return self.notice("A deck needs 1 to 6 ingredient stacks");
+        }
+        let mut slots = Vec::new();
+        for &(slot, count) in &deck {
+            let Some(s) = self.inv.get(slot as usize) else { return };
+            let Some(&bm_core::ItemKind::Ingredient(i)) = self.items.get(s.item).map(|d| &d.kind) else {
+                return self.notice("Only forging ingredients go in the deck");
+            };
+            if slot == gear || count == 0 || count > s.count.min(DECK_STACK) || slots.iter().any(|(o, _)| *o == slot) {
+                return;
+            }
+            slots.push((
+                slot,
+                DeckSlot {
+                    stack: ItemStack { count, ..s },
+                    ingredient: i,
+                },
+            ));
+        }
+        self.inv.clear(gear as usize);
+        for (slot, d) in &slots {
+            if let Some(s) = self.inv.slots[*slot as usize].as_mut() {
+                s.count -= d.stack.count;
+                if s.count == 0 {
+                    self.inv.slots[*slot as usize] = None;
+                }
+            }
+        }
+        let seed = (self.fight.rand() * u32::MAX as f64) as u64;
+        let session = Session::new(
+            item,
+            kind,
+            forger.stats(flex, 0.0),
+            slots.into_iter().map(|(_, d)| d).collect(),
+            seed,
+        );
+        if let Some(st) = self.stations.get_mut(&pos) {
+            st.forge.get_or_insert_with(DemoForge::default).session = Some(session);
+        }
+        self.push_view(Some(pos));
+    }
+
+    /// The forge at `pos`'s state, if it is a forge.
+    fn forge_mut(&mut self, pos: BlockPos) -> Option<&mut DemoForge> {
+        self.stations.get_mut(&pos).and_then(|s| s.forge.as_mut())
+    }
+
+    /// `ForgeUse`: one round of the session, by the real rules; a stale
+    /// round number (a double click) is ignored.
+    fn forge_use(&mut self, pos: BlockPos, slot: u8, round: u32) {
+        use bm_core::forge::{Ended, Refused, queue_band};
+        use bm_protocol::ForgeOutcome;
+        let pos = self.machine(pos);
+        let Some(mut s) = self.forge_mut(pos).and_then(|f| f.session.take()) else {
+            return;
+        };
+        let result = if s.rounds == round {
+            s.use_ingredient(slot as usize)
+        } else {
+            Err(Refused::Empty)
+        };
+        let ended = match result {
+            Ok(Some(e)) => e,
+            other => {
+                if let Some(f) = self.forge_mut(pos) {
+                    f.session = Some(s);
+                }
+                match other {
+                    Err(Refused::NoVigour) => self.notice("Not enough vigour for that"),
+                    Ok(None) => self.push_view(Some(pos)),
+                    _ => {}
+                }
+                return;
+            }
+        };
+        let rank_base = self.items.get(s.item.item).map_or(0, |d| d.rank);
+        let outcome = match ended {
+            Ended::Sealed(forged) => {
+                let item = ItemStack {
+                    forge: forged,
+                    ..s.item
+                };
+                let band = queue_band(forged.rank(rank_base));
+                if let Some(f) = self.forge_mut(pos) {
+                    f.queued = Some((item, band.seconds as f64, 0.0));
+                }
+                ForgeOutcome::Sealed(item)
+            }
+            Ended::Unmade(back) => {
+                let returned: Vec<ItemStack> = back.into_iter().map(|(k, n)| ItemStack { count: n, ..k }).collect();
+                self.give(s.item);
+                for r in &returned {
+                    self.give(*r);
+                }
+                ForgeOutcome::Unmade { gear: s.item, returned }
+            }
+            Ended::Destroyed => ForgeOutcome::Destroyed(s.item),
+        };
+        for left in s.leftovers() {
+            self.give(left);
+        }
+        self.events.push_back(NetEvent::Msg(ServerMsg::Forged { pos, outcome }));
+        self.push_view(Some(pos));
+    }
+
     pub fn show_spark(&mut self) {
         let b = |n: &str| BlockState::plain(self.blocks.id(n).expect("builtin block"));
         let mut put: Vec<(BlockPos, BlockState)> = Vec::new();
@@ -2128,6 +2406,14 @@ impl Demo {
             return;
         }
         self.answer_edit(seq, pos, BlockState::AIR, true);
+    }
+
+    /// Tests: puts `stack` in pack slot `slot`, telling the client.
+    #[cfg(test)]
+    pub fn put_slot(&mut self, slot: usize, stack: ItemStack) {
+        let before = self.inv.clone();
+        self.inv.slots[slot] = Some(stack);
+        self.slots_since(&before);
     }
 
     /// Takes the player to the third tier world, facing a stone block on
@@ -3569,5 +3855,141 @@ mod tests {
         let v = portal_views(&d.poll()).pop().unwrap();
         assert_eq!((v.link, v.open), (None, false));
         assert_eq!(d.portals[2].link, None);
+    }
+
+    fn forged_news(ev: &[NetEvent]) -> Vec<bm_protocol::ForgeOutcome> {
+        ev.iter()
+            .filter_map(|e| match e {
+                NetEvent::Msg(ServerMsg::Forged { outcome, .. }) => Some(outcome.clone()),
+                _ => None,
+            })
+            .collect()
+    }
+
+    #[test]
+    fn the_demo_forge_runs_a_real_session_seals_and_queues() {
+        let mut d = Demo::new("Tester");
+        d.poll();
+        d.show_forge(false);
+        let pos = bp(FORGE[2]);
+        d.send(ClientMsg::WatchStation { pos: Some(pos) });
+        let v = station_views(&d.poll()).pop().expect("the forge's view");
+        assert_eq!((v.pos, v.station), (bp(FORGE[0]), Station::Forge));
+        let s = v.forge.and_then(|f| f.session).expect("a session under way");
+        assert_eq!(s.rounds, 8, "a few rounds played");
+        assert!(!s.buffs.is_empty(), "the force glazes last");
+        assert!(s.traits.iter().any(|t| !t.is_empty()), "some traits landed");
+        // A stale round (a double click) is ignored; the right one plays,
+        // exactly as the real session does.
+        let mut mirror = d.stations[&bp(FORGE[0])]
+            .forge
+            .as_ref()
+            .unwrap()
+            .session
+            .clone()
+            .unwrap();
+        d.send(ClientMsg::ForgeUse {
+            pos,
+            slot: 0,
+            round: s.rounds - 1,
+        });
+        assert!(station_views(&d.poll()).is_empty());
+        d.send(ClientMsg::ForgeUse {
+            pos,
+            slot: 0,
+            round: s.rounds,
+        });
+        mirror.use_ingredient(0).unwrap();
+        let after = station_views(&d.poll()).pop().unwrap().forge.unwrap().session.unwrap();
+        assert_eq!(after, bm_protocol::SessionView::of(&mirror));
+        // Sealing: the traits go into the queue; the rest of the deck comes
+        // back to the pack.
+        let wax = d.items.id("sealing_wax").unwrap();
+        let before = d.inv.count(wax);
+        d.send(ClientMsg::ForgeUse {
+            pos,
+            slot: 5,
+            round: after.rounds,
+        });
+        let ev = d.poll();
+        let sealed = match forged_news(&ev).pop() {
+            Some(bm_protocol::ForgeOutcome::Sealed(item)) => item,
+            other => panic!("sealed, not {other:?}"),
+        };
+        assert_eq!(sealed.forge, mirror.forged());
+        assert_eq!(d.inv.count(wax), before + 1, "the second wax comes back");
+        let f = station_views(&ev).pop().unwrap().forge.unwrap();
+        assert!(f.session.is_none());
+        let (queued, progress, left) = f.queued.unwrap();
+        assert_eq!((queued, progress), (sealed, 0.0));
+        assert!(left >= 120, "two minutes at least");
+        // Time passes: it waits in the output, and comes out forged.
+        d.run_stations(left as f64 + 1.0);
+        let st = &d.stations[&bp(FORGE[0])];
+        assert_eq!(st.output, vec![sealed]);
+        d.send(ClientMsg::CollectStation { pos });
+        d.poll();
+        assert!(d.inv.slots.contains(&Some(sealed)), "collected with its traits");
+    }
+
+    #[test]
+    fn the_demo_forge_begins_from_the_pack_and_unmakes() {
+        let mut d = Demo::new("Tester");
+        d.poll();
+        d.show_forge(false);
+        let pos = bp(FORGE[0]);
+        d.stations.get_mut(&pos).unwrap().forge = Some(DemoForge::default());
+        let id = |d: &Demo, n: &str| d.items.id(n).unwrap();
+        d.inv.slots[30] = Some(ItemStack::new(id(&d, "copper_hammer"), 1));
+        d.inv.slots[31] = Some(ItemStack::new(id(&d, "unmaking_wax_1"), 2));
+        let pure = (0..40)
+            .find(|&i| d.inv.get(i).is_some_and(|s| s.item == id(&d, "pure_tincture_1")))
+            .unwrap() as u8;
+        let had = d.inv.get(pure as usize).unwrap().count;
+        // Refused: forged gear, and stone in the deck.
+        d.send(ClientMsg::ForgeBegin {
+            pos,
+            gear: 1,
+            deck: vec![(pure, 5)],
+        });
+        assert_eq!(notices(&d.poll()), vec!["That cannot be forged".to_string()]);
+        d.send(ClientMsg::ForgeBegin {
+            pos,
+            gear: 30,
+            deck: vec![(pure, 5), (31, 1), (2, 1)],
+        });
+        assert_eq!(
+            notices(&d.poll()),
+            vec!["Only forging ingredients go in the deck".to_string()]
+        );
+        d.send(ClientMsg::ForgeBegin {
+            pos,
+            gear: 30,
+            deck: vec![(pure, 5), (31, 1)],
+        });
+        let ev = d.poll();
+        let s = station_views(&ev).pop().unwrap().forge.unwrap().session.unwrap();
+        assert_eq!(d.inv.get(30), None, "the gear went in");
+        assert_eq!(d.inv.get(pure as usize).unwrap().count, had - 5);
+        assert_eq!(d.inv.get(31).unwrap().count, 1);
+        let forger = d.character.effects(&d.tree).forger();
+        assert_eq!(s.stats, forger.stats(110, 0.0), "the character's own stats");
+        assert_eq!(s.deck.len(), 2);
+        d.send(ClientMsg::ForgeUse { pos, slot: 0, round: 0 });
+        d.poll();
+        d.send(ClientMsg::ForgeUse { pos, slot: 1, round: 1 });
+        let ev = d.poll();
+        match forged_news(&ev).pop() {
+            Some(bm_protocol::ForgeOutcome::Unmade { gear, .. }) => assert!(!gear.forge.done),
+            other => panic!("unmade, not {other:?}"),
+        }
+        let hammer = id(&d, "copper_hammer");
+        assert!(
+            d.inv.slots.iter().flatten().any(|s| s.item == hammer && !s.forge.done),
+            "the hammer comes back unforged"
+        );
+        // The four unused tinctures come back; the used one by a 25% chance.
+        let n = d.inv.count(id(&d, "pure_tincture_1"));
+        assert!(n == had as u32 - 1 || n == had as u32, "{n} of {had}");
     }
 }

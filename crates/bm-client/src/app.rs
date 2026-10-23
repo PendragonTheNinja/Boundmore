@@ -2758,6 +2758,27 @@ impl App {
                 }
                 (self.yaw, self.pitch) = (0.0, 0.12);
             }
+            // Milestone 17: a forge with a session under way on an iron
+            // hammer, its window open; or ("forge-queue") a sealed hammer in
+            // its queue and a forged one ready to collect.
+            "forge" | "forge-queue" => {
+                if let Some(Link::Demo(d)) = &mut self.link {
+                    d.show_forge(screen == "forge-queue");
+                }
+                if let Some(s) = &mut self.session {
+                    s.me.teleport(bm_core::PlayerState {
+                        pos: DVec3::new(128.5, 44.0, 126.5),
+                        vel: DVec3::ZERO,
+                        on_ground: true,
+                        hook: None,
+                        ..Default::default()
+                    });
+                    s.selected = 1;
+                }
+                (self.yaw, self.pitch) = (0.0, -0.35);
+                let f = crate::demo::FORGE[1];
+                self.open_menu(Menu::Crafting(Some(BlockPos::new(f[0], f[1], f[2]))));
+            }
             // Spark: two generators, links and a running mixer, its window
             // open with its wear and spark; the other machines behind.
             "spark" => {
@@ -3661,6 +3682,80 @@ mod tests {
         let ready = s.swinger.ready_at();
         assert!(s.swing(pos, ready, 0, DVec3::NEG_Z, &Held::default()).is_none());
         assert_eq!(s.swinger.ready_at(), ready);
+    }
+
+    #[test]
+    fn a_forged_tool_swings_spends_and_hits_as_the_server_rules() {
+        let (mut s, mut demo, msgs) = session_on_the_demo();
+        for m in msgs {
+            if let ServerMsg::Chunk { pos, data } = m {
+                s.world.insert_chunk(pos, Chunk::decode(&data).unwrap());
+            }
+        }
+        // A stone hammer forged Quick 3, Mighty 2 and Thrifty 2, in slot 0
+        // on both sides.
+        let hammer = s.items.registry.id("stone_hammer").unwrap();
+        let forged = ItemStack {
+            forge: bm_core::forge::Forged::from_suffix("quick3,mighty2,thrifty2"),
+            ..ItemStack::new(hammer, 1)
+        };
+        demo.put_slot(0, forged);
+        deliver(&mut s, demo.poll());
+        assert_eq!(s.items.slot(0), Some(forged));
+        let def = s.items.registry.get(hammer).unwrap().clone();
+        let plain = def.tool().unwrap();
+        let t = def.tool_of(&forged, &Held::default()).unwrap();
+        assert_eq!(t.action_speed, plain.action_speed + 15.0);
+        assert_eq!(t.damage, plain.damage + plain.damage / 10 + 100);
+        assert_eq!(t.energy, plain.energy.saturating_sub(4));
+        assert_eq!(s.items.tool_of(Some(&forged), &Held::default()), Some(t));
+        // The cadence and the energy spent are the forged tool's, through
+        // the character's skills exactly as the server applies them.
+        let effects = *s.progress.effects();
+        let ticks = swing_ticks(skilled_tool(&t, &effects).action_speed);
+        assert!(ticks < swing_ticks(skilled_tool(&plain, &effects).action_speed));
+        let mut expect = s.me.state;
+        assert!(expect.try_spend(t.energy, bm_core::food::Drain::Tool));
+        let pos = BlockPos::new(128, 39, 128);
+        let at = s.swinger.next(5, 6).unwrap();
+        let msg = s.swing(pos, at, 0, DVec3::NEG_Z, &Held::default()).unwrap();
+        assert_eq!(s.swinger.ready_at(), at + ticks);
+        assert_eq!(s.me.state.energy(), expect.energy());
+        let predicted = s.damage.damage(pos);
+        assert_eq!(predicted, t.damage, "Mighty's damage, predicted");
+        demo.send(msg);
+        deliver(&mut s, demo.poll());
+        assert_eq!(s.damage.damage(pos), predicted, "the answer agrees");
+    }
+
+    #[test]
+    fn a_forged_grapple_and_a_glowing_tool_give_their_traits() {
+        let (s, _, _) = session_on_the_demo();
+        let id = s.items.registry.id("copper_grapple").unwrap();
+        let def = s.items.registry.get(id).unwrap();
+        let g = ItemStack {
+            forge: bm_core::forge::Forged::from_suffix("long_rope2,quick_reel1,hookshot1"),
+            ..ItemStack::new(id, 1)
+        };
+        let base = def.grapple().unwrap();
+        let spec = s.items.grapple_of(Some(&g)).unwrap();
+        // What the movement step is given, on both sides.
+        assert_eq!(Some(spec), def.grapple_of(&g, &Held::default()));
+        assert_eq!(spec.range, base.range + 6.0);
+        assert_eq!(spec.reel_out_speed, base.reel_out_speed + 5.0);
+        assert!(spec.hookshot && spec.reel_in_speed == base.reel_in_speed + 25.0);
+        assert_eq!(
+            s.items.grapple_of(Some(&ItemStack::new(id, 1))),
+            Some(base),
+            "unforged as before"
+        );
+        let hammer = s.items.registry.id("iron_hammer").unwrap();
+        let glowing = ItemStack {
+            forge: bm_core::forge::Forged::from_suffix("glowing2"),
+            ..ItemStack::new(hammer, 1)
+        };
+        assert_eq!(s.items.held_light_of(Some(&glowing)), bm_core::forge::glow_light(2));
+        assert_eq!(s.items.held_light_of(Some(&ItemStack::new(hammer, 1))), 0);
     }
 
     #[test]

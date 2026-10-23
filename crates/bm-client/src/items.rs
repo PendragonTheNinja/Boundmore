@@ -845,6 +845,94 @@ mod tests {
     }
 
     #[test]
+    fn forged_gear_lists_its_traits_and_shows_its_forged_stats() {
+        use bm_core::forge::Forged;
+        let i = items();
+        let iron = stack(&i, "iron_hammer", 1).unwrap();
+        let plain = i.tooltip(&iron);
+        assert!(plain.ends_with("Rank 30. Can be forged once"), "{plain}");
+        let forged = ItemStack {
+            forge: Forged::from_suffix("mighty5,quick3,night_owl1,unlucky1"),
+            ..iron
+        };
+        let tip = i.tooltip(&forged);
+        // Mighty 5: 700 x 1.3 + 250; Quick 3: action speed +15.
+        let per_second = 1.0 / bm_core::mining::seconds_per_hit(def_speed(&i, "iron_hammer") + 15.0);
+        assert!(
+            tip.contains(&format!("1160 damage, {} hits a second", trim_float(per_second as f32))),
+            "{tip}"
+        );
+        assert!(tip.contains("15% chance of a critical hit"), "Unlucky 1: {tip}");
+        let rank = forged.forge.rank(30);
+        assert!(tip.contains(&format!("Forged, rank {rank}")), "{tip}");
+        assert!(
+            tip.contains("Boons:\n  Mighty 5: +250 damage and +30%\n  Quick 3: +15 action speed\n"),
+            "{tip}"
+        );
+        assert!(
+            tip.contains("Quirks:\n  Night Owl: +100 and +10% damage at night"),
+            "{tip}"
+        );
+        assert!(tip.contains("Flaws:\n  Unlucky 1: -5% crit chance"), "{tip}");
+        // Forged with no traits; a Sturdy grapple's range and uses.
+        let none = ItemStack {
+            forge: Forged::from_suffix(""),
+            ..iron
+        };
+        assert!(i.tooltip(&none).ends_with("No traits"));
+        let g = ItemStack {
+            forge: Forged::from_suffix("long_rope2,sturdy1"),
+            ..stack(&i, "copper_grapple", 1).unwrap()
+        };
+        let gt = i.tooltip(&g);
+        assert!(
+            gt.contains("Fires a hook up to 16 blocks") && gt.contains("700 of 700 uses left"),
+            "{gt}"
+        );
+        // Not gear: nothing about forging.
+        assert!(!i.tooltip(&stack(&i, "stone", 1).unwrap()).contains("forged"));
+        assert!(!i.tooltip(&stack(&i, "hand_stone", 1).unwrap()).contains("forged"));
+        for t in [plain, tip, gt] {
+            assert!(!t.contains('\u{2014}'));
+        }
+    }
+
+    fn def_speed(i: &Items, name: &str) -> f32 {
+        i.registry
+            .get(i.registry.id(name).unwrap())
+            .unwrap()
+            .tool()
+            .unwrap()
+            .action_speed
+    }
+
+    #[test]
+    fn ingredients_say_what_they_do_and_cost() {
+        let i = items();
+        let tip = |n: &str| i.tooltip(&stack(&i, n, 3).unwrap());
+        assert_eq!(
+            tip("pure_tincture_1"),
+            "Pure Tincture I\nAdds 100 boon points, then every pool rolls\nCosts 100 to 110 stability\n3 in this stack"
+        );
+        assert!(
+            tip("wild_tincture_1").contains("Adds 200 boon, 100 quirk and 50 flaw points"),
+            "{}",
+            tip("wild_tincture_1")
+        );
+        assert!(tip("mending_tincture_1").contains("Takes away 150 boon and 150 flaw points"));
+        assert!(tip("force_glaze").contains("For the rest of the session: leaning to Force boons"));
+        assert!(tip("force_glaze").contains("Costs 50 vigour\n"));
+        assert!(tip("boost_salve_1").contains("For 2 rounds: boon points +50%"));
+        assert!(tip("boost_salve_1").contains("Costs 50 vigour and 100 to 110 stability"));
+        assert!(tip("sealing_wax").contains("Ends the session") && tip("sealing_wax").contains("Costs nothing"));
+        assert!(tip("unmaking_wax_1").contains("a 25% chance"));
+        for d in bm_core::forge::INGREDIENTS {
+            let t = ingredient_lines(d).join("\n");
+            assert!(!t.contains('\u{2014}') && !t.is_empty(), "{}", d.name);
+        }
+    }
+
+    #[test]
     fn spanners_say_what_they_repair() {
         let i = items();
         for (name, repair) in [("stone_spanner", 100), ("copper_spanner", 400), ("iron_spanner", 700)] {
