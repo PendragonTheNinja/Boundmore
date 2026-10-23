@@ -253,3 +253,11 @@ Boundless's live tree and tables exactly (Nathan, 2026-10-20), in Boundmore's na
 | Loud | creatures notice from 1.5 times as far | **guess** (the size is unpublished) |
 | Small fossils | every world, 3+ below the surface, about as rare as wayshards | Boundless: 3 to 40 down; the richness a **guess** |
 | Medium fossils | 5+ below the surface, rarer | **guess** (Boundless 5 to 50) |
+| Slippery | ground grip 15% of usual; +40 falling armour | grip a **guess** (Measure 7); armour Release 209 |
+| Bouncing | landings over 6 blocks a second spring back at half the speed; bounces never hurt | **guesses** (Measure 8); no bounce damage: Boundmore leaves Boundless's bug out |
+| Leaden | three times the pull in water, swimming up does nothing | **guess** (Measure 11) |
+| Sprinter | walk and run x0.75, sprint bonus x1.5 | Release 209 |
+| Jumpy | a jump about every 4 s on the ground; a double jump | the rate a **guess** (Measure 9); double jump Release 209 |
+| Twitchy | goes off about every 10 s; +400 durability | the rate a **guess** (Measure 9); durability Release 209 |
+| Gnawing | hunger as fast as sprinting; +30% max energy | the rate a **guess** (Measure 10); +30% Release 209 |
+| Draining | 5 health every 5 s, never breaking the calm; +30% max health | the rate a **guess** (Measure 10); +30% Release 209 |

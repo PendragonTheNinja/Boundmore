@@ -242,6 +242,13 @@ pub struct PlayerState {
     pub sick: u16,
     /// Ticks until the next bite.
     pub chew: u16,
+    /// The quirks of the item in hand (milestone 17 part 2), set by the
+    /// caller before each step from the slot the input names, on server and
+    /// client alike.
+    pub quirks: crate::forge::Quirks,
+    /// Steps taken (wrapping): the dice of the random quirks, so both sides
+    /// roll the same.
+    pub clock: u32,
 }
 
 /// What skills change about moving and energy (`skills::Effects::body`).
@@ -275,11 +282,29 @@ pub const HIGH_JUMP_EXTRA: f64 = 2.0;
 /// more (players, tuning 1.6; a **guess** at the impulse).
 pub const DOUBLE_JUMP_FRACTION: f64 = 0.7;
 
+/// Slippery's grip on the ground, as a share of the usual (**guess**).
+pub const SLIPPERY_GRIP: f64 = 0.15;
+/// Leaden's pull down in water, as a multiple of the usual (**guess**).
+pub const LEADEN_SINK: f64 = 3.0;
+/// Bouncing: a landing faster than this (blocks a second) springs back with
+/// this share of its speed (**guesses**).
+pub const BOUNCE_MIN: f64 = 6.0;
+pub const BOUNCE_KEEP: f64 = 0.5;
+/// Jumpy's chance of a jump on any tick on the ground: about one every 4 s
+/// (**guess**; players saw a holder "jumping up and down while running").
+pub const JUMPY_CHANCE: f64 = 1.0 / 240.0;
+/// Twitchy's chance of going off on any tick: about every 10 s (**guess**).
+pub const TWITCHY_CHANCE: f64 = 1.0 / 600.0;
+
 /// What happened in a tick that the caller acts on.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct StepEvents {
     /// A grapple was fired (it wears by one).
     pub fired: bool,
+    /// Twitchy (milestone 17 part 2): the item in hand goes off by itself
+    /// this tick. A grapple already fired inside the step; anything else is
+    /// used by the client as if clicked.
+    pub twitched: bool,
     /// A grapple was let go by firing again (it wears by one too, as in
     /// Boundless; putting it away costs nothing).
     pub released: bool,
@@ -385,15 +410,22 @@ pub fn step(
         ..*g
     });
     let grapple = skilled.as_ref();
+    // Twitchy: the item in hand goes off by itself now and then (Release
+    // 209's wonky trigger; how often is a **guess**).
+    let twitch = !s.down
+        && s.quirks.has(crate::forge::Quirks::TWITCHY)
+        && crate::forge::Quirks::roll(s.clock, 2) < TWITCHY_CHANCE;
+    events.twitched = twitch;
+    let fire = input.fire || (twitch && s.hook.is_none());
     match grapple {
         // Nothing in hand holds the rope: putting the grapple away lets go.
         None => s.hook = None,
         // Firing again lets go of a stuck hook or recalls a flying one.
-        Some(_) if input.fire && s.hook.is_some() => {
+        Some(_) if fire && s.hook.is_some() => {
             s.hook = None;
             events.released = true;
         }
-        Some(g) if input.fire => {
+        Some(g) if fire => {
             used = true;
             // Too tired to fire: nothing happens but the pause starts again.
             if s.try_spend(g.energy, crate::food::Drain::Ranged) {
@@ -423,6 +455,7 @@ pub fn step(
     s.beat = (s.beat + 1) % crate::combat::REGEN_PERIOD_TICKS;
     s.heal_tick(s.beat == 0);
     s.food_tick(s.beat == 0);
+    s.quirk_tick(s.beat == 0);
     let hooked = s.anchor().is_some();
     let in_water = world.liquid(BlockPos::containing(s.pos.x, s.pos.y + cfg.height * 0.4, s.pos.z));
 
@@ -442,16 +475,36 @@ pub fn step(
             crate::food::RUN_HUNGER_PER_TICK
         });
     }
+    let q = s.quirks;
+    let walk = cfg.walk_speed + s.body.run_bonus;
+    let sprint = cfg.sprint_speed + s.body.sprint_bonus;
+    // Sprinter: walking and running 25% slower, the sprint's bonus 50%
+    // bigger (Release 209).
+    let (walk, sprint) = if q.has(crate::forge::Quirks::SPRINTER) {
+        (walk * 0.75, walk * 0.75 + (sprint - walk) * 1.5)
+    } else {
+        (walk, sprint)
+    };
     let speed = if in_water {
         cfg.swim_speed
     } else if input.sprint && f > 0.0 {
-        cfg.sprint_speed + s.body.sprint_bonus
+        sprint
     } else {
-        cfg.walk_speed + s.body.run_bonus
+        walk
     };
     let flat = DVec3::new(s.vel.x, 0.0, s.vel.z);
     let horiz = if s.on_ground || in_water {
-        let accel = if s.on_ground { cfg.ground_accel } else { cfg.air_accel };
+        let accel = if s.on_ground {
+            // Slippery: the ground barely grips (**guess**: 15%).
+            cfg.ground_accel
+                * if q.has(crate::forge::Quirks::SLIPPERY) {
+                    SLIPPERY_GRIP
+                } else {
+                    1.0
+                }
+        } else {
+            cfg.air_accel
+        };
         approach(flat, wish * speed, accel * dt)
     } else if hooked {
         // Hanging on the rope: leaning pumps the swing, nothing brakes it.
@@ -481,16 +534,26 @@ pub fn step(
     if in_water && input.jump && against_wall {
         s.vel.y = cfg.water_exit_velocity;
     } else if in_water {
-        s.vel.y -= cfg.gravity * cfg.water_gravity_scale * dt;
-        if input.jump {
+        // Leaden: sinks, and swimming up barely helps (**guess**).
+        let sink = if q.has(crate::forge::Quirks::LEADEN) {
+            LEADEN_SINK
+        } else {
+            1.0
+        };
+        s.vel.y -= cfg.gravity * cfg.water_gravity_scale * sink * dt;
+        if input.jump && sink == 1.0 {
             s.vel.y += cfg.gravity * 0.6 * dt;
         }
         let drag = 1.0 / (1.0 + cfg.water_drag * dt);
         s.vel.y *= drag;
         s.vel.y = s.vel.y.clamp(-cfg.swim_speed, cfg.swim_speed);
     } else {
+        // Jumpy: jumps now and then by itself, and gives a double jump
+        // (Release 209).
+        let jumpy = q.has(crate::forge::Quirks::JUMPY);
+        let random_jump = jumpy && s.on_ground && crate::forge::Quirks::roll(s.clock, 1) < JUMPY_CHANCE;
         let fresh = input.jump && !s.jump_held;
-        if input.jump && s.on_ground {
+        if (input.jump || random_jump) && s.on_ground {
             // v^2 = v0^2 + 2 g h: the same jump, h higher (the high-jump
             // epic, Springy food).
             let extra = if s.body.high_jump { HIGH_JUMP_EXTRA } else { 0.0 } + s.jump_extra();
@@ -500,7 +563,7 @@ pub fn step(
                 cfg.jump_velocity
             };
             s.add_hunger(crate::food::JUMP_HUNGER);
-        } else if fresh && s.body.double_jump && !s.air_jumped && s.hook.is_none() {
+        } else if fresh && (s.body.double_jump || jumpy) && !s.air_jumped && s.hook.is_none() {
             s.vel.y = cfg.jump_velocity * DOUBLE_JUMP_FRACTION;
             s.air_jumped = true;
             s.add_hunger(crate::food::JUMP_HUNGER);
@@ -579,11 +642,19 @@ pub fn step(
     if s.on_ground && !was_on_ground && !in_water && impact > 0.0 {
         let below = BlockPos::containing(s.pos.x, s.pos.y - 0.5, s.pos.z);
         s.land(impact, world.soft(below));
+        // Bouncing: a hard landing springs back up at half the speed
+        // (**guess**). The landing itself hurts as any would; Boundless's
+        // quirk also hurt on every bounce, a bug players hated.
+        if q.has(crate::forge::Quirks::BOUNCING) && impact > BOUNCE_MIN && !s.down {
+            s.vel.y = impact * BOUNCE_KEEP;
+            s.on_ground = false;
+        }
     }
     s.jump_held = input.jump;
     if s.on_ground {
         s.air_jumped = false;
     }
+    s.clock = s.clock.wrapping_add(1);
     events
 }
 
@@ -973,6 +1044,158 @@ mod tests {
         for _ in 0..ticks {
             step(s, &input, &cfg, None, planet(), w);
         }
+    }
+
+    fn quirky(q: u16) -> PlayerState {
+        PlayerState {
+            quirks: crate::forge::Quirks(q),
+            ..standing(5.5, 10.0)
+        }
+    }
+
+    #[test]
+    fn sprinter_walks_slower_and_sprints_faster() {
+        use crate::forge::Quirks;
+        let w = world();
+        let (mut plain, mut slow) = (standing(5.5, 10.0), quirky(Quirks::SPRINTER));
+        run(&mut plain, east(), 120, &w);
+        run(&mut slow, east(), 120, &w);
+        assert!(
+            (slow.vel.x - plain.vel.x * 0.75).abs() < 1e-9,
+            "{} vs {}",
+            slow.vel.x,
+            plain.vel.x
+        );
+        let sprint = PlayerInput { sprint: true, ..east() };
+        let (mut plain, mut fast) = (standing(5.5, 10.0), quirky(Quirks::SPRINTER));
+        run(&mut plain, sprint, 120, &w);
+        run(&mut fast, sprint, 120, &w);
+        let cfg = MoveConfig::default();
+        let want = cfg.walk_speed * 0.75 + (cfg.sprint_speed - cfg.walk_speed) * 1.5;
+        assert!((fast.vel.x - want).abs() < 1e-9 && fast.vel.x > plain.vel.x);
+    }
+
+    #[test]
+    fn slippery_ground_barely_grips() {
+        use crate::forge::Quirks;
+        let w = world();
+        let (mut plain, mut icy) = (standing(5.5, 10.0), quirky(Quirks::SLIPPERY));
+        run(&mut plain, east(), 6, &w);
+        run(&mut icy, east(), 6, &w);
+        assert!(icy.vel.x < plain.vel.x * 0.5, "{} vs {}", icy.vel.x, plain.vel.x);
+        assert_eq!(icy.falling_armour(), plain.falling_armour() + 40);
+    }
+
+    #[test]
+    fn bouncing_springs_back_from_a_hard_landing() {
+        use crate::forge::Quirks;
+        let w = world();
+        let drop = |q| PlayerState {
+            pos: DVec3::new(5.5, 20.0, 5.5),
+            quirks: Quirks(q),
+            ..Default::default()
+        };
+        let (mut plain, mut bouncy) = (drop(0), drop(Quirks::BOUNCING));
+        let mut bounced = false;
+        for _ in 0..200 {
+            run(&mut plain, PlayerInput::default(), 1, &w);
+            run(&mut bouncy, PlayerInput::default(), 1, &w);
+            bounced |= bouncy.vel.y > 0.0;
+        }
+        assert!(bounced, "it bounced");
+        assert!(plain.on_ground && bouncy.on_ground, "and settles");
+        assert_eq!(plain.hurt, bouncy.hurt, "the bounces do not hurt again");
+    }
+
+    #[test]
+    fn jumpy_jumps_by_itself_and_doubles_the_same_on_both_sides() {
+        use crate::forge::Quirks;
+        let w = world();
+        let mut a = quirky(Quirks::JUMPY);
+        let mut b = a;
+        let mut jumps = 0;
+        for _ in 0..2400 {
+            let was = a.on_ground;
+            run(&mut a, PlayerInput::default(), 1, &w);
+            run(&mut b, PlayerInput::default(), 1, &w);
+            jumps += (was && a.vel.y > 0.0) as u32;
+        }
+        assert_eq!(a, b, "the same dice on both sides");
+        assert!((3..30).contains(&jumps), "about one every 4 s: {jumps} in 40 s");
+        // A double jump without the epic.
+        let mut s = quirky(Quirks::JUMPY);
+        run(
+            &mut s,
+            PlayerInput {
+                jump: true,
+                ..Default::default()
+            },
+            1,
+            &w,
+        );
+        run(&mut s, PlayerInput::default(), 10, &w);
+        let v = s.vel.y;
+        run(
+            &mut s,
+            PlayerInput {
+                jump: true,
+                ..Default::default()
+            },
+            1,
+            &w,
+        );
+        assert!(s.air_jumped && s.vel.y > v);
+    }
+
+    #[test]
+    fn twitchy_goes_off_now_and_then() {
+        use crate::forge::Quirks;
+        let w = world();
+        let cfg = MoveConfig::default();
+        let mut s = quirky(Quirks::TWITCHY);
+        let mut twitches = 0;
+        for _ in 0..6000 {
+            twitches += step(&mut s, &PlayerInput::default(), &cfg, None, planet(), &w).twitched as u32;
+        }
+        assert!((3..30).contains(&twitches), "about every 10 s: {twitches} in 100 s");
+    }
+
+    #[test]
+    fn gnawing_and_draining_raise_the_maximum_and_drain() {
+        use crate::forge::Quirks;
+        let w = world();
+        let plain = standing(5.5, 10.0);
+        let (mut gnaw, mut drain) = (quirky(Quirks::GNAWING), quirky(Quirks::DRAINING));
+        assert_eq!(gnaw.full_energy() as u32, plain.full_energy() as u32 * 130 / 100);
+        assert_eq!(drain.max_health(), plain.max_health() * 130 / 100);
+        run(&mut gnaw, PlayerInput::default(), 600, &w);
+        run(&mut drain, PlayerInput::default(), 599, &w);
+        assert!(gnaw.hunger > 0, "hungry from standing still");
+        assert_eq!(drain.hurt, crate::forge::DRAINING_PER_BEAT, "5 every 5 s");
+        // Being Full heals faster than it drains, once calm.
+        run(&mut drain, PlayerInput::default(), 1200, &w);
+        assert!(drain.hurt <= crate::forge::DRAINING_PER_BEAT, "{}", drain.hurt);
+    }
+
+    #[test]
+    fn leaden_sinks_in_water() {
+        use crate::forge::Quirks;
+        let mut w = world();
+        w.floor = 0;
+        w.water_below = 40;
+        let at = |q| PlayerState {
+            pos: DVec3::new(5.5, 30.0, 5.5),
+            quirks: Quirks(q),
+            ..Default::default()
+        };
+        let (mut plain, mut lead) = (at(0), at(Quirks::LEADEN));
+        let up = PlayerInput {
+            jump: true,
+            ..Default::default()
+        };
+        run(&mut plain, up, 120, &w);
+        run(&mut lead, up, 120, &w);
+        assert!(lead.pos.y < plain.pos.y - 3.0, "{} vs {}", lead.pos.y, plain.pos.y);
     }
 
     #[test]

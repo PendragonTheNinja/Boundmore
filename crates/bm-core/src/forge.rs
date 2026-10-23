@@ -186,6 +186,15 @@ pub enum TraitId {
     Sated,
     Ravenous,
     Loud,
+    // Milestone 17 part 2: the body quirks.
+    Slippery,
+    Bouncing,
+    Leaden,
+    Sprinter,
+    Jumpy,
+    Twitchy,
+    Gnawing,
+    Draining,
 }
 
 pub struct TraitDef {
@@ -269,6 +278,14 @@ pub static TRAITS: &[TraitDef] = &[
     t!(Sated, "sated", "Sated", Quirk, None, ALL, QUIRK_LEVEL, RQ, [Ravenous]),
     t!(Ravenous, "ravenous", "Ravenous", Quirk, None, ALL, QUIRK_LEVEL, RQ, [Sated]),
     t!(Loud, "loud", "Loud", Quirk, None, ALL, QUIRK_LEVEL, RQ, []),
+    t!(Slippery, "slippery", "Slippery", Quirk, None, ALL, QUIRK_LEVEL, RQ, [Bouncing]),
+    t!(Bouncing, "bouncing", "Bouncing", Quirk, None, ALL, QUIRK_LEVEL, RQ, [Slippery]),
+    t!(Leaden, "leaden", "Leaden", Quirk, None, ALL, QUIRK_LEVEL, RQ, []),
+    t!(Sprinter, "sprinter", "Sprinter", Quirk, None, ALL, QUIRK_LEVEL, RQ, []),
+    t!(Jumpy, "jumpy", "Jumpy", Quirk, None, ALL, QUIRK_LEVEL, RQ, []),
+    t!(Twitchy, "twitchy", "Twitchy", Quirk, None, ALL, QUIRK_LEVEL, RQ, []),
+    t!(Gnawing, "gnawing", "Gnawing", Quirk, None, ALL, QUIRK_LEVEL, RQ, []),
+    t!(Draining, "draining", "Draining", Quirk, None, ALL, QUIRK_LEVEL, RQ, []),
 ];
 
 impl TraitId {
@@ -367,6 +384,14 @@ impl TraitDef {
             TraitId::Sated => "10 less energy a use while you are fed".into(),
             TraitId::Ravenous => "10 less energy a use while you are hungry".into(),
             TraitId::Loud => "creatures notice you from further away".into(),
+            TraitId::Slippery => "slippery footing while held; +40 falling armour".into(),
+            TraitId::Bouncing => "hard landings bounce you back up".into(),
+            TraitId::Leaden => "you sink in water".into(),
+            TraitId::Sprinter => "walk 25% slower, sprint bonus 50% bigger".into(),
+            TraitId::Jumpy => "jumps by itself now and then; gives a double jump".into(),
+            TraitId::Twitchy => "goes off by itself now and then; +400 durability".into(),
+            TraitId::Gnawing => "makes you hungry fast; +30% max energy".into(),
+            TraitId::Draining => "slowly drains health; +30% max health".into(),
         }
     }
 }
@@ -409,6 +434,90 @@ fn light_speed(level: u8) -> u32 {
 
 /// Many Shots' spread between shots, radians.
 pub const MANY_SHOTS_SPREAD: f64 = 0.15;
+
+// ---------------------------------------------------------------- the body
+
+/// The quirks of the item in hand that change the body (milestone 17 part
+/// 2), carried in `PlayerState::quirks` so the movement step and the bars
+/// read them alike on server and client.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub struct Quirks(pub u16);
+
+impl Quirks {
+    pub const SLIPPERY: u16 = 1;
+    pub const BOUNCING: u16 = 2;
+    pub const LEADEN: u16 = 4;
+    pub const SPRINTER: u16 = 8;
+    pub const JUMPY: u16 = 16;
+    pub const TWITCHY: u16 = 32;
+    pub const GNAWING: u16 = 64;
+    pub const DRAINING: u16 = 128;
+
+    pub fn has(self, flag: u16) -> bool {
+        self.0 & flag != 0
+    }
+
+    /// The body quirks of a held stack (none for an empty hand).
+    pub fn of(stack: Option<&ItemStack>) -> Quirks {
+        let Some(s) = stack else { return Quirks(0) };
+        let mut q = 0;
+        for (id, _) in s.forge.traits() {
+            q |= match id {
+                TraitId::Slippery => Self::SLIPPERY,
+                TraitId::Bouncing => Self::BOUNCING,
+                TraitId::Leaden => Self::LEADEN,
+                TraitId::Sprinter => Self::SPRINTER,
+                TraitId::Jumpy => Self::JUMPY,
+                TraitId::Twitchy => Self::TWITCHY,
+                TraitId::Gnawing => Self::GNAWING,
+                TraitId::Draining => Self::DRAINING,
+                _ => 0,
+            };
+        }
+        Quirks(q)
+    }
+
+    /// A number in 0..1 from the step clock and a salt: the random quirks'
+    /// dice, the same on both sides.
+    pub fn roll(clock: u32, salt: u32) -> f64 {
+        let mut d = Dice(((clock as u64) << 8) ^ salt as u64 ^ 0x5EED_F0A6_E000_0000);
+        d.roll()
+    }
+}
+
+/// Max energy and max health with Gnawing or Draining in hand (Release
+/// 209: +30%).
+pub const DRAIN_MAX_PERCENT: u32 = 30;
+/// Gnawing's hunger, in food hundredths a tick: as fast as sprinting
+/// (**guess**; players found it fast).
+pub const GNAWING_HUNGER_PER_TICK: u32 = crate::food::SPRINT_HUNGER_PER_TICK;
+/// Draining's health lost every regeneration beat (5 s): a little under
+/// what being Full gives back (**guess**; players: "all you need is Full
+/// Up").
+pub const DRAINING_PER_BEAT: u32 = 5;
+/// Slippery's falling armour (Release 209).
+pub const SLIPPERY_FALLING_ARMOUR: u32 = 40;
+
+impl crate::movement::PlayerState {
+    /// Gnawing and Draining, once a tick (`beat`: the 5 s regeneration
+    /// beat). Draining never resets the calm that lets being Full heal.
+    pub(crate) fn quirk_tick(&mut self, beat: bool) {
+        if self.down {
+            return;
+        }
+        if self.quirks.has(Quirks::GNAWING) {
+            self.add_hunger(GNAWING_HUNGER_PER_TICK);
+        }
+        if beat && self.quirks.has(Quirks::DRAINING) {
+            let max = self.max_health();
+            self.hurt = (self.hurt + DRAINING_PER_BEAT).min(max);
+            if self.hurt >= max {
+                self.down = true;
+                self.hook = None;
+            }
+        }
+    }
+}
 
 // ---------------------------------------------------------------- on items
 
@@ -587,7 +696,8 @@ impl Forged {
 
     /// Durability after Sturdy and Brittle.
     pub fn durability(&self, base: u16) -> u16 {
-        (base as i32 + 200 * self.scalar(TraitId::Sturdy, TraitId::Brittle)).clamp(1, u16::MAX as i32) as u16
+        let twitchy = if self.has(TraitId::Twitchy) { 400 } else { 0 };
+        (base as i32 + 200 * self.scalar(TraitId::Sturdy, TraitId::Brittle) + twitchy).clamp(1, u16::MAX as i32) as u16
     }
 
     /// Light held in the hand.

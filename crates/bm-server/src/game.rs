@@ -1292,6 +1292,15 @@ impl Game {
                         g.energy = d.energy_of(&s, &held).unwrap_or(g.energy);
                         Some(g)
                     });
+                // The body quirks of what is in that hand (milestone 17
+                // part 2), set the same way the client sets them.
+                p.state.quirks = bm_core::forge::Quirks::of(
+                    p.inventory
+                        .slots
+                        .get(slot)
+                        .filter(|_| slot < HOTBAR_SLOTS)
+                        .and_then(|s| s.as_ref()),
+                );
                 let world = &self.planets[p.planet].world;
                 // Held at a portal while its far side loads.
                 let held = p.trip.as_ref().map(|t| t.held);

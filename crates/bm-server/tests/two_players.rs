@@ -6109,3 +6109,40 @@ async fn stability_running_out_destroys_the_gear_and_returns_the_rest() {
     assert!(alice.dig(20, forge[3]).await.0);
     server.stop();
 }
+
+/// Milestone 17 part 2: the quirks of the item in hand act on the server's
+/// body: Gnawing makes you hungry standing still and raises the bar, and
+/// only while held.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn a_gnawing_hammer_in_hand_makes_you_hungry() {
+    let dir = tempfile::tempdir().unwrap();
+    seed(
+        dir.path(),
+        "Alice",
+        &[(0, "iron_hammer!gnawing1", 1, 0), (1, "stone", 1, 0)],
+    );
+    let server = bm_server::start(config(dir.path())).unwrap();
+    let mut alice = TestClient::login(&server, "Alice").await;
+    let feet = alice.feet();
+    alice.wait_for_chunk(feet.chunk()).await;
+    // Standing still holding the stone: no hunger.
+    let stone = PlayerInput {
+        slot: 1,
+        ..Default::default()
+    };
+    paced(&mut alice, 120, stone).await;
+    let s = snapshot_after(&mut alice).await;
+    assert_eq!(s.hunger, 0);
+    assert_eq!(s.full_energy(), 600);
+    // Standing still holding the hammer: hungry, and the bar is 30% bigger.
+    let hammer = PlayerInput {
+        slot: 0,
+        ..Default::default()
+    };
+    paced(&mut alice, 300, hammer).await;
+    let s = snapshot_after(&mut alice).await;
+    assert!(s.quirks.has(bm_core::forge::Quirks::GNAWING));
+    assert!(s.hunger_points() >= 4, "hungry: {}", s.hunger_points());
+    assert_eq!(s.full_energy(), 780);
+    server.stop();
+}

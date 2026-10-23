@@ -147,14 +147,46 @@ Heavy and Light Shot exclude each other. Stats never go below sensible floors (d
 - The forge screen shows the gear, the deck, Effectiveness, Stability, Vigour, the three pools with the last roll, traits with their levels, buffs with rounds left; item tooltips list traits. `--demo-ui forge`; screenshots.
 - Upgrade check from save version 10; load test.
 
+## Part 2: the body quirks
+
+*Built 2026-10-23 (Nathan: "Continue on part 2!"). Values from Release 209's notes (forum t/22336, t/22594) and the trait list (tuning 5.8); how often and how much, where no source says, are **guesses** on the Measure list.*
+
+21. Eight more quirks, one level at 600 points, on every kind of gear, acting while the item is in hand (appended to the trait ids):
+    - **Slippery** [slippery feet]: the ground grips at 15% (**guess**); +40 falling armour (Release 209). Excludes Bouncing.
+    - **Bouncing** [bouncy feet]: a landing faster than 6 blocks a second springs back up at half the speed (**guesses**). The landing hurts as any landing does, but the bounces do not: in Boundless the quirk dealt fall damage on every bounce, a bug players called a death quirk (t/23147), so Boundmore leaves the bug out.
+    - **Leaden** [that sinking feeling]: you sink in water, three times the pull, and swimming up does nothing (**guess**); pushing against a wall still climbs out. Its +50% breath waits for breath (there is no drowning yet).
+    - **Sprinter** [slow-mo]: walking and running 25% slower, the sprint's bonus 50% bigger (Release 209).
+    - **Jumpy** [one jump ahead]: jumps by itself on the ground about every 4 s (**guess**; players saw holders "jumping up and down while running"), and gives a double jump without the epic (Release 209).
+    - **Twitchy** [wonky trigger]: goes off by itself about every 10 s (**guess**; players found it too frequent); +400 durability (Release 209). A grapple fires inside the step; a tool swings, a sling shoots and a bag throws as if clicked.
+    - **Gnawing** [nutritionally challenged]: hunger as fast as sprinting, all the time (**guess**; players: it "drains energy" fast); +30% max energy (Release 209).
+    - **Draining** [bleeding edge]: 5 health every 5 s (**guess**: a little under what being Full heals, as players found "all you need is Full Up"); +30% max health. It never interrupts the calm that lets being Full heal, and it can defeat you (players were). Boundmore counts health lost, not health left, so the +30% shows at once on picking the item up; Boundless's players complained that it did not (t/28136).
+22. **Odd noises** waits for sound.
+23. **Deterministic on both sides**: the held item's quirks ride in `PlayerState::quirks`, set by server and client from the slot each input names before its step; the random ones roll from `PlayerState::clock`, counted by the step itself, so client and server roll the same dice and prediction needs no messages. Protocol 25 (the state on the wire gained both fields; saves keep the body layout of `SavedBody`, so no save change).
+
+### Acceptance (part 2)
+
+- Each quirk's rule in a unit test (speeds, grip and falling armour, bounces that settle and do not hurt twice, Jumpy's rate and double jump, identical on two copies, Twitchy's rate, the drains and the +30% maxima, sinking).
+- A Jumpy and Sprinter item held for part of a run predicts with no corrections across reconciliations.
+- End to end: a Gnawing hammer in hand makes the server's player hungry standing still and raises the bar to 780; holding the stone, nothing.
+
 ## Non-goals (later)
 
 - Power coils, gems, tier 5 and 6 worlds, and the ingredient recipes that need power (the milestone after this, or with gems).
 - Traits whose systems do not exist yet: the loot magnet (no dropped items: it would loot nearby bodies), bleed, slow and weaken (creature debuffs), healing, regenerating and buff bombs, changing, unshaping and lattice chisels, door spanners, liquid breakers, totems and fists. Until they exist they are not in the dice, so the dice choose among fewer traits than Boundless's.
-- The movement and body quirks (icy and bouncy feet, sinking, slowed, random jumps, random swings, hunger and health drains with their +30%, odd noises): part 2 of this milestone, after Nathan's first play-test.
+- Odd noises (no sound yet) and Leaden's breath (no drowning yet).
 - Forge academy, recipe planner, trading forged gear (shops come with Society).
 
 ## Measure in game (Nathan)
+
+Part 2's guesses (any quirk you have on an item):
+
+7. Slippery Feet: how far do you slide after letting go of forward at a run, compared with without it?
+8. Bouncy Feet: from what height does a landing bounce, and how high (about half the fall)?
+9. One Jump Ahead: about how many jumps a minute standing still? Wonky Trigger: how many misfires a minute?
+10. Nutritionally Challenged: standing still from fed, how long until hunger shading first shows? Bleeding Edge: how much health a tick and how often, when not Full?
+11. That Sinking Feeling: in water, do you sink like a stone, or slowly? Can you swim up at all?
+
+Part 1:
 
 1. **Effectiveness**: on your forging character, note your Intelligence ranks (and Attributes Bonus), whether you have the Forging Epic, and how many coils are on the Centraforge. Put in a wood, stone, copper or iron, and silver tool (any you have), a chisel and a grapple, and read the Effectiveness in the forge screen's circle. If you can take the coils off (or use a forge without them), the same with none. This calibrates the guessed formula.
 2. **Stability and Vigour** at the start of a session, with your Vitality and Power ranks.
@@ -175,4 +207,12 @@ Heavy and Light Shot exclude each other. Stats never go below sensible floors (d
 - [x] Verified: 640 tests; upgrade check from `main` ("upgraded the universe from save version 10 to 11 (0 stations rewritten with no forge sessions; characters as they were)", and each planet: "small_fossil_seam, medium_fossil_seam added to its ores"); load test, 50 bots: 14 slow ticks while they joined, worst 5.2 ms in steady play, against 41 and 58.8 ms for `main`'s server on the same sandbox the same hour (the sandbox, not the change)
 - [x] End to end: a hammer forged Quick swings faster after the queue; a session survives a restart and only its forger can play it; Stability running out destroys the gear and returns the rest; unmaking returns the gear unforged; a forged item is refused; a forge with a session cannot be broken
 
-Open: the Effectiveness formula and the other guesses (Measure list); Night Owl and Early Bird may correct once at dusk (client and server judge night by their own tick); power coils, gems and the powered recipes; part 2 (movement and body quirks) after Nathan's play-test.
+### Part 2
+
+*Built 2026-10-23; awaiting Nathan's play-test.* Protocol 25.
+
+- [x] Core: eight body quirks (`forge::Quirks`, `PlayerState::quirks` and `clock`), their rules in `movement::step`, the drains and maxima in `forge`, `food`; 7 unit tests
+- [x] Server and client set the held item's quirks before each step; replays use each input's own; Twitchy uses a held tool, sling or bag as a click would
+- [x] Tests: prediction with no corrections (`quirks_in_hand_predict_with_no_correction`), end to end (`a_gnawing_hammer_in_hand_makes_you_hungry`)
+
+Open: the Effectiveness formula and every guess (Measure list); Night Owl and Early Bird may correct once at dusk (client and server judge night by their own tick); Twitchy on a tool, sling or bag is the client's click, so a modified client could skip its own drawback (the server cannot tell a misfire from a click); power coils, gems and the powered recipes; odd noises and breath.

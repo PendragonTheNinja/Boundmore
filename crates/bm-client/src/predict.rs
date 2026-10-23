@@ -37,6 +37,8 @@ struct Entry {
     seq: u32,
     input: PlayerInput,
     grapple: Option<GrappleSpec>,
+    /// The body quirks of the item in hand at this input (milestone 17).
+    quirks: bm_core::forge::Quirks,
     /// What follows this input (the server applies it right after, in this
     /// order); a replay re-applies it.
     after: Vec<After>,
@@ -58,6 +60,9 @@ pub struct Predictor {
     /// Moved by the server on this planet (`jump`): the next snapshot is
     /// where we are, not a disagreement to count.
     adopt_next: bool,
+    /// A Twitchy item went off on a tick since this was last taken
+    /// (milestone 17): the caller uses the item in hand once.
+    pub twitched: bool,
 }
 
 impl Predictor {
@@ -71,6 +76,7 @@ impl Predictor {
             corrections: 0,
             last_snapshot_tick: 0,
             adopt_next: false,
+            twitched: false,
         }
     }
 
@@ -110,13 +116,16 @@ impl Predictor {
         &mut self,
         input: PlayerInput,
         grapple: Option<GrappleSpec>,
+        quirks: bm_core::forge::Quirks,
         cfg: &MoveConfig,
         shape: PlanetShape,
         world: &impl PhysicsWorld,
     ) -> u32 {
         self.seq += 1;
         self.previous = self.state;
-        movement::step(&mut self.state, &input, cfg, grapple.as_ref(), shape, world);
+        self.state.quirks = quirks;
+        let events = movement::step(&mut self.state, &input, cfg, grapple.as_ref(), shape, world);
+        self.twitched |= events.twitched;
         if self.history.len() == HISTORY {
             self.history.pop_front();
         }
@@ -124,6 +133,7 @@ impl Predictor {
             seq: self.seq,
             input,
             grapple,
+            quirks,
             after: Vec::new(),
             state: self.state,
         });
@@ -317,6 +327,7 @@ impl Predictor {
 /// Runs one remembered input again from `state`, with what followed it,
 /// and remembers the result.
 fn replay(state: &mut PlayerState, e: &mut Entry, cfg: &MoveConfig, shape: PlanetShape, world: &impl PhysicsWorld) {
+    state.quirks = e.quirks;
     movement::step(state, &e.input, cfg, e.grapple.as_ref(), shape, world);
     for a in &e.after {
         match *a {
@@ -557,10 +568,47 @@ mod tests {
         assert_eq!(truth[239].hunger, 0, "Sated");
         let mut p = Predictor::new(spawn());
         for (i, input) in inputs.iter().enumerate() {
-            let seq = p.tick(*input, None, &cfg, shape(), &w);
+            let seq = p.tick(*input, None, Default::default(), &cfg, shape(), &w);
             if seq == 122 {
                 p.eat(120, broth, &cfg, shape(), &w);
             }
+            if i >= 5 && i % 3 == 0 {
+                let ack = i as u32 - 4;
+                p.reconcile(i as u64, ack, truth[ack as usize - 1], &cfg, shape(), &w);
+            }
+        }
+        assert_eq!(p.corrections, 0);
+        assert_eq!(p.state, truth[239]);
+    }
+
+    #[test]
+    fn quirks_in_hand_predict_with_no_correction() {
+        // A Jumpy, Sprinter item held for inputs 30 to 150 (milestone 17):
+        // the server sets the quirks before each step, and replays after a
+        // correction use each input's own.
+        use bm_core::forge::Quirks;
+        let (cfg, w) = (MoveConfig::default(), Floor(10));
+        let inputs: Vec<PlayerInput> = (1..=240).map(walk).collect();
+        let held = |i: usize| {
+            if (30..150).contains(&i) {
+                Quirks(Quirks::JUMPY | Quirks::SPRINTER)
+            } else {
+                Quirks(0)
+            }
+        };
+        let mut s = spawn();
+        let truth: Vec<PlayerState> = inputs
+            .iter()
+            .enumerate()
+            .map(|(i, input)| {
+                s.quirks = held(i);
+                movement::step(&mut s, input, &cfg, None, shape(), &w);
+                s
+            })
+            .collect();
+        let mut p = Predictor::new(spawn());
+        for (i, input) in inputs.iter().enumerate() {
+            p.tick(*input, None, held(i), &cfg, shape(), &w);
             if i >= 5 && i % 3 == 0 {
                 let ack = i as u32 - 4;
                 p.reconcile(i as u64, ack, truth[ack as usize - 1], &cfg, shape(), &w);
@@ -592,7 +640,7 @@ mod tests {
             .collect();
         let mut p = Predictor::new(spawn());
         for (i, input) in inputs.iter().enumerate() {
-            let seq = p.tick(*input, None, &cfg, shape(), &w);
+            let seq = p.tick(*input, None, Default::default(), &cfg, shape(), &w);
             // We swing a couple of inputs late: the spend lands at its own
             // input and the ones after are replayed.
             if let Some(&at) = swings.iter().find(|&&at| at + 2 == seq) {
@@ -646,7 +694,7 @@ mod tests {
             .collect();
         let mut p = Predictor::new(spawn());
         for (i, input) in inputs.iter().enumerate() {
-            let seq = p.tick(*input, None, &cfg, shape(), &w);
+            let seq = p.tick(*input, None, Default::default(), &cfg, shape(), &w);
             if let Some(&(at, b)) = changes.iter().find(|c| c.0 + 2 == seq) {
                 p.set_body(at, b, &cfg, shape(), &w);
             }
@@ -664,7 +712,7 @@ mod tests {
         // A server that never changed the body corrects us once.
         let mut p = Predictor::new(spawn());
         for input in &inputs[..60] {
-            p.tick(*input, None, &cfg, shape(), &w);
+            p.tick(*input, None, Default::default(), &cfg, shape(), &w);
         }
         p.set_body(40, fast, &cfg, shape(), &w);
         p.reconcile(1, 50, plain[49], &cfg, shape(), &w);
@@ -678,7 +726,7 @@ mod tests {
         let truth = server_states(&inputs, &w);
         let mut p = Predictor::new(spawn());
         for (i, input) in inputs.iter().enumerate() {
-            p.tick(*input, None, &cfg, shape(), &w);
+            p.tick(*input, None, Default::default(), &cfg, shape(), &w);
             if i >= 5 && i % 3 == 0 {
                 // Server is 5 ticks behind, like a ~80 ms round trip.
                 let ack = i as u32 - 4;
@@ -729,7 +777,7 @@ mod tests {
         assert!(truth.iter().any(|s| s.anchor().is_some()), "the test hooks the ceiling");
         let mut p = Predictor::new(spawn());
         for (i, input) in inputs.iter().enumerate() {
-            p.tick(*input, Some(g), &cfg, shape(), &Room);
+            p.tick(*input, Some(g), Default::default(), &cfg, shape(), &Room);
             if i >= 5 && i % 3 == 0 {
                 let ack = i as u32 - 4;
                 p.reconcile(i as u64, ack, truth[ack as usize - 1], &cfg, shape(), &Room);
@@ -740,7 +788,7 @@ mod tests {
         // A server that never saw the hook (it had no grapple) corrects us.
         let mut p = Predictor::new(spawn());
         for input in &inputs[..10] {
-            p.tick(*input, Some(g), &cfg, shape(), &Room);
+            p.tick(*input, Some(g), Default::default(), &cfg, shape(), &Room);
         }
         let mut bare = spawn();
         for i in &inputs[..5] {
@@ -760,7 +808,7 @@ mod tests {
         let mut p = Predictor::new(spawn());
         let client_world = Floor(10);
         for input in &inputs[..60] {
-            p.tick(*input, None, &cfg, shape(), &client_world);
+            p.tick(*input, None, Default::default(), &cfg, shape(), &client_world);
         }
         p.reconcile(1, 50, truth[49], &cfg, shape(), &client_world);
         assert_eq!(p.corrections, 1);
@@ -807,7 +855,7 @@ mod tests {
         let truth = hit_states(&inputs, &[(30, 30), (31, 30), (90, 250)], &w, spawn());
         let mut p = Predictor::new(spawn());
         for (i, input) in inputs.iter().enumerate() {
-            p.tick(*input, None, &cfg, shape(), &w);
+            p.tick(*input, None, Default::default(), &cfg, shape(), &w);
             if i >= 5 && i % 3 == 0 {
                 let ack = i as u32 - 4;
                 p.reconcile(i as u64, ack, truth[ack as usize - 1], &cfg, shape(), &w);
@@ -841,7 +889,7 @@ mod tests {
         assert!(truth[60].down);
         let mut p = Predictor::new(spawn());
         for (i, input) in inputs.iter().enumerate() {
-            p.tick(*input, None, &cfg, shape(), &w);
+            p.tick(*input, None, Default::default(), &cfg, shape(), &w);
             if i >= 5 && i % 3 == 0 {
                 let ack = i as u32 - 4;
                 p.reconcile(i as u64, ack, truth[ack as usize - 1], &cfg, shape(), &w);
@@ -865,7 +913,7 @@ mod tests {
         assert!(truth[239].hurt > 0, "thirty blocks onto rock hurts");
         let mut p = Predictor::new(from);
         for (i, input) in inputs.iter().enumerate() {
-            p.tick(*input, None, &cfg, shape(), &w);
+            p.tick(*input, None, Default::default(), &cfg, shape(), &w);
             if i >= 5 && i % 3 == 0 {
                 let ack = i as u32 - 4;
                 p.reconcile(i as u64, ack, truth[ack as usize - 1], &cfg, shape(), &w);
@@ -882,7 +930,7 @@ mod tests {
         let truth = hit_states(&inputs[..50], &[(45, 100)], &Floor(12), spawn());
         let mut p = Predictor::new(spawn());
         for input in &inputs {
-            p.tick(*input, None, &cfg, shape(), &Floor(10));
+            p.tick(*input, None, Default::default(), &cfg, shape(), &Floor(10));
         }
         p.reconcile(1, 50, truth[49], &cfg, shape(), &Floor(10));
         assert_eq!(p.corrections, 1);
@@ -895,7 +943,7 @@ mod tests {
         let mut p = Predictor::new(spawn());
         let mut states = Vec::new();
         for i in 1..=30 {
-            p.tick(walk(i), None, &cfg, shape(), &w);
+            p.tick(walk(i), None, Default::default(), &cfg, shape(), &w);
             states.push(p.state);
         }
         let now = p.state;
@@ -911,7 +959,7 @@ mod tests {
         let (cfg, w) = (MoveConfig::default(), Floor(10));
         let mut p = Predictor::new(spawn());
         for i in 1..=20 {
-            p.tick(walk(i), None, &cfg, shape(), &w);
+            p.tick(walk(i), None, Default::default(), &cfg, shape(), &w);
         }
         let elsewhere = PlayerState {
             pos: DVec3::new(3.5, 11.0, 4.5),
@@ -931,7 +979,7 @@ mod tests {
         assert_eq!(p.state, moved);
         assert_eq!(p.corrections, 0);
         // Then prediction carries on from there, numbered after the old inputs.
-        assert_eq!(p.tick(walk(1), None, &cfg, shape(), &w), 21);
+        assert_eq!(p.tick(walk(1), None, Default::default(), &cfg, shape(), &w), 21);
     }
 
     #[test]
@@ -952,7 +1000,7 @@ mod tests {
         }
         let mut p = Predictor::new(spawn());
         for (i, input) in inputs[..60].iter().enumerate() {
-            p.tick(*input, None, &cfg, shape(), &w);
+            p.tick(*input, None, Default::default(), &cfg, shape(), &w);
             if i >= 5 && i % 3 == 0 && i < 50 {
                 let ack = i as u32 - 4;
                 p.reconcile(i as u64, ack, truth[ack as usize - 1], &cfg, shape(), &w);
@@ -966,7 +1014,7 @@ mod tests {
         p.reconcile(48, 47, truth[46], &cfg, shape(), &w);
         assert_eq!(p.state, portal);
         for input in &inputs[60..70] {
-            p.tick(*input, None, &cfg, shape(), &w);
+            p.tick(*input, None, Default::default(), &cfg, shape(), &w);
         }
         // The first snapshot after the move has seen up to input 56: we take
         // it and replay 57 to 70 from there.
@@ -975,7 +1023,7 @@ mod tests {
         assert_eq!(p.correction, DVec3::ZERO);
         // And prediction agrees from then on.
         for (i, input) in inputs[70..].iter().enumerate() {
-            p.tick(*input, None, &cfg, shape(), &w);
+            p.tick(*input, None, Default::default(), &cfg, shape(), &w);
             let ack = 66 + i as u32;
             p.reconcile(60 + i as u64, ack, truth[ack as usize - 1], &cfg, shape(), &w);
         }
@@ -988,7 +1036,7 @@ mod tests {
         let (cfg, w) = (MoveConfig::default(), Floor(10));
         let mut p = Predictor::new(spawn());
         for i in 1..=10 {
-            p.tick(walk(i), None, &cfg, shape(), &w);
+            p.tick(walk(i), None, Default::default(), &cfg, shape(), &w);
         }
         let there = PlayerState {
             pos: DVec3::new(2.5, 10.0, 2.5),

@@ -1714,7 +1714,10 @@ impl App {
                 let held = s.held_now(local);
                 s.items.grapple_of(s.items.slot(s.selected).as_ref(), &held)
             });
-            let seq = s.me.tick(input, grapple, &s.movement, s.world.shape, &s.world);
+            // The body quirks of the item in hand (milestone 17), as the
+            // server sets them for this input.
+            let quirks = bm_core::forge::Quirks::of(s.items.slot(s.selected).as_ref());
+            let seq = s.me.tick(input, grapple, quirks, &s.movement, s.world.shape, &s.world);
             link.send_datagram(ClientDatagram::Input {
                 latest: seq,
                 inputs: s.me.recent_inputs(INPUT_REDUNDANCY),
@@ -1882,6 +1885,12 @@ impl App {
             }
         }
         let mut mouse = if chisel.is_some() { [false; 2] } else { mouse };
+        // Twitchy (milestone 17): an item in hand that went off by itself is
+        // used once, as a click would. A grapple went off inside the step.
+        if std::mem::take(&mut s.me.twitched) && playing && !claim_mode && !s.travelling() {
+            mouse[0] = true;
+            pressed = true;
+        }
         // Fighting (milestone 13). A creature nearer than the terrain is
         // what we aim at. A sling shoots (never breaking blocks); a tool or
         // the hand stone strikes a living creature in reach; a body in reach
@@ -3571,7 +3580,14 @@ mod tests {
         let centre = BlockPos::new(128, 44, 128).chunk();
         s.world.schedule_meshing(centre, 64);
         for _ in 0..12 {
-            s.me.tick(PlayerInput::default(), None, &s.movement, s.world.shape, &s.world);
+            s.me.tick(
+                PlayerInput::default(),
+                None,
+                Default::default(),
+                &s.movement,
+                s.world.shape,
+                &s.world,
+            );
         }
         let seq = s.me.seq;
 

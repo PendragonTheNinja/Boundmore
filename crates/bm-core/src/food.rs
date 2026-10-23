@@ -210,7 +210,10 @@ impl PlayerState {
     /// The bar with no hunger: 600 plus skills, times Lively.
     pub fn full_energy(&self) -> u16 {
         let base = MAX_ENERGY.saturating_add(self.body.energy_bonus) as u32;
-        let up = self.buff.rank_of(Buff::Lively).map_or(0, |r| PERCENT_UP[r]);
+        let mut up = self.buff.rank_of(Buff::Lively).map_or(0, |r| PERCENT_UP[r]);
+        if self.quirks.has(crate::forge::Quirks::GNAWING) {
+            up += crate::forge::DRAIN_MAX_PERCENT;
+        }
         (base * (100 + up) / 100).min(u16::MAX as u32) as u16
     }
 
@@ -325,7 +328,12 @@ impl PlayerState {
 
     /// Hearty's share more health, in percent.
     pub(crate) fn health_up_percent(&self) -> u32 {
-        self.buff.rank_of(Buff::Hearty).map_or(0, |r| PERCENT_UP[r])
+        let draining = if self.quirks.has(crate::forge::Quirks::DRAINING) {
+            crate::forge::DRAIN_MAX_PERCENT
+        } else {
+            0
+        };
+        self.buff.rank_of(Buff::Hearty).map_or(0, |r| PERCENT_UP[r]) + draining
     }
 
     /// Refreshed's extra energy a second.
@@ -340,7 +348,14 @@ impl PlayerState {
 
     /// Falling armour from skills and Springy.
     pub fn falling_armour(&self) -> u32 {
-        self.body.falling_armour as u32 + self.buff.rank_of(Buff::Springy).map_or(0, |r| SPRING_FALL[r] as u32)
+        let slippery = if self.quirks.has(crate::forge::Quirks::SLIPPERY) {
+            crate::forge::SLIPPERY_FALLING_ARMOUR
+        } else {
+            0
+        };
+        self.body.falling_armour as u32
+            + self.buff.rank_of(Buff::Springy).map_or(0, |r| SPRING_FALL[r] as u32)
+            + slippery
     }
 
     /// Keen multiplies crit chance: 1.2 to 2.0.
