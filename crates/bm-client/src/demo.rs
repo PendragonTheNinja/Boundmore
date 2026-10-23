@@ -13,6 +13,10 @@
 //! each, and travel between them. After a warp the new planet's ground is
 //! held back for a moment (or for good, with `hold_arrivals`) so the
 //! travelling screen can be seen.
+//!
+//! Milestone 17's screens: `--demo-ui forge` (a session under way, played
+//! by the real `bm_core::forge::Session`), `forge-queue` (a sealed hammer in
+//! the queue, a forged one ready) and `forge-empty` (choose gear and deck).
 
 use crate::net::NetEvent;
 use bm_core::forge::Held;
@@ -129,6 +133,14 @@ struct DemoStation {
     spark: Option<SparkView>,
     /// Milestone 17: a forge's session and queue.
     forge: Option<DemoForge>,
+}
+
+/// What `show_forge` puts in its forge.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ForgeShow {
+    Session,
+    Queue,
+    Empty,
 }
 
 /// A forge as the demo keeps it: a session (the real rules, run here) and
@@ -1962,16 +1974,15 @@ impl Demo {
         self.events.extend(chunks.into_iter().map(NetEvent::Msg));
     }
 
-    /// Spark (milestone 15): generators, links and a working mixer in a
-    /// row, more machines and the new ores behind (`SPARK_*`, `MIXER`), and
-    /// a spanner and the mixer's inputs in the pack.
     /// `--demo-ui forge`: a forge of four blocks ahead of the spawn with a
     /// session under way on an iron hammer (a few rounds played: traits,
-    /// buffs, a deck), answering `ForgeUse` by running the real
-    /// `bm_core::forge::Session`; `queue` instead shows a sealed hammer in
-    /// the queue and a finished one waiting (milestone 17). A forged hammer
-    /// and some ingredients go in the pack either way.
-    pub fn show_forge(&mut self, queue: bool) {
+    /// buffs, a deck), answering `ForgeBegin` and `ForgeUse` by running the
+    /// real `bm_core::forge::Session` (milestone 17). `ForgeShow::Queue`
+    /// instead shows a sealed hammer in the queue and a finished one
+    /// waiting; `ForgeShow::Empty` an idle forge, to start a session. A
+    /// forged hammer and some ingredients go in the pack either way.
+    pub fn show_forge(&mut self, show: ForgeShow) {
+        let queue = show == ForgeShow::Queue;
         use bm_core::forge::{Forged, Forger, Gear};
         let b = |n: &str| BlockState::plain(self.blocks.id(n).expect("builtin block"));
         let planet = &mut self.planets[0];
@@ -1991,7 +2002,7 @@ impl Demo {
             let mut sealed = hammer;
             sealed.forge = Forged::from_suffix("mighty2,sturdy3,glowing1");
             forge.queued = Some((sealed, 240.0, 96.0));
-        } else {
+        } else if show == ForgeShow::Session {
             let deck = [
                 ("pure_tincture_1", 30),
                 ("rough_tincture_1", 20),
@@ -2209,6 +2220,9 @@ impl Demo {
         self.push_view(Some(pos));
     }
 
+    /// Spark (milestone 15): generators, links and a working mixer in a
+    /// row, more machines and the new ores behind (`SPARK_*`, `MIXER`), and
+    /// a spanner and the mixer's inputs in the pack.
     pub fn show_spark(&mut self) {
         let b = |n: &str| BlockState::plain(self.blocks.id(n).expect("builtin block"));
         let mut put: Vec<(BlockPos, BlockState)> = Vec::new();
@@ -3874,7 +3888,7 @@ mod tests {
     fn the_demo_forge_runs_a_real_session_seals_and_queues() {
         let mut d = Demo::new("Tester");
         d.poll();
-        d.show_forge(false);
+        d.show_forge(ForgeShow::Session);
         let pos = bp(FORGE[2]);
         d.send(ClientMsg::WatchStation { pos: Some(pos) });
         let v = station_views(&d.poll()).pop().expect("the forge's view");
@@ -3940,7 +3954,7 @@ mod tests {
     fn the_demo_forge_queue_runs_out_into_the_output() {
         let mut d = Demo::new("Tester");
         d.poll();
-        d.show_forge(true);
+        d.show_forge(ForgeShow::Queue);
         let pos = bp(FORGE[0]);
         d.send(ClientMsg::WatchStation { pos: Some(pos) });
         d.send(ClientMsg::CollectStation { pos });
@@ -3958,7 +3972,7 @@ mod tests {
     fn the_demo_forge_begins_from_the_pack_and_unmakes() {
         let mut d = Demo::new("Tester");
         d.poll();
-        d.show_forge(false);
+        d.show_forge(ForgeShow::Session);
         let pos = bp(FORGE[0]);
         d.stations.get_mut(&pos).unwrap().forge = Some(DemoForge::default());
         let id = |d: &Demo, n: &str| d.items.id(n).unwrap();

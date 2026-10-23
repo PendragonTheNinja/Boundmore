@@ -2761,9 +2761,14 @@ impl App {
             // Milestone 17: a forge with a session under way on an iron
             // hammer, its window open; or ("forge-queue") a sealed hammer in
             // its queue and a forged one ready to collect.
-            "forge" | "forge-queue" => {
+            // "forge-empty": an idle forge, to choose gear and a deck.
+            "forge" | "forge-queue" | "forge-empty" => {
                 if let Some(Link::Demo(d)) = &mut self.link {
-                    d.show_forge(screen == "forge-queue");
+                    d.show_forge(match screen.as_str() {
+                        "forge-queue" => crate::demo::ForgeShow::Queue,
+                        "forge-empty" => crate::demo::ForgeShow::Empty,
+                        _ => crate::demo::ForgeShow::Session,
+                    });
                 }
                 if let Some(s) = &mut self.session {
                     s.me.teleport(bm_core::PlayerState {

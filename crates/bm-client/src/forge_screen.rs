@@ -390,6 +390,8 @@ fn setup_panel(
     actions: &mut Vec<UiAction>,
 ) {
     let slots = v.forger.deck_slots();
+    // Room for a full deck, so the window does not jump as it fills.
+    ui.set_min_height(430.0);
     state.tidy(v.items, slots);
     ui.label(
         egui::RichText::new(
@@ -463,26 +465,25 @@ fn setup_panel(
                 let Some(stack) = v.items.inventory.get(*slot as usize) else {
                     continue;
                 };
+                item_chip(
+                    ui,
+                    &stack,
+                    v.items,
+                    v.icons,
+                    26.0,
+                    egui::RichText::new(format!("{} x{count}", item_name(v.items, &stack))).color(TEXT),
+                );
                 ui.horizontal(|ui| {
-                    item_chip(
-                        ui,
-                        &stack,
-                        v.items,
-                        v.icons,
-                        26.0,
-                        egui::RichText::new(format!("{} x{count}", item_name(v.items, &stack))).color(TEXT),
-                    );
-                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                        if ui.small_button("Take out").clicked() {
-                            remove = Some(i);
+                    ui.add_space(30.0);
+                    let most = stack.count.min(DECK_STACK);
+                    for (label, step) in [("-10", -10i32), ("-1", -1), ("+1", 1), ("+10", 10)] {
+                        if ui.small_button(label).clicked() {
+                            *count = (*count as i32 + step).clamp(1, most as i32) as u16;
                         }
-                        let most = stack.count.min(DECK_STACK);
-                        for (label, step) in [("+10", 10i32), ("+1", 1), ("-1", -1), ("-10", -10)] {
-                            if ui.small_button(label).clicked() {
-                                *count = (*count as i32 + step).clamp(1, most as i32) as u16;
-                            }
-                        }
-                    });
+                    }
+                    if ui.small_button("Take out").clicked() {
+                        remove = Some(i);
+                    }
                 });
             }
             if let Some(i) = remove {
