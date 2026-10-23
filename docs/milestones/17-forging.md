@@ -165,10 +165,14 @@ Heavy and Light Shot exclude each other. Stats never go below sensible floors (d
 
 ## Status
 
-*Spec written 2026-10-22; building part 1.*
+*Part 1 built 2026-10-23; awaiting Nathan's play-test.* Protocol 24, `SAVE_VERSION` 11 (version 10 universes open unchanged: no forges existed).
 
-- [ ] Core (`bm-core/src/forge.rs`): traits, levels, eligibility, weights, the session (pools, rolls, buffs, every ingredient), Effectiveness, rank, queue table, stats through traits
-- [ ] Data: forge blocks, ingredients, bases, charcoal, fossils, fossil essence, recipes, Flexibility and rank on gear, the three skills
-- [ ] Server: the forge station, sessions saved, the queue, traits applied wherever stats are read
-- [ ] Client and art: the forge screen, tooltips, prediction through traits, textures and icons, `--demo-ui forge`
-- [ ] Verified: tests, upgrade check, load test, screenshots
+- [x] Core (`bm-core/src/forge.rs`): 39 traits with Boundless's levels, exclusions and values; stats through traits (`ItemDef::tool_of` and friends, `Held::of` for quirk conditions on both sides); the session engine following the simulator round by round (pools, rolls, fate, every buff, every ingredient: 66); Effectiveness (the guess), Stability, Vigour, Intelligence; rank and the queue table; the dice saved with the session. 23 unit tests, one per rule
+- [x] Data: forge blocks (workbench, Machine Crafting 2), 66 ingredients, 6 bases, charcoal, small and medium fossils and fossil essence, recipes for everything that needs no power (Forge Stocks levels, XP and wear from Boundless's data), Flexibility and rank on all 28 gear items; Insight, Forge Stocks and Forgemaster are real skills; fossil seams on every kind, appended to existing planets (re-pinned, `appending_m17_only_turns_rock_into_fossils`)
+- [x] Server (`forging.rs`, `game/forge.rs`): the forge station (wears, draws spark for its queue), `ForgeBegin`/`ForgeUse`, sessions owned by their forger and saved, the queue and collect with XP, forged stats wherever the server reads gear (swings, Wide Swing areas, slings with Many Shots, bombs, grapples, spanners, chisels, Loud)
+- [x] Client: the forge window (set-up with predicted Effectiveness, the session in three columns, the queue), forged tooltips (traits by kind, rank, forged stats), ingredient tooltips, prediction through traits, `--demo-ui forge` and `forge-queue` running a real session; screenshots `docs/media/m17-forge.png`, `m17-forged-tooltip.png`
+- [x] Art: forge top and side, two fossil seams, icons for all 76 new items by family; `docs/media/m17-forge-icons.png`
+- [x] Verified: 640 tests; upgrade check from `main` ("upgraded the universe from save version 10 to 11 (0 stations rewritten with no forge sessions; characters as they were)", and each planet: "small_fossil_seam, medium_fossil_seam added to its ores"); load test, 50 bots: 14 slow ticks while they joined, worst 5.2 ms in steady play, against 41 and 58.8 ms for `main`'s server on the same sandbox the same hour (the sandbox, not the change)
+- [x] End to end: a hammer forged Quick swings faster after the queue; a session survives a restart and only its forger can play it; Stability running out destroys the gear and returns the rest; unmaking returns the gear unforged; a forged item is refused; a forge with a session cannot be broken
+
+Open: the Effectiveness formula and the other guesses (Measure list); Night Owl and Early Bird may correct once at dusk (client and server judge night by their own tick); power coils, gems and the powered recipes; part 2 (movement and body quirks) after Nathan's play-test.
