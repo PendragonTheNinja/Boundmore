@@ -133,11 +133,16 @@ impl Items {
         self.def(s)?.energy_of(s, held)
     }
 
-    /// The grapple spec the movement step is given: through the stack's
-    /// traits with no quirk conditions (`Held::default`), on both sides.
-    pub fn grapple_of(&self, stack: Option<&ItemStack>) -> Option<bm_core::movement::GrappleSpec> {
+    /// The grapple spec the movement step is given, as the server builds it:
+    /// through the stack's traits with no quirk conditions
+    /// (`Held::default`), and its shot's energy by the holder (`held`, as
+    /// they stand before the step: Sated and Ravenous).
+    pub fn grapple_of(&self, stack: Option<&ItemStack>, held: &Held) -> Option<bm_core::movement::GrappleSpec> {
         let s = stack?;
-        self.def(s)?.grapple_of(s, &Held::default())
+        let d = self.def(s)?;
+        let mut g = d.grapple_of(s, &Held::default())?;
+        g.energy = d.energy_of(s, held).unwrap_or(g.energy);
+        Some(g)
     }
 
     /// Light a held stack gives (a torch, a Glowing tool).

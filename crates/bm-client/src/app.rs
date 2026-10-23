@@ -1675,8 +1675,9 @@ impl App {
         let mouse = if s.travelling() { [false; 2] } else { mouse };
         // A grapple in hand fires (and lets go) with the left button, inside
         // the simulation, instead of breaking or placing.
-        // Through its traits with no quirk conditions, as the server steps it.
-        let grapple = s.items.grapple_of(s.items.slot(s.selected).as_ref());
+        // Through its traits, as the server steps it (built again for each
+        // tick below, with the holder as they stand before that step).
+        let grapple = s.items.grapple_of(s.items.slot(s.selected).as_ref(), &Held::default());
         if grapple.is_none() || !playing || claim_mode || s.travelling() {
             self.fire_pending = false;
         }
@@ -1709,6 +1710,10 @@ impl App {
                 fire: std::mem::take(&mut self.fire_pending),
                 ..input
             };
+            let grapple = grapple.and_then(|_| {
+                let held = s.held_now(local);
+                s.items.grapple_of(s.items.slot(s.selected).as_ref(), &held)
+            });
             let seq = s.me.tick(input, grapple, &s.movement, s.world.shape, &s.world);
             link.send_datagram(ClientDatagram::Input {
                 latest: seq,
@@ -3743,17 +3748,31 @@ mod tests {
             ..ItemStack::new(id, 1)
         };
         let base = def.grapple().unwrap();
-        let spec = s.items.grapple_of(Some(&g)).unwrap();
+        let spec = s.items.grapple_of(Some(&g), &Held::default()).unwrap();
         // What the movement step is given, on both sides.
         assert_eq!(Some(spec), def.grapple_of(&g, &Held::default()));
         assert_eq!(spec.range, base.range + 6.0);
         assert_eq!(spec.reel_out_speed, base.reel_out_speed + 5.0);
         assert!(spec.hookshot && spec.reel_in_speed == base.reel_in_speed + 25.0);
         assert_eq!(
-            s.items.grapple_of(Some(&ItemStack::new(id, 1))),
+            s.items.grapple_of(Some(&ItemStack::new(id, 1)), &Held::default()),
             Some(base),
             "unforged as before"
         );
+        // Its shot's energy is the holder's, as the server sets it: Ravenous
+        // spends 10 less while hungry.
+        let ravenous = ItemStack {
+            forge: bm_core::forge::Forged::from_suffix("ravenous1"),
+            ..ItemStack::new(id, 1)
+        };
+        let hungry = Held {
+            hunger: Some(0.8),
+            ..Held::default()
+        };
+        let spec = s.items.grapple_of(Some(&ravenous), &hungry).unwrap();
+        assert_eq!(spec.energy, base.energy - 10);
+        assert_eq!(Some(spec.energy), def.energy_of(&ravenous, &hungry));
+        assert_eq!(s.items.grapple_of(Some(&ravenous), &Held::default()), Some(base));
         let hammer = s.items.registry.id("iron_hammer").unwrap();
         let glowing = ItemStack {
             forge: bm_core::forge::Forged::from_suffix("glowing2"),
