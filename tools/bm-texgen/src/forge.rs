@@ -624,7 +624,7 @@ fn tin(rgb: u32, second: Option<u32>, mark: Mark, rank: u32) -> Tex {
 // ----------------------------------------------------------------- spurs
 
 /// Spur: three crystal shards in `rgb` growing from a lump of rock, the
-/// rank pips along the top left.
+/// rank pips along the top from the right.
 fn spur(rgb: u32, rank: u32, name: &str) -> Tex {
     let r = tint(rgb);
     let salt = seed(name);
@@ -634,7 +634,8 @@ fn spur(rgb: u32, rank: u32, name: &str) -> Tex {
     blade(&mut icon, (8.0, 26.0), up + 0.05, 25.0, 5.0, &r);
     blade(&mut icon, (11.0, 27.0), up + 0.78, 13.0, 2.8, &r);
     Lump::new(salt, 8.5, 26.0, 5.2, 6).draw(&mut icon, &stone_ramp(), 0.15, 0.8, false);
-    pips(&mut icon, rank, (4.5, 4.5), (5.0, 0.0));
+    // Along the top from the right: the slot number sits top left.
+    pips(&mut icon, rank, (27.5, 3.5), (-5.0, 0.0));
     icon.finish()
 }
 
