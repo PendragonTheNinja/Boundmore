@@ -347,6 +347,11 @@ impl PlayerState {
 pub trait PhysicsWorld {
     fn solid(&self, p: BlockPos) -> bool;
     fn liquid(&self, p: BlockPos) -> bool;
+    /// A liquid that burns (lava, milestone 18 part 3). Client and server
+    /// must answer identically (invariant 3).
+    fn burning(&self, _p: BlockPos) -> bool {
+        false
+    }
     /// The shape of a solid block (ADR-0008): its kept octants are what
     /// collides. Client and server must answer identically (invariant 3).
     fn shape(&self, _p: BlockPos) -> crate::block::Shape {
@@ -468,6 +473,12 @@ pub fn step(
     s.quirk_tick(s.beat == 0);
     let hooked = s.anchor().is_some();
     let in_water = world.liquid(BlockPos::containing(s.pos.x, s.pos.y + cfg.height * 0.4, s.pos.z));
+    // Lava (milestone 18 part 3): feet or chest in it burns, every second.
+    let in_lava = world.burning(BlockPos::containing(s.pos.x, s.pos.y + 0.1, s.pos.z))
+        || world.burning(BlockPos::containing(s.pos.x, s.pos.y + cfg.height * 0.4, s.pos.z));
+    s.lava_tick(in_lava, s.beat % crate::TICK_HZ as u16 == 0);
+    // Swimming in lava is half as fast as in water (Release 195).
+    let swim = if in_lava { cfg.swim_speed * 0.5 } else { cfg.swim_speed };
 
     let (fwd, right) = heading(input.yaw);
     let f = input.forward.clamp(-1, 1) as f64;
@@ -496,7 +507,7 @@ pub fn step(
         (walk, sprint)
     };
     let speed = if in_water {
-        cfg.swim_speed
+        swim
     } else if input.sprint && f > 0.0 {
         sprint
     } else {
@@ -556,7 +567,7 @@ pub fn step(
         }
         let drag = 1.0 / (1.0 + cfg.water_drag * dt);
         s.vel.y *= drag;
-        s.vel.y = s.vel.y.clamp(-cfg.swim_speed, cfg.swim_speed);
+        s.vel.y = s.vel.y.clamp(-swim, swim);
     } else {
         // Jumpy: jumps now and then by itself, and gives a double jump
         // (Release 209).
@@ -856,6 +867,8 @@ mod tests {
         shaped: HashMap<BlockPos, Shape>,
         floor: i64,
         water_below: i64,
+        /// The liquid is lava (milestone 18 part 3).
+        lava: bool,
     }
 
     impl PhysicsWorld for Flat {
@@ -864,6 +877,9 @@ mod tests {
         }
         fn liquid(&self, p: BlockPos) -> bool {
             p.y < self.water_below && !self.solid(p)
+        }
+        fn burning(&self, p: BlockPos) -> bool {
+            self.lava && self.liquid(p)
         }
         fn shape(&self, p: BlockPos) -> Shape {
             self.shaped.get(&p).copied().unwrap_or(Shape::FULL)
@@ -876,6 +892,7 @@ mod tests {
             shaped: HashMap::new(),
             floor: 10,
             water_below: 0,
+            lava: false,
         }
     }
 
@@ -1417,6 +1434,44 @@ mod tests {
             &w,
         );
         assert!(s.pos.x > 8.3 && s.pos.y >= 21.0, "still in the water at {:?}", s.pos);
+    }
+
+    #[test]
+    fn lava_burns_every_second_and_slows_a_swimmer() {
+        let mut w = world();
+        w.water_below = 13;
+        let swim = |w: &Flat| {
+            let mut s = PlayerState {
+                pos: DVec3::new(5.5, 10.0, 5.5),
+                on_ground: true,
+                ..Default::default()
+            };
+            run(
+                &mut s,
+                PlayerInput {
+                    forward: 1,
+                    ..Default::default()
+                },
+                120,
+                w,
+            );
+            s
+        };
+        let water = swim(&w);
+        assert_eq!(water.hurt, 0, "water does not burn");
+        w.lava = true;
+        let lava = swim(&w);
+        let max = lava.max_health();
+        assert_eq!(
+            lava.hurt,
+            2 * max * crate::combat::LAVA_PERCENT / 100,
+            "a burn a second"
+        );
+        let (dw, dl) = (
+            (water.pos - DVec3::new(5.5, 10.0, 5.5)).length(),
+            (lava.pos - DVec3::new(5.5, 10.0, 5.5)).length(),
+        );
+        assert!(dl < dw * 0.6, "half as fast in lava: {dl} vs {dw}");
     }
 
     #[test]

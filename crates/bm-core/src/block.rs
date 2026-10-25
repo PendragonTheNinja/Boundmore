@@ -114,6 +114,13 @@ pub struct BlockDef {
     /// recipes, which then run over time inside it.
     #[serde(default)]
     pub station: Option<Station>,
+    /// A liquid: swum in, not walked on (water, lava). Client and server
+    /// answer `PhysicsWorld::liquid` from it (invariant 3).
+    #[serde(default)]
+    pub liquid: bool,
+    /// Burns whoever is in it (lava, milestone 18 part 3).
+    #[serde(default)]
+    pub burns: bool,
     /// Hard (milestone 18, Boundless's hardness above 3): only advanced
     /// chisels shape it (gem seams, hard coal).
     #[serde(default)]
@@ -507,6 +514,8 @@ impl BlockRegistry {
             mount: self.defs.iter().map(|d| d.mount).collect(),
             model: self.defs.iter().map(|d| d.model).collect(),
             soft: self.defs.iter().map(|d| d.health == Health::Soft).collect(),
+            liquid: self.defs.iter().map(|d| d.liquid).collect(),
+            burns: self.defs.iter().map(|d| d.burns).collect(),
         }
     }
 }
@@ -521,9 +530,23 @@ pub struct BlockFlags {
     mount: Vec<Option<Mount>>,
     model: Vec<Model>,
     soft: Vec<bool>,
+    liquid: Vec<bool>,
+    burns: Vec<bool>,
 }
 
 impl BlockFlags {
+    /// A liquid (water, lava).
+    #[inline]
+    pub fn liquid(&self, id: BlockId) -> bool {
+        self.liquid.get(id.0 as usize).copied().unwrap_or(false)
+    }
+
+    /// Burns whoever is in it (lava).
+    #[inline]
+    pub fn burns(&self, id: BlockId) -> bool {
+        self.burns.get(id.0 as usize).copied().unwrap_or(false)
+    }
+
     /// Soft ground (soil, sand, snow, leaves: `Health::Soft`) softens falls.
     #[inline]
     pub fn soft(&self, id: BlockId) -> bool {

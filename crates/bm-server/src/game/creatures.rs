@@ -550,7 +550,8 @@ pub(super) trait Terrain: PhysicsWorld {
 impl Terrain for World {
     fn ground(&self, p: BlockPos) -> Option<Ground> {
         let b = self.block(p)?;
-        Some(if b == self.water {
+        // Any liquid (water, lava) is no place to stand or spawn.
+        Some(if self.flags.liquid(b) {
             Ground::Water
         } else if self.flags.solid(b) {
             Ground::Solid

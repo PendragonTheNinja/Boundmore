@@ -25,6 +25,11 @@ pub const REGEN_PERIOD_TICKS: u16 = (TICK_HZ * 5) as u16;
 /// food index says 4 a step).
 pub const CALM_REGEN: u32 = 7;
 
+/// Lava takes this share of max health every second, in percent (**guess**:
+/// Boundless's "about a third of max per tick" has no tick length; tuning
+/// 3.3.4, Measure 6 of milestone 18).
+pub const LAVA_PERCENT: u32 = 20;
+
 /// Mending (the health regeneration epic): +25 every 5 s, in combat too
 /// (Boundless's skill text, tuning 5.4a).
 pub const MENDING_REGEN: u32 = 25;
@@ -229,6 +234,14 @@ impl PlayerState {
     }
 
     /// Back on their feet with `health` (the server's respawn).
+    /// One tick in or out of lava (milestone 18 part 3): in it, every
+    /// second (`second`) takes [`LAVA_PERCENT`] of max health.
+    pub(crate) fn lava_tick(&mut self, in_lava: bool, second: bool) {
+        if in_lava && second && !self.down {
+            self.take((self.max_health() * LAVA_PERCENT / 100).max(1));
+        }
+    }
+
     pub fn revive(&mut self, health: u32) {
         self.down = false;
         self.hurt = self.max_health().saturating_sub(health.max(1));

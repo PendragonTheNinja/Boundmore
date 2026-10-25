@@ -2109,10 +2109,7 @@ impl App {
             && let (Some(hit), Some((block, mount))) = (s.target, place)
         {
             let at = hit.adjacent();
-            let free = s
-                .world
-                .block(at)
-                .is_some_and(|b| b.is_air() || s.world.registry.get(b).name == "water");
+            let free = s.world.block(at).is_some_and(|b| b.is_air() || s.world.flags.liquid(b));
             let blocks_me = s.world.registry.get(block).solid && s.me.state.overlaps_block(&s.movement, at);
             if free && !blocks_me && s.world.shape.contains_y(at.y) {
                 s.edit_seq += 1;

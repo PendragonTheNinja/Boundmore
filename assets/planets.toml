@@ -1112,16 +1112,21 @@ turf = ["Muted Moss", "Muted Lime", "Faded Moss", "Faded Lime"]
 foliage = ["Muted Moss", "Dusky Moss", "Dark Lime", "Muted Jade"]
 trunk = ["Dark Rust", "Deep Rust", "Iron"]
 [kind.generation]
-# Rocky and bare: scree for ground, few trees, basins dry (lava seas wait
-# for part 3).
+# Rocky and bare: scree for ground, few trees, seas of lava (Boundless's
+# Metal worlds).
 mountain_height = 170.0
 tree_density = 0.002
-water_offset = -20
+water = "lava"
 ground = "gravel"
 subsoil = "stone"
 shore = "gravel"
 shallows = "gravel"
 seabed = ["gravel", "stone"]
+[kind.generation.lower_sea]
+# Milestone 18 part 3: open caves below altitude 16 fill with lava
+# (Boundless's world configs, tuning 4.13.4).
+level = 16
+block = "lava"
 [[kind.generation.ores]]
 block = "coal_seam"
 size = 14.0
@@ -1347,6 +1352,11 @@ sand = ["Ash", "Smoke", "Faded Amber", "Muted Amber"]
 mountain_height = 150.0
 tree_density = 0.008
 water_offset = -6
+[kind.generation.lower_sea]
+# Milestone 18 part 3: open caves below altitude 16 fill with lava
+# (Boundless's world configs, tuning 4.13.4).
+level = 16
+block = "lava"
 [[kind.generation.ores]]
 block = "coal_seam"
 size = 14.0
@@ -1574,6 +1584,11 @@ snow = ["Snow", "Pearl", "Misty Violet"]
 mountain_height = 140.0
 tree_density = 0.012
 water_offset = 2
+[kind.generation.lower_sea]
+# Milestone 18 part 3: open caves below altitude 16 fill with lava
+# (Boundless's world configs, tuning 4.13.4).
+level = 16
+block = "lava"
 [[kind.generation.ores]]
 block = "coal_seam"
 size = 14.0
@@ -1819,6 +1834,11 @@ deep_stone = ["Iron", "Smoke", "Deep Moss"]
 mountain_height = 110.0
 tree_density = 0.02
 water_offset = 6
+[kind.generation.lower_sea]
+# Milestone 18 part 3: open caves below altitude 16 fill with lava
+# (Boundless's world configs, tuning 4.13.4).
+level = 16
+block = "lava"
 [[kind.generation.ores]]
 block = "coal_seam"
 size = 14.0
@@ -2066,6 +2086,11 @@ tree_line = 50
 ice_depth = 3
 shore = "snow"
 mountain_height = 160.0
+[kind.generation.lower_sea]
+# Milestone 18 part 3: open caves below altitude 16 fill with water
+# (Boundless's world configs, tuning 4.13.4).
+level = 16
+block = "water"
 [[kind.generation.ores]]
 block = "coal_seam"
 size = 14.0
@@ -2292,6 +2317,11 @@ snow = ["Snow", "Cloud", "Misty Cobalt", "Misty Violet"]
 mountain_height = 240.0
 tree_density = 0.01
 snow_line = 90
+[kind.generation.lower_sea]
+# Milestone 18 part 3: open caves below altitude 16 fill with lava
+# (Boundless's world configs, tuning 4.13.4).
+level = 16
+block = "lava"
 [[kind.generation.ores]]
 block = "coal_seam"
 size = 14.0
@@ -2541,6 +2571,11 @@ seabed = ["sand", "gravel"]
 cliff = "sandstone"
 layer = "sandstone"
 layer_depth = 16
+[kind.generation.lower_sea]
+# Milestone 18 part 3: open caves below altitude 16 fill with lava
+# (Boundless's world configs, tuning 4.13.4).
+level = 16
+block = "lava"
 [[kind.generation.ores]]
 block = "coal_seam"
 size = 14.0
@@ -2770,15 +2805,20 @@ turf = ["Dusky Ember", "Dark Ember", "Dusky Crimson", "Muted Crimson"]
 foliage = ["Dark Crimson", "Deep Crimson", "Dusky Ember", "Dark Amber"]
 trunk = ["Coal", "Soot", "Midnight Crimson"]
 [kind.generation]
-# Black scree and dry basins (lava seas wait for part 3).
+# Black scree and seas of lava (Boundless's Burn worlds).
 mountain_height = 180.0
 tree_density = 0.001
-water_offset = -24
+water = "lava"
 ground = "gravel"
 subsoil = "stone"
 shore = "gravel"
 shallows = "gravel"
 seabed = ["gravel", "stone"]
+[kind.generation.lower_sea]
+# Milestone 18 part 3: open caves below altitude 16 fill with lava
+# (Boundless's world configs, tuning 4.13.4).
+level = 16
+block = "lava"
 [[kind.generation.ores]]
 block = "coal_seam"
 size = 14.0

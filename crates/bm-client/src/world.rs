@@ -14,7 +14,6 @@ pub struct ClientWorld {
     pub shape: PlanetShape,
     pub registry: BlockRegistry,
     pub flags: BlockFlags,
-    water: BlockId,
     chunks: HashMap<ChunkPos, Arc<Chunk>>,
     /// Edits sent but not yet answered: position -> (edit seq, block before).
     pending: HashMap<BlockPos, (u32, BlockState)>,
@@ -25,11 +24,9 @@ pub struct ClientWorld {
 
 impl ClientWorld {
     pub fn new(shape: PlanetShape, registry: BlockRegistry) -> Self {
-        let water = registry.id("water").unwrap_or(BlockId(u16::MAX));
         Self {
             shape,
             flags: registry.flags(),
-            water,
             chunks: HashMap::new(),
             pending: HashMap::new(),
             light: LightMap::new(shape, &registry.flags()),
@@ -329,7 +326,11 @@ impl PhysicsWorld for ClientWorld {
     }
 
     fn liquid(&self, p: BlockPos) -> bool {
-        self.block(p) == Some(self.water)
+        self.block(p).is_some_and(|b| self.flags.liquid(b))
+    }
+
+    fn burning(&self, p: BlockPos) -> bool {
+        self.block(p).is_some_and(|b| self.flags.burns(b))
     }
 
     /// Soft ground softens a fall (milestone 13). Unloaded reads as hard.

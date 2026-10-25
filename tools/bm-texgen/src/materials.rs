@@ -899,6 +899,32 @@ pub fn water(ctx: Ctx) -> Tex {
     })
 }
 
+/// Lava (milestone 18 part 3): molten orange and yellow rivers, warped like
+/// water's swell, crusted over with dark cooling skin in broken plates.
+pub fn lava(ctx: Ctx) -> Tex {
+    let salt = seed("lava");
+    let glow = Ramp::from_hex(&[
+        0x5a0d08, 0x8f1a0a, 0xc4320c, 0xe85a10, 0xf88a1c, 0xffb83a, 0xffe27a, 0xfff6c4,
+    ]);
+    let crust = Ramp::from_hex(&[0x1c1012, 0x2a1614, 0x3a1d16, 0x4e2618]);
+    Tex::from_fn(|x, y| {
+        let (fx, fy) = (c(x), c(y));
+        let wx = fx + (ctx.fbm(salt ^ 1, 2, 2, 2, fx, fy) - 0.5) * 8.0;
+        let wy = fy + (ctx.fbm(salt ^ 2, 2, 2, 2, fx, fy) - 0.5) * 8.0;
+        let heat = ctx.fbm(salt ^ 3, 2, 3, 3, wx, wy);
+        // Cooling skin where the melt is coldest, cracked by bright seams.
+        let skin = ctx.fbm(salt ^ 4, 3, 3, 2, fx, fy);
+        if skin > 0.5 && heat < 0.66 {
+            let seam = (ctx.fbm(salt ^ 5, 4, 4, 2, fx, fy) * 5.0).fract();
+            if seam < 0.14 {
+                return glow.pick(0.62, x, y);
+            }
+            return crust.pick((skin - 0.5) * 2.5, x, y);
+        }
+        glow.pick(0.08 + heat * 0.7, x, y)
+    })
+}
+
 // ------------------------------------------------------------------- wood
 
 /// Trunk side: bark in tall plates split by deep furrows, each plate lit on
@@ -2025,6 +2051,7 @@ pub fn paint_named(name: &str, variant: u32) -> Option<Tex> {
         "ash" => ash,
         "snow" => snow,
         "water" => water,
+        "lava" => lava,
         "trunk_side" => trunk_side,
         "trunk_top" => trunk_top,
         "foliage" => foliage,

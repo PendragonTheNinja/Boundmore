@@ -120,6 +120,10 @@ pub struct PlanetGenConfig {
     /// `glow_depth` under sea level.
     pub glow_chance: f64,
     pub glow_depth: i64,
+    /// A lower sea (milestone 18 part 3): open cave cells at or below this
+    /// height fill with this block (Boundless's lava, or water, at altitude
+    /// 16). None: caves stay open.
+    pub lower_sea: Option<LowerSea>,
     /// Ores in rock, tried in order; the first that matches a block wins.
     /// Each ore's veins come from its own noise, keyed by its place in this
     /// list, so add new ores at the end.
@@ -141,6 +145,13 @@ pub struct PlanetGenConfig {
     /// natural everywhere. Only colourable blocks may be listed.
     #[serde(skip_serializing_if = "BTreeMap::is_empty")]
     pub colours: BTreeMap<String, Vec<String>>,
+}
+
+/// A lower sea: what open caves fill with, up to which height.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct LowerSea {
+    pub level: i64,
+    pub block: String,
 }
 
 /// Why planet settings cannot be generated.
@@ -292,6 +303,7 @@ impl Default for PlanetGenConfig {
             layer_depth: 0,
             glow_chance: 0.02,
             glow_depth: 24,
+            lower_sea: None,
             ores: vec![
                 OreSpec {
                     block: "coal_seam".into(),
@@ -476,6 +488,8 @@ struct Ids {
     ice: BlockId,
     layer: BlockId,
     ores: Vec<BlockId>,
+    /// The lower sea's height and block, resolved.
+    lower: Option<(i64, BlockId)>,
     /// Each ore's `under` blocks, resolved.
     ore_under: Vec<Vec<BlockId>>,
 }
@@ -504,6 +518,11 @@ impl Ids {
             ice: r.id(&cfg.ice)?,
             layer: r.id(&cfg.layer)?,
             ores: cfg.ores.iter().map(|o| r.id(&o.block)).collect::<Result<_, _>>()?,
+            lower: cfg
+                .lower_sea
+                .as_ref()
+                .map(|l| r.id(&l.block).map(|b| (l.level, b)))
+                .transpose()?,
             ore_under: cfg
                 .ores
                 .iter()
@@ -1007,7 +1026,10 @@ impl Generator {
                     if underground && carveable {
                         let cell = Cell::at(lx, ly, lz);
                         if cave_in(&cell).open() {
-                            b = ids.air;
+                            b = match ids.lower {
+                                Some((level, sea)) if wy <= level => sea,
+                                _ => ids.air,
+                            };
                         } else if b == ids.stone || b == ids.deep_stone {
                             let mut ore_hit = None;
                             for (o, ore) in self.ores.iter().enumerate() {
@@ -1708,7 +1730,8 @@ mod tests {
     // Re-pinned for M17's fossil seams (appended ores) without a version
     // bump: planets saved before keep their terrain (`PINNED_M16`, checked in
     // `appending_m17_only_turns_rock_into_fossils`).
-    // Re-pinned for M18's coal seams (appended ores) and its nine new kinds
+    // Re-pinned for M18's coal seams (appended ores), its nine new kinds and
+    // their gems and lava
     // without a version bump: planets saved before keep their terrain
     // (`PINNED_M17`, checked in `appending_m18_only_turns_rock_into_coal`).
     const PINNED: [(&str, u64); 14] = [
@@ -1718,14 +1741,14 @@ mod tests {
         ("frozen", 0x8d82_1743_4246_6964),
         ("lush", 0x4878_da2d_016c_ec27),
         ("overgrown", 0x8831_bcaa_b529_9f85),
-        ("rustland", 0xfa04_575f_2b25_bbd5),
+        ("rustland", 0xaa38_4fa4_295a_f88c),
         ("cinderland", 0xb1c5_f24e_e00d_6755),
         ("acrid", 0x2a22_4a1c_33b4_5015),
         ("blighted", 0x8ae4_33e0_5ea0_2841),
         ("glacial", 0xc357_442f_7e20_db2b),
         ("stormy", 0xda7e_6340_af03_6d5d),
         ("scorched", 0x021e_f8ca_e477_3cac),
-        ("ember", 0xaeb5_1ddb_19a2_549d),
+        ("ember", 0x93c2_6bbb_86b5_8913),
     ];
     const PINNED_M17: [(&str, u64); 4] = [
         ("temperate", 0xa10a_36aa_5d69_57f1),
@@ -2189,6 +2212,45 @@ mod tests {
             eprintln!("{name}: {found} gem blocks");
             if own.is_some() {
                 assert!(found > 0, "{name}: no gems found");
+            }
+        }
+    }
+
+    /// Milestone 18 part 3: lower seas of lava fill low caves on their
+    /// worlds, never above altitude 16; Ironmarch's kind has lava seas; old
+    /// kinds have no lava at all.
+    #[test]
+    fn lava_fills_low_caves_and_the_lava_worlds_seas() {
+        let lava = id("lava");
+        for (name, _, g) in all_kinds() {
+            let (mut low, mut high) = (0, 0);
+            for cz in 0..6 {
+                for cx in 0..6 {
+                    for cy in 0..6 {
+                        let p = ChunkPos::new(cx * 10, cy, cz * 10 + cx);
+                        let c = g.generate(p);
+                        if !c.may_contain(lava) {
+                            continue;
+                        }
+                        for (i, b) in c.to_dense().into_iter().enumerate() {
+                            if b == lava {
+                                if p.origin().y + LocalPos::from_index(i).y as i64 <= 16 {
+                                    low += 1;
+                                } else {
+                                    high += 1;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            eprintln!("{name}: lava {low} low, {high} high");
+            match name.as_str() {
+                "temperate" | "arid" | "frozen" | "lush" | "overgrown" | "glacial" => {
+                    assert_eq!(low + high, 0, "{name}: no lava")
+                }
+                "rustland" | "ember" => assert!(high > 0, "{name}: a lava sea"),
+                _ => assert!(low > 0 && high == 0, "{name}: lava only low ({low}, {high})"),
             }
         }
     }

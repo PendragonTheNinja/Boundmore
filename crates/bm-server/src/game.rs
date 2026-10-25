@@ -1886,7 +1886,7 @@ impl Game {
                 if !reg.contains(block) || !reg.get(block).placeable {
                     return Err("cannot place that".into());
                 }
-                if !(current.is_air() || current == world.water) {
+                if !(current.is_air() || world.flags.liquid(current)) {
                     return Err("space is occupied".into());
                 }
                 // A prop (a torch) goes on the face the player clicked, and

@@ -194,6 +194,7 @@ placeable = false
 health = "hard"
 opacity = 0.62
 textures = { all = "water" }
+liquid = true
 
 [[block]]
 name = "trunk"
@@ -2347,3 +2348,20 @@ drops = "relic_core"
 bonus = [{ item = "relic_core", per_tier = [0, 0, 0, 0, 0.5, 0.8, 0.8, 1.2] }]
 mine_xp = 80
 build_xp = 0
+
+# Milestone 18 part 3: lava (docs/milestones/18-higher-worlds.md rules 45 to
+# 48): a liquid that glows and burns; swum at half water's speed.
+[[block]]
+name = "lava"
+colourable = false
+color = [255, 110, 30]
+solid = false
+opaque = true
+translucent = false
+breakable = false
+placeable = false
+health = "hard"
+textures = { all = "lava" }
+light = 15
+liquid = true
+burns = true

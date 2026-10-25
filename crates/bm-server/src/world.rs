@@ -326,7 +326,11 @@ impl PhysicsWorld for World {
     }
 
     fn liquid(&self, p: BlockPos) -> bool {
-        self.block(p) == Some(self.water)
+        self.block(p).is_some_and(|b| self.flags.liquid(b))
+    }
+
+    fn burning(&self, p: BlockPos) -> bool {
+        self.block(p).is_some_and(|b| self.flags.burns(b))
     }
 
     /// Soft ground softens a fall (milestone 13). Unloaded reads as hard.
