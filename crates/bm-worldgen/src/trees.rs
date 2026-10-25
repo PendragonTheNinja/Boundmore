@@ -39,6 +39,11 @@ pub enum Shape {
     FallenLog,
     Stump,
     Bush,
+    /// A rock outcrop (milestone 19 rule 12): lumps of the biome's rock
+    /// heaped on the ground. Drawn as trunk, so it holds its footing.
+    Outcrop,
+    /// A few rounded stones lying together.
+    BoulderPile,
 }
 
 /// One tree: blocks as offsets from its base (the block just above the ground
@@ -51,7 +56,7 @@ pub struct Tree {
 
 impl Shape {
     /// Every shape, for tests and tools.
-    pub const ALL: [Shape; 14] = [
+    pub const ALL: [Shape; 16] = [
         Shape::BroadCrown,
         Shape::FruitTree,
         Shape::Conifer,
@@ -66,6 +71,8 @@ impl Shape {
         Shape::FallenLog,
         Shape::Stump,
         Shape::Bush,
+        Shape::Outcrop,
+        Shape::BoulderPile,
     ];
 
     /// The furthest any block of this shape reaches sideways from its base
@@ -85,6 +92,8 @@ impl Shape {
             Shape::FallenLog => (10, 1),
             Shape::Stump => (1, 1),
             Shape::Bush => (3, 3),
+            Shape::Outcrop => (6, 11),
+            Shape::BoulderPile => (4, 3),
         }
     }
 
@@ -134,6 +143,8 @@ impl Shape {
             Shape::FallenLog => b.fallen_log(),
             Shape::Stump => b.stump(),
             Shape::Bush => b.bush(),
+            Shape::Outcrop => b.outcrop(),
+            Shape::BoulderPile => b.boulder_pile(),
         }
         b.finish(self)
     }
@@ -770,6 +781,69 @@ impl Build {
         // Never empty, and nothing below the ground.
         self.put((0, base, 0), Part::Leaves);
         self.blocks.retain(|b| b.1 >= 0 && b.1 < hh);
+    }
+
+    /// Two to four lumps of rock leaning on one another, the biggest on the
+    /// spot, the rest beside it and stacked a little.
+    fn outcrop(&mut self) {
+        let height = self.pick(4.0, 10.0);
+        let rad = self.pick(2.0, 4.5);
+        let lumps = self.rng.int(2, 4);
+        self.blob(
+            (0.0, height * 0.4, 0.0),
+            (rad, height * 0.5, rad * 0.85),
+            Part::Trunk,
+            0.5,
+        );
+        for i in 1..lumps {
+            let (dx, dz) = dir(self.rng.int(0, 15));
+            let off = rad * (0.6 + 0.4 * self.rng.unit());
+            let r2 = rad * (0.5 + 0.3 * self.rng.unit());
+            let cy = r2 * 0.6 + if i == lumps - 1 { height * 0.35 } else { 0.0 };
+            self.blob((dx * off, cy, dz * off), (r2, r2 * 0.9, r2), Part::Trunk, 0.6);
+        }
+        self.put((0, 0, 0), Part::Trunk);
+        let (side, up) = Shape::Outcrop.reach();
+        self.blocks
+            .retain(|b| b.0.abs() <= side && b.2.abs() <= side && b.1 <= up);
+        self.keep_grounded();
+    }
+
+    /// Two to five rounded stones, one to two blocks across, in a cluster.
+    fn boulder_pile(&mut self) {
+        let n = self.rng.int(2, 5);
+        self.blob((0.0, 0.6, 0.0), (1.4, 1.1, 1.4), Part::Trunk, 0.4);
+        for _ in 1..n {
+            let (dx, dz) = dir(self.rng.int(0, 15));
+            let off = self.pick(1.0, 2.5);
+            let rr = self.pick(0.7, 1.3);
+            self.blob((dx * off, rr * 0.5, dz * off), (rr, rr * 0.8, rr), Part::Trunk, 0.4);
+        }
+        self.put((0, 0, 0), Part::Trunk);
+        let (side, up) = Shape::BoulderPile.reach();
+        self.blocks
+            .retain(|b| b.0.abs() <= side && b.2.abs() <= side && b.1 <= up);
+        self.keep_grounded();
+    }
+
+    /// Drops any block of rock with nothing under it reaching down to the
+    /// ground (a lump's rough edge can leave one hanging).
+    fn keep_grounded(&mut self) {
+        let mut set: std::collections::HashSet<P3> = self.blocks.iter().map(|b| (b.0, b.1, b.2)).collect();
+        loop {
+            let hanging: Vec<P3> = set
+                .iter()
+                .copied()
+                .filter(|&(x, y, z)| y > 0 && !set.contains(&(x, y - 1, z)))
+                .collect();
+            if hanging.is_empty() {
+                break;
+            }
+            for h in hanging {
+                set.remove(&h);
+            }
+        }
+        self.blocks.retain(|b| set.contains(&(b.0, b.1, b.2)));
     }
 
     fn finish(self, shape: Shape) -> Vec<(i32, i32, i32, Part)> {

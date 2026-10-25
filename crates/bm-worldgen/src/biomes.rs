@@ -96,6 +96,11 @@ impl TreeSpec {
         let d = default_wood(self.shape);
         [or(&self.trunk, d[0]), or(&self.leaves, d[1]), or(&self.leaves2, d[2])]
     }
+
+    /// Whether it is made of rock (the biome's, unless named).
+    pub fn is_rock(&self) -> bool {
+        matches!(self.shape, Shape::Outcrop | Shape::BoulderPile)
+    }
 }
 
 /// Each shape's own wood, after Boundless's trees (research 5.2): its
@@ -116,6 +121,8 @@ pub fn default_wood(shape: Shape) -> [&'static str; 3] {
         Shape::DeadTree | Shape::FallenLog => ["gnarled_trunk", "foliage", "foliage"],
         Shape::Stump => ["trunk", "foliage", "foliage"],
         Shape::Bush => ["trunk", "foliage", "foliage"],
+        // Rock: the biome's own, when the planet resolves it.
+        Shape::Outcrop | Shape::BoulderPile => ["", "", ""],
     }
 }
 

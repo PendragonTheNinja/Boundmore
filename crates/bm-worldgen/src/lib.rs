@@ -899,11 +899,13 @@ impl BiomeWorld {
             };
             for t in &specs {
                 let [tr, lv, l2] = t.wood();
+                // Rock shapes are of the biome's rock unless they name one.
+                let named = |n: &str| if n.is_empty() { Ok(rock) } else { id(n) };
                 trees.push(LandTree {
                     shape: t.shape,
                     weight: t.weight.max(0.0),
                     size: t.size.clamp(0.0, 1.0),
-                    wood: [id(tr)?, id(lv)?, id(l2)?],
+                    wood: [named(tr)?, named(lv)?, named(l2)?],
                 });
             }
             let tree_weight = trees.iter().map(|t| t.weight).sum();
@@ -2527,11 +2529,11 @@ mod tests {
         let want: Vec<(String, u64)> = PINNED_V4.iter().map(|(n, h)| (n.to_string(), *h)).collect();
         assert_eq!(got, want, "terrain changed");
     }
-    // Re-pinned for M19 part 2's trees (2026-10-25) without a bump:
+    // Re-pinned for M19 part 2's trees and rock outcrops (2026-10-25) without a bump:
     // generator 4 had not left the branch, so no planet held the old pins.
     const PINNED_V4: [(&str, u64); 13] = [
         ("temperate", 0x0929_d78c_1f40_39c0),
-        ("arid", 0x7542_0e8c_b9aa_407d),
+        ("arid", 0x90de_5b37_1031_8726),
         ("frozen", 0xd8ba_157b_3c51_7163),
         ("lush", 0xa5aa_5853_72a9_b14f),
         ("overgrown", 0x2add_7385_9eff_9dd5),
@@ -2541,8 +2543,8 @@ mod tests {
         ("blighted", 0xfd7f_d73a_cf90_cff9),
         ("glacial", 0xcc05_7992_1461_dc04),
         ("stormy", 0x84da_06bc_0265_7c0f),
-        ("scorched", 0x7f02_63e7_b7c3_1f62),
-        ("ember", 0x3690_9a4d_9323_56aa),
+        ("scorched", 0x79dd_d5be_8182_53f1),
+        ("ember", 0x7427_46ae_3937_aa73),
     ];
     // The version 3 pins: every kind's settings without biomes (what planets
     // saved before generator 4 hold) still make them.
