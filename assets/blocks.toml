@@ -79,7 +79,7 @@ placeable = true
 health = "hard"
 textures = { all = "stone" }
 material = "rock"
-bonus = [{ item = "flint", per_tier = [0.015, 0.015, 0.02, 0.02, 0, 0, 0, 0] }]
+bonus = [{ item = "flint", per_tier = [0.015, 0.015, 0.02, 0.02, 0, 0, 0, 0] }, { item = "rock_salt", per_tier = [0, 0, 0, 0.01, 0.01, 0.01, 0.01, 0.01] }, { item = "opal", per_tier = [0, 0, 0, 0.001, 0.001, 0.001, 0.001, 0.001] }, { item = "olivine", per_tier = [0, 0, 0, 0.001, 0.001, 0.001, 0.001, 0.001] }, { item = "cobalt", per_tier = [0, 0, 0, 0, 0.001, 0.001, 0.001, 0.001] }]
 mine_xp = 2
 build_xp = 8
 
@@ -2365,3 +2365,189 @@ textures = { all = "lava" }
 light = 15
 liquid = true
 burns = true
+
+# Milestone 19 (docs/milestones/19-living-worlds.md): Boundless's three rock
+# kinds (stone is the grey one), three soils with their grasses, mud, three
+# trunks and three leaves. Each rock gives Boundless's rare drops and its own
+# trace fragment (tuning 4.4).
+[[block]]
+name = "basalt"
+chisel = "slope"
+color = [70, 68, 74]
+solid = true
+opaque = true
+translucent = false
+breakable = true
+placeable = true
+health = "hard"
+textures = { all = "basalt" }
+material = "rock"
+bonus = [{ item = "flint", per_tier = [0.015, 0.015, 0.02, 0.02, 0, 0, 0, 0] }, { item = "rock_salt", per_tier = [0, 0, 0, 0.01, 0.01, 0.01, 0.01, 0.01] }, { item = "opal", per_tier = [0, 0, 0, 0.001, 0.001, 0.001, 0.001, 0.001] }, { item = "sulphur", per_tier = [0, 0, 0, 0.001, 0.001, 0.001, 0.001, 0.001] }, { item = "cobalt", per_tier = [0, 0, 0, 0, 0.001, 0.001, 0.001, 0.001] }]
+mine_xp = 2
+build_xp = 8
+
+[[block]]
+name = "limestone"
+chisel = "slope"
+color = [196, 184, 156]
+solid = true
+opaque = true
+translucent = false
+breakable = true
+placeable = true
+health = "hard"
+textures = { all = "limestone" }
+material = "rock"
+bonus = [{ item = "flint", per_tier = [0.015, 0.015, 0.02, 0.02, 0, 0, 0, 0] }, { item = "rock_salt", per_tier = [0, 0, 0, 0.01, 0.01, 0.01, 0.01, 0.01] }, { item = "opal", per_tier = [0, 0, 0, 0.001, 0.001, 0.001, 0.001, 0.001] }, { item = "saltpetre", per_tier = [0, 0, 0, 0.001, 0.001, 0.001, 0.001, 0.001] }, { item = "cobalt", per_tier = [0, 0, 0, 0, 0.001, 0.001, 0.001, 0.001] }]
+mine_xp = 2
+build_xp = 8
+
+[[block]]
+name = "clay"
+chisel = "slope"
+color = [150, 104, 78]
+solid = true
+opaque = true
+translucent = false
+breakable = true
+placeable = true
+health = "soft"
+textures = { all = "clay" }
+material = "soil"
+bonus = [{ item = "tuber", per_tier = [0.015, 0.015, 0.025, 0.015, 0, 0, 0, 0] }, { item = "waxy_tuber", per_tier = [0, 0, 0, 0.015, 0.02, 0.02, 0.02, 0.03] }]
+mine_xp = 2
+build_xp = 2
+
+[[block]]
+name = "peat"
+chisel = "slope"
+color = [66, 50, 40]
+solid = true
+opaque = true
+translucent = false
+breakable = true
+placeable = true
+health = "soft"
+textures = { all = "peat" }
+material = "soil"
+fuel = 20
+bonus = [{ item = "tuber", per_tier = [0.015, 0.015, 0.025, 0.015, 0, 0, 0, 0] }, { item = "waxy_tuber", per_tier = [0, 0, 0, 0.015, 0.02, 0.02, 0.02, 0.03] }]
+mine_xp = 2
+build_xp = 2
+
+[[block]]
+name = "mud"
+chisel = "slope"
+color = [92, 72, 54]
+solid = true
+opaque = true
+translucent = false
+breakable = true
+placeable = true
+health = "soft"
+textures = { all = "mud" }
+material = "soil"
+mine_xp = 2
+build_xp = 2
+
+[[block]]
+name = "meadow_turf"
+chisel = "slope"
+color = [150, 104, 78]
+top_color = [128, 170, 70]
+fringe = true
+solid = true
+opaque = true
+translucent = false
+breakable = true
+placeable = true
+health = "soft"
+textures = { top = "meadow_turf_top", side = "meadow_turf_side", bottom = "clay" }
+material = "soil"
+drops = "clay"
+mine_xp = 2
+build_xp = 2
+
+[[block]]
+name = "moss_turf"
+chisel = "slope"
+color = [66, 50, 40]
+top_color = [70, 120, 70]
+fringe = true
+solid = true
+opaque = true
+translucent = false
+breakable = true
+placeable = true
+health = "soft"
+textures = { top = "moss_turf_top", side = "moss_turf_side", bottom = "peat" }
+material = "soil"
+drops = "peat"
+mine_xp = 2
+build_xp = 2
+
+[[block]]
+name = "pale_trunk"
+color = [176, 160, 136]
+top_color = [214, 196, 160]
+bottom_color = [214, 196, 160]
+solid = true
+opaque = true
+translucent = false
+breakable = true
+placeable = true
+health = "hard"
+textures = { side = "pale_trunk_side", top = "pale_trunk_top", bottom = "pale_trunk_top" }
+material = "wood"
+fuel = 30
+bonus = [{ item = "sap", per_tier = [0.08, 0.08, 0.08, 0.08, 0.12, 0.12, 0.12, 0.12] }, { item = "bark", per_tier = [0, 0, 0.03, 0.03, 0.03, 0.04, 0.04, 0.04] }]
+mine_xp = 2
+build_xp = 8
+
+[[block]]
+name = "gnarled_trunk"
+color = [84, 62, 50]
+top_color = [150, 116, 86]
+bottom_color = [150, 116, 86]
+solid = true
+opaque = true
+translucent = false
+breakable = true
+placeable = true
+health = "hard"
+textures = { side = "gnarled_trunk_side", top = "gnarled_trunk_top", bottom = "gnarled_trunk_top" }
+material = "wood"
+fuel = 30
+bonus = [{ item = "sap", per_tier = [0.08, 0.08, 0.08, 0.08, 0.12, 0.12, 0.12, 0.12] }, { item = "bark", per_tier = [0, 0, 0.03, 0.03, 0.03, 0.04, 0.04, 0.04] }]
+mine_xp = 2
+build_xp = 8
+
+[[block]]
+name = "fronds"
+color = [46, 110, 80]
+solid = true
+opaque = true
+translucent = false
+breakable = true
+placeable = true
+health = "soft"
+textures = { all = "fronds" }
+material = "plant"
+bonus = [{ item = "dewberry", per_tier = [0.1, 0.1, 0.1, 0, 0, 0, 0, 0] }]
+mine_xp = 2
+build_xp = 4
+
+[[block]]
+name = "glossy_foliage"
+color = [90, 140, 50]
+solid = true
+opaque = true
+translucent = false
+breakable = true
+placeable = true
+health = "soft"
+textures = { all = "glossy_foliage" }
+material = "plant"
+bonus = [{ item = "dewberry", per_tier = [0.1, 0.1, 0.1, 0, 0, 0, 0, 0] }]
+mine_xp = 2
+build_xp = 4
