@@ -8,7 +8,7 @@ Boundmore's worlds stop at tier 3. Boundless's best materials (gold, titanium, g
 
 - **Part 1, the worlds:** atmospheres and protection; nine new planets at tiers 4 to 6, one of each kind Boundless had; gold, titanium, medium and hard coal; gold and titanium smelting and alloys; silver, gold and titanium tools, grapples and spanners, with bonding agents; atmosphere food.
 - **Part 2, gems and power:** six gem seams with their places, rough, compact and refined gems; power coils and machine power (crafts above a recipe's power need run faster and cheaper); leather; gem tools, grapples, spanners and advanced chisels; the titanium furnace; power on the forge (M17's power share) and the forge recipes that waited for it.
-- **Part 3 (later, its own spec section when started):** lava seas and lava below, elemental creatures on gem worlds.
+- **Part 3, lava and elements:** lava seas and lava below, elemental creatures on gem worlds.
 
 ## How Boundless did it
 
@@ -168,9 +168,32 @@ Boundmore's worlds stop at tier 3. Boundless's best materials (gold, titanium, g
 - The forge's Effectiveness rises with amethyst coils.
 - Upgrade check from save version 12; load test.
 
+## Part 3: lava and elements
+
+*Rules written 2026-10-25.*
+
+### Lava
+
+45. **A lava block**: a liquid like water (`PhysicsWorld::liquid` answers it on both sides, invariant 3), not solid, glowing at full light, not placeable by hand (no bucket of lava yet). Swimming in it is half as fast as in water (Release 195).
+46. **Lava burns**: a body in lava (feet or head in a lava block) takes **20% of max health a second** (**guess**: Boundless's "about a third of max per tick", tuning 3.3.4, with no tick length; Measure 6), in steps on the regen beat's second, inside `movement::step` so prediction stays exact (`PhysicsWorld::burning`, client and server alike). Fire Ward does not help (Boundless's protection is atmospheric only). Defeat in lava is ordinary defeat; the revive spot is never lava.
+47. **Where**: Boundless's world configs (tuning 4.13.4). A **lower sea** of lava fills open caves below **altitude 16** on Cinderland, Violetmoor, Mirefen, Stormcrown, Sunscar and the lava worlds; Frostspire's lower sea is water. Ironmarch (Metal) and Ashfall (Burn) have **lava seas** at the surface in place of part 1's dry basins (`water = "lava"` with their sea level back to normal). Older kinds and every planet already saved keep their terrain (new settings default off).
+48. Generation knobs: `lower_sea = { level, block }` (open cave cells at or below `level` fill with `block`); a kind's `water` may be `lava`.
+
+### Elements
+
+49. **Gem worlds have an element** (Boundless, from tier 5): Violetmoor corrosion, Mirefen toxin, Frostspire chill, Stormcrown shock, Sunscar blast, Ashfall burn. A creature that spawns there is **elemental** with a chance (**guess** 30%, Measure 7): +100% health, +50% damage and armour (tuning 3.2.2), shown by its name ("Burning Grim Pelter") and a tint.
+50. **Resistance** (tuning 3.3.3, Vansten's table): an elemental creature resists physical damage 40% of the time (a resisted hit does nothing), and each gem element by the table (0.8 itself, 0.6 and 0.3 its neighbours, double damage at -0.3 from its opposite). Gem tools struck as weapons deal their gem's element (amethyst corrosion, ruby burn, diamond blast, topaz shock, sapphire chill, emerald toxin); everything else is physical.
+51. Elemental status effects (burn, chill, toxin, corrosion, blast) wait for brews and armour.
+
+### Acceptance, part 3
+
+- Lava fills low caves on its worlds and the seas of Ironmarch and Ashfall; walking into it hurts every second and swimming is slow; the client predicts it with no corrections.
+- Elemental creatures spawn on gem worlds only, with their health and names; a physical hit is sometimes resisted; a sapphire hammer hits a burning creature for double now and then and a ruby one is mostly resisted.
+- Old planets' terrain unchanged; upgrade check; load test.
+
 ## Non-goals
 
-- Lava, elemental creatures and elemental damage (part 3); exoworlds and tier 7 and 8 worlds; lucents and oortstone; world-specific creature lists (Boundless's were never published); breath under water.
+- Elemental status effects, buckets of lava, solidifiers (part 3 builds lava and elemental damage only); exoworlds and tier 7 and 8 worlds; lucents and oortstone; world-specific creature lists (Boundless's were never published); breath under water.
 
 ## Measure in game (for Nathan, on a Boundless tier 4 world with no protection)
 
@@ -179,6 +202,8 @@ Boundmore's worlds stop at tier 3. Boundless's best materials (gold, titanium, g
 3. Whether air refills at once or over time when protected again (ours: about 8 s).
 4. Whether choking stops health regeneration.
 5. Whether atmosphere food (chilli) protects on every atmosphere line or only one.
+6. Lava: how much health a second in lava takes, at full health with no armour (ours: 20% of max).
+7. On a tier 5 or 6 gem world, roughly how many creatures are elemental (ours: 3 in 10).
 
 ## Status
 
@@ -195,7 +220,7 @@ Open: the guesses (Measure list); load test with 50 bots on the new worlds; whet
 
 ### Part 2
 
-*Built 2026-10-25 (art in progress); awaiting Nathan's play-test.* Protocol 27, `SAVE_VERSION` 13.
+*Built 2026-10-25; awaiting Nathan's play-test.* Protocol 27, `SAVE_VERSION` 13.
 
 - [x] Generation: four ore knobs (`max_depth`, `water_depth` with `near_water`, `land_height`, `under`), off by default; six gem seams on their worlds by Boundless's intent (`gems_grow_on_their_own_worlds_by_their_rules`); relic core seams on every world, appended to old planets' ores (re-pinned; `appending_m18_only_turns_rock_into_coal` covers them)
 - [x] Core: `spark::power_scale` (the early-access curve, fitted to the guide's example and the measured marble series; a need of 0 read as 2,400, a guess), coil constants; `power` on recipes; `powers` and `coil_power` on blocks; `hard` blocks and `advanced` chisels (`hard_blocks_take_only_advanced_chisels`)
@@ -203,6 +228,6 @@ Open: the guesses (Measure list); load test with 50 bots on the new worlds; whet
 - [x] Data: twelve coil blocks and their recipes (Boundless's: iron furnace base, components, machined metal, a compact gem; advanced: titanium furnace base, refined gems, a relic core, 1,500 power), the titanium furnace, bark from trunks on tier 3+, leather, compact coal (soft, medium, hard; 500, 1,000, 2,000 power), rough, compact and refined gems, gem tools, grapples, spanners and advanced chisels (1,500 power)
 - [x] Client: the power line in the machine window; hard blocks refused to ordinary chisels in prediction
 - [x] Verified: game tests pass (`coils_power_a_compactor_past_its_need` end to end: 4 coils wait, a fifth starts it, a spanner mends a coil); store upgrade test from version 12; upgrade check (a version 12 universe opened as 13: "0 stations rewritten with no power coils"; every planet gained relic cores, the gem worlds their gems); load test, 50 bots on four worlds, sandbox shared with a compiling agent: the M17 server averaged 0.5, 1.0 and 1.4 ms a tick over its three reports, this one 0.6, 1.2 and 1.3 (a first sample read 0.8, 1.2, 1.9): within the sandbox's noise
-- [ ] Art: gem seams, coils, titanium furnace, relic core seam, gem items and gear (an agent is painting them; until then they fall back to block colours)
+- [x] Art (bm-texgen `gems.rs`): six gem seams, the relic core seam, the titanium furnace, twelve coils, 60 icons; `docs/media/m18-part2-icons.png`. To look at in game: a wall of basic coils is very orange; the titanium crucible's side is mostly blue stripes
 
 Open: every guess in part 2 (coil wear capacity and wear per craft, the curve for unpowered recipes, gem placement widths, mining XP); gem spanners are not yet "most effective" on their own machine (a flat 10,000 everywhere); the gem worlds' looks.
