@@ -78,6 +78,10 @@ What a Boundless player expects to find, and where each stands. "Ours" is the Bo
 
 `research/boundless-forum-feedback.md` ranks what Boundless players liked, disliked and wished for, with ten candidate principles. Decided so far: no beacon fuel (claims lapse after 6 months away, nothing destroyed). Open: portal fuel (Nathan is more open to it than to beacon fuel), whether to move PvE earlier (the most-wished-for content), schematics that save a lapsed build so it can be placed again.
 
+## A worldgen pass (Nathan, 2026-10-25)
+
+"Eventually we'll need to do another worldgen pass to make planets more interesting overall, and the different tree types, different stone types, et cetera." Boundless's worlds have three rock kinds (igneous, sedimentary, metamorphic) each with its trace ore, three wood and leaf kinds, several soils (silty, clay, peaty), mud, gravel and sand kinds, biomes per world type, cave networks, floating islands, lower seas, and per-type surface features (the official world-builder configs in `monumentalco/boundless.worlds`, CC BY 4.0, hold the shapes: biomes, noise, caves, strata; tuning 4.13.4). It changes generated terrain, so it bumps `GENERATOR_VERSION`, and the server must keep the old generator for planets already made (as it keeps version 2): a spec decides that first.
+
 ## Later art passes
 
 - **Three kinds of rock** (Nathan, 2026-10-22). Boundless has three rock kinds (igneous, sedimentary, metamorphic), on every world, each recoloured per world and each with its own trace ore (tuning 4: sulphur, saltpetre, olivine). For now Boundmore keeps one stone texture; when planet generation grows, that texture becomes **one** of the three, and the other two get their own textures and placement.
