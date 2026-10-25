@@ -301,4 +301,6 @@ Boundless's live tree and tables exactly (Nathan, 2026-10-20), in Boundmore's na
 | Beach | sand from 6 under to 2 over the sea, only within 3 of open water | Boundless's 58 to 67 against 64 |
 | Strata | from 9 under the sea: 4 thick bands (12 ± 4), 6 middle (6 ± 3), 12 thin (3 ± 1); wobble ± 9 over 110 blocks | Boundless's strata configs; counts and wobble **guesses** (Measure 4) |
 | Each biome's land, cover, rock and tree density | `assets/biomes.toml` | shapes after Boundless's labels; every number a **guess** calibrated on maps |
+| Lifted land | islands 40 to 110 over the sea, shelves 30 to 62, overhangs and spires up to 70 over the ground; noise 34 blocks across; fill -0.28 to 0.12 | shapes after Boundless's 3D biomes (bands y 90 to 220 against its sea at 64); every number a **guess** (Measure 5) |
+| Caves by tier | flat caves (tier 1+), 2-deep linings (2+), rooms and thicker tunnels (3+), halls and tall caves 24+ under the sea (5+), shafts (a third of 32-block squares, 70 deep) and pillars (6+) | Boundless's cave sets by tier; sizes and chances **guesses** (Measure 5) |
 

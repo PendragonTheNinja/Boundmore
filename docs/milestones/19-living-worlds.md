@@ -72,14 +72,16 @@ Today a Boundmore planet is one landscape: one noise heightmap, one stone, one s
 
 ## Measure (for Nathan, in game)
 
-1. Do the biomes feel the size of Boundless's? (Ours: about 384 blocks across, a guess.)
+1. Do the biomes feel the size of Boundless's? (Ours: about 320 blocks across, a guess.)
 2. Tree density in a forest against a Boundless tier 1 forest.
 3. River width and how often a player meets one.
 4. Whether the striped cliffs read like Boundless's.
+5. How often floating land and overhangs appear on tier 4 to 6 worlds, and how big the caves feel by tier, against Boundless's.
+6. Whether chunks load fast enough walking and flying on your machine (biome chunks take about 1.5 times the old ones to generate).
 
 ## Status
 
-*Spec written 2026-10-25. Part 1 and part 2's trees built the same day (awaiting Nathan's play-test).* Generator 4, protocol 31.
+*Spec written 2026-10-25. Parts 1, 2 and 3 built the same day (awaiting Nathan's play-test).* Generator 4, protocol 31.
 
 - [x] Recipe groups (rule 7 of Decided): `[[group]]` tables in `assets/recipes.toml` (`any_rock`, `any_trunk`, `any_leaves`, `any_soil`, `any_base_metal` for the copper or iron machine recipes, `any_base_alloy`, and each atmosphere line's pastes); a group input takes its members in the group's order (then `Inventory::remove`'s slot order), mixed members allowed. A station job keeps the items each craft took, saves them as runs of real items (the save format is unchanged; old jobs match the merged recipes) and refunds exactly those. The duplicated recipes (titanium alloy, the paste dishes, the copper or iron machines) are one each now. The crafting screen shows "Any Rock 3/4" with its members on hover. Protocol 31.
 - [x] Blocks and art: basalt, limestone, clay, peat, mud, meadow turf, moss turf, pale and gnarled trunks, fronds, glossy foliage (bm-texgen `living.rs`, `docs/media/m19-materials.png`); each rock gives Boundless's rare drops and its own trace fragment (stone olivine, basalt sulphur, limestone saltpetre); each new block takes colours from its nearest older block's choices on every kind; the new turfs and soils till, sow and grow crops; flora grows on them
@@ -91,5 +93,10 @@ Today a Boundmore planet is one landscape: one noise heightmap, one stone, one s
 - [x] Part 2, trees: fourteen drawn shapes (`trees.rs`: broad crown, fruit tree, conifer, snowy conifer, palm, bent palm, giant conifer, flat-top, swamp tree, jungle tree, dead tree, fallen log, stump, bush); each biome lists its trees by weight (`trees` in `assets/biomes.toml`), wood from the shape (`biomes::default_wood`, after Boundless's: gnarled trunks and glossy leaves for broad crowns, fronds on conifers and palms, pale trunks on giants and jungle trees) or named; one site per 4 by 4 square, on dry gentle ground, never on a river or a cave mouth; wide trunks reach down to the ground (`biome_trees_stand_on_something_across_chunks`); shrines keep clear of every crown. In game: `docs/media/m19-verdance.jpg`, `docs/media/m19-rimehold.jpg`
 - [x] Speed: each chunk column's land and every tree site are cached in the generator (results identical, only not recomputed), so a biome chunk with terrain takes about 8 ms against the single landscape's 7 (`gen_timing`, `--single` for the old)
 
-Next: props (rock outcrops, boulder piles) and plants filtered by biome (rule 12), then part 3 (vertical land, cave styles, linings). Open: every size and density above is a guess calibrated on maps (`docs/feel.md`); deep fill pockets of rock, sand and gravel under the sea (research 4) are not built.
+- [x] Part 2, props: rock outcrops and boulder piles (two more drawn shapes, of the biome's own rock unless named), planted with the trees in the rocky biomes. Plants, boulders and fungi need no biome filter after all: their ground lists already follow the biomes' covers (desert plants on sand, swamp plants on mud and peat)
+- [x] Part 3, lifted land: a biome may carry a `lift` (a band of 3D noise made solid, floating above the sea or rising from the ground, thinning toward its biome's border); eight new biomes use it, the first in tier sets 5 and 6: sky isles, arched shelves, overhang cliffs, floating meadows, spire fields, frozen spires, shattered sky, ember crags. Lifted land takes its biome's cover on top and the planet's rock bands inside (`lifted_land_floats_and_caves_follow_the_tier`). Side views: `docs/media/m19-slices.jpg` (`planet_map ... --slice Z`; `--lifted` marks lifted land on the map)
+- [x] Part 3, caves by tier (`cave_tier`, the planet's tier on biome planets, 0 on older planets): flat caves from tier 1, linings from 2 (a 2-deep wall of another rock, now and then ice, sand, ash or gravel), wider rooms and thicker tunnels from 3, great halls and tall caves deep under the sea from 5, round shafts and pillars holding the halls from 6
+- [x] Speed: about 9 to 12 ms a terrain chunk (the old landscape 7), `gen_timing`
+
+Next: Nathan's play-test (Measure 1 to 4) on a fresh universe. Open: deep fill pockets of rock, sand and gravel under the sea (research 4); hazard covers and crystal props (non-goals until their blocks exist); large fossils (M18's follow-up) could join the cave linings' pass. Open: every size and density above is a guess calibrated on maps (`docs/feel.md`); deep fill pockets of rock, sand and gravel under the sea (research 4) are not built.
 
