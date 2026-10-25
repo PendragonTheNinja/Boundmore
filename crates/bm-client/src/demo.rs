@@ -2572,6 +2572,7 @@ impl Demo {
             dead: c.dead,
             looted: c.looted,
             exotic: c.exotic,
+            element: 0,
         };
         self.events.push_back(NetEvent::Msg(ServerMsg::Creature(v)));
     }

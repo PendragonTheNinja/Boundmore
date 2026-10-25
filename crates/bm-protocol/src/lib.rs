@@ -25,7 +25,7 @@ use glam::DVec3;
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
 
 /// Bump on any change to a message below. Client and server must match.
-pub const PROTOCOL_VERSION: u32 = 28;
+pub const PROTOCOL_VERSION: u32 = 29;
 
 /// QUIC application protocol name; also refuses non-Boundmore peers early.
 pub const ALPN: &[u8] = b"boundmore/1";
@@ -743,6 +743,8 @@ pub struct CreatureView {
     /// Exotic buffs (`creatures::Exotic` bits; 0: ordinary). Exotics wear
     /// markings.
     pub exotic: u8,
+    /// Its element (`creatures::Element::code`; 0: none; milestone 18).
+    pub element: u8,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]

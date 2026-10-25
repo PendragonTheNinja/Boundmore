@@ -286,6 +286,9 @@ pub(super) struct Creature {
     pub attack_until: u64,
     /// Its exotic buffs (milestone 13 part 2), rolled at spawn.
     pub exotic: Exotic,
+    /// Its element (milestone 18 part 3): double health, half again its
+    /// armour and damage, and the element's resistances.
+    pub element: Option<bm_core::creatures::Element>,
     /// A popper: whether it has had its one chance to curl, and until when
     /// it is curled (cannot be hurt) or stunned (by a hammer).
     pub curl_tried: bool,
@@ -335,6 +338,7 @@ impl Creature {
             next_attack: 0,
             attack_until: 0,
             exotic: Exotic::default(),
+            element: None,
             curl_tried: false,
             curled_until: 0,
             stunned_until: 0,
@@ -354,16 +358,19 @@ impl Creature {
 
     /// Its health at full: its tier's, tripled by the exotic health buff.
     pub(super) fn max_health(&self, def: &CreatureDef) -> u32 {
-        self.exotic.health(def.tier(self.tier).health)
+        // Elemental: +100% health (Boundless, tuning 3.2.2).
+        bm_core::creatures::max_health(def.tier(self.tier).health, self.exotic, self.element)
     }
 
     pub(super) fn armour(&self, def: &CreatureDef) -> u32 {
-        self.exotic.armour(def.tier(self.tier).armour)
+        let a = self.exotic.armour(def.tier(self.tier).armour);
+        if self.element.is_some() { a + a / 2 } else { a }
     }
 
     /// Damage one of its hits deals before the player's armour.
     pub(super) fn hit_damage(&self, def: &CreatureDef) -> u32 {
-        self.exotic.damage(def.tier(self.tier).damage)
+        let d = self.exotic.damage(def.tier(self.tier).damage);
+        if self.element.is_some() { d + d / 2 } else { d }
     }
 
     /// XP its kill gives each attacker.
@@ -491,6 +498,7 @@ impl Creature {
             dead: !self.alive(),
             looted: self.looted.iter().any(|a| a == account),
             exotic: self.exotic.0,
+            element: self.element.map_or(0, |e| e.code()),
         }
     }
 
@@ -1751,6 +1759,12 @@ impl Game {
         let feet = self.planets[pi].world.shape.wrap_point(feet);
         let mut c = Creature::new(id, kind, tier, feet, self.tick);
         c.exotic = exotic;
+        // On an elemental world some creatures carry its element.
+        if let Some(e) = self.planets[pi].element
+            && roll(&mut self.rng) < bm_core::creatures::ELEMENTAL_CHANCE
+        {
+            c.element = Some(e);
+        }
         self.herds[pi].list.push(c);
         id
     }

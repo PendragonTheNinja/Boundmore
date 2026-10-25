@@ -1563,6 +1563,7 @@ near_water = true
 name = "acrid"
 tier = 5
 air = "acid"
+element = "corrosion"
 [kind.look]
 day_zenith = [0.42, 0.30, 0.58]
 day_horizon = [0.85, 0.72, 0.85]
@@ -1814,6 +1815,7 @@ near_water = true
 name = "blighted"
 tier = 5
 air = "acid"
+element = "toxin"
 [kind.look]
 day_zenith = [0.26, 0.36, 0.18]
 day_horizon = [0.70, 0.78, 0.40]
@@ -2062,6 +2064,7 @@ near_water = true
 name = "glacial"
 tier = 5
 air = "charged"
+element = "chill"
 [kind.look]
 day_zenith = [0.12, 0.28, 0.62]
 day_horizon = [0.62, 0.78, 0.95]
@@ -2296,6 +2299,7 @@ density = 0.0012
 name = "stormy"
 tier = 6
 air = "charged"
+element = "shock"
 [kind.look]
 day_zenith = [0.10, 0.12, 0.30]
 day_horizon = [0.42, 0.46, 0.66]
@@ -2544,6 +2548,7 @@ near_water = true
 name = "scorched"
 tier = 6
 air = "burning"
+element = "blast"
 [kind.look]
 day_zenith = [0.36, 0.30, 0.20]
 day_horizon = [0.92, 0.70, 0.44]
@@ -2789,6 +2794,7 @@ density = 0.0012
 name = "ember"
 tier = 6
 air = "burning"
+element = "burn"
 [kind.look]
 day_zenith = [0.30, 0.10, 0.08]
 day_horizon = [0.85, 0.34, 0.16]

@@ -144,7 +144,7 @@ impl Game {
         for (cid, dist, dir) in hits {
             let damage = blast_damage(what.damage, dist, radius);
             let crit = creature_crit(what.crit_chance, id, at, cid);
-            self.player_hits_creature(pi, id, cid, damage, crit, what.crit_effect);
+            self.player_hits_creature(pi, id, cid, damage, crit, what.crit_effect, None);
             if let Some(c) = self.herds[pi].get_mut(cid).filter(|c| c.alive() && !c.flying) {
                 c.state.vel = dir * blast.knockback as f64 + DVec3::new(0.0, KNOCK_UP, 0.0);
                 c.state.on_ground = false;

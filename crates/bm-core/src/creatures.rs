@@ -99,6 +99,83 @@ pub enum Attack {
     },
 }
 
+/// A world's element and its elemental creatures' (milestone 18 part 3;
+/// Boundless's gem-world elements, tuning 3.3.3). Each is weak to its
+/// opposite: corrosion and shock, burn and chill, blast and toxin.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Element {
+    Corrosion,
+    Burn,
+    Blast,
+    Shock,
+    Chill,
+    Toxin,
+}
+
+impl Element {
+    pub const ALL: [Element; 6] = [
+        Element::Corrosion,
+        Element::Burn,
+        Element::Blast,
+        Element::Shock,
+        Element::Chill,
+        Element::Toxin,
+    ];
+
+    /// On the wire: 1 to 6 (0 is none).
+    pub fn code(self) -> u8 {
+        Self::ALL.iter().position(|e| *e == self).expect("listed") as u8 + 1
+    }
+
+    pub fn from_code(c: u8) -> Option<Element> {
+        Self::ALL.get((c as usize).checked_sub(1)?).copied()
+    }
+
+    /// The word before an elemental creature's name ("Burning Grim Pelter").
+    pub fn word(self) -> &'static str {
+        match self {
+            Element::Corrosion => "Corroding",
+            Element::Burn => "Burning",
+            Element::Blast => "Blasting",
+            Element::Shock => "Shocking",
+            Element::Chill => "Chilling",
+            Element::Toxin => "Toxic",
+        }
+    }
+}
+
+/// The chance an elemental creature shrugs off a hit of `attack` (None:
+/// physical), as Vansten's table has it (tuning 3.3.3): physical 0.4,
+/// itself 0.8, its neighbours 0.6 and 0.3; negative is the chance the hit
+/// does double instead (its opposite, -0.3).
+pub fn resistance(creature: Element, attack: Option<Element>) -> f32 {
+    use Element::*;
+    let Some(a) = attack else { return 0.4 };
+    let row: [f32; 6] = match creature {
+        // Attack order: corrosion, burn, blast, shock, chill, toxin.
+        Corrosion => [0.8, 0.3, 0.0, -0.3, 0.0, 0.6],
+        Burn => [0.3, 0.8, 0.6, 0.0, -0.3, 0.0],
+        Blast => [0.0, 0.6, 0.8, 0.3, 0.0, -0.3],
+        Shock => [-0.3, 0.0, 0.3, 0.8, 0.6, 0.0],
+        Chill => [0.0, -0.3, 0.0, 0.6, 0.8, 0.3],
+        Toxin => [0.6, 0.0, -0.3, 0.0, 0.3, 0.8],
+    };
+    row[a.code() as usize - 1]
+}
+
+/// A creature's health at full: its tier's, tripled by the exotic health
+/// buff, doubled again if elemental (milestone 18 part 3). Client and server
+/// both use it.
+pub fn max_health(base: u32, exotic: Exotic, element: Option<Element>) -> u32 {
+    let h = exotic.health(base);
+    if element.is_some() { h * 2 } else { h }
+}
+
+/// The chance a creature spawning on an elemental world is elemental
+/// (**guess**, milestone 18 Measure 7).
+pub const ELEMENTAL_CHANCE: f64 = 0.3;
+
 /// An exotic creature's buffs (Boundless: visible decals, 1 to 2 buffs on low
 /// worlds, 3 to 4 on high ones [tuning 3.2.2]). A bit set, sent on the wire.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -408,6 +485,28 @@ impl CreatureKinds {
 
     pub fn iter(&self) -> impl Iterator<Item = (u16, &CreatureDef)> {
         self.defs.iter().enumerate().map(|(i, d)| (i as u16, d))
+    }
+}
+
+#[cfg(test)]
+mod element_tests {
+    use super::*;
+
+    #[test]
+    fn each_element_resists_itself_and_fears_its_opposite() {
+        for e in Element::ALL {
+            assert_eq!(resistance(e, Some(e)), 0.8);
+            assert_eq!(resistance(e, None), 0.4, "physical");
+            assert_eq!(Element::from_code(e.code()), Some(e));
+            let weak: Vec<Element> = Element::ALL
+                .into_iter()
+                .filter(|a| resistance(e, Some(*a)) < 0.0)
+                .collect();
+            assert_eq!(weak.len(), 1, "{e:?} has one weakness");
+            assert_eq!(resistance(weak[0], Some(e)), -0.3, "opposites pair up");
+        }
+        assert_eq!(resistance(Element::Burn, Some(Element::Chill)), -0.3);
+        assert_eq!(Element::from_code(0), None);
     }
 }
 

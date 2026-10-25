@@ -1477,6 +1477,7 @@ fuel = 15000
 # Gem gear: Boundless's stats (tuning 2.1, 4.9).
 [[item]]
 name = "amethyst_hammer"
+element = "corrosion"
 flex = 70
 rank = 100
 stack = 1
@@ -1484,6 +1485,7 @@ tool = { class = "hammer", damage = 1000, action_speed = 38.0, crit_chance = 0.2
 
 [[item]]
 name = "amethyst_shovel"
+element = "corrosion"
 flex = 70
 rank = 100
 stack = 1
@@ -1491,6 +1493,7 @@ tool = { class = "shovel", damage = 1000, action_speed = 38.0, crit_chance = 0.2
 
 [[item]]
 name = "amethyst_axe"
+element = "corrosion"
 flex = 70
 rank = 100
 stack = 1
@@ -1520,6 +1523,7 @@ chisel = { family = "square", precise = true, durability = 2000, energy = 20, ad
 
 [[item]]
 name = "emerald_hammer"
+element = "toxin"
 flex = 80
 rank = 100
 stack = 1
@@ -1527,6 +1531,7 @@ tool = { class = "hammer", damage = 1800, action_speed = 15.0, crit_chance = 0.2
 
 [[item]]
 name = "emerald_shovel"
+element = "toxin"
 flex = 80
 rank = 100
 stack = 1
@@ -1534,6 +1539,7 @@ tool = { class = "shovel", damage = 1800, action_speed = 15.0, crit_chance = 0.2
 
 [[item]]
 name = "emerald_axe"
+element = "toxin"
 flex = 80
 rank = 100
 stack = 1
@@ -1563,6 +1569,7 @@ chisel = { family = "bevel", precise = true, durability = 2000, energy = 20, adv
 
 [[item]]
 name = "sapphire_hammer"
+element = "chill"
 flex = 75
 rank = 100
 stack = 1
@@ -1570,6 +1577,7 @@ tool = { class = "hammer", damage = 1300, action_speed = 30.0, crit_chance = 0.2
 
 [[item]]
 name = "sapphire_shovel"
+element = "chill"
 flex = 75
 rank = 100
 stack = 1
@@ -1577,6 +1585,7 @@ tool = { class = "shovel", damage = 1300, action_speed = 30.0, crit_chance = 0.2
 
 [[item]]
 name = "sapphire_axe"
+element = "chill"
 flex = 75
 rank = 100
 stack = 1
@@ -1606,6 +1615,7 @@ chisel = { family = "square", precise = false, durability = 2000, energy = 20, a
 
 [[item]]
 name = "topaz_hammer"
+element = "shock"
 flex = 70
 rank = 100
 stack = 1
@@ -1613,6 +1623,7 @@ tool = { class = "hammer", damage = 1100, action_speed = 38.0, durability = 2400
 
 [[item]]
 name = "topaz_shovel"
+element = "shock"
 flex = 70
 rank = 100
 stack = 1
@@ -1620,6 +1631,7 @@ tool = { class = "shovel", damage = 1100, action_speed = 38.0, durability = 2400
 
 [[item]]
 name = "topaz_axe"
+element = "shock"
 flex = 70
 rank = 100
 stack = 1
@@ -1649,6 +1661,7 @@ chisel = { family = "slope", precise = true, durability = 2000, energy = 20, adv
 
 [[item]]
 name = "diamond_hammer"
+element = "blast"
 flex = 80
 rank = 100
 stack = 1
@@ -1656,6 +1669,7 @@ tool = { class = "hammer", damage = 1900, action_speed = 15.0, durability = 2000
 
 [[item]]
 name = "diamond_shovel"
+element = "blast"
 flex = 80
 rank = 100
 stack = 1
@@ -1663,6 +1677,7 @@ tool = { class = "shovel", damage = 1900, action_speed = 15.0, durability = 2000
 
 [[item]]
 name = "diamond_axe"
+element = "blast"
 flex = 80
 rank = 100
 stack = 1
@@ -1692,6 +1707,7 @@ chisel = { family = "bevel", precise = false, durability = 2000, energy = 20, ad
 
 [[item]]
 name = "ruby_hammer"
+element = "burn"
 flex = 75
 rank = 100
 stack = 1
@@ -1699,6 +1715,7 @@ tool = { class = "hammer", damage = 1400, action_speed = 30.0, durability = 2200
 
 [[item]]
 name = "ruby_shovel"
+element = "burn"
 flex = 75
 rank = 100
 stack = 1
@@ -1706,6 +1723,7 @@ tool = { class = "shovel", damage = 1400, action_speed = 30.0, durability = 2200
 
 [[item]]
 name = "ruby_axe"
+element = "burn"
 flex = 75
 rank = 100
 stack = 1

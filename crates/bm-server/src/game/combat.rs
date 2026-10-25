@@ -401,7 +401,7 @@ impl Game {
             match (hit, what.from) {
                 (Some(Target::Creature(cid)), Shooter::Player { id, at, .. }) => {
                     let crit = creature_crit(what.crit_chance, id, at, cid);
-                    self.player_hits_creature(pi, id, cid, what.damage, crit, what.crit_effect);
+                    self.player_hits_creature(pi, id, cid, what.damage, crit, what.crit_effect, None);
                 }
                 (Some(Target::Player(pid)), Shooter::Creature(cid)) => {
                     self.creature_hits_player(pi, cid, pid, what.damage, DamageKind::Kinetic);
@@ -435,6 +435,12 @@ impl Game {
             return tracing::debug!("#{id} struck with no tool in slot {slot}");
         };
         let effects = p.effects;
+        // A gem tool strikes with its gem's element (milestone 18 part 3).
+        let element = p
+            .inventory
+            .get(slot as usize)
+            .and_then(|s| self.items.get(s.item))
+            .and_then(|d| d.element);
         let tool = skilled_tool_keen(&tool, &effects, p.state.crit_multiplier());
         let p = self.players.get_mut(&id).expect("present");
         p.last_swing = Some((at, swing_ticks(tool.action_speed)));
@@ -450,7 +456,7 @@ impl Game {
             }
         }
         let crit = creature_crit(tool.crit_chance, id, at, cid);
-        self.player_hits_creature(pi, id, cid, tool.damage, crit, tool.crit_effect);
+        self.player_hits_creature(pi, id, cid, tool.damage, crit, tool.crit_effect, element);
         // A hammer stuns a popper.
         if tool.class == Some(ToolClass::Hammer) {
             let tick = self.tick;
@@ -463,6 +469,7 @@ impl Game {
 
     /// A player's hit lands on a creature: armour, threat, the numbers. A
     /// curled popper takes nothing; the first hit on a popper may curl it.
+    #[allow(clippy::too_many_arguments)]
     pub(super) fn player_hits_creature(
         &mut self,
         pi: usize,
@@ -471,14 +478,22 @@ impl Game {
         damage: u32,
         crit: bool,
         crit_effect: f32,
+        element: Option<bm_core::creatures::Element>,
     ) {
         let tick = self.tick;
         let curl = roll(&mut self.rng);
+        let resist_roll = roll(&mut self.rng) as f32;
         let Some(c) = self.herds[pi].get_mut(cid).filter(|c| c.alive()) else {
             return;
         };
         let def = self.creature_kinds.get(c.kind).expect("present");
-        let amount = c.struck(def, tick, curl, dealt(damage, crit, crit_effect, c.armour(def)));
+        // An elemental creature shrugs some hits off and takes double from
+        // its opposite (milestone 18 part 3, tuning 3.3.3).
+        let scale = match c.element {
+            Some(e) => elemental_scale(bm_core::creatures::resistance(e, element), resist_roll),
+            None => 1,
+        };
+        let amount = c.struck(def, tick, curl, dealt(damage, crit, crit_effect, c.armour(def)) * scale);
         if let Some(p) = self.players.get_mut(&id) {
             p.state.fought();
             p.out.send(&ServerMsg::Hit {
@@ -748,6 +763,33 @@ impl Game {
         });
         // Returning gives up a meteor life (Boundless: the sanctum).
         self.meteor_life_lost(id);
+    }
+}
+
+/// The damage multiple of a hit on an elemental creature given its
+/// resistance to the attack and a roll in 0..1: 0 when resisted, 2 when the
+/// hit finds its weakness, else 1.
+fn elemental_scale(resistance: f32, roll: f32) -> u32 {
+    if resistance > 0.0 && roll < resistance {
+        0
+    } else if resistance < 0.0 && roll < -resistance {
+        2
+    } else {
+        1
+    }
+}
+
+#[cfg(test)]
+mod element_tests {
+    use super::elemental_scale;
+
+    #[test]
+    fn resisted_hits_do_nothing_and_weak_spots_double() {
+        assert_eq!(elemental_scale(0.4, 0.39), 0, "physical, resisted");
+        assert_eq!(elemental_scale(0.4, 0.41), 1);
+        assert_eq!(elemental_scale(-0.3, 0.29), 2, "its opposite");
+        assert_eq!(elemental_scale(-0.3, 0.31), 1);
+        assert_eq!(elemental_scale(0.0, 0.0), 1, "neutral");
     }
 }
 

@@ -74,6 +74,8 @@ pub struct Seen {
     pub damage: u32,
     /// Exotic buffs (`creatures::Exotic` bits; 0 ordinary).
     pub exotic: u8,
+    /// Its element (`creatures::Element::code`; 0 none).
+    pub element: u8,
 }
 
 /// Easing state for one creature's animation.
@@ -270,6 +272,7 @@ impl Creatures {
                 angry: v.angry,
                 damage: v.damage,
                 exotic: v.exotic,
+                element: v.element,
             });
         }
         out.sort_by_key(|s| s.id);
@@ -1236,6 +1239,7 @@ mod tests {
             dead: false,
             looted: false,
             exotic: 0,
+            element: 0,
         }
     }
 

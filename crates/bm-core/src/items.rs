@@ -266,6 +266,10 @@ pub struct ItemDef {
     /// Its rank before traits (Boundless's Default Rank).
     #[serde(default)]
     pub rank: u16,
+    /// The element its strikes carry (milestone 18 part 3: gem tools);
+    /// None is physical.
+    #[serde(default)]
+    pub element: Option<crate::creatures::Element>,
 }
 
 impl ItemDef {
@@ -496,6 +500,8 @@ struct ItemEntry {
     flex: u16,
     #[serde(default)]
     rank: u16,
+    #[serde(default)]
+    element: Option<crate::creatures::Element>,
     /// A forging ingredient's name in `forge::INGREDIENTS`.
     #[serde(default)]
     ingredient: Option<String>,
@@ -668,6 +674,7 @@ impl ItemRegistry {
                     returns: None,
                     flex: 0,
                     rank: 0,
+                    element: None,
                 });
             }
         }
@@ -744,6 +751,7 @@ impl ItemRegistry {
                 returns: e.returns,
                 flex: e.flex,
                 rank: e.rank,
+                element: e.element,
             });
         }
         let reg = Self::from_defs(defs, blocks)?;

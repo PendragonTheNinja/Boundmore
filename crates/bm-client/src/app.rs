@@ -822,15 +822,13 @@ impl Session {
                 continue;
             };
             let t = k.tier(c.tier);
+            let element = bm_core::creatures::Element::from_code(c.element);
+            let max = bm_core::creatures::max_health(t.health, bm_core::creatures::Exotic(c.exotic), element);
             out.push(crate::fight_hud::Plate {
                 at,
-                title: if c.exotic != 0 {
-                    format!("Exotic {}", k.title(c.tier))
-                } else {
-                    k.title(c.tier)
-                },
+                title: plate_title(&k.title(c.tier), c.exotic != 0, element),
                 angry: c.angry,
-                left: 1.0 - c.damage.min(t.health) as f32 / t.health.max(1) as f32,
+                left: 1.0 - c.damage.min(max) as f32 / max.max(1) as f32,
                 shields: t.armour / 100,
                 dead: c.dead,
             });
@@ -4014,5 +4012,33 @@ mod tests {
         a.menu = Some(Menu::Inventory);
         a.close_chat();
         assert!(!a.chat.open && !a.grabbed);
+    }
+}
+
+/// A creature's name plate: "Exotic Burning Grim Pelter".
+fn plate_title(title: &str, exotic: bool, element: Option<bm_core::creatures::Element>) -> String {
+    let mut t = match element {
+        Some(e) => format!("{} {title}", e.word()),
+        None => title.to_string(),
+    };
+    if exotic {
+        t = format!("Exotic {t}");
+    }
+    t
+}
+
+#[cfg(test)]
+mod plate_tests {
+    use super::plate_title;
+    use bm_core::creatures::Element;
+
+    #[test]
+    fn plates_name_the_element() {
+        assert_eq!(plate_title("Grim Pelter", false, None), "Grim Pelter");
+        assert_eq!(
+            plate_title("Grim Pelter", true, Some(Element::Burn)),
+            "Exotic Burning Grim Pelter"
+        );
+        assert_eq!(plate_title("Grazer", false, Some(Element::Chill)), "Chilling Grazer");
     }
 }

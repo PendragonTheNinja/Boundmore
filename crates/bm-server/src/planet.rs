@@ -42,6 +42,8 @@ pub struct Planet {
     pub tier: u8,
     /// Its air (milestone 18), from its kind and tier.
     pub air: Air,
+    /// Its element (milestone 18 part 3), from its kind.
+    pub element: Option<bm_core::creatures::Element>,
     pub look: PlanetLook,
     pub tints: Vec<[u8; 3]>,
     pub day: DayCycle,
@@ -340,6 +342,7 @@ pub fn open(
         kind_display: kind.map_or_else(|| bm_core::items::title_case(&saved.kind), |k| k.display.clone()),
         tier: kind.map_or(1, |k| k.tier),
         air: kind.map_or_else(Air::default, |k| Air::of(k.air, k.tier)),
+        element: kind.and_then(|k| k.element),
         name: saved.name,
         kind: saved.kind,
         look,

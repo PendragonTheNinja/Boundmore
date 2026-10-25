@@ -23,6 +23,8 @@ pub struct PlanetKind {
     pub tier: u8,
     /// The line of its air (milestone 18): hazardous from tier 4.
     pub air: AirLine,
+    /// Its element (milestone 18 part 3): some creatures there carry it.
+    pub element: Option<bm_core::creatures::Element>,
     pub look: PlanetLook,
     /// Block name to the palette colour names a planet of this kind may give
     /// it (`[kind.colours]`).
@@ -74,6 +76,8 @@ struct KindEntry {
     #[serde(default)]
     air: AirLine,
     #[serde(default)]
+    element: Option<bm_core::creatures::Element>,
+    #[serde(default)]
     look: PlanetLook,
     #[serde(default)]
     colours: BTreeMap<String, Vec<String>>,
@@ -106,6 +110,7 @@ impl PlanetKinds {
                 name: e.name,
                 tier: e.tier.max(1),
                 air: e.air,
+                element: e.element,
                 look: e.look,
                 colours: e.colours,
                 generation: e.generation,
