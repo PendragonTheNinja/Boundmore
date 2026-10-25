@@ -249,6 +249,12 @@ pub struct PlayerState {
     /// Steps taken (wrapping): the dice of the random quirks, so both sides
     /// roll the same.
     pub clock: u32,
+    /// The air of the planet the player is on (milestone 18, `atmosphere`).
+    /// Set by the server when they arrive; the client takes it from the
+    /// state it is sent.
+    pub air: crate::atmosphere::Air,
+    /// Ticks of air used, out of `atmosphere::AIR_TICKS` (0: full). Saved.
+    pub air_used: u16,
 }
 
 /// What skills change about moving and energy (`skills::Effects::body`).
@@ -273,6 +279,9 @@ pub struct Body {
     pub falling_armour: u16,
     /// Mending: +25 health every 5 s, in combat too.
     pub mending: bool,
+    /// Protection points against each air line (acid, charged, burning)
+    /// from the ward skills (milestone 18).
+    pub wards: [u8; 3],
 }
 
 /// Extra height the high-jump epic adds, in blocks (Boundless's skill text:
@@ -455,6 +464,7 @@ pub fn step(
     s.beat = (s.beat + 1) % crate::combat::REGEN_PERIOD_TICKS;
     s.heal_tick(s.beat == 0);
     s.food_tick(s.beat == 0);
+    s.air_tick(s.beat == 0);
     s.quirk_tick(s.beat == 0);
     let hooked = s.anchor().is_some();
     let in_water = world.liquid(BlockPos::containing(s.pos.x, s.pos.y + cfg.height * 0.4, s.pos.z));

@@ -48,3 +48,59 @@ name = "Wildmere"
 kind = "lush"
 seed = 20261021
 width_chunks = 64
+
+# Milestone 18: tier 4 to 6 worlds; their air needs protection (wards, food).
+
+[[planets]]
+name = "Thornreach"
+kind = "overgrown"
+seed = 20261025
+width_chunks = 48
+
+[[planets]]
+name = "Ironmarch"
+kind = "rustland"
+seed = 20261026
+width_chunks = 48
+
+[[planets]]
+name = "Cindervale"
+kind = "cinderland"
+seed = 20261027
+width_chunks = 48
+
+[[planets]]
+name = "Violetmoor"
+kind = "acrid"
+seed = 20261028
+width_chunks = 48
+
+[[planets]]
+name = "Mirefen"
+kind = "blighted"
+seed = 20261029
+width_chunks = 48
+
+[[planets]]
+name = "Frostspire"
+kind = "glacial"
+seed = 20261030
+width_chunks = 48
+
+[[planets]]
+name = "Stormcrown"
+kind = "stormy"
+seed = 20261031
+width_chunks = 48
+
+[[planets]]
+name = "Sunscar"
+kind = "scorched"
+seed = 20261032
+width_chunks = 48
+
+[[planets]]
+name = "Ashfall"
+kind = "ember"
+seed = 20261033
+width_chunks = 48

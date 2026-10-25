@@ -25,7 +25,7 @@ use glam::DVec3;
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
 
 /// Bump on any change to a message below. Client and server must match.
-pub const PROTOCOL_VERSION: u32 = 25;
+pub const PROTOCOL_VERSION: u32 = 26;
 
 /// QUIC application protocol name; also refuses non-Boundmore peers early.
 pub const ALPN: &[u8] = b"boundmore/1";
@@ -321,6 +321,8 @@ pub struct PlanetInfo {
     /// The kind's display name ("Arid").
     pub kind: String,
     pub tier: u8,
+    /// Its air (milestone 18).
+    pub air: bm_core::atmosphere::Air,
     pub shape: PlanetShape,
     /// Day length and phase on this planet; time of day is derived from
     /// snapshot ticks (one clock for the whole server).
@@ -337,6 +339,8 @@ pub struct PlanetSummary {
     pub name: String,
     pub kind: String,
     pub tier: u8,
+    /// Its air (milestone 18), for the travel window.
+    pub air: bm_core::atmosphere::Air,
     /// Linear RGB, as seen from other planets.
     pub color: [f32; 3],
     /// Blocks around, for its apparent size in the sky.
@@ -987,6 +991,7 @@ mod tests {
                     health_bonus: u32::MAX,
                     falling_armour: u16::MAX,
                     mending: true,
+                    wards: [u8::MAX; 3],
                 },
                 jump_held: true,
                 air_jumped: true,
@@ -1005,6 +1010,11 @@ mod tests {
                 chew: u16::MAX,
                 quirks: bm_core::forge::Quirks(u16::MAX),
                 clock: u32::MAX,
+                air: bm_core::atmosphere::Air {
+                    line: bm_core::atmosphere::AirLine::Burning,
+                    hazard: u8::MAX,
+                },
+                air_used: u16::MAX,
                 hook: Some(bm_core::Hook {
                     pos: DVec3::new(1e6, 1e3, 1e6),
                     vel: DVec3::splat(-50.0),
@@ -1089,6 +1099,7 @@ mod tests {
                 name: "Verdance".into(),
                 kind: "Temperate".into(),
                 tier: 1,
+                air: Default::default(),
                 shape: PlanetShape::new(64, 12),
                 day: DayCycle::default(),
                 look: PlanetLook::default(),
@@ -1100,6 +1111,7 @@ mod tests {
                     name: "A planet with quite a long name".into(),
                     kind: "Temperate".into(),
                     tier: 3,
+                    air: Default::default(),
                     color: [0.5; 3],
                     width_blocks: 2048,
                     players: 100,

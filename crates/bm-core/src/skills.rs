@@ -203,6 +203,10 @@ pub enum Effect {
     Insight,
     IngredientCrafting,
     ForgingEpic,
+    /// Milestone 18: protection against each line of hazardous air.
+    AcidWard,
+    SparkWard,
+    FireWard,
     /// On the tree, not built yet ("Comes later"): cannot be bought.
     Later,
 }
@@ -587,6 +591,8 @@ pub struct Effects {
     pub insight: f64,
     pub ingredient_crafting: u8,
     pub forging_epic: bool,
+    /// Ward ranks against acid, charged and burning air (milestone 18).
+    pub wards: [u8; 3],
     /// Milestone 13.
     pub vitality: f64,
     pub sling_mastery: u8,
@@ -676,6 +682,9 @@ impl Effects {
                 Effect::Insight => e.insight += f,
                 Effect::IngredientCrafting => e.ingredient_crafting += r,
                 Effect::ForgingEpic => e.forging_epic |= on,
+                Effect::AcidWard => e.wards[0] += r,
+                Effect::SparkWard => e.wards[1] += r,
+                Effect::FireWard => e.wards[2] += r,
                 Effect::Later => {}
             }
         }
@@ -819,6 +828,7 @@ impl Effects {
             health_bonus: self.max_health().saturating_sub(crate::combat::BASE_HEALTH),
             falling_armour: self.defence().falling_armour as u16,
             mending: self.health_regen_epic,
+            wards: self.wards.map(crate::atmosphere::ward_points),
         }
     }
 

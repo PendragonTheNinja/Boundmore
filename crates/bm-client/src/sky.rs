@@ -172,6 +172,7 @@ mod tests {
             name: format!("P{id}"),
             kind: "Temperate".into(),
             tier: 1,
+            air: Default::default(),
             color: [0.5, 0.4, 0.3],
             width_blocks: width,
             players: 0,

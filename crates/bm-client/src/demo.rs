@@ -3038,6 +3038,7 @@ fn demo_planets(blocks: &BlockRegistry) -> Vec<DemoPlanet> {
                     name: name.to_string(),
                     kind: display.clone(),
                     tier: k.tier,
+                    air: Default::default(),
                     shape: shape(),
                     // Days differ between planets, as on a real server.
                     day: DayCycle {
@@ -3052,6 +3053,7 @@ fn demo_planets(blocks: &BlockRegistry) -> Vec<DemoPlanet> {
                     name: name.to_string(),
                     kind: display,
                     tier: k.tier,
+                    air: Default::default(),
                     color: k.look.color,
                     width_blocks: *width,
                     players: (i == 0) as u16 + [0, 3, 0, 7][i],

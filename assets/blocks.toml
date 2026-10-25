@@ -1917,3 +1917,74 @@ drops = "medium_fossil"
 bonus = [{ item = "medium_fossil", per_tier = [0, 0, 0.5, 0.5, 0.7, 0.7, 1.05, 1.05] }]
 mine_xp = 64
 build_xp = 0
+
+# Milestone 18: higher worlds (docs/milestones/18-higher-worlds.md). Yields
+# by tier are Boundless's (tuning 4.4); mining XP is a guess between the
+# silver seam's and the fossils'.
+[[block]]
+name = "medium_coal_seam"
+colourable = false
+color = [40, 38, 44]
+solid = true
+opaque = true
+translucent = false
+breakable = true
+placeable = false
+health = "seam"
+textures = { all = "medium_coal_seam" }
+material = "rock"
+drops = "medium_coal"
+bonus = [{ item = "medium_coal", per_tier = [0, 0, 0.5, 0.5, 0.7, 0.7, 1.05, 1.05] }]
+mine_xp = 36
+build_xp = 0
+
+[[block]]
+name = "hard_coal_seam"
+colourable = false
+color = [30, 30, 40]
+solid = true
+opaque = true
+translucent = false
+breakable = true
+placeable = false
+health = "seam"
+textures = { all = "hard_coal_seam" }
+material = "rock"
+drops = "hard_coal"
+bonus = [{ item = "hard_coal", per_tier = [0, 0, 0, 0, 0.5, 0.8, 0.8, 1.2] }]
+mine_xp = 60
+build_xp = 0
+
+[[block]]
+name = "gold_seam"
+colourable = false
+color = [214, 176, 72]
+solid = true
+opaque = true
+translucent = false
+breakable = true
+placeable = false
+health = "seam"
+textures = { all = "gold_seam" }
+material = "rock"
+drops = "gold_ore"
+bonus = [{ item = "gold_ore", per_tier = [0, 0, 0, 0.5, 0.5, 0.7, 0.7, 1.05] }]
+mine_xp = 80
+build_xp = 0
+
+[[block]]
+name = "titanium_seam"
+colourable = false
+color = [190, 206, 222]
+solid = true
+opaque = true
+translucent = false
+breakable = true
+placeable = false
+health = "seam"
+textures = { all = "titanium_seam" }
+material = "rock"
+drops = "titanium_ore"
+bonus = [{ item = "titanium_ore", per_tier = [0, 0, 0, 0, 0.5, 0.8, 0.8, 1.2] }]
+mine_xp = 100
+build_xp = 0

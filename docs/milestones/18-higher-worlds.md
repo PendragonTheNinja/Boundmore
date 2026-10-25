@@ -53,7 +53,7 @@ Boundmore's worlds stop at tier 3. Boundless's best materials (gold, titanium, g
 
 1. **A planet kind has an air line** (`air = "acid" | "charged" | "burning"`, none by default) and its **hazard** comes from its tier: 0 up to tier 3, then 1, 3, 5, 7, 10 for tiers 4 to 8 (`bm-core/src/atmosphere.rs`). The client learns each planet's line and hazard in the handshake with the planet list.
 2. **Protection** against a line = the ward skill of that line (ranks give +1, +1, +1, +2, +2, so 1, 2, 3, 5, 7) + the atmosphere food buff (+1, +2, +3, against every line). The **shortfall** is hazard − protection, at least 0.
-3. **The body carries it**: `PlayerState` gains `air` (ticks of air left) and `shortfall` (set before each step by both server and client, as M17 part 2's quirks are, from the planet, the character's skills and the food buff, all of which the client knows). Prediction stays exact.
+3. **The body carries it**: `PlayerState` gains `air` (the planet's line and hazard, set by the server on arrival) and `air_used` (ticks of air used, 0 full); `Body` gains `wards` (protection points per line, from the skills, set at an agreed input as every skill is). The shortfall is worked out inside `movement::step` from those and the food buff, so server and client agree and prediction stays exact.
 4. **Air**: full is **30 s** (**guess**). Each tick with a shortfall, air falls by 1; with none, it refills at 4 a tick (**guess**: about 8 s from empty). A player who is down keeps their air as it is. Arriving on a planet (warp, portal, revive) keeps the current air, so hopping between hazardous worlds does not reset it; reviving after defeat fills it.
 5. **Choking**: with air at 0 and a shortfall, every 5 s (the existing regen beat) the player takes **5% of max health per point of shortfall** (**guess**: one short dies in about 100 s after the air runs out; five short in 20 s), at least 1. Choking and an empty air bar stop out-of-combat healing (**guess**, as sickness does).
 6. **Everywhere on the planet**: underground, indoors, in water (Boundless: "even indoors"). Water's own breath is not modelled yet.
@@ -106,7 +106,8 @@ Boundmore's worlds stop at tier 3. Boundless's best materials (gold, titanium, g
 
 ### Formats
 
-27. Protocol 26: planet list entries carry air line and hazard; `PlayerState` carries `air` and `shortfall` (movement snapshots and the body the client predicts). `SAVE_VERSION` 12: saved bodies keep `air` (version 11 characters start with full air). Planet records gain their appended ores on opening (no format change).
+27. Protocol 26: `PlanetInfo` and `PlanetSummary` carry the planet's `air`; `PlayerState` carries `air` and `air_used`, `Body` carries `wards`. `SAVE_VERSION` 12: player records keep `air_used`, so leaving does not refill it (version 11 characters start with full air). Planet records gain their appended ores on opening (no format change).
+28. **Fixed on the way**: a warp used to rebuild the traveller's body from nothing but their skills, so it healed them fully and cleared hunger, food buffs and sickness. Travel now moves the body and keeps everything else (portals already did).
 
 ## Acceptance, part 1
 

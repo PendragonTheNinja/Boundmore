@@ -1,6 +1,7 @@
 //! Server settings: `server.toml` in the working directory if present, then
 //! command-line overrides. Every field has a default so a bare `bm-server`
-//! runs a playable local universe of four planets.
+//! runs a playable local universe of thirteen planets (four, then nine higher
+//! worlds from milestone 18).
 
 use anyhow::{Context, Result, bail};
 use serde::{Deserialize, Serialize};
@@ -66,6 +67,17 @@ pub fn default_planets() -> Vec<PlanetSpec> {
         PlanetSpec::new("Emberdune", "arid", 20261019, 48),
         PlanetSpec::new("Rimehold", "frozen", 20261020, 48),
         PlanetSpec::new("Wildmere", "lush", 20261021, 64),
+        // Milestone 18: one tier 4 world of each air, then one tier 5 or 6
+        // world of each gem's kind, as Boundless gave every region.
+        PlanetSpec::new("Thornreach", "overgrown", 20261025, 48),
+        PlanetSpec::new("Ironmarch", "rustland", 20261026, 48),
+        PlanetSpec::new("Cindervale", "cinderland", 20261027, 48),
+        PlanetSpec::new("Violetmoor", "acrid", 20261028, 48),
+        PlanetSpec::new("Mirefen", "blighted", 20261029, 48),
+        PlanetSpec::new("Frostspire", "glacial", 20261030, 48),
+        PlanetSpec::new("Stormcrown", "stormy", 20261031, 48),
+        PlanetSpec::new("Sunscar", "scorched", 20261032, 48),
+        PlanetSpec::new("Ashfall", "ember", 20261033, 48),
     ]
 }
 
@@ -326,7 +338,7 @@ mod tests {
         let mut cfg: ServerConfig = toml::from_str("planet_name = \"Home\"\nseed = 5\nwidth_chunks = 32\n").unwrap();
         cfg.apply_legacy();
         assert_eq!(cfg.planets[0], PlanetSpec::new("Home", "temperate", 5, 32));
-        assert_eq!(cfg.planets.len(), 4);
+        assert_eq!(cfg.planets.len(), default_planets().len());
         cfg.validate().unwrap();
     }
 

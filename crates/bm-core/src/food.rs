@@ -85,10 +85,13 @@ pub enum Buff {
     Springy,
     /// More XP (Fast Learner).
     Studious,
+    /// Protection against every kind of hazardous air (milestone 18;
+    /// Boundless's atmosphere protection).
+    Breathing,
 }
 
 impl Buff {
-    pub const ALL: [Buff; 9] = [
+    pub const ALL: [Buff; 10] = [
         Buff::Sated,
         Buff::Refreshed,
         Buff::Lively,
@@ -98,6 +101,7 @@ impl Buff {
         Buff::Hearty,
         Buff::Springy,
         Buff::Studious,
+        Buff::Breathing,
     ];
 
     /// What players see.
@@ -113,6 +117,7 @@ impl Buff {
             Buff::Hearty => "Hearty",
             Buff::Springy => "Springy",
             Buff::Studious => "Studious",
+            Buff::Breathing => "Breathing",
         }
     }
 
@@ -121,6 +126,7 @@ impl Buff {
         match self {
             Buff::None => 0,
             Buff::Studious => 4,
+            Buff::Breathing => 3,
             _ => 5,
         }
     }
@@ -139,6 +145,7 @@ impl Buff {
             Buff::Hearty => format!("+{}% max health", PERCENT_UP[r]),
             Buff::Springy => format!("+{} m jump, +{} falling armour", SPRING_JUMP[r], SPRING_FALL[r]),
             Buff::Studious => format!("+{}% XP", STUDY[r.min(3)]),
+            Buff::Breathing => format!("+{} protection against hazardous air", r.min(2) + 1),
         }
     }
 }
@@ -167,6 +174,11 @@ pub struct FoodBuff {
 }
 
 impl FoodBuff {
+    /// Protection against hazardous air (Breathing: +1, +2, +3).
+    pub fn air_points(&self) -> u8 {
+        self.rank_of(Buff::Breathing).map_or(0, |r| r.min(2) as u8 + 1)
+    }
+
     /// The rank if `kind` is the active buff.
     fn rank_of(&self, kind: Buff) -> Option<usize> {
         (self.kind == kind && self.left > 0 && self.rank > 0).then(|| (self.rank.min(5) - 1) as usize)

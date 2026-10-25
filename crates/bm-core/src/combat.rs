@@ -234,6 +234,8 @@ impl PlayerState {
         self.hurt = self.max_health().saturating_sub(health.max(1));
         self.calm = 0;
         self.loose = u16::MAX;
+        // Back with full air (milestone 18): time to reach a shrine.
+        self.air_used = 0;
     }
 
     /// One tick of healing: Mending every 5 s, and the calm regeneration

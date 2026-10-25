@@ -632,6 +632,7 @@ fn seed_hurt(dir: &Path, name: &str, stacks: &[(usize, &str, u16, u16)], charact
                     character: character.into(),
                     hurt,
                     food: Default::default(),
+                    air_used: 0,
                 },
             )],
             ..Default::default()
@@ -1681,7 +1682,8 @@ async fn digging_block_after_block_keeps_every_break() {
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn warp_shrines_take_players_between_planets() {
     let dir = tempfile::tempdir().unwrap();
-    seed(dir.path(), "Alice", &[(1, "stone", 10, 0)]);
+    // Hurt, so the warp can be seen to keep her body as it was.
+    seed_hurt(dir.path(), "Alice", &[(1, "stone", 10, 0)], Character::default(), 200);
     let server = bm_server::start(universe(dir.path())).unwrap();
     let mut alice = TestClient::login(&server, "Alice").await;
     let mut bob = TestClient::register(&server, "Bob").await;
@@ -1731,6 +1733,11 @@ async fn warp_shrines_take_players_between_planets() {
         _ => unreachable!(),
     };
     assert_eq!((travel.planet.id, travel.planet.name.as_str()), (1, "Dryside"));
+    assert!(
+        travel.spawn.hurt > 150,
+        "a warp moves the body, it does not heal it: {}",
+        travel.spawn.hurt
+    );
     assert_eq!(travel.planet.kind, "Arid");
     assert!(travel.claims.is_empty());
     bob.until(|m| matches!(m, ServerMsg::PlayerLeft { id } if *id == alice.welcome.player_id))
@@ -3937,6 +3944,87 @@ async fn the_body_changes_at_the_input_a_skill_follows() {
         d(&end),
         d(&untrained)
     );
+    server.stop();
+}
+
+/// Milestone 18, acceptance 1 and 3: on a tier 4 world of acid air an
+/// untrained player is told what they need, and their air runs down input
+/// by input exactly as the client predicts; a rank of Acid Ward from an
+/// agreed input stops it and the air comes back.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn acid_air_runs_down_as_predicted_and_a_ward_stops_it() {
+    let dir = tempfile::tempdir().unwrap();
+    seed_character(dir.path(), "Alice", &[], at_level(12, 0));
+    let cfg = ServerConfig {
+        planets: vec![PlanetSpec::new("Thicket", "overgrown", 7, 16)],
+        ..config(dir.path())
+    };
+    let server = bm_server::start(cfg).unwrap();
+    let mut alice = TestClient::login(&server, "Alice").await;
+    let air = alice.welcome.planet.air;
+    assert_eq!((air.line, air.hazard), (bm_core::atmosphere::AirLine::Acid, 1));
+    assert_eq!(alice.welcome.spawn.air, air, "the body knows the planet's air");
+    alice
+        .notice("The air here is acid. You need Acid Ward 1 to breathe it; your protection is 0 of 1.")
+        .await;
+    let feet = alice.feet();
+    wait_around(&mut alice, feet, 12).await;
+    alice.send_inputs(5, PlayerInput::default());
+    let seq = alice.seq;
+    let start = snapshot_at(&mut alice, seq).await;
+    let s0 = alice.seq;
+    assert!(start.air_used > 0, "already running down");
+
+    // One rank of Acid Ward, following input s0 + 40.
+    let at = s0 + 40;
+    alice
+        .send(ClientMsg::Skill {
+            at,
+            action: SkillAction::Learn("caustic_protection".into()),
+        })
+        .await;
+    tokio::time::sleep(Duration::from_millis(200)).await;
+    for _ in 0..80 {
+        alice.send_inputs(1, PlayerInput::default());
+        tokio::time::sleep(Duration::from_millis(16)).await;
+    }
+    let seq = alice.seq;
+    let end = snapshot_at(&mut alice, seq).await;
+    let c = alice
+        .until(|m| matches!(m, ServerMsg::Character { character, at: a } if *a == at && character.page().rank("caustic_protection") == 1))
+        .await;
+    let ServerMsg::Character { character, .. } = c else {
+        unreachable!()
+    };
+    let body = character.effects(&bm_core::skills::SkillTree::builtin()).body();
+    assert_eq!(body.wards, [1, 0, 0]);
+
+    // Replay: short to input s0 + 40, warded after.
+    let world = HeldWorld {
+        c: &alice,
+        solid: alice.welcome.blocks.iter().map(|b| b.solid).collect(),
+        water: alice.block("water"),
+    };
+    let mut s = start;
+    let mut most = s.air_used;
+    for seq in s0 + 1..=s0 + 80 {
+        bm_core::movement::step(
+            &mut s,
+            &PlayerInput::default(),
+            &alice.welcome.movement,
+            None,
+            alice.shape(),
+            &world,
+        );
+        if seq == at {
+            most = s.air_used;
+            s.body = body;
+        }
+    }
+    assert_eq!(end, s, "the server stepped exactly as predicted");
+    assert_eq!(most, start.air_used + 40, "a tick of air an input while short");
+    assert!(end.air_used < most, "protected, the air comes back");
+    assert_eq!(end.shortfall(), 0);
     server.stop();
 }
 

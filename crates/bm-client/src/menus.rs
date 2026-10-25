@@ -486,6 +486,46 @@ pub struct Hud<'a> {
     pub meteor: Option<(String, f32)>,
     /// The meteor life marker, beside the meteor's status.
     pub life: Option<String>,
+    /// Air (milestone 18), while it is not full or protection falls short.
+    pub air: Option<AirView>,
+}
+
+/// The air bar: what is left, and what the tag over it says.
+#[derive(Clone, Debug, PartialEq)]
+pub struct AirView {
+    /// 0 to 1.
+    pub left: f32,
+    /// "Acid air: 2 short", "Choking", or "Air" while it comes back.
+    pub text: String,
+    /// Short of protection (drawn in warning colours).
+    pub short: bool,
+}
+
+/// What the air bar shows for `s`, or nothing (full, and safe).
+pub fn air_view(s: &bm_core::PlayerState) -> Option<AirView> {
+    let short = s.shortfall();
+    let left = s.air_left();
+    if short == 0 && left >= 1.0 {
+        return None;
+    }
+    let text = if s.choking() {
+        format!("Choking: {} short", short)
+    } else if short > 0 {
+        let line = s.air.line.name();
+        let mut c = line.chars();
+        let line = c
+            .next()
+            .map(|f| f.to_uppercase().chain(c).collect::<String>())
+            .unwrap_or_default();
+        format!("{line}: {short} short of {}", s.air.line.ward())
+    } else {
+        "Air".to_string()
+    };
+    Some(AirView {
+        left,
+        text,
+        short: short > 0,
+    })
 }
 
 const XP_BAR: Color32 = Color32::from_rgb(132, 196, 236);
@@ -502,6 +542,10 @@ const ENERGY_FULL: Color32 = Color32::from_rgb(238, 200, 96);
 const ENERGY_LOW: Color32 = Color32::from_rgb(214, 96, 70);
 /// Hunger's end of the energy bar, and the food tags.
 const HUNGER: Color32 = Color32::from_rgb(92, 64, 44);
+/// The air bar (milestone 18): pale sky blue, going violet as it runs out.
+const AIR_FULL: Color32 = Color32::from_rgb(150, 215, 245);
+const AIR_LOW: Color32 = Color32::from_rgb(170, 120, 235);
+const AIR_WARN: Color32 = Color32::from_rgb(255, 190, 120);
 const FOOD_BUFF: Color32 = Color32::from_rgb(150, 220, 140);
 const FOOD_FULL: Color32 = Color32::from_rgb(196, 230, 150);
 const FOOD_BAD: Color32 = Color32::from_rgb(230, 120, 96);
@@ -749,6 +793,36 @@ pub fn hud(ctx: &egui::Context, h: &Hud) {
                 x -= w + 14.0;
             }
         });
+
+    // Air (milestone 18): a slim bar over the health bar, with its tag.
+    if let Some(air) = &h.air {
+        egui::Area::new(Id::unique("air"))
+            .anchor(Align2::CENTER_BOTTOM, vec2(0.0, -(18.0 + SLOT + 26.0)))
+            .interactable(false)
+            .order(egui::Order::Background)
+            .show(ctx, |ui| {
+                let (row, _) = ui.allocate_exact_size(vec2(width, 16.0), Sense::hover());
+                let painter = ui.painter();
+                let half = (width - 10.0) / 2.0;
+                let bar = Rect::from_min_size(pos2(row.left(), row.bottom() - 5.0), vec2(half, 5.0));
+                painter.rect_filled(bar.expand(1.0), CornerRadius::same(3), Color32::from_black_alpha(150));
+                let left = air.left.clamp(0.0, 1.0);
+                if left > 0.0 {
+                    let fill = Rect::from_min_size(bar.min, vec2(bar.width() * left, bar.height()));
+                    let colour = if air.short && left < 0.3 { AIR_LOW } else { AIR_FULL };
+                    painter.rect_filled(fill, CornerRadius::same(3), colour);
+                }
+                let colour = if air.short { AIR_WARN } else { TEXT };
+                let galley = painter.layout_no_wrap(air.text.clone(), FontId::proportional(11.0), colour);
+                let at = pos2(bar.left(), bar.top() - galley.size().y - 2.0);
+                painter.rect_filled(
+                    Rect::from_min_size(at - vec2(4.0, 1.0), galley.size() + vec2(8.0, 2.0)),
+                    CornerRadius::same(3),
+                    Color32::from_black_alpha(140),
+                );
+                painter.galley(at, galley, colour);
+            });
+    }
 
     // XP: a hairline under the hotbar, the level at its left.
     if let Some((level, into, need)) = h.level {
@@ -2076,6 +2150,16 @@ pub enum ShrineTab {
     Reclaim,
 }
 
+/// A planet's kind and tier, and its air when that needs protection:
+/// "Rustland, tier 4, charged air (protection 1)".
+pub fn planet_line(kind: &str, tier: u8, air: bm_core::atmosphere::Air) -> String {
+    if air.hazardous() {
+        format!("{kind}, tier {tier}, {} (protection {})", air.line.name(), air.hazard)
+    } else {
+        format!("{kind}, tier {tier}")
+    }
+}
+
 pub fn travel(ctx: &egui::Context, v: &TravelView, tab: &mut ShrineTab, actions: &mut Vec<UiAction>) {
     let mut open = true;
     window("Warp Shrine").open(&mut open).show(ctx, |ui| {
@@ -2180,8 +2264,8 @@ fn worlds_tab(ui: &mut Ui, v: &TravelView, actions: &mut Vec<UiAction>) {
                             ui.spacing_mut().item_spacing.y = 2.0;
                             ui.label(egui::RichText::new(&p.name).strong().size(17.0));
                             ui.label(
-                                egui::RichText::new(format!("{}, tier {}", p.kind, p.tier))
-                                    .color(MUTED)
+                                egui::RichText::new(planet_line(&p.kind, p.tier, p.air))
+                                    .color(if p.air.hazardous() { AIR_WARN } else { MUTED })
                                     .small(),
                             );
                             ui.label(egui::RichText::new(players_there(p.players)).color(MUTED).small());
@@ -2272,6 +2356,31 @@ fn paint_planet_faded(painter: &egui::Painter, centre: egui::Pos2, radius: f32, 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_air_bar_shows_only_when_it_matters_and_says_why() {
+        use bm_core::atmosphere::{AIR_TICKS, Air, AirLine};
+        let mut s = bm_core::PlayerState::default();
+        assert_eq!(air_view(&s), None, "ordinary air, full: no bar");
+        s.air = Air::of(AirLine::Charged, 5);
+        let v = air_view(&s).unwrap();
+        assert_eq!((v.left, v.short), (1.0, true));
+        assert_eq!(v.text, "Charged air: 3 short of Spark Ward");
+        s.air_used = AIR_TICKS;
+        assert_eq!(air_view(&s).unwrap().text, "Choking: 3 short");
+        s.body.wards = [0, 3, 0];
+        let v = air_view(&s).unwrap();
+        assert_eq!(
+            (v.text.as_str(), v.short, v.left),
+            ("Air", false, 0.0),
+            "safe, coming back"
+        );
+        assert_eq!(
+            planet_line("Rustland", 4, Air::of(AirLine::Charged, 4)),
+            "Rustland, tier 4, charged air (protection 1)"
+        );
+        assert_eq!(planet_line("Arid", 2, Air::default()), "Arid, tier 2");
+    }
 
     #[test]
     fn notices_fade_and_expire() {

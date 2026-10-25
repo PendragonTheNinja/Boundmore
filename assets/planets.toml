@@ -125,6 +125,14 @@ size = 6.0
 threshold = 0.65
 min_y = 10
 min_depth = 5
+[[kind.generation.ores]]
+# Milestone 18: medium coal on every world, 20+ under the surface (Boundless;
+# densest 25 to 45 above the floor). Richness a guess.
+block = "medium_coal_seam"
+size = 11.0
+threshold = 0.6
+min_y = 10
+min_depth = 20
 # Flora (all placement a guess): spikeleaf on the beaches and in dry
 # patches of turf so a new player finds fibrous leaves early, ferns and
 # roots on turf, lilies by the water, snowbells above the snow line,
@@ -313,6 +321,14 @@ size = 6.0
 threshold = 0.65
 min_y = 10
 min_depth = 5
+[[kind.generation.ores]]
+# Milestone 18: medium coal on every world, 20+ under the surface (Boundless;
+# densest 25 to 45 above the floor). Richness a guess.
+block = "medium_coal_seam"
+size = 11.0
+threshold = 0.6
+min_y = 10
+min_depth = 20
 # Flora (a guess): spikeleaf plentiful on the dunes, with cactus and
 # aloe (no turf here, so they take the sand); boulders on sand and rock.
 [[kind.generation.flora]]
@@ -490,6 +506,14 @@ size = 6.0
 threshold = 0.65
 min_y = 10
 min_depth = 5
+[[kind.generation.ores]]
+# Milestone 18: medium coal on every world, 20+ under the surface (Boundless;
+# densest 25 to 45 above the floor). Richness a guess.
+block = "medium_coal_seam"
+size = 11.0
+threshold = 0.6
+min_y = 10
+min_depth = 20
 # Flora (a guess): snowbells on the snow; boulders on snow and rock.
 [[kind.generation.flora]]
 block = "frostbell"
@@ -667,6 +691,22 @@ size = 6.0
 threshold = 0.65
 min_y = 10
 min_depth = 5
+[[kind.generation.ores]]
+# Milestone 18: medium coal on every world, 20+ under the surface (Boundless;
+# densest 25 to 45 above the floor). Richness a guess.
+block = "medium_coal_seam"
+size = 11.0
+threshold = 0.6
+min_y = 10
+min_depth = 20
+[[kind.generation.ores]]
+# Milestone 18: hard coal from tier 3, 50+ under the surface, low (Boundless:
+# 0 to 20 above the floor, densest; any height). Richness a guess.
+block = "hard_coal_seam"
+size = 9.0
+threshold = 0.63
+max_y = 60
+min_depth = 50
 # Flora (a guess): the most plants, lilies by the water, spikeleaf on
 # the beaches, snowbells on the peaks, boulders on rock and turf.
 [[kind.generation.flora]]
@@ -781,3 +821,2013 @@ density = 0.0012
 block = "exotic_tuber_plant_4"
 on = ["turf"]
 density = 0.001
+[[kind]]
+name = "overgrown"
+tier = 4
+air = "acid"
+[kind.look]
+day_zenith = [0.12, 0.40, 0.48]
+day_horizon = [0.62, 0.84, 0.58]
+color = [0.30, 0.70, 0.30]
+tints = [["turf", [170, 255, 140]], ["foliage", [150, 240, 130]]]
+[kind.colours]
+# Deep, wet greens under an acid-tinged sky.
+turf = ["Bold Lime", "Strong Lime", "True Lime", "Rich Moss", "Bold Moss", "Strong Jade", "Rich Lime"]
+foliage = ["Deep Fern", "Rich Fern", "Dusky Jade", "Rich Jade", "Dark Moss", "Rich Lime", "Dusky Teal", "Rich Orchid"]
+trunk = ["Dark Rust", "Deep Rust", "Dusky Ember", "Dark Amber", "Deep Violet"]
+soil = ["Dark Rust", "Dusky Rust", "Deep Ember", "Muted Ember"]
+sand = ["Pale Lime", "Faded Lime", "Light Gold", "Faded Gold"]
+gravel = ["Fog", "Stone", "Muted Jade", "Muted Lime"]
+stone = ["Stone", "Pewter", "Muted Jade", "Muted Lime", "Muted Moss", "Muted Teal"]
+deep_stone = ["Iron", "Smoke", "Muted Jade", "Dark Teal"]
+[kind.generation]
+# Taller and denser than lush: the canopy closes overhead.
+mountain_height = 200.0
+tree_density = 0.045
+trunk_min = 7
+trunk_extra = 6
+glow_chance = 0.05
+[[kind.generation.ores]]
+block = "coal_seam"
+size = 14.0
+threshold = 0.52
+min_y = 13
+min_depth = 6
+[[kind.generation.ores]]
+block = "copper_vein"
+size = 12.0
+threshold = 0.58
+max_y = 149
+[[kind.generation.ores]]
+block = "iron_vein"
+size = 10.0
+threshold = 0.55
+min_y = 13
+max_y = 96
+min_depth = 10
+[[kind.generation.ores]]
+block = "wayshard_vein"
+size = 6.0
+threshold = 0.64
+max_y = 68
+min_depth = 24
+[[kind.generation.ores]]
+# Relic seam (Boundless's ancient tech remnant): every tier, 20 or more
+# above the floor, 3 or more under the surface (tuning 4.3). Its richness,
+# about copper's, is a guess.
+block = "relic_seam"
+size = 12.0
+threshold = 0.58
+min_y = 20
+min_depth = 3
+[[kind.generation.ores]]
+# Milestone 15: relic components (Boundless's ancient tech component), deeper
+# and rarer than fragments: 40+ above the floor, 5+ below the surface.
+block = "relic_cache"
+size = 9.0
+threshold = 0.63
+min_y = 40
+min_depth = 5
+[[kind.generation.ores]]
+# Milestone 15: silver, tier 3 and up (Boundless: 10 to 40 above the floor,
+# 20+ below the surface).
+block = "silver_seam"
+size = 8.0
+threshold = 0.6
+min_y = 10
+max_y = 40
+min_depth = 20
+[[kind.generation.ores]]
+# Milestone 17: small fossils on every tier, 3+ below the surface (Boundless:
+# 3 to 40 down; there is no deepest-depth setting, so rarity stands in). The
+# richness is a guess.
+block = "small_fossil_seam"
+size = 7.0
+threshold = 0.62
+min_y = 10
+min_depth = 3
+[[kind.generation.ores]]
+# Medium fossils, deeper and rarer (a guess: Boundless 5 to 50 down).
+block = "medium_fossil_seam"
+size = 6.0
+threshold = 0.65
+min_y = 10
+min_depth = 5
+[[kind.generation.ores]]
+# Milestone 18: medium coal on every world, 20+ under the surface (Boundless;
+# densest 25 to 45 above the floor). Richness a guess.
+block = "medium_coal_seam"
+size = 11.0
+threshold = 0.6
+min_y = 10
+min_depth = 20
+[[kind.generation.ores]]
+# Milestone 18: hard coal from tier 3, 50+ under the surface, low (Boundless:
+# 0 to 20 above the floor, densest; any height). Richness a guess.
+block = "hard_coal_seam"
+size = 9.0
+threshold = 0.63
+max_y = 60
+min_depth = 50
+[[kind.generation.ores]]
+# Milestone 18: gold from tier 4, 10 to 20 above the floor, 25+ under the
+# surface (Boundless; the band is widened a little, a guess).
+block = "gold_seam"
+size = 7.0
+threshold = 0.58
+min_y = 8
+max_y = 26
+min_depth = 25
+# Flora (a guess): the most plants, lilies by the water, spikeleaf on
+# the beaches, snowbells on the peaks, boulders on rock and turf.
+[[kind.generation.flora]]
+block = "spikeleaf"
+on = ["sand"]
+density = 0.015
+[[kind.generation.flora]]
+block = "nightlily"
+on = ["turf", "sand"]
+density = 0.04
+near_water = true
+[[kind.generation.flora]]
+block = "stiltfrond"
+on = ["turf"]
+density = 0.002
+[[kind.generation.flora]]
+block = "curlfern"
+on = ["turf"]
+density = 0.002
+[[kind.generation.flora]]
+block = "hornroot"
+on = ["turf"]
+density = 0.0015
+[[kind.generation.flora]]
+block = "knot_aloe"
+on = ["turf"]
+density = 0.001
+[[kind.generation.flora]]
+block = "frostbell"
+on = ["snow"]
+density = 0.002
+[[kind.generation.flora]]
+block = "boulder"
+on = ["stone", "turf"]
+density = 0.0008
+[[kind.generation.flora]]
+block = "stalk_boulder"
+on = ["stone", "turf"]
+density = 0.0004
+[[kind.generation.flora]]
+block = "stacked_boulder"
+on = ["stone", "turf"]
+density = 0.0003
+[[kind.generation.flora]]
+block = "tarspot_cap"
+on = ["stone", "deep_stone", "sandstone", "soil"]
+density = 0.006
+cave = true
+min_depth = 4
+max_depth = 40
+[[kind.generation.flora]]
+block = "burst_cap"
+on = ["stone", "deep_stone", "sandstone", "soil"]
+density = 0.005
+cave = true
+min_depth = 4
+max_depth = 48
+[[kind.generation.flora]]
+block = "tongue_bracket"
+on = ["stone", "deep_stone", "sandstone", "soil"]
+density = 0.005
+cave = true
+min_depth = 10
+max_depth = 60
+[[kind.generation.flora]]
+block = "branch_coral"
+on = ["stone", "deep_stone", "sandstone", "soil"]
+density = 0.005
+cave = true
+min_depth = 20
+max_depth = 80
+[[kind.generation.flora]]
+block = "weeping_cap"
+on = ["stone", "deep_stone", "sandstone", "soil"]
+density = 0.005
+cave = true
+min_depth = 30
+[[kind.generation.flora]]
+block = "glowcap"
+on = ["stone", "deep_stone", "sandstone", "soil"]
+density = 0.006
+cave = true
+min_depth = 50
+# Milestone 16 part 2: wild crops (densities guesses), appended so
+# existing planets' unsaved chunks gain them and saved terrain is untouched.
+[[kind.generation.flora]]
+block = "tuber_plant_4"
+on = ["turf"]
+density = 0.0015
+[[kind.generation.flora]]
+block = "dewberry_bush_4"
+on = ["turf"]
+density = 0.0012
+[[kind.generation.flora]]
+block = "oats_4"
+on = ["turf"]
+density = 0.0012
+[[kind.generation.flora]]
+block = "rice_4"
+on = ["turf", "sand"]
+density = 0.006
+near_water = true
+[[kind.generation.flora]]
+block = "waxy_tuber_plant_4"
+on = ["turf"]
+density = 0.0012
+[[kind.generation.flora]]
+block = "wheat_4"
+on = ["turf"]
+density = 0.0012
+[[kind.generation.flora]]
+block = "exotic_tuber_plant_4"
+on = ["turf"]
+density = 0.001
+[[kind]]
+name = "rustland"
+tier = 4
+air = "charged"
+[kind.look]
+day_zenith = [0.22, 0.38, 0.30]
+day_horizon = [0.70, 0.74, 0.52]
+color = [0.62, 0.42, 0.30]
+tints = [["stone", [255, 220, 200]], ["gravel", [255, 210, 180]]]
+[kind.colours]
+# Bare rust-red rock and grey scree under a green-tinged sky.
+stone = ["Muted Rust", "Faded Rust", "Dusky Rust", "Muted Ember", "Pewter", "Iron", "Muted Amber"]
+deep_stone = ["Iron", "Smoke", "Dark Rust", "Dusky Rust", "Deep Ember"]
+gravel = ["Pewter", "Stone", "Faded Rust", "Muted Rust", "Fog"]
+sand = ["Faded Rust", "Faded Amber", "Pale Rust", "Muted Amber"]
+soil = ["Dark Rust", "Dusky Rust", "Muted Rust"]
+turf = ["Muted Moss", "Muted Lime", "Faded Moss", "Faded Lime"]
+foliage = ["Muted Moss", "Dusky Moss", "Dark Lime", "Muted Jade"]
+trunk = ["Dark Rust", "Deep Rust", "Iron"]
+[kind.generation]
+# Rocky and bare: scree for ground, few trees, basins dry (lava seas wait
+# for part 3).
+mountain_height = 170.0
+tree_density = 0.002
+water_offset = -20
+ground = "gravel"
+subsoil = "stone"
+shore = "gravel"
+shallows = "gravel"
+seabed = ["gravel", "stone"]
+[[kind.generation.ores]]
+block = "coal_seam"
+size = 14.0
+threshold = 0.52
+min_y = 13
+min_depth = 6
+[[kind.generation.ores]]
+block = "copper_vein"
+size = 12.0
+threshold = 0.58
+max_y = 149
+[[kind.generation.ores]]
+block = "iron_vein"
+size = 10.0
+threshold = 0.55
+min_y = 13
+max_y = 96
+min_depth = 10
+[[kind.generation.ores]]
+block = "wayshard_vein"
+size = 6.0
+threshold = 0.64
+max_y = 68
+min_depth = 24
+[[kind.generation.ores]]
+# Relic seam (Boundless's ancient tech remnant): every tier, 20 or more
+# above the floor, 3 or more under the surface (tuning 4.3). Its richness,
+# about copper's, is a guess.
+block = "relic_seam"
+size = 12.0
+threshold = 0.58
+min_y = 20
+min_depth = 3
+[[kind.generation.ores]]
+# Milestone 15: relic components (Boundless's ancient tech component), deeper
+# and rarer than fragments: 40+ above the floor, 5+ below the surface.
+block = "relic_cache"
+size = 9.0
+threshold = 0.63
+min_y = 40
+min_depth = 5
+[[kind.generation.ores]]
+# Milestone 15: silver, tier 3 and up (Boundless: 10 to 40 above the floor,
+# 20+ below the surface).
+block = "silver_seam"
+size = 8.0
+threshold = 0.6
+min_y = 10
+max_y = 40
+min_depth = 20
+[[kind.generation.ores]]
+# Milestone 17: small fossils on every tier, 3+ below the surface (Boundless:
+# 3 to 40 down; there is no deepest-depth setting, so rarity stands in). The
+# richness is a guess.
+block = "small_fossil_seam"
+size = 7.0
+threshold = 0.62
+min_y = 10
+min_depth = 3
+[[kind.generation.ores]]
+# Medium fossils, deeper and rarer (a guess: Boundless 5 to 50 down).
+block = "medium_fossil_seam"
+size = 6.0
+threshold = 0.65
+min_y = 10
+min_depth = 5
+[[kind.generation.ores]]
+# Milestone 18: medium coal on every world, 20+ under the surface (Boundless;
+# densest 25 to 45 above the floor). Richness a guess.
+block = "medium_coal_seam"
+size = 11.0
+threshold = 0.6
+min_y = 10
+min_depth = 20
+[[kind.generation.ores]]
+# Milestone 18: hard coal from tier 3, 50+ under the surface, low (Boundless:
+# 0 to 20 above the floor, densest; any height). Richness a guess.
+block = "hard_coal_seam"
+size = 9.0
+threshold = 0.63
+max_y = 60
+min_depth = 50
+[[kind.generation.ores]]
+# Milestone 18: gold from tier 4, 10 to 20 above the floor, 25+ under the
+# surface (Boundless; the band is widened a little, a guess).
+block = "gold_seam"
+size = 7.0
+threshold = 0.58
+min_y = 8
+max_y = 26
+min_depth = 25
+[[kind.generation.ores]]
+# Milestone 18: titanium on tier 4 metal worlds and every world from tier 5,
+# 70+ under the surface (Boundless). Richness a guess.
+block = "titanium_seam"
+size = 8.0
+threshold = 0.6
+min_y = 10
+min_depth = 70
+# Flora (a guess): spikeleaf plentiful on the dunes, with cactus and
+# aloe (no turf here, so they take the sand); boulders on sand and rock.
+[[kind.generation.flora]]
+block = "spikeleaf"
+on = ["sand", "gravel"]
+density = 0.006
+[[kind.generation.flora]]
+block = "ridge_cactus"
+on = ["sand", "gravel"]
+density = 0.003
+[[kind.generation.flora]]
+block = "knot_aloe"
+on = ["sand", "gravel"]
+density = 0.0015
+[[kind.generation.flora]]
+block = "boulder"
+on = ["sand", "gravel", "sandstone", "stone"]
+density = 0.0006
+[[kind.generation.flora]]
+block = "tapered_boulder"
+on = ["sand", "gravel", "sandstone", "stone"]
+density = 0.0005
+[[kind.generation.flora]]
+block = "stacked_boulder"
+on = ["sand", "gravel", "sandstone", "stone"]
+density = 0.0003
+[[kind.generation.flora]]
+block = "tarspot_cap"
+on = ["stone", "deep_stone", "sandstone", "soil"]
+density = 0.006
+cave = true
+min_depth = 4
+max_depth = 40
+[[kind.generation.flora]]
+block = "burst_cap"
+on = ["stone", "deep_stone", "sandstone", "soil"]
+density = 0.005
+cave = true
+min_depth = 4
+max_depth = 48
+[[kind.generation.flora]]
+block = "tongue_bracket"
+on = ["stone", "deep_stone", "sandstone", "soil"]
+density = 0.005
+cave = true
+min_depth = 10
+max_depth = 60
+[[kind.generation.flora]]
+block = "branch_coral"
+on = ["stone", "deep_stone", "sandstone", "soil"]
+density = 0.005
+cave = true
+min_depth = 20
+max_depth = 80
+[[kind.generation.flora]]
+block = "weeping_cap"
+on = ["stone", "deep_stone", "sandstone", "soil"]
+density = 0.005
+cave = true
+min_depth = 30
+[[kind.generation.flora]]
+block = "glowcap"
+on = ["stone", "deep_stone", "sandstone", "soil"]
+density = 0.006
+cave = true
+min_depth = 50
+# Milestone 16 part 2: wild crops (densities guesses), appended so
+# existing planets' unsaved chunks gain them and saved terrain is untouched.
+[[kind.generation.flora]]
+block = "tuber_plant_4"
+on = ["turf"]
+density = 0.0015
+[[kind.generation.flora]]
+block = "dewberry_bush_4"
+on = ["turf"]
+density = 0.0012
+[[kind.generation.flora]]
+block = "oats_4"
+on = ["turf"]
+density = 0.0012
+[[kind.generation.flora]]
+block = "rice_4"
+on = ["turf", "sand"]
+density = 0.006
+near_water = true
+[[kind.generation.flora]]
+block = "waxy_tuber_plant_4"
+on = ["turf"]
+density = 0.0012
+[[kind.generation.flora]]
+block = "wheat_4"
+on = ["turf"]
+density = 0.0012
+
+[[kind]]
+name = "cinderland"
+tier = 4
+air = "burning"
+[kind.look]
+day_zenith = [0.20, 0.16, 0.22]
+day_horizon = [0.72, 0.46, 0.34]
+color = [0.30, 0.26, 0.28]
+tints = [["turf", [210, 200, 170]], ["stone", [200, 195, 205]]]
+[kind.colours]
+# Soot-dark ground and charred trees under a smoky sky.
+turf = ["Dusky Moss", "Dark Moss", "Muted Moss", "Dusky Amber", "Muted Amber"]
+foliage = ["Dark Amber", "Dusky Amber", "Deep Ember", "Dusky Ember", "Dark Moss"]
+trunk = ["Coal", "Soot", "Midnight Ember", "Deep Rust"]
+soil = ["Soot", "Slate", "Deep Rust", "Dark Ember"]
+stone = ["Slate", "Smoke", "Iron", "Ash", "Muted Violet"]
+deep_stone = ["Coal", "Soot", "Slate", "Deep Violet"]
+gravel = ["Slate", "Smoke", "Ash", "Iron"]
+sand = ["Ash", "Smoke", "Faded Amber", "Muted Amber"]
+[kind.generation]
+# Dark ground, sparse charred woods, lower seas.
+mountain_height = 150.0
+tree_density = 0.008
+water_offset = -6
+[[kind.generation.ores]]
+block = "coal_seam"
+size = 14.0
+threshold = 0.52
+min_y = 13
+min_depth = 6
+[[kind.generation.ores]]
+block = "copper_vein"
+size = 12.0
+threshold = 0.58
+max_y = 149
+[[kind.generation.ores]]
+block = "iron_vein"
+size = 10.0
+threshold = 0.55
+min_y = 13
+max_y = 96
+min_depth = 10
+[[kind.generation.ores]]
+block = "wayshard_vein"
+size = 6.0
+threshold = 0.64
+max_y = 68
+min_depth = 24
+[[kind.generation.ores]]
+# Relic seam (Boundless's ancient tech remnant): every tier, 20 or more
+# above the floor, 3 or more under the surface (tuning 4.3). Its richness,
+# about copper's, is a guess.
+block = "relic_seam"
+size = 12.0
+threshold = 0.58
+min_y = 20
+min_depth = 3
+[[kind.generation.ores]]
+# Milestone 15: relic components (Boundless's ancient tech component), deeper
+# and rarer than fragments: 40+ above the floor, 5+ below the surface.
+block = "relic_cache"
+size = 9.0
+threshold = 0.63
+min_y = 40
+min_depth = 5
+[[kind.generation.ores]]
+# Milestone 15: silver, tier 3 and up (Boundless: 10 to 40 above the floor,
+# 20+ below the surface).
+block = "silver_seam"
+size = 8.0
+threshold = 0.6
+min_y = 10
+max_y = 40
+min_depth = 20
+[[kind.generation.ores]]
+# Milestone 17: small fossils on every tier, 3+ below the surface (Boundless:
+# 3 to 40 down; there is no deepest-depth setting, so rarity stands in). The
+# richness is a guess.
+block = "small_fossil_seam"
+size = 7.0
+threshold = 0.62
+min_y = 10
+min_depth = 3
+[[kind.generation.ores]]
+# Medium fossils, deeper and rarer (a guess: Boundless 5 to 50 down).
+block = "medium_fossil_seam"
+size = 6.0
+threshold = 0.65
+min_y = 10
+min_depth = 5
+[[kind.generation.ores]]
+# Milestone 18: medium coal on every world, 20+ under the surface (Boundless;
+# densest 25 to 45 above the floor). Richness a guess.
+block = "medium_coal_seam"
+size = 11.0
+threshold = 0.6
+min_y = 10
+min_depth = 20
+[[kind.generation.ores]]
+# Milestone 18: hard coal from tier 3, 50+ under the surface, low (Boundless:
+# 0 to 20 above the floor, densest; any height). Richness a guess.
+block = "hard_coal_seam"
+size = 9.0
+threshold = 0.63
+max_y = 60
+min_depth = 50
+[[kind.generation.ores]]
+# Milestone 18: gold from tier 4, 10 to 20 above the floor, 25+ under the
+# surface (Boundless; the band is widened a little, a guess).
+block = "gold_seam"
+size = 7.0
+threshold = 0.58
+min_y = 8
+max_y = 26
+min_depth = 25
+# Flora (all placement a guess): spikeleaf on the beaches and in dry
+# patches of turf so a new player finds fibrous leaves early, ferns and
+# roots on turf, lilies by the water, snowbells above the snow line,
+# boulders on rock and turf, fungi in caves.
+[[kind.generation.flora]]
+block = "spikeleaf"
+on = ["sand"]
+density = 0.02
+[[kind.generation.flora]]
+block = "spikeleaf"
+on = ["turf"]
+density = 0.006
+patch = 96.0
+patch_threshold = 0.15
+[[kind.generation.flora]]
+block = "nightlily"
+on = ["turf", "sand"]
+density = 0.03
+near_water = true
+[[kind.generation.flora]]
+block = "curlfern"
+on = ["turf"]
+density = 0.002
+[[kind.generation.flora]]
+block = "hornroot"
+on = ["turf"]
+density = 0.0012
+[[kind.generation.flora]]
+block = "frostbell"
+on = ["snow"]
+density = 0.002
+[[kind.generation.flora]]
+block = "boulder"
+on = ["stone", "turf"]
+density = 0.0008
+[[kind.generation.flora]]
+block = "chip_boulder"
+on = ["stone", "turf"]
+density = 0.0003
+[[kind.generation.flora]]
+block = "stacked_boulder"
+on = ["stone", "turf"]
+density = 0.0003
+[[kind.generation.flora]]
+block = "tarspot_cap"
+on = ["stone", "deep_stone", "sandstone", "soil"]
+density = 0.006
+cave = true
+min_depth = 4
+max_depth = 40
+[[kind.generation.flora]]
+block = "burst_cap"
+on = ["stone", "deep_stone", "sandstone", "soil"]
+density = 0.005
+cave = true
+min_depth = 4
+max_depth = 48
+[[kind.generation.flora]]
+block = "tongue_bracket"
+on = ["stone", "deep_stone", "sandstone", "soil"]
+density = 0.005
+cave = true
+min_depth = 10
+max_depth = 60
+[[kind.generation.flora]]
+block = "branch_coral"
+on = ["stone", "deep_stone", "sandstone", "soil"]
+density = 0.005
+cave = true
+min_depth = 20
+max_depth = 80
+[[kind.generation.flora]]
+block = "weeping_cap"
+on = ["stone", "deep_stone", "sandstone", "soil"]
+density = 0.005
+cave = true
+min_depth = 30
+[[kind.generation.flora]]
+block = "glowcap"
+on = ["stone", "deep_stone", "sandstone", "soil"]
+density = 0.006
+cave = true
+min_depth = 50
+# Milestone 16 part 2: wild crops (densities guesses), appended so
+# existing planets' unsaved chunks gain them and saved terrain is untouched.
+[[kind.generation.flora]]
+block = "tuber_plant_4"
+on = ["turf"]
+density = 0.0015
+[[kind.generation.flora]]
+block = "dewberry_bush_4"
+on = ["turf"]
+density = 0.0012
+[[kind.generation.flora]]
+block = "oats_4"
+on = ["turf"]
+density = 0.0012
+[[kind.generation.flora]]
+block = "rice_4"
+on = ["turf", "sand"]
+density = 0.006
+near_water = true
+
+[[kind]]
+name = "acrid"
+tier = 5
+air = "acid"
+[kind.look]
+day_zenith = [0.42, 0.30, 0.58]
+day_horizon = [0.85, 0.72, 0.85]
+color = [0.70, 0.55, 0.82]
+tints = [["turf", [235, 225, 255]], ["foliage", [225, 200, 255]]]
+[kind.colours]
+# Bleached violets and pale stone, as if the air ate the colour.
+turf = ["Pale Violet", "Light Violet", "Faded Violet", "Pale Orchid", "Misty Orchid", "Faded Lime"]
+foliage = ["Soft Violet", "Light Orchid", "Pale Orchid", "Faded Orchid", "Muted Violet", "Pale Lime"]
+trunk = ["Bone", "Pearl", "Chalk", "Faded Violet"]
+soil = ["Faded Violet", "Muted Violet", "Faded Rose"]
+sand = ["Pearl", "Bone", "Pale Violet", "Pale Gold"]
+gravel = ["Cloud", "Fog", "Faded Violet"]
+stone = ["Chalk", "Cloud", "Fog", "Pale Violet", "Faded Violet"]
+deep_stone = ["Pewter", "Muted Violet", "Dusky Violet"]
+snow = ["Snow", "Pearl", "Misty Violet"]
+[kind.generation]
+# Pale rolling hills and shallow lakes.
+mountain_height = 140.0
+tree_density = 0.012
+water_offset = 2
+[[kind.generation.ores]]
+block = "coal_seam"
+size = 14.0
+threshold = 0.52
+min_y = 13
+min_depth = 6
+[[kind.generation.ores]]
+block = "copper_vein"
+size = 12.0
+threshold = 0.58
+max_y = 149
+[[kind.generation.ores]]
+block = "iron_vein"
+size = 10.0
+threshold = 0.55
+min_y = 13
+max_y = 96
+min_depth = 10
+[[kind.generation.ores]]
+block = "wayshard_vein"
+size = 6.0
+threshold = 0.64
+max_y = 68
+min_depth = 24
+[[kind.generation.ores]]
+# Relic seam (Boundless's ancient tech remnant): every tier, 20 or more
+# above the floor, 3 or more under the surface (tuning 4.3). Its richness,
+# about copper's, is a guess.
+block = "relic_seam"
+size = 12.0
+threshold = 0.58
+min_y = 20
+min_depth = 3
+[[kind.generation.ores]]
+# Milestone 15: relic components (Boundless's ancient tech component), deeper
+# and rarer than fragments: 40+ above the floor, 5+ below the surface.
+block = "relic_cache"
+size = 9.0
+threshold = 0.63
+min_y = 40
+min_depth = 5
+[[kind.generation.ores]]
+# Milestone 15: silver, tier 3 and up (Boundless: 10 to 40 above the floor,
+# 20+ below the surface).
+block = "silver_seam"
+size = 8.0
+threshold = 0.6
+min_y = 10
+max_y = 40
+min_depth = 20
+[[kind.generation.ores]]
+# Milestone 17: small fossils on every tier, 3+ below the surface (Boundless:
+# 3 to 40 down; there is no deepest-depth setting, so rarity stands in). The
+# richness is a guess.
+block = "small_fossil_seam"
+size = 7.0
+threshold = 0.62
+min_y = 10
+min_depth = 3
+[[kind.generation.ores]]
+# Medium fossils, deeper and rarer (a guess: Boundless 5 to 50 down).
+block = "medium_fossil_seam"
+size = 6.0
+threshold = 0.65
+min_y = 10
+min_depth = 5
+[[kind.generation.ores]]
+# Milestone 18: medium coal on every world, 20+ under the surface (Boundless;
+# densest 25 to 45 above the floor). Richness a guess.
+block = "medium_coal_seam"
+size = 11.0
+threshold = 0.6
+min_y = 10
+min_depth = 20
+[[kind.generation.ores]]
+# Milestone 18: hard coal from tier 3, 50+ under the surface, low (Boundless:
+# 0 to 20 above the floor, densest; any height). Richness a guess.
+block = "hard_coal_seam"
+size = 9.0
+threshold = 0.63
+max_y = 60
+min_depth = 50
+[[kind.generation.ores]]
+# Milestone 18: gold from tier 4, 10 to 20 above the floor, 25+ under the
+# surface (Boundless; the band is widened a little, a guess).
+block = "gold_seam"
+size = 7.0
+threshold = 0.58
+min_y = 8
+max_y = 26
+min_depth = 25
+[[kind.generation.ores]]
+# Milestone 18: titanium on tier 4 metal worlds and every world from tier 5,
+# 70+ under the surface (Boundless). Richness a guess.
+block = "titanium_seam"
+size = 8.0
+threshold = 0.6
+min_y = 10
+min_depth = 70
+# Flora (all placement a guess): spikeleaf on the beaches and in dry
+# patches of turf so a new player finds fibrous leaves early, ferns and
+# roots on turf, lilies by the water, snowbells above the snow line,
+# boulders on rock and turf, fungi in caves.
+[[kind.generation.flora]]
+block = "spikeleaf"
+on = ["sand"]
+density = 0.02
+[[kind.generation.flora]]
+block = "spikeleaf"
+on = ["turf"]
+density = 0.006
+patch = 96.0
+patch_threshold = 0.15
+[[kind.generation.flora]]
+block = "nightlily"
+on = ["turf", "sand"]
+density = 0.03
+near_water = true
+[[kind.generation.flora]]
+block = "curlfern"
+on = ["turf"]
+density = 0.002
+[[kind.generation.flora]]
+block = "hornroot"
+on = ["turf"]
+density = 0.0012
+[[kind.generation.flora]]
+block = "frostbell"
+on = ["snow"]
+density = 0.002
+[[kind.generation.flora]]
+block = "boulder"
+on = ["stone", "turf"]
+density = 0.0008
+[[kind.generation.flora]]
+block = "chip_boulder"
+on = ["stone", "turf"]
+density = 0.0003
+[[kind.generation.flora]]
+block = "stacked_boulder"
+on = ["stone", "turf"]
+density = 0.0003
+[[kind.generation.flora]]
+block = "tarspot_cap"
+on = ["stone", "deep_stone", "sandstone", "soil"]
+density = 0.006
+cave = true
+min_depth = 4
+max_depth = 40
+[[kind.generation.flora]]
+block = "burst_cap"
+on = ["stone", "deep_stone", "sandstone", "soil"]
+density = 0.005
+cave = true
+min_depth = 4
+max_depth = 48
+[[kind.generation.flora]]
+block = "tongue_bracket"
+on = ["stone", "deep_stone", "sandstone", "soil"]
+density = 0.005
+cave = true
+min_depth = 10
+max_depth = 60
+[[kind.generation.flora]]
+block = "branch_coral"
+on = ["stone", "deep_stone", "sandstone", "soil"]
+density = 0.005
+cave = true
+min_depth = 20
+max_depth = 80
+[[kind.generation.flora]]
+block = "weeping_cap"
+on = ["stone", "deep_stone", "sandstone", "soil"]
+density = 0.005
+cave = true
+min_depth = 30
+[[kind.generation.flora]]
+block = "glowcap"
+on = ["stone", "deep_stone", "sandstone", "soil"]
+density = 0.006
+cave = true
+min_depth = 50
+# Milestone 16 part 2: wild crops (densities guesses), appended so
+# existing planets' unsaved chunks gain them and saved terrain is untouched.
+[[kind.generation.flora]]
+block = "tuber_plant_4"
+on = ["turf"]
+density = 0.0015
+[[kind.generation.flora]]
+block = "dewberry_bush_4"
+on = ["turf"]
+density = 0.0012
+[[kind.generation.flora]]
+block = "oats_4"
+on = ["turf"]
+density = 0.0012
+[[kind.generation.flora]]
+block = "rice_4"
+on = ["turf", "sand"]
+density = 0.006
+near_water = true
+
+[[kind]]
+name = "blighted"
+tier = 5
+air = "acid"
+[kind.look]
+day_zenith = [0.26, 0.36, 0.18]
+day_horizon = [0.70, 0.78, 0.40]
+color = [0.48, 0.62, 0.20]
+tints = [["turf", [220, 240, 140]], ["foliage", [210, 230, 120]], ["water", [190, 230, 150]]]
+[kind.colours]
+# Sickly yellow-greens and still, murky water.
+turf = ["Muted Lime", "Dusky Lime", "Faded Lime", "Muted Gold", "Dusky Moss", "Muted Moss"]
+foliage = ["Dusky Lime", "Dark Lime", "Muted Gold", "Dusky Gold", "Dark Moss", "Muted Jade"]
+trunk = ["Deep Moss", "Dark Moss", "Dusky Amber", "Dark Rust"]
+soil = ["Dusky Moss", "Dark Moss", "Muted Amber"]
+sand = ["Muted Gold", "Faded Lime", "Faded Gold"]
+gravel = ["Smoke", "Muted Moss", "Muted Lime"]
+stone = ["Pewter", "Smoke", "Muted Moss", "Muted Lime", "Dusky Moss"]
+deep_stone = ["Iron", "Smoke", "Deep Moss"]
+[kind.generation]
+# Low marshy land, much of it under deep still water.
+mountain_height = 110.0
+tree_density = 0.02
+water_offset = 6
+[[kind.generation.ores]]
+block = "coal_seam"
+size = 14.0
+threshold = 0.52
+min_y = 13
+min_depth = 6
+[[kind.generation.ores]]
+block = "copper_vein"
+size = 12.0
+threshold = 0.58
+max_y = 149
+[[kind.generation.ores]]
+block = "iron_vein"
+size = 10.0
+threshold = 0.55
+min_y = 13
+max_y = 96
+min_depth = 10
+[[kind.generation.ores]]
+block = "wayshard_vein"
+size = 6.0
+threshold = 0.64
+max_y = 68
+min_depth = 24
+[[kind.generation.ores]]
+# Relic seam (Boundless's ancient tech remnant): every tier, 20 or more
+# above the floor, 3 or more under the surface (tuning 4.3). Its richness,
+# about copper's, is a guess.
+block = "relic_seam"
+size = 12.0
+threshold = 0.58
+min_y = 20
+min_depth = 3
+[[kind.generation.ores]]
+# Milestone 15: relic components (Boundless's ancient tech component), deeper
+# and rarer than fragments: 40+ above the floor, 5+ below the surface.
+block = "relic_cache"
+size = 9.0
+threshold = 0.63
+min_y = 40
+min_depth = 5
+[[kind.generation.ores]]
+# Milestone 15: silver, tier 3 and up (Boundless: 10 to 40 above the floor,
+# 20+ below the surface).
+block = "silver_seam"
+size = 8.0
+threshold = 0.6
+min_y = 10
+max_y = 40
+min_depth = 20
+[[kind.generation.ores]]
+# Milestone 17: small fossils on every tier, 3+ below the surface (Boundless:
+# 3 to 40 down; there is no deepest-depth setting, so rarity stands in). The
+# richness is a guess.
+block = "small_fossil_seam"
+size = 7.0
+threshold = 0.62
+min_y = 10
+min_depth = 3
+[[kind.generation.ores]]
+# Medium fossils, deeper and rarer (a guess: Boundless 5 to 50 down).
+block = "medium_fossil_seam"
+size = 6.0
+threshold = 0.65
+min_y = 10
+min_depth = 5
+[[kind.generation.ores]]
+# Milestone 18: medium coal on every world, 20+ under the surface (Boundless;
+# densest 25 to 45 above the floor). Richness a guess.
+block = "medium_coal_seam"
+size = 11.0
+threshold = 0.6
+min_y = 10
+min_depth = 20
+[[kind.generation.ores]]
+# Milestone 18: hard coal from tier 3, 50+ under the surface, low (Boundless:
+# 0 to 20 above the floor, densest; any height). Richness a guess.
+block = "hard_coal_seam"
+size = 9.0
+threshold = 0.63
+max_y = 60
+min_depth = 50
+[[kind.generation.ores]]
+# Milestone 18: gold from tier 4, 10 to 20 above the floor, 25+ under the
+# surface (Boundless; the band is widened a little, a guess).
+block = "gold_seam"
+size = 7.0
+threshold = 0.58
+min_y = 8
+max_y = 26
+min_depth = 25
+[[kind.generation.ores]]
+# Milestone 18: titanium on tier 4 metal worlds and every world from tier 5,
+# 70+ under the surface (Boundless). Richness a guess.
+block = "titanium_seam"
+size = 8.0
+threshold = 0.6
+min_y = 10
+min_depth = 70
+# Flora (all placement a guess): spikeleaf on the beaches and in dry
+# patches of turf so a new player finds fibrous leaves early, ferns and
+# roots on turf, lilies by the water, snowbells above the snow line,
+# boulders on rock and turf, fungi in caves.
+[[kind.generation.flora]]
+block = "spikeleaf"
+on = ["sand"]
+density = 0.02
+[[kind.generation.flora]]
+block = "spikeleaf"
+on = ["turf"]
+density = 0.006
+patch = 96.0
+patch_threshold = 0.15
+[[kind.generation.flora]]
+block = "nightlily"
+on = ["turf", "sand"]
+density = 0.03
+near_water = true
+[[kind.generation.flora]]
+block = "curlfern"
+on = ["turf"]
+density = 0.002
+[[kind.generation.flora]]
+block = "hornroot"
+on = ["turf"]
+density = 0.0012
+[[kind.generation.flora]]
+block = "frostbell"
+on = ["snow"]
+density = 0.002
+[[kind.generation.flora]]
+block = "boulder"
+on = ["stone", "turf"]
+density = 0.0008
+[[kind.generation.flora]]
+block = "chip_boulder"
+on = ["stone", "turf"]
+density = 0.0003
+[[kind.generation.flora]]
+block = "stacked_boulder"
+on = ["stone", "turf"]
+density = 0.0003
+[[kind.generation.flora]]
+block = "tarspot_cap"
+on = ["stone", "deep_stone", "sandstone", "soil"]
+density = 0.006
+cave = true
+min_depth = 4
+max_depth = 40
+[[kind.generation.flora]]
+block = "burst_cap"
+on = ["stone", "deep_stone", "sandstone", "soil"]
+density = 0.005
+cave = true
+min_depth = 4
+max_depth = 48
+[[kind.generation.flora]]
+block = "tongue_bracket"
+on = ["stone", "deep_stone", "sandstone", "soil"]
+density = 0.005
+cave = true
+min_depth = 10
+max_depth = 60
+[[kind.generation.flora]]
+block = "branch_coral"
+on = ["stone", "deep_stone", "sandstone", "soil"]
+density = 0.005
+cave = true
+min_depth = 20
+max_depth = 80
+[[kind.generation.flora]]
+block = "weeping_cap"
+on = ["stone", "deep_stone", "sandstone", "soil"]
+density = 0.005
+cave = true
+min_depth = 30
+[[kind.generation.flora]]
+block = "glowcap"
+on = ["stone", "deep_stone", "sandstone", "soil"]
+density = 0.006
+cave = true
+min_depth = 50
+# Milestone 16 part 2: wild crops (densities guesses), appended so
+# existing planets' unsaved chunks gain them and saved terrain is untouched.
+[[kind.generation.flora]]
+block = "tuber_plant_4"
+on = ["turf"]
+density = 0.0015
+[[kind.generation.flora]]
+block = "dewberry_bush_4"
+on = ["turf"]
+density = 0.0012
+[[kind.generation.flora]]
+block = "oats_4"
+on = ["turf"]
+density = 0.0012
+[[kind.generation.flora]]
+block = "rice_4"
+on = ["turf", "sand"]
+density = 0.006
+near_water = true
+
+[[kind]]
+name = "glacial"
+tier = 5
+air = "charged"
+[kind.look]
+day_zenith = [0.12, 0.28, 0.62]
+day_horizon = [0.62, 0.78, 0.95]
+color = [0.70, 0.86, 1.00]
+tints = [["foliage", [160, 205, 215]]]
+[kind.colours]
+# Ice blue and white, hills of pale blue stone.
+snow = ["Snow", "Cloud", "Misty Sky", "Misty Azure", "Pale Sky"]
+ice = ["Light Sky", "Pale Sky", "Soft Azure", "Light Azure", "Pale Cobalt"]
+foliage = ["Dark Teal", "Deep Teal", "Dusky Sky", "Dark Azure"]
+trunk = ["Iron", "Pewter", "Dark Cobalt"]
+soil = ["Muted Cobalt", "Muted Azure", "Pewter"]
+sand = ["Pale Azure", "Pearl", "Faded Sky"]
+gravel = ["Fog", "Cloud", "Faded Azure"]
+stone = ["Faded Azure", "Faded Sky", "Muted Azure", "Fog", "Cloud", "Faded Cobalt"]
+deep_stone = ["Muted Cobalt", "Dusky Cobalt", "Iron"]
+[kind.generation]
+# Snow to the waterline, seas frozen deep, hills of blue stone.
+snow_line = -20
+tree_density = 0.003
+tree_line = 50
+ice_depth = 3
+shore = "snow"
+mountain_height = 160.0
+[[kind.generation.ores]]
+block = "coal_seam"
+size = 14.0
+threshold = 0.52
+min_y = 13
+min_depth = 6
+[[kind.generation.ores]]
+block = "copper_vein"
+size = 12.0
+threshold = 0.58
+max_y = 149
+[[kind.generation.ores]]
+block = "iron_vein"
+size = 10.0
+threshold = 0.55
+min_y = 13
+max_y = 96
+min_depth = 10
+[[kind.generation.ores]]
+block = "wayshard_vein"
+size = 6.0
+threshold = 0.64
+max_y = 68
+min_depth = 24
+[[kind.generation.ores]]
+# Relic seam (Boundless's ancient tech remnant): every tier, 20 or more
+# above the floor, 3 or more under the surface (tuning 4.3). Its richness,
+# about copper's, is a guess.
+block = "relic_seam"
+size = 12.0
+threshold = 0.58
+min_y = 20
+min_depth = 3
+[[kind.generation.ores]]
+# Milestone 15: relic components (Boundless's ancient tech component), deeper
+# and rarer than fragments: 40+ above the floor, 5+ below the surface.
+block = "relic_cache"
+size = 9.0
+threshold = 0.63
+min_y = 40
+min_depth = 5
+[[kind.generation.ores]]
+# Milestone 15: silver, tier 3 and up (Boundless: 10 to 40 above the floor,
+# 20+ below the surface).
+block = "silver_seam"
+size = 8.0
+threshold = 0.6
+min_y = 10
+max_y = 40
+min_depth = 20
+[[kind.generation.ores]]
+# Milestone 17: small fossils on every tier, 3+ below the surface (Boundless:
+# 3 to 40 down; there is no deepest-depth setting, so rarity stands in). The
+# richness is a guess.
+block = "small_fossil_seam"
+size = 7.0
+threshold = 0.62
+min_y = 10
+min_depth = 3
+[[kind.generation.ores]]
+# Medium fossils, deeper and rarer (a guess: Boundless 5 to 50 down).
+block = "medium_fossil_seam"
+size = 6.0
+threshold = 0.65
+min_y = 10
+min_depth = 5
+[[kind.generation.ores]]
+# Milestone 18: medium coal on every world, 20+ under the surface (Boundless;
+# densest 25 to 45 above the floor). Richness a guess.
+block = "medium_coal_seam"
+size = 11.0
+threshold = 0.6
+min_y = 10
+min_depth = 20
+[[kind.generation.ores]]
+# Milestone 18: hard coal from tier 3, 50+ under the surface, low (Boundless:
+# 0 to 20 above the floor, densest; any height). Richness a guess.
+block = "hard_coal_seam"
+size = 9.0
+threshold = 0.63
+max_y = 60
+min_depth = 50
+[[kind.generation.ores]]
+# Milestone 18: gold from tier 4, 10 to 20 above the floor, 25+ under the
+# surface (Boundless; the band is widened a little, a guess).
+block = "gold_seam"
+size = 7.0
+threshold = 0.58
+min_y = 8
+max_y = 26
+min_depth = 25
+[[kind.generation.ores]]
+# Milestone 18: titanium on tier 4 metal worlds and every world from tier 5,
+# 70+ under the surface (Boundless). Richness a guess.
+block = "titanium_seam"
+size = 8.0
+threshold = 0.6
+min_y = 10
+min_depth = 70
+# Flora (a guess): snowbells on the snow; boulders on snow and rock.
+[[kind.generation.flora]]
+block = "frostbell"
+on = ["snow"]
+density = 0.004
+[[kind.generation.flora]]
+block = "boulder"
+on = ["snow", "stone"]
+density = 0.0006
+[[kind.generation.flora]]
+block = "ring_boulder"
+on = ["snow", "stone"]
+density = 0.0005
+[[kind.generation.flora]]
+block = "stalk_boulder"
+on = ["snow", "stone"]
+density = 0.0003
+[[kind.generation.flora]]
+block = "tarspot_cap"
+on = ["stone", "deep_stone", "sandstone", "soil"]
+density = 0.006
+cave = true
+min_depth = 4
+max_depth = 40
+[[kind.generation.flora]]
+block = "burst_cap"
+on = ["stone", "deep_stone", "sandstone", "soil"]
+density = 0.005
+cave = true
+min_depth = 4
+max_depth = 48
+[[kind.generation.flora]]
+block = "tongue_bracket"
+on = ["stone", "deep_stone", "sandstone", "soil"]
+density = 0.005
+cave = true
+min_depth = 10
+max_depth = 60
+[[kind.generation.flora]]
+block = "branch_coral"
+on = ["stone", "deep_stone", "sandstone", "soil"]
+density = 0.005
+cave = true
+min_depth = 20
+max_depth = 80
+[[kind.generation.flora]]
+block = "weeping_cap"
+on = ["stone", "deep_stone", "sandstone", "soil"]
+density = 0.005
+cave = true
+min_depth = 30
+[[kind.generation.flora]]
+block = "glowcap"
+on = ["stone", "deep_stone", "sandstone", "soil"]
+density = 0.006
+cave = true
+min_depth = 50
+# Milestone 16 part 2: wild crops (densities guesses), appended so
+# existing planets' unsaved chunks gain them and saved terrain is untouched.
+[[kind.generation.flora]]
+block = "tuber_plant_4"
+on = ["turf"]
+density = 0.0015
+[[kind.generation.flora]]
+block = "dewberry_bush_4"
+on = ["turf"]
+density = 0.0012
+[[kind.generation.flora]]
+block = "oats_4"
+on = ["turf"]
+density = 0.0012
+[[kind.generation.flora]]
+block = "rice_4"
+on = ["turf", "sand"]
+density = 0.006
+near_water = true
+[[kind.generation.flora]]
+block = "waxy_tuber_plant_4"
+on = ["turf"]
+density = 0.0012
+[[kind.generation.flora]]
+block = "wheat_4"
+on = ["turf"]
+density = 0.0012
+
+[[kind]]
+name = "stormy"
+tier = 6
+air = "charged"
+[kind.look]
+day_zenith = [0.10, 0.12, 0.30]
+day_horizon = [0.42, 0.46, 0.66]
+color = [0.36, 0.40, 0.70]
+tints = [["turf", [200, 210, 255]], ["foliage", [190, 200, 255]]]
+[kind.colours]
+# Dark blue-violet peaks under a brooding sky.
+turf = ["Dusky Cobalt", "Muted Cobalt", "Dusky Azure", "Muted Teal", "Dusky Teal"]
+foliage = ["Dark Cobalt", "Deep Cobalt", "Dusky Violet", "Dark Teal", "Deep Azure"]
+trunk = ["Slate", "Smoke", "Deep Violet", "Midnight Cobalt"]
+soil = ["Slate", "Dusky Violet", "Dark Cobalt"]
+sand = ["Fog", "Faded Cobalt", "Pale Azure"]
+gravel = ["Slate", "Smoke", "Muted Cobalt"]
+stone = ["Slate", "Smoke", "Iron", "Muted Cobalt", "Muted Violet", "Dusky Cobalt"]
+deep_stone = ["Coal", "Soot", "Midnight Cobalt", "Deep Violet"]
+snow = ["Snow", "Cloud", "Misty Cobalt", "Misty Violet"]
+[kind.generation]
+# The tallest mountains of any world.
+mountain_height = 240.0
+tree_density = 0.01
+snow_line = 90
+[[kind.generation.ores]]
+block = "coal_seam"
+size = 14.0
+threshold = 0.52
+min_y = 13
+min_depth = 6
+[[kind.generation.ores]]
+block = "copper_vein"
+size = 12.0
+threshold = 0.58
+max_y = 149
+[[kind.generation.ores]]
+block = "iron_vein"
+size = 10.0
+threshold = 0.55
+min_y = 13
+max_y = 96
+min_depth = 10
+[[kind.generation.ores]]
+block = "wayshard_vein"
+size = 6.0
+threshold = 0.64
+max_y = 68
+min_depth = 24
+[[kind.generation.ores]]
+# Relic seam (Boundless's ancient tech remnant): every tier, 20 or more
+# above the floor, 3 or more under the surface (tuning 4.3). Its richness,
+# about copper's, is a guess.
+block = "relic_seam"
+size = 12.0
+threshold = 0.58
+min_y = 20
+min_depth = 3
+[[kind.generation.ores]]
+# Milestone 15: relic components (Boundless's ancient tech component), deeper
+# and rarer than fragments: 40+ above the floor, 5+ below the surface.
+block = "relic_cache"
+size = 9.0
+threshold = 0.63
+min_y = 40
+min_depth = 5
+[[kind.generation.ores]]
+# Milestone 15: silver, tier 3 and up (Boundless: 10 to 40 above the floor,
+# 20+ below the surface).
+block = "silver_seam"
+size = 8.0
+threshold = 0.6
+min_y = 10
+max_y = 40
+min_depth = 20
+[[kind.generation.ores]]
+# Milestone 17: small fossils on every tier, 3+ below the surface (Boundless:
+# 3 to 40 down; there is no deepest-depth setting, so rarity stands in). The
+# richness is a guess.
+block = "small_fossil_seam"
+size = 7.0
+threshold = 0.62
+min_y = 10
+min_depth = 3
+[[kind.generation.ores]]
+# Medium fossils, deeper and rarer (a guess: Boundless 5 to 50 down).
+block = "medium_fossil_seam"
+size = 6.0
+threshold = 0.65
+min_y = 10
+min_depth = 5
+[[kind.generation.ores]]
+# Milestone 18: medium coal on every world, 20+ under the surface (Boundless;
+# densest 25 to 45 above the floor). Richness a guess.
+block = "medium_coal_seam"
+size = 11.0
+threshold = 0.6
+min_y = 10
+min_depth = 20
+[[kind.generation.ores]]
+# Milestone 18: hard coal from tier 3, 50+ under the surface, low (Boundless:
+# 0 to 20 above the floor, densest; any height). Richness a guess.
+block = "hard_coal_seam"
+size = 9.0
+threshold = 0.63
+max_y = 60
+min_depth = 50
+[[kind.generation.ores]]
+# Milestone 18: gold from tier 4, 10 to 20 above the floor, 25+ under the
+# surface (Boundless; the band is widened a little, a guess).
+block = "gold_seam"
+size = 7.0
+threshold = 0.58
+min_y = 8
+max_y = 26
+min_depth = 25
+[[kind.generation.ores]]
+# Milestone 18: titanium on tier 4 metal worlds and every world from tier 5,
+# 70+ under the surface (Boundless). Richness a guess.
+block = "titanium_seam"
+size = 8.0
+threshold = 0.6
+min_y = 10
+min_depth = 70
+# Flora (all placement a guess): spikeleaf on the beaches and in dry
+# patches of turf so a new player finds fibrous leaves early, ferns and
+# roots on turf, lilies by the water, snowbells above the snow line,
+# boulders on rock and turf, fungi in caves.
+[[kind.generation.flora]]
+block = "spikeleaf"
+on = ["sand"]
+density = 0.02
+[[kind.generation.flora]]
+block = "spikeleaf"
+on = ["turf"]
+density = 0.006
+patch = 96.0
+patch_threshold = 0.15
+[[kind.generation.flora]]
+block = "nightlily"
+on = ["turf", "sand"]
+density = 0.03
+near_water = true
+[[kind.generation.flora]]
+block = "curlfern"
+on = ["turf"]
+density = 0.002
+[[kind.generation.flora]]
+block = "hornroot"
+on = ["turf"]
+density = 0.0012
+[[kind.generation.flora]]
+block = "frostbell"
+on = ["snow"]
+density = 0.002
+[[kind.generation.flora]]
+block = "boulder"
+on = ["stone", "turf"]
+density = 0.0008
+[[kind.generation.flora]]
+block = "chip_boulder"
+on = ["stone", "turf"]
+density = 0.0003
+[[kind.generation.flora]]
+block = "stacked_boulder"
+on = ["stone", "turf"]
+density = 0.0003
+[[kind.generation.flora]]
+block = "tarspot_cap"
+on = ["stone", "deep_stone", "sandstone", "soil"]
+density = 0.006
+cave = true
+min_depth = 4
+max_depth = 40
+[[kind.generation.flora]]
+block = "burst_cap"
+on = ["stone", "deep_stone", "sandstone", "soil"]
+density = 0.005
+cave = true
+min_depth = 4
+max_depth = 48
+[[kind.generation.flora]]
+block = "tongue_bracket"
+on = ["stone", "deep_stone", "sandstone", "soil"]
+density = 0.005
+cave = true
+min_depth = 10
+max_depth = 60
+[[kind.generation.flora]]
+block = "branch_coral"
+on = ["stone", "deep_stone", "sandstone", "soil"]
+density = 0.005
+cave = true
+min_depth = 20
+max_depth = 80
+[[kind.generation.flora]]
+block = "weeping_cap"
+on = ["stone", "deep_stone", "sandstone", "soil"]
+density = 0.005
+cave = true
+min_depth = 30
+[[kind.generation.flora]]
+block = "glowcap"
+on = ["stone", "deep_stone", "sandstone", "soil"]
+density = 0.006
+cave = true
+min_depth = 50
+# Milestone 16 part 2: wild crops (densities guesses), appended so
+# existing planets' unsaved chunks gain them and saved terrain is untouched.
+[[kind.generation.flora]]
+block = "tuber_plant_4"
+on = ["turf"]
+density = 0.0015
+[[kind.generation.flora]]
+block = "dewberry_bush_4"
+on = ["turf"]
+density = 0.0012
+[[kind.generation.flora]]
+block = "oats_4"
+on = ["turf"]
+density = 0.0012
+[[kind.generation.flora]]
+block = "rice_4"
+on = ["turf", "sand"]
+density = 0.006
+near_water = true
+
+[[kind]]
+name = "scorched"
+tier = 6
+air = "burning"
+[kind.look]
+day_zenith = [0.36, 0.30, 0.20]
+day_horizon = [0.92, 0.70, 0.44]
+color = [0.88, 0.64, 0.36]
+tints = [["sand", [255, 210, 170]], ["stone", [255, 220, 190]]]
+[kind.colours]
+# Bleached gold sand, cracked amber rock, a low sea.
+sand = ["Pale Gold", "Light Gold", "Soft Gold", "Pale Amber", "Light Amber", "Bone"]
+sandstone = ["Soft Amber", "Light Amber", "Bright Amber", "Soft Gold", "Faded Amber", "Soft Rust"]
+stone = ["Faded Amber", "Muted Amber", "Faded Rust", "Stone", "Fog"]
+deep_stone = ["Iron", "Smoke", "Muted Rust", "Dusky Amber"]
+gravel = ["Fog", "Faded Amber", "Faded Rust", "Silver"]
+[kind.generation]
+# Dunes and deep dry canyons; only the deepest basins hold water (Boundless's
+# blast worlds have their sea low).
+tree_density = 0.0
+snow_line = 400
+water_offset = -30
+mountain_height = 190.0
+ground = "sand"
+subsoil = "sand"
+shore = "sand"
+shallows = "sand"
+seabed = ["sand", "gravel"]
+cliff = "sandstone"
+layer = "sandstone"
+layer_depth = 16
+[[kind.generation.ores]]
+block = "coal_seam"
+size = 14.0
+threshold = 0.52
+min_y = 13
+min_depth = 6
+[[kind.generation.ores]]
+block = "copper_vein"
+size = 12.0
+threshold = 0.58
+max_y = 149
+[[kind.generation.ores]]
+block = "iron_vein"
+size = 10.0
+threshold = 0.55
+min_y = 13
+max_y = 96
+min_depth = 10
+[[kind.generation.ores]]
+block = "wayshard_vein"
+size = 6.0
+threshold = 0.64
+max_y = 68
+min_depth = 24
+[[kind.generation.ores]]
+# Relic seam (Boundless's ancient tech remnant): every tier, 20 or more
+# above the floor, 3 or more under the surface (tuning 4.3). Its richness,
+# about copper's, is a guess.
+block = "relic_seam"
+size = 12.0
+threshold = 0.58
+min_y = 20
+min_depth = 3
+[[kind.generation.ores]]
+# Milestone 15: relic components (Boundless's ancient tech component), deeper
+# and rarer than fragments: 40+ above the floor, 5+ below the surface.
+block = "relic_cache"
+size = 9.0
+threshold = 0.63
+min_y = 40
+min_depth = 5
+[[kind.generation.ores]]
+# Milestone 15: silver, tier 3 and up (Boundless: 10 to 40 above the floor,
+# 20+ below the surface).
+block = "silver_seam"
+size = 8.0
+threshold = 0.6
+min_y = 10
+max_y = 40
+min_depth = 20
+[[kind.generation.ores]]
+# Milestone 17: small fossils on every tier, 3+ below the surface (Boundless:
+# 3 to 40 down; there is no deepest-depth setting, so rarity stands in). The
+# richness is a guess.
+block = "small_fossil_seam"
+size = 7.0
+threshold = 0.62
+min_y = 10
+min_depth = 3
+[[kind.generation.ores]]
+# Medium fossils, deeper and rarer (a guess: Boundless 5 to 50 down).
+block = "medium_fossil_seam"
+size = 6.0
+threshold = 0.65
+min_y = 10
+min_depth = 5
+[[kind.generation.ores]]
+# Milestone 18: medium coal on every world, 20+ under the surface (Boundless;
+# densest 25 to 45 above the floor). Richness a guess.
+block = "medium_coal_seam"
+size = 11.0
+threshold = 0.6
+min_y = 10
+min_depth = 20
+[[kind.generation.ores]]
+# Milestone 18: hard coal from tier 3, 50+ under the surface, low (Boundless:
+# 0 to 20 above the floor, densest; any height). Richness a guess.
+block = "hard_coal_seam"
+size = 9.0
+threshold = 0.63
+max_y = 60
+min_depth = 50
+[[kind.generation.ores]]
+# Milestone 18: gold from tier 4, 10 to 20 above the floor, 25+ under the
+# surface (Boundless; the band is widened a little, a guess).
+block = "gold_seam"
+size = 7.0
+threshold = 0.58
+min_y = 8
+max_y = 26
+min_depth = 25
+[[kind.generation.ores]]
+# Milestone 18: titanium on tier 4 metal worlds and every world from tier 5,
+# 70+ under the surface (Boundless). Richness a guess.
+block = "titanium_seam"
+size = 8.0
+threshold = 0.6
+min_y = 10
+min_depth = 70
+# Flora (a guess): spikeleaf plentiful on the dunes, with cactus and
+# aloe (no turf here, so they take the sand); boulders on sand and rock.
+[[kind.generation.flora]]
+block = "spikeleaf"
+on = ["sand"]
+density = 0.006
+[[kind.generation.flora]]
+block = "ridge_cactus"
+on = ["sand"]
+density = 0.003
+[[kind.generation.flora]]
+block = "knot_aloe"
+on = ["sand"]
+density = 0.0015
+[[kind.generation.flora]]
+block = "boulder"
+on = ["sand", "sandstone", "stone"]
+density = 0.0006
+[[kind.generation.flora]]
+block = "tapered_boulder"
+on = ["sand", "sandstone", "stone"]
+density = 0.0005
+[[kind.generation.flora]]
+block = "stacked_boulder"
+on = ["sand", "sandstone", "stone"]
+density = 0.0003
+[[kind.generation.flora]]
+block = "tarspot_cap"
+on = ["stone", "deep_stone", "sandstone", "soil"]
+density = 0.006
+cave = true
+min_depth = 4
+max_depth = 40
+[[kind.generation.flora]]
+block = "burst_cap"
+on = ["stone", "deep_stone", "sandstone", "soil"]
+density = 0.005
+cave = true
+min_depth = 4
+max_depth = 48
+[[kind.generation.flora]]
+block = "tongue_bracket"
+on = ["stone", "deep_stone", "sandstone", "soil"]
+density = 0.005
+cave = true
+min_depth = 10
+max_depth = 60
+[[kind.generation.flora]]
+block = "branch_coral"
+on = ["stone", "deep_stone", "sandstone", "soil"]
+density = 0.005
+cave = true
+min_depth = 20
+max_depth = 80
+[[kind.generation.flora]]
+block = "weeping_cap"
+on = ["stone", "deep_stone", "sandstone", "soil"]
+density = 0.005
+cave = true
+min_depth = 30
+[[kind.generation.flora]]
+block = "glowcap"
+on = ["stone", "deep_stone", "sandstone", "soil"]
+density = 0.006
+cave = true
+min_depth = 50
+# Milestone 16 part 2: wild crops (densities guesses), appended so
+# existing planets' unsaved chunks gain them and saved terrain is untouched.
+[[kind.generation.flora]]
+block = "tuber_plant_4"
+on = ["turf"]
+density = 0.0015
+[[kind.generation.flora]]
+block = "dewberry_bush_4"
+on = ["turf"]
+density = 0.0012
+[[kind.generation.flora]]
+block = "oats_4"
+on = ["turf"]
+density = 0.0012
+[[kind.generation.flora]]
+block = "rice_4"
+on = ["turf", "sand"]
+density = 0.006
+near_water = true
+[[kind.generation.flora]]
+block = "waxy_tuber_plant_4"
+on = ["turf"]
+density = 0.0012
+[[kind.generation.flora]]
+block = "wheat_4"
+on = ["turf"]
+density = 0.0012
+
+[[kind]]
+name = "ember"
+tier = 6
+air = "burning"
+[kind.look]
+day_zenith = [0.30, 0.10, 0.08]
+day_horizon = [0.85, 0.34, 0.16]
+color = [0.70, 0.22, 0.14]
+tints = [["gravel", [255, 190, 170]], ["stone", [230, 190, 180]]]
+[kind.colours]
+# Black and crimson stone under a red sky (lava seas wait for part 3).
+stone = ["Soot", "Slate", "Deep Crimson", "Dark Crimson", "Midnight Crimson", "Dusky Ember"]
+deep_stone = ["Coal", "Soot", "Midnight Crimson", "Midnight Ember"]
+gravel = ["Soot", "Slate", "Dark Crimson", "Dusky Ember", "Smoke"]
+sand = ["Smoke", "Ash", "Dusky Ember", "Muted Crimson"]
+soil = ["Soot", "Deep Crimson", "Dark Ember"]
+turf = ["Dusky Ember", "Dark Ember", "Dusky Crimson", "Muted Crimson"]
+foliage = ["Dark Crimson", "Deep Crimson", "Dusky Ember", "Dark Amber"]
+trunk = ["Coal", "Soot", "Midnight Crimson"]
+[kind.generation]
+# Black scree and dry basins (lava seas wait for part 3).
+mountain_height = 180.0
+tree_density = 0.001
+water_offset = -24
+ground = "gravel"
+subsoil = "stone"
+shore = "gravel"
+shallows = "gravel"
+seabed = ["gravel", "stone"]
+[[kind.generation.ores]]
+block = "coal_seam"
+size = 14.0
+threshold = 0.52
+min_y = 13
+min_depth = 6
+[[kind.generation.ores]]
+block = "copper_vein"
+size = 12.0
+threshold = 0.58
+max_y = 149
+[[kind.generation.ores]]
+block = "iron_vein"
+size = 10.0
+threshold = 0.55
+min_y = 13
+max_y = 96
+min_depth = 10
+[[kind.generation.ores]]
+block = "wayshard_vein"
+size = 6.0
+threshold = 0.64
+max_y = 68
+min_depth = 24
+[[kind.generation.ores]]
+# Relic seam (Boundless's ancient tech remnant): every tier, 20 or more
+# above the floor, 3 or more under the surface (tuning 4.3). Its richness,
+# about copper's, is a guess.
+block = "relic_seam"
+size = 12.0
+threshold = 0.58
+min_y = 20
+min_depth = 3
+[[kind.generation.ores]]
+# Milestone 15: relic components (Boundless's ancient tech component), deeper
+# and rarer than fragments: 40+ above the floor, 5+ below the surface.
+block = "relic_cache"
+size = 9.0
+threshold = 0.63
+min_y = 40
+min_depth = 5
+[[kind.generation.ores]]
+# Milestone 15: silver, tier 3 and up (Boundless: 10 to 40 above the floor,
+# 20+ below the surface).
+block = "silver_seam"
+size = 8.0
+threshold = 0.6
+min_y = 10
+max_y = 40
+min_depth = 20
+[[kind.generation.ores]]
+# Milestone 17: small fossils on every tier, 3+ below the surface (Boundless:
+# 3 to 40 down; there is no deepest-depth setting, so rarity stands in). The
+# richness is a guess.
+block = "small_fossil_seam"
+size = 7.0
+threshold = 0.62
+min_y = 10
+min_depth = 3
+[[kind.generation.ores]]
+# Medium fossils, deeper and rarer (a guess: Boundless 5 to 50 down).
+block = "medium_fossil_seam"
+size = 6.0
+threshold = 0.65
+min_y = 10
+min_depth = 5
+[[kind.generation.ores]]
+# Milestone 18: medium coal on every world, 20+ under the surface (Boundless;
+# densest 25 to 45 above the floor). Richness a guess.
+block = "medium_coal_seam"
+size = 11.0
+threshold = 0.6
+min_y = 10
+min_depth = 20
+[[kind.generation.ores]]
+# Milestone 18: hard coal from tier 3, 50+ under the surface, low (Boundless:
+# 0 to 20 above the floor, densest; any height). Richness a guess.
+block = "hard_coal_seam"
+size = 9.0
+threshold = 0.63
+max_y = 60
+min_depth = 50
+[[kind.generation.ores]]
+# Milestone 18: gold from tier 4, 10 to 20 above the floor, 25+ under the
+# surface (Boundless; the band is widened a little, a guess).
+block = "gold_seam"
+size = 7.0
+threshold = 0.58
+min_y = 8
+max_y = 26
+min_depth = 25
+[[kind.generation.ores]]
+# Milestone 18: titanium on tier 4 metal worlds and every world from tier 5,
+# 70+ under the surface (Boundless). Richness a guess.
+block = "titanium_seam"
+size = 8.0
+threshold = 0.6
+min_y = 10
+min_depth = 70
+# Flora (a guess): spikeleaf plentiful on the dunes, with cactus and
+# aloe (no turf here, so they take the sand); boulders on sand and rock.
+[[kind.generation.flora]]
+block = "spikeleaf"
+on = ["sand", "gravel"]
+density = 0.006
+[[kind.generation.flora]]
+block = "ridge_cactus"
+on = ["sand", "gravel"]
+density = 0.003
+[[kind.generation.flora]]
+block = "knot_aloe"
+on = ["sand", "gravel"]
+density = 0.0015
+[[kind.generation.flora]]
+block = "boulder"
+on = ["sand", "gravel", "sandstone", "stone"]
+density = 0.0006
+[[kind.generation.flora]]
+block = "tapered_boulder"
+on = ["sand", "gravel", "sandstone", "stone"]
+density = 0.0005
+[[kind.generation.flora]]
+block = "stacked_boulder"
+on = ["sand", "gravel", "sandstone", "stone"]
+density = 0.0003
+[[kind.generation.flora]]
+block = "tarspot_cap"
+on = ["stone", "deep_stone", "sandstone", "soil"]
+density = 0.006
+cave = true
+min_depth = 4
+max_depth = 40
+[[kind.generation.flora]]
+block = "burst_cap"
+on = ["stone", "deep_stone", "sandstone", "soil"]
+density = 0.005
+cave = true
+min_depth = 4
+max_depth = 48
+[[kind.generation.flora]]
+block = "tongue_bracket"
+on = ["stone", "deep_stone", "sandstone", "soil"]
+density = 0.005
+cave = true
+min_depth = 10
+max_depth = 60
+[[kind.generation.flora]]
+block = "branch_coral"
+on = ["stone", "deep_stone", "sandstone", "soil"]
+density = 0.005
+cave = true
+min_depth = 20
+max_depth = 80
+[[kind.generation.flora]]
+block = "weeping_cap"
+on = ["stone", "deep_stone", "sandstone", "soil"]
+density = 0.005
+cave = true
+min_depth = 30
+[[kind.generation.flora]]
+block = "glowcap"
+on = ["stone", "deep_stone", "sandstone", "soil"]
+density = 0.006
+cave = true
+min_depth = 50
+# Milestone 16 part 2: wild crops (densities guesses), appended so
+# existing planets' unsaved chunks gain them and saved terrain is untouched.
+[[kind.generation.flora]]
+block = "tuber_plant_4"
+on = ["turf"]
+density = 0.0015
+[[kind.generation.flora]]
+block = "dewberry_bush_4"
+on = ["turf"]
+density = 0.0012
+[[kind.generation.flora]]
+block = "oats_4"
+on = ["turf"]
+density = 0.0012
+[[kind.generation.flora]]
+block = "rice_4"
+on = ["turf", "sand"]
+density = 0.006
+near_water = true
+[[kind.generation.flora]]
+block = "waxy_tuber_plant_4"
+on = ["turf"]
+density = 0.0012
+[[kind.generation.flora]]
+block = "wheat_4"
+on = ["turf"]
+density = 0.0012
+

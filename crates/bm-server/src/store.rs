@@ -111,7 +111,7 @@ const V2_STATIONS: TableDefinition<&[u8], &[u8]> = TableDefinition::new("station
 /// 11 (M17): a forge's station record saves its session and queued item
 /// ([`SavedStation::forge`]); older stations are rewritten with none (no
 /// forges existed).
-pub const SAVE_VERSION: u32 = 11;
+pub const SAVE_VERSION: u32 = 12;
 
 /// The universe file in the data directory.
 pub const UNIVERSE_FILE: &str = "universe.redb";
@@ -374,6 +374,9 @@ pub struct PlayerData {
     pub hurt: u32,
     /// Hunger, the food buff and sickness (milestone 16, save version 9).
     pub food: SavedFood,
+    /// Air used (milestone 18, save version 12; 0: full), so leaving and
+    /// coming back never refills it.
+    pub air_used: u16,
 }
 
 /// A growing crop as saved (`bm_core::crops::Crop`), its kind by name.
@@ -571,6 +574,41 @@ mod v10 {
 
 pub use v10::SavedStation as V10SavedStation;
 
+/// The player layout save versions 9 to 11 wrote, kept only to read them
+/// for the upgrade.
+mod v11 {
+    use super::*;
+
+    #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+    pub struct PlayerData {
+        pub planet: u16,
+        pub state: Option<SavedBody>,
+        pub inventory: Vec<Option<SavedStack>>,
+        pub last_seen: u64,
+        pub character: SavedCharacter,
+        pub hurt: u32,
+        pub food: SavedFood,
+    }
+
+    impl From<PlayerData> for super::PlayerData {
+        fn from(p: PlayerData) -> Self {
+            Self {
+                planet: p.planet,
+                state: p.state,
+                inventory: p.inventory,
+                last_seen: p.last_seen,
+                character: p.character,
+                hurt: p.hurt,
+                food: p.food,
+                // Full air: no world had any.
+                air_used: 0,
+            }
+        }
+    }
+}
+
+pub use v11::PlayerData as V11PlayerData;
+
 /// The station and player layouts save version 8 wrote, kept only to read
 /// them for the upgrade.
 mod v8 {
@@ -636,6 +674,7 @@ mod v8 {
                 hurt: p.hurt,
                 // No hunger, no buff.
                 food: SavedFood::default(),
+                air_used: 0,
             }
         }
     }
@@ -780,6 +819,7 @@ mod v4 {
                 character: SavedCharacter::default(),
                 hurt: 0,
                 food: SavedFood::default(),
+                air_used: 0,
             }
         }
     }
@@ -834,6 +874,7 @@ mod v5 {
                 // Unhurt: there was no health before.
                 hurt: 0,
                 food: SavedFood::default(),
+                air_used: 0,
             }
         }
     }
@@ -1101,9 +1142,11 @@ impl Store {
                             postcard::from_bytes::<v8::SavedStation>(b).map(Into::into)
                         })?,
                         // 9 to 10 only added the crops table.
-                        _ => upgrade_stations(&tx, from, |b| {
+                        9 | 10 => upgrade_stations(&tx, from, |b| {
                             postcard::from_bytes::<v10::SavedStation>(b).map(Into::into)
                         })?,
+                        // 11 to 12 changed only players.
+                        _ => 0,
                     };
                     // Version 6 to 7 only adds tables (skies, discoveries),
                     // which read as empty until written.
@@ -1115,7 +1158,10 @@ impl Store {
                         // Versions 6 to 8 share a player layout.
                         upgrade_players(&tx, from, |b| postcard::from_bytes::<v8::PlayerData>(b).map(Into::into))?
                     } else {
-                        0
+                        // Versions 9 to 11 share a player layout; 12 adds air.
+                        upgrade_players(&tx, from, |b| {
+                            postcard::from_bytes::<v11::PlayerData>(b).map(Into::into)
+                        })?
                     };
                     let u = UniverseMeta {
                         save_version: SAVE_VERSION,
@@ -1124,7 +1170,12 @@ impl Store {
                     tx.open_table(META)?
                         .insert("universe", postcard::to_stdvec(&u)?.as_slice())?;
                     tx.commit()?;
-                    if from == 10 {
+                    if from == 11 {
+                        tracing::info!(
+                            "upgraded the universe from save version 11 to {SAVE_VERSION} ({players} characters \
+                             with full air; stations as they were)"
+                        );
+                    } else if from == 10 {
                         tracing::info!(
                             "upgraded the universe from save version 10 to {SAVE_VERSION} ({stations} stations \
                              rewritten with no forge sessions; characters as they were)"
@@ -1814,6 +1865,7 @@ fn upgrade_2_to_3(tx: &WriteTransaction, meta: &v2::PlanetMeta, kinds: &PlanetKi
                         character: SavedCharacter::default(),
                         hurt: 0,
                         food: SavedFood::default(),
+                        air_used: 0,
                     };
                     t.insert(key.as_str(), postcard::to_stdvec(&new)?.as_slice())?;
                     report.players += 1;
@@ -2148,6 +2200,7 @@ mod tests {
                         },
                         hurt: 77,
                         food: Default::default(),
+                        air_used: 0,
                     },
                 )],
                 stations: vec![(2, spot, Some(station.clone()))],
@@ -2537,6 +2590,7 @@ mod tests {
             },
             hurt: 77,
             food: Default::default(),
+            air_used: 0,
         };
         {
             let s = Store::open(&path).unwrap();
@@ -2720,6 +2774,64 @@ mod tests {
         let st = s.stations(1).unwrap();
         assert_eq!(st, vec![(spot, old_station.clone().into())]);
         assert_eq!((st[0].1.wear, st[0].1.containers.len()), (1234, 0));
+        drop(s);
+        let s = Store::open(&path).unwrap();
+        assert!(s.universe(&kinds()).unwrap().is_none(), "reopens as it is");
+        assert_eq!(s.player("alice").unwrap().unwrap(), p);
+    }
+
+    /// A version 11 universe (M17) opens: every character keeps everything
+    /// and has full air; it is marked version 12 and reopens as it is.
+    #[test]
+    fn a_version_11_universe_gives_everyone_full_air() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("u.redb");
+        let old_player = V11PlayerData {
+            planet: 2,
+            state: None,
+            inventory: vec![
+                Some(SavedStack {
+                    item: "stone".into(),
+                    count: 3,
+                    wear: 0,
+                }),
+                None,
+            ],
+            last_seen: 1_700_000_123,
+            character: SavedCharacter::default(),
+            hurt: 40,
+            food: SavedFood {
+                hunger: 12_000,
+                buff: Default::default(),
+                sick: 3,
+            },
+        };
+        {
+            let s = Store::open(&path).unwrap();
+            let tx = s.db.begin_write().unwrap();
+            tx.open_table(META)
+                .unwrap()
+                .insert(
+                    "universe",
+                    postcard::to_stdvec(&UniverseMeta {
+                        save_version: 11,
+                        chunk_format: CHUNK_FORMAT_VERSION,
+                    })
+                    .unwrap()
+                    .as_slice(),
+                )
+                .unwrap();
+            tx.open_table(PLAYER_DATA)
+                .unwrap()
+                .insert("alice", postcard::to_stdvec(&old_player).unwrap().as_slice())
+                .unwrap();
+            tx.commit().unwrap();
+        }
+        let s = Store::open(&path).unwrap();
+        assert!(s.universe(&kinds()).unwrap().is_none());
+        let p = s.player("alice").unwrap().unwrap();
+        assert_eq!(p, PlayerData::from(old_player.clone()));
+        assert_eq!((p.hurt, p.food.hunger, p.food.sick, p.air_used), (40, 12_000, 3, 0));
         drop(s);
         let s = Store::open(&path).unwrap();
         assert!(s.universe(&kinds()).unwrap().is_none(), "reopens as it is");

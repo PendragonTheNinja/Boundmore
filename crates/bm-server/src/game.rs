@@ -1016,7 +1016,7 @@ impl Game {
             out.close("this server is full");
             return;
         }
-        let (planet, saved, mut inventory, character, hurt, food) = match self.departed.remove(&account) {
+        let (planet, saved, mut inventory, character, hurt, food, air_used) = match self.departed.remove(&account) {
             Some(d) => (
                 d.planet,
                 Some(d.state),
@@ -1024,6 +1024,7 @@ impl Game {
                 d.character,
                 d.state.hurt,
                 SavedFood::from(&d.state),
+                d.state.air_used,
             ),
             None => match self.store.player(&account) {
                 Ok(Some(data)) => (
@@ -1035,6 +1036,7 @@ impl Game {
                     skills::sanitize(data.character.into(), &self.skills),
                     data.hurt,
                     data.food,
+                    data.air_used,
                 ),
                 Ok(None) => (
                     self.start,
@@ -1043,6 +1045,7 @@ impl Game {
                     Character::default(),
                     0,
                     SavedFood::default(),
+                    0,
                 ),
                 Err(e) => {
                     // Never start them afresh: the empty inventory would be
@@ -1079,6 +1082,10 @@ impl Game {
             hunger: food.hunger,
             buff: food.buff,
             sick: food.sick,
+            // The air of where they are, and what they had left of it
+            // (milestone 18).
+            air: pl.air,
+            air_used,
             // Never left lying defeated: one who left down comes back up.
             down: false,
             ..state
@@ -1195,6 +1202,9 @@ impl Game {
         self.arrived_in_sky(id);
         self.tell_tokens(id);
         self.server_line(planet, arrived);
+        if let Some(text) = self.players[&id].state.air_warning() {
+            self.notice(id, &text);
+        }
     }
 
     fn leave(&mut self, id: u32) {
@@ -2058,10 +2068,15 @@ impl Game {
         let Some(p) = self.players.get_mut(&id) else { return };
         let from = p.planet;
         p.planet = to;
-        // The character's skills go with them.
+        // Only the place changes: health, hunger, food, energy, air and
+        // skills go with them (a warp used to heal and feed).
         let arrival = PlayerState {
-            body: p.state.body,
-            ..arrival
+            pos: arrival.pos,
+            vel: DVec3::ZERO,
+            on_ground: arrival.on_ground,
+            hook: None,
+            air: self.planets[to].air,
+            ..p.state
         };
         p.state = arrival;
         // Inputs and edits sent about the old planet are not replayed on the
@@ -2138,6 +2153,10 @@ impl Game {
             m.lives.remove(&account);
         }
         self.players[&id].out.send(&ServerMsg::MeteorLife { life: None });
+        // Air they cannot breathe (milestone 18): say so on arrival.
+        if let Some(text) = self.players[&id].state.air_warning() {
+            self.notice(id, &text);
+        }
         self.arrived_in_sky(id);
     }
 
@@ -2751,6 +2770,7 @@ impl Game {
             character: c.clone().into(),
             hurt: state.hurt,
             food: SavedFood::from(&state),
+            air_used: state.air_used,
         };
         let mut players: Vec<(String, PlayerData)> = self
             .players

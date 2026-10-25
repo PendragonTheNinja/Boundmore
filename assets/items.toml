@@ -1213,3 +1213,185 @@ ingredient = "unmaking_wax_2"
 name = "unmaking_wax_3"
 display = "Unmaking Wax III"
 ingredient = "unmaking_wax_3"
+
+# Milestone 18: higher worlds (docs/milestones/18-higher-worlds.md).
+# Coal grades burn for Boundless's spark and heat (tuning 4.7).
+[[item]]
+name = "medium_coal"
+fuel = 250
+
+[[item]]
+name = "hard_coal"
+fuel = 800
+
+[[item]]
+name = "gold_ore"
+
+[[item]]
+name = "gold_ingot"
+display = "Gold Bar"
+
+[[item]]
+name = "gold_alloy"
+
+[[item]]
+name = "titanium_ore"
+
+[[item]]
+name = "titanium_ingot"
+display = "Titanium Bar"
+
+[[item]]
+name = "titanium_alloy"
+
+[[item]]
+name = "compact_gold_alloy"
+
+[[item]]
+name = "compact_titanium_alloy"
+
+[[item]]
+name = "refined_gold_alloy"
+
+[[item]]
+name = "refined_titanium_alloy"
+
+[[item]]
+name = "machined_gold_alloy"
+
+[[item]]
+name = "machined_titanium_alloy"
+
+# Boundless's bonding agent and enriched bonding agent.
+[[item]]
+name = "bonding_agent"
+
+[[item]]
+name = "strong_bonding_agent"
+
+# Tools: Boundless's stats (tuning 2.1); energy per swing is damage / 50.
+[[item]]
+name = "silver_hammer"
+flex = 100
+rank = 50
+stack = 1
+tool = { class = "hammer", damage = 650, action_speed = 30.0, durability = 1200 }
+
+[[item]]
+name = "silver_shovel"
+flex = 100
+rank = 50
+stack = 1
+tool = { class = "shovel", damage = 650, action_speed = 30.0, durability = 1200 }
+
+[[item]]
+name = "silver_axe"
+flex = 100
+rank = 50
+stack = 1
+tool = { class = "axe", damage = 650, action_speed = 30.0, durability = 1200 }
+
+[[item]]
+name = "gold_hammer"
+flex = 90
+rank = 50
+stack = 1
+tool = { class = "hammer", damage = 700, action_speed = 10.0, crit_chance = 0.5, crit_effect = 0.75, durability = 1100 }
+
+[[item]]
+name = "gold_shovel"
+flex = 90
+rank = 50
+stack = 1
+tool = { class = "shovel", damage = 700, action_speed = 10.0, crit_chance = 0.5, crit_effect = 0.75, durability = 1100 }
+
+[[item]]
+name = "gold_axe"
+flex = 90
+rank = 50
+stack = 1
+tool = { class = "axe", damage = 700, action_speed = 10.0, crit_chance = 0.5, crit_effect = 0.75, durability = 1100 }
+
+[[item]]
+name = "titanium_hammer"
+flex = 90
+rank = 80
+stack = 1
+tool = { class = "hammer", damage = 1000, action_speed = 25.0, crit_chance = 0.2, crit_effect = 0.4, durability = 1500 }
+
+[[item]]
+name = "titanium_shovel"
+flex = 90
+rank = 80
+stack = 1
+tool = { class = "shovel", damage = 1000, action_speed = 25.0, crit_chance = 0.2, crit_effect = 0.4, durability = 1500 }
+
+[[item]]
+name = "titanium_axe"
+flex = 90
+rank = 80
+stack = 1
+tool = { class = "axe", damage = 1000, action_speed = 25.0, crit_chance = 0.2, crit_effect = 0.4, durability = 1500 }
+
+# Grapples (tuning 4.9).
+[[item]]
+name = "silver_grapple"
+flex = 100
+rank = 50
+stack = 1
+grapple = { range = 18.0, shot_speed = 50.0, reel_in = 10.0, reel_out = 20.0, durability = 1000, energy = 100 }
+
+[[item]]
+name = "gold_grapple"
+flex = 90
+rank = 50
+stack = 1
+grapple = { range = 25.0, shot_speed = 30.0, reel_in = 10.0, reel_out = 20.0, durability = 1000, energy = 100 }
+
+[[item]]
+name = "titanium_grapple"
+flex = 90
+rank = 80
+stack = 1
+grapple = { range = 20.0, shot_speed = 40.0, reel_in = 40.0, reel_out = 40.0, durability = 1200, energy = 120 }
+
+# Spanners: wear mended a hit is Boundless's; durability, speed and energy
+# are guesses on the copper and iron spanners' pattern.
+[[item]]
+name = "silver_spanner"
+flex = 100
+rank = 50
+stack = 1
+tool = { class = "spanner", action_speed = 30.0, durability = 1200, energy = 13, repair = 1500 }
+
+[[item]]
+name = "gold_spanner"
+flex = 90
+rank = 50
+stack = 1
+tool = { class = "spanner", action_speed = 30.0, durability = 1100, energy = 14, repair = 2000 }
+
+[[item]]
+name = "titanium_spanner"
+flex = 90
+rank = 80
+stack = 1
+tool = { class = "spanner", action_speed = 30.0, durability = 1500, energy = 20, repair = 6000 }
+
+# Atmosphere food (Boundless's hunger and buffs; recipes are guesses).
+[[item]]
+name = "spicy_chilli"
+food = { hunger = 1500, buff = "breathing", rank = 1, minutes = 30 }
+
+[[item]]
+name = "spiced_rice"
+food = { hunger = 2500, buff = "breathing", rank = 2, minutes = 30 }
+
+[[item]]
+name = "raw_hearty_pie"
+display = "Raw Hearty Pie"
+food = { hunger = 400, sick = true }
+
+[[item]]
+name = "hearty_pie"
+food = { hunger = 5000, buff = "breathing", rank = 3, minutes = 30 }

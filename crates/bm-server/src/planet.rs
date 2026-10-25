@@ -13,6 +13,7 @@ use crate::storage::Storages;
 use crate::store::{SavedClaim, SavedPlanet, Store, WriteBatch};
 use crate::world::World;
 use anyhow::{Context, Result, bail};
+use bm_core::atmosphere::Air;
 use bm_core::{
     BlockId, BlockPos, BlockRegistry, BlockState, Chunk, ChunkPos, DayCycle, ItemRegistry, PlanetLook, PlanetShape,
     PlayerState, PlotPos, RecipeBook,
@@ -39,6 +40,8 @@ pub struct Planet {
     /// The kind's display name.
     pub kind_display: String,
     pub tier: u8,
+    /// Its air (milestone 18), from its kind and tier.
+    pub air: Air,
     pub look: PlanetLook,
     pub tints: Vec<[u8; 3]>,
     pub day: DayCycle,
@@ -65,6 +68,7 @@ impl Planet {
             name: self.name.clone(),
             kind: self.kind_display.clone(),
             tier: self.tier,
+            air: self.air,
             shape: self.world.shape,
             day: self.day,
             look: self.look.clone(),
@@ -78,6 +82,7 @@ impl Planet {
             name: self.name.clone(),
             kind: self.kind_display.clone(),
             tier: self.tier,
+            air: self.air,
             color: self.look.color,
             width_blocks: self.world.shape.width_blocks() as u32,
             players: self.players.min(u16::MAX as usize) as u16,
@@ -334,6 +339,7 @@ pub fn open(
         id,
         kind_display: kind.map_or_else(|| bm_core::items::title_case(&saved.kind), |k| k.display.clone()),
         tier: kind.map_or(1, |k| k.tier),
+        air: kind.map_or_else(Air::default, |k| Air::of(k.air, k.tier)),
         name: saved.name,
         kind: saved.kind,
         look,
@@ -542,12 +548,14 @@ mod tests {
             "relic_cache",
             "small_fossil_seam",
             "medium_fossil_seam",
+            "medium_coal_seam",
         ];
         for (i, name) in tail.iter().enumerate() {
             assert_eq!(kind.ores[n - tail.len() + i].block, *name);
         }
         // A planet made before wayshards gains them, the relic seam, the
-        // relic cache (milestone 15) and the fossils (milestone 17), once,
+        // relic cache (milestone 15), the fossils (milestone 17) and medium
+        // coal (milestone 18), once,
         // after its own ores in their order.
         let mut old = kind.clone();
         old.ores.truncate(n - tail.len());
@@ -604,11 +612,11 @@ mod tests {
         let spec = PlanetSpec::new("Old", "lush", 3, 16);
         let mut saved = new_record(0, &spec, 12, &kinds).unwrap();
         let full = saved.generation.clone();
-        // Before the relic seam, milestone 15's relic cache and silver, and
-        // milestone 17's fossils.
+        // Before the relic seam, milestone 15's relic cache and silver,
+        // milestone 17's fossils and milestone 18's medium and hard coal.
         let n = saved.generation.ores.len();
-        assert_eq!(saved.generation.ores[n - 5].block, "relic_seam");
-        saved.generation.ores.truncate(n - 5);
+        assert_eq!(saved.generation.ores[n - 7].block, "relic_seam");
+        saved.generation.ores.truncate(n - 7);
         saved.generation.flora.clear();
         let old_ores = saved.generation.ores.clone();
         store.put_planet(0, &saved).unwrap();
@@ -622,7 +630,7 @@ mod tests {
         let reopened = store.planet(0).unwrap().unwrap().generation;
         assert_eq!(reopened, full, "saved");
         assert_eq!(reopened.ores[..old_ores.len()], old_ores[..]);
-        assert_eq!(reopened.ores.last().unwrap().block, "medium_fossil_seam");
+        assert_eq!(reopened.ores.last().unwrap().block, "hard_coal_seam");
         open(&store, 0, &spec, 12, 4, &cat, Vec::new()).unwrap();
         assert_eq!(store.planet(0).unwrap().unwrap().generation, full, "once");
     }

@@ -1588,3 +1588,311 @@ xp = 12
 wear = 9
 spark = 200
 skill = { name = "ingredient_crafting", level = 1 }
+
+# ---------------------------------------------------------------- milestone 18
+# Higher worlds (docs/milestones/18-higher-worlds.md): Boundless's times,
+# heat and spark (tuning 4.8, 4.9); XP and wear follow the silver line and
+# are guesses where the data was not to hand.
+[[recipe]]
+output = "gold_ingot"
+inputs = [["gold_ore", 1]]
+station = "furnace"
+seconds = 180.0
+heat = 400
+xp = 16
+
+[[recipe]]
+output = "titanium_ingot"
+inputs = [["titanium_ore", 1]]
+station = "furnace"
+seconds = 240.0
+heat = 600
+xp = 20
+
+[[recipe]]
+output = "gold_alloy"
+inputs = [["gold_ingot", 1], ["copper_ingot", 1]]
+station = "mixer"
+seconds = 50.0
+spark = 100
+xp = 13
+wear = 12
+
+[[recipe]]
+output = "titanium_alloy"
+inputs = [["titanium_ingot", 1], ["silver_alloy", 2]]
+station = "mixer"
+seconds = 60.0
+spark = 200
+xp = 16
+wear = 14
+
+[[recipe]]
+output = "titanium_alloy"
+inputs = [["titanium_ingot", 1], ["gold_alloy", 2]]
+station = "mixer"
+seconds = 60.0
+spark = 200
+xp = 16
+wear = 14
+
+[[recipe]]
+output = "compact_gold_alloy"
+inputs = [["gold_alloy", 10]]
+station = "compactor"
+seconds = 110.0
+spark = 400
+xp = 22
+wear = 14
+
+[[recipe]]
+output = "refined_gold_alloy"
+inputs = [["compact_gold_alloy", 1]]
+station = "refinery"
+seconds = 50.0
+spark = 400
+xp = 17
+wear = 12
+
+[[recipe]]
+output = "machined_gold_alloy"
+inputs = [["refined_gold_alloy", 1]]
+station = "workbench"
+seconds = 50.0
+spark = 400
+xp = 18
+wear = 12
+
+[[recipe]]
+output = "compact_titanium_alloy"
+inputs = [["titanium_alloy", 10]]
+station = "compactor"
+seconds = 120.0
+spark = 400
+xp = 22
+wear = 14
+
+[[recipe]]
+output = "refined_titanium_alloy"
+inputs = [["compact_titanium_alloy", 1]]
+station = "refinery"
+seconds = 60.0
+spark = 400
+xp = 17
+wear = 12
+
+[[recipe]]
+output = "machined_titanium_alloy"
+inputs = [["refined_titanium_alloy", 1]]
+station = "workbench"
+seconds = 60.0
+spark = 400
+xp = 18
+wear = 12
+
+# Boundless's ancient essence is our fossil essence; its fresh vital essence our vital essence.
+[[recipe]]
+output = "bonding_agent"
+inputs = [["glue", 2], ["fossil_essence", 2], ["vital_essence", 1], ["pulsating_orb", 1]]
+station = "mixer"
+seconds = 30.0
+xp = 8
+wear = 12
+
+[[recipe]]
+output = "strong_bonding_agent"
+inputs = [["glue", 4], ["fossil_essence", 10], ["vital_essence", 5], ["shimmering_orb", 1]]
+station = "mixer"
+seconds = 60.0
+spark = 200
+xp = 16
+wear = 15
+
+[[recipe]]
+output = "silver_hammer"
+inputs = [["silver_alloy", 3], ["stick", 4], ["cotton_cloth", 1], ["bonding_agent", 1]]
+station = "workbench"
+seconds = 240.0
+spark = 800
+xp = 24
+wear = 14
+skill = { name = "tool_crafting", level = 2 }
+
+[[recipe]]
+output = "silver_shovel"
+inputs = [["silver_alloy", 3], ["stick", 4], ["cotton_cloth", 1], ["bonding_agent", 1]]
+station = "workbench"
+seconds = 240.0
+spark = 800
+xp = 24
+wear = 14
+skill = { name = "tool_crafting", level = 2 }
+
+[[recipe]]
+output = "silver_axe"
+inputs = [["silver_alloy", 3], ["stick", 4], ["cotton_cloth", 1], ["bonding_agent", 1]]
+station = "workbench"
+seconds = 240.0
+spark = 800
+xp = 24
+wear = 14
+skill = { name = "tool_crafting", level = 2 }
+
+[[recipe]]
+output = "silver_grapple"
+inputs = [["silver_alloy", 3], ["cotton_cloth", 1], ["bonding_agent", 1], ["relic_fragment", 5]]
+station = "workbench"
+seconds = 240.0
+spark = 800
+xp = 24
+wear = 14
+skill = { name = "tech_crafting", level = 2 }
+
+[[recipe]]
+output = "silver_spanner"
+inputs = [["silver_alloy", 3], ["stick", 4], ["cotton_cloth", 1], ["bonding_agent", 1], ["cog", 4]]
+station = "workbench"
+seconds = 240.0
+spark = 800
+xp = 24
+wear = 14
+skill = { name = "tech_crafting", level = 2 }
+
+[[recipe]]
+output = "gold_hammer"
+inputs = [["gold_alloy", 3], ["stick", 4], ["cotton_cloth", 1], ["bonding_agent", 1]]
+station = "workbench"
+seconds = 480.0
+spark = 800
+xp = 28
+wear = 14
+skill = { name = "tool_crafting", level = 2 }
+
+[[recipe]]
+output = "gold_shovel"
+inputs = [["gold_alloy", 3], ["stick", 4], ["cotton_cloth", 1], ["bonding_agent", 1]]
+station = "workbench"
+seconds = 480.0
+spark = 800
+xp = 28
+wear = 14
+skill = { name = "tool_crafting", level = 2 }
+
+[[recipe]]
+output = "gold_axe"
+inputs = [["gold_alloy", 3], ["stick", 4], ["cotton_cloth", 1], ["bonding_agent", 1]]
+station = "workbench"
+seconds = 480.0
+spark = 800
+xp = 28
+wear = 14
+skill = { name = "tool_crafting", level = 2 }
+
+[[recipe]]
+output = "gold_grapple"
+inputs = [["gold_alloy", 3], ["cotton_cloth", 1], ["bonding_agent", 1], ["relic_fragment", 5]]
+station = "workbench"
+seconds = 480.0
+spark = 800
+xp = 28
+wear = 14
+skill = { name = "tech_crafting", level = 2 }
+
+[[recipe]]
+output = "gold_spanner"
+inputs = [["gold_alloy", 3], ["stick", 4], ["cotton_cloth", 1], ["bonding_agent", 1], ["cog", 4]]
+station = "workbench"
+seconds = 480.0
+spark = 800
+xp = 28
+wear = 14
+skill = { name = "tech_crafting", level = 2 }
+
+[[recipe]]
+output = "titanium_hammer"
+inputs = [["titanium_alloy", 3], ["stick", 4], ["cotton_cloth", 1], ["strong_bonding_agent", 1]]
+station = "workbench"
+seconds = 1200.0
+spark = 1500
+xp = 40
+wear = 22
+skill = { name = "tool_crafting", level = 3 }
+
+[[recipe]]
+output = "titanium_shovel"
+inputs = [["titanium_alloy", 3], ["stick", 4], ["cotton_cloth", 1], ["strong_bonding_agent", 1]]
+station = "workbench"
+seconds = 1200.0
+spark = 1500
+xp = 40
+wear = 22
+skill = { name = "tool_crafting", level = 3 }
+
+[[recipe]]
+output = "titanium_axe"
+inputs = [["titanium_alloy", 3], ["stick", 4], ["cotton_cloth", 1], ["strong_bonding_agent", 1]]
+station = "workbench"
+seconds = 1200.0
+spark = 1500
+xp = 40
+wear = 22
+skill = { name = "tool_crafting", level = 3 }
+
+[[recipe]]
+output = "titanium_grapple"
+inputs = [["titanium_alloy", 3], ["cotton_cloth", 1], ["strong_bonding_agent", 1], ["relic_component", 1], ["relic_fragment", 5]]
+station = "workbench"
+seconds = 1200.0
+spark = 1500
+xp = 40
+wear = 22
+skill = { name = "tech_crafting", level = 3 }
+
+[[recipe]]
+output = "titanium_spanner"
+inputs = [["titanium_alloy", 3], ["stick", 4], ["cotton_cloth", 1], ["strong_bonding_agent", 1], ["cog", 4]]
+station = "workbench"
+seconds = 1200.0
+spark = 1500
+xp = 40
+wear = 22
+skill = { name = "tech_crafting", level = 3 }
+
+# Atmosphere food: Boundless's inputs are prime meat, spicy beans and an
+# amalgam we do not have, so these recipes are guesses (spec rule 26).
+[[recipe]]
+output = "spicy_chilli"
+inputs = [["cooked_prime_meat", 1], ["spicy_bean", 4], ["water_bucket", 1]]
+station = "furnace"
+seconds = 60.0
+heat = 100
+xp = 10
+skill = { name = "food_crafting", level = 2 }
+
+[[recipe]]
+output = "spiced_rice"
+inputs = [["cooked_prime_meat", 1], ["spicy_bean", 6], ["rice_bag", 1], ["water_bucket", 1]]
+station = "furnace"
+seconds = 120.0
+heat = 200
+xp = 16
+skill = { name = "food_crafting", level = 3 }
+
+[[recipe]]
+output = "raw_hearty_pie"
+inputs = [["cooked_prime_meat", 2], ["spicy_bean", 10], ["flour", 1], ["baking_powder", 1], ["milk_bucket", 1]]
+station = "mixer"
+seconds = 120.0
+spark = 200
+xp = 20
+wear = 21
+skill = { name = "food_crafting", level = 4 }
+
+[[recipe]]
+output = "hearty_pie"
+inputs = [["raw_hearty_pie", 1]]
+station = "furnace"
+seconds = 480.0
+heat = 300
+xp = 32
+skill = { name = "food_crafting", level = 4 }

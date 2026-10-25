@@ -1314,12 +1314,34 @@ mod tests {
 
     /// A kind's settings as planets made before M17 saved them: without the
     /// two fossil seams at the end of the ores.
-    fn before_m17(mut cfg: PlanetGenConfig) -> PlanetGenConfig {
+    fn before_m17(cfg: PlanetGenConfig) -> PlanetGenConfig {
+        let mut cfg = before_m18(cfg);
         for seam in ["medium_fossil_seam", "small_fossil_seam"] {
             assert_eq!(cfg.ores.last().map(|o| o.block.as_str()), Some(seam));
             cfg.ores.pop();
         }
         cfg
+    }
+
+    /// A kind's settings as planets made before M18 saved them: without the
+    /// coal seams appended to the ores (medium coal everywhere, hard coal on
+    /// tier 3). Only the four kinds that existed before M18 have such
+    /// planets.
+    fn before_m18(mut cfg: PlanetGenConfig) -> PlanetGenConfig {
+        if cfg.ores.last().map(|o| o.block.as_str()) == Some("hard_coal_seam") {
+            cfg.ores.pop();
+        }
+        assert_eq!(cfg.ores.last().map(|o| o.block.as_str()), Some("medium_coal_seam"));
+        cfg.ores.pop();
+        cfg
+    }
+
+    /// The kinds that existed before milestone 18: the only ones with older
+    /// planets to keep.
+    const ORIGINAL_KINDS: [&str; 4] = ["temperate", "arid", "frozen", "lush"];
+
+    fn original_kinds(kinds: &PlanetKinds) -> impl Iterator<Item = &crate::PlanetKind> {
+        kinds.kinds.iter().filter(|k| ORIGINAL_KINDS.contains(&k.name.as_str()))
     }
 
     const CROP_FLORA: [&str; 7] = [
@@ -1594,8 +1616,26 @@ mod tests {
     // Re-pinned for M17's fossil seams (appended ores) without a version
     // bump: planets saved before keep their terrain (`PINNED_M16`, checked in
     // `appending_m17_only_turns_rock_into_fossils`).
-    const PINNED: [(&str, u64); 5] = [
+    // Re-pinned for M18's coal seams (appended ores) and its nine new kinds
+    // without a version bump: planets saved before keep their terrain
+    // (`PINNED_M17`, checked in `appending_m18_only_turns_rock_into_coal`).
+    const PINNED: [(&str, u64); 14] = [
         ("default", 0x6bc9_e59d_8877_7736),
+        ("temperate", 0x76a6_36c1_13f8_f35b),
+        ("arid", 0xee50_ee54_4498_53f4),
+        ("frozen", 0x1be4_f48d_f602_cd05),
+        ("lush", 0xce44_41df_fbcd_2de5),
+        ("overgrown", 0xc4c9_503a_3673_e8a3),
+        ("rustland", 0x7357_b341_e729_e4d9),
+        ("cinderland", 0x0ac7_055c_c27b_183d),
+        ("acrid", 0x9539_8597_36c8_3fde),
+        ("blighted", 0xe8df_2f34_0408_6f26),
+        ("glacial", 0xde05_b9ff_a1bc_8a5b),
+        ("stormy", 0xad63_8d85_5531_7e01),
+        ("scorched", 0xa45d_7ef3_71b1_002c),
+        ("ember", 0x6bfd_e7f2_4d61_8d2b),
+    ];
+    const PINNED_M17: [(&str, u64); 4] = [
         ("temperate", 0xa10a_36aa_5d69_57f1),
         ("arid", 0x8ef1_bc6b_29ce_448c),
         ("frozen", 0x9068_f146_8540_363b),
@@ -1616,11 +1656,11 @@ mod tests {
         let kinds = PlanetKinds::builtin(&blocks);
         let rock = ["stone", "deep_stone", "sandstone"].map(id);
         let fossils = [id("small_fossil_seam"), id("medium_fossil_seam")];
-        for k in &kinds.kinds {
+        for k in original_kinds(&kinds) {
             let with = k.generation(42);
             let shape = PlanetShape::new(64, 12);
             let old = Generator::new(shape, before_m17(with.clone()), &blocks).unwrap();
-            let new = Generator::new(shape, with, &blocks).unwrap();
+            let new = Generator::new(shape, before_m18(with), &blocks).unwrap();
             let pinned = PINNED_M16.iter().find(|(n, _)| *n == k.name).expect("pinned").1;
             assert_eq!(fingerprint(&old), pinned, "{} before M17 keeps its terrain", k.name);
             let mut found = [0; 2];
@@ -1643,6 +1683,54 @@ mod tests {
         }
     }
 
+    /// M18 appended medium coal to every kind's ores (and hard coal to the
+    /// lush kind's): an existing planet's unsaved chunks may only turn rock
+    /// into coal.
+    #[test]
+    fn appending_m18_only_turns_rock_into_coal() {
+        let blocks = BlockRegistry::builtin();
+        let kinds = PlanetKinds::builtin(&blocks);
+        // Glow crystals sit in rock under cave floors; coal takes that rock
+        // first, as any ore does.
+        let rock = ["stone", "deep_stone", "sandstone", "glow_crystal"].map(id);
+        let coal = [id("medium_coal_seam"), id("hard_coal_seam")];
+        for k in original_kinds(&kinds) {
+            let with = k.generation(42);
+            // A cave fungus whose rock floor became coal no longer grows.
+            let props: Vec<_> = with.flora.iter().map(|f| id(&f.block)).collect();
+            let shape = PlanetShape::new(64, 12);
+            let old = Generator::new(shape, before_m18(with.clone()), &blocks).unwrap();
+            let new = Generator::new(shape, with, &blocks).unwrap();
+            let pinned = PINNED_M17.iter().find(|(n, _)| *n == k.name).expect("pinned").1;
+            assert_eq!(fingerprint(&old), pinned, "{} before M18 keeps its terrain", k.name);
+            let mut found = [0; 2];
+            for x in 0..12 {
+                for y in 0..5 {
+                    let pos = ChunkPos::new(x * 5, y, x * 11);
+                    let (a, b) = (old.generate(pos).to_dense_states(), new.generate(pos).to_dense_states());
+                    for (a, b) in a.iter().zip(&b) {
+                        if a == b {
+                            continue;
+                        }
+                        if props.contains(&a.id) && b.id == BlockId::AIR {
+                            continue;
+                        }
+                        assert!(rock.contains(&a.id), "{}: {a:?} became {b:?}", k.name);
+                        let i = coal.iter().position(|c| *c == b.id).expect("only coal appears");
+                        found[i] += 1;
+                    }
+                }
+            }
+            assert!(found[0] > 0, "{}: medium coal {found:?}", k.name);
+            assert_eq!(
+                found[1] > 0,
+                k.name == "lush",
+                "{}: hard coal only on tier 3 {found:?}",
+                k.name
+            );
+        }
+    }
+
     const PINNED_M15: [(&str, u64); 4] = [
         ("temperate", 0xa6ab_8a36_dcb2_7da0),
         ("arid", 0x31a0_b625_c37a_056f),
@@ -1658,7 +1746,7 @@ mod tests {
         let kinds = PlanetKinds::builtin(&blocks);
         let crops: Vec<BlockId> = CROP_FLORA.iter().map(|n| id(n)).collect();
         let mut grown = 0;
-        for k in &kinds.kinds {
+        for k in original_kinds(&kinds) {
             let with = k.generation(42);
             let shape = PlanetShape::new(64, 12);
             let old = Generator::new(shape, before_m16(with.clone()), &blocks).unwrap();
@@ -1736,7 +1824,7 @@ mod tests {
         let kinds = PlanetKinds::builtin(&blocks);
         let rock = ["stone", "deep_stone", "sandstone"].map(id);
         let (cache, silver) = (id("relic_cache"), id("silver_seam"));
-        for k in &kinds.kinds {
+        for k in original_kinds(&kinds) {
             let with = k.generation(42);
             let shape = PlanetShape::new(64, 12);
             let old = Generator::new(shape, before_m15(with.clone()), &blocks).unwrap();

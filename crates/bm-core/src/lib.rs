@@ -2,6 +2,7 @@
 //! server and client. Headless by rule: nothing here may depend on graphics,
 //! windowing, sockets or the filesystem.
 
+pub mod atmosphere;
 pub mod block;
 pub mod chisel;
 pub mod chunk;

@@ -2242,6 +2242,7 @@ impl App {
                     region: s.sky_view.place(feet),
                     meteor: s.sky_view.status(feet, shape, s.server_tick(local)),
                     life: s.sky_view.life_text(),
+                    air: crate::menus::air_view(&s.me.state),
                 },
             );
             // Fighting: name plates, numbers, the hurt flash, the charge
@@ -2650,6 +2651,8 @@ impl App {
             }
         }
         let view_radius = s.view_radius;
+        // Short of air, the fog closes in (milestone 18).
+        let fog_end = bm_core::atmosphere::fog_end((view_radius as f32 - 1.0) * 32.0, &s.me.state);
         // Cracks on the aimed block once it has taken damage.
         let breaking = s
             .target_health()
@@ -2667,7 +2670,7 @@ impl App {
             breaking,
             lines: &lines,
             xray_lines: &xray,
-            fog_end: (view_radius as f32 - 1.0) * 32.0,
+            fog_end,
             time,
         });
     }
@@ -2987,6 +2990,18 @@ impl App {
                     s.selected = 0;
                 }
                 (self.yaw, self.pitch) = (0.4, -0.1);
+            }
+            // Milestone 18: on a tier 6 world of burning air with Fire Ward 1,
+            // most of the air gone and the fog closing in.
+            "air" => {
+                if let Some(s) = &mut self.session {
+                    let mut st = s.me.state;
+                    st.air = bm_core::atmosphere::Air::of(bm_core::atmosphere::AirLine::Burning, 6);
+                    st.body.wards = [0, 0, bm_core::atmosphere::ward_points(1)];
+                    st.air_used = bm_core::atmosphere::AIR_TICKS * 3 / 4;
+                    s.me.teleport(st);
+                }
+                (self.yaw, self.pitch) = (0.4, -0.05);
             }
             "torches" => {
                 if let Some(Link::Demo(d)) = &mut self.link {

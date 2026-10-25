@@ -552,8 +552,8 @@ name = "Fire Ward"
 category = "exploration"
 ranks = 5
 cost = 1
-effect = "later"
-text = "Comes with world hazards"
+effect = "fire_ward"
+text = "+1 protection against burning air a rank (+2 at ranks 4 and 5): 1, 2, 3, 5, 7"
 
 [[skill]]
 id = "potent_protection"
@@ -561,8 +561,8 @@ name = "Spark Ward"
 category = "exploration"
 ranks = 5
 cost = 1
-effect = "later"
-text = "Comes with world hazards"
+effect = "spark_ward"
+text = "+1 protection against charged air a rank (+2 at ranks 4 and 5): 1, 2, 3, 5, 7"
 
 [[skill]]
 id = "caustic_protection"
@@ -570,8 +570,8 @@ name = "Acid Ward"
 category = "exploration"
 ranks = 5
 cost = 1
-effect = "later"
-text = "Comes with world hazards"
+effect = "acid_ward"
+text = "+1 protection against acid air a rank (+2 at ranks 4 and 5): 1, 2, 3, 5, 7"
 
 [[skill]]
 id = "warp_distance"

@@ -8,6 +8,7 @@
 //! from them by seed ([`crate::pick_colours`]), saved with its settings.
 
 use crate::{ConfigError, PlanetGenConfig, palette, pick_colours};
+use bm_core::atmosphere::AirLine;
 use bm_core::{BlockRegistry, PlanetLook, RegistryError};
 use serde::Deserialize;
 use std::collections::BTreeMap;
@@ -20,6 +21,8 @@ pub struct PlanetKind {
     pub display: String,
     /// 1 is the gentle start; higher tiers hold rarer ore.
     pub tier: u8,
+    /// The line of its air (milestone 18): hazardous from tier 4.
+    pub air: AirLine,
     pub look: PlanetLook,
     /// Block name to the palette colour names a planet of this kind may give
     /// it (`[kind.colours]`).
@@ -69,6 +72,8 @@ struct KindEntry {
     display: Option<String>,
     tier: u8,
     #[serde(default)]
+    air: AirLine,
+    #[serde(default)]
     look: PlanetLook,
     #[serde(default)]
     colours: BTreeMap<String, Vec<String>>,
@@ -100,6 +105,7 @@ impl PlanetKinds {
                 display: e.display.unwrap_or_else(|| title_case(&e.name)),
                 name: e.name,
                 tier: e.tier.max(1),
+                air: e.air,
                 look: e.look,
                 colours: e.colours,
                 generation: e.generation,

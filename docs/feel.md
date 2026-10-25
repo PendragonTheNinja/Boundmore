@@ -261,3 +261,20 @@ Boundless's live tree and tables exactly (Nathan, 2026-10-20), in Boundmore's na
 | Twitchy | goes off about every 10 s; +400 durability | the rate a **guess** (Measure 9); durability Release 209 |
 | Gnawing | hunger as fast as sprinting; +30% max energy | the rate a **guess** (Measure 10); +30% Release 209 |
 | Draining | 5 health every 5 s, never breaking the calm; +30% max health | the rate a **guess** (Measure 10); +30% Release 209 |
+
+## Higher worlds (M18, `docs/milestones/18-higher-worlds.md`, `bm-core/src/atmosphere.rs`)
+
+| Value | Now | Source, or guess |
+|---|---|---|
+| Hazard by tier | 0 to tier 3, then 1, 3, 5 (7, 10 for tiers 7, 8) | Boundless (boundlexx world code, R198) |
+| Ward protection | 1, 2, 3, 5, 7 for ranks 1 to 5 | Boundless's skill text |
+| Atmosphere food | +1, +2, +3 against every line, 30 min | numbers Boundless's; "every line" a **guess** (Measure 5) |
+| Air | 30 s from full to empty while short | **guess** (Measure 1) |
+| Air coming back | about 8 s from empty to full once protected | **guess** (Measure 3) |
+| Choking | 5% of max health per point short, every 5 s; stops healing | **guess** (Measure 2, 4) |
+| Fog | closes from the view distance to 30 blocks as the air runs out | **guess**; Boundless: "fog rolls in right up to you" |
+| New worlds' size | 48 chunks (1,536 blocks) across | **guess**, as Emberdune and Rimehold |
+| Gold seams | 8 to 26 above the floor, 25+ down | Boundless 10 to 20 and 25+; the band widened a little, a **guess** |
+| Titanium, medium and hard coal | 70+, 20+ and 50+ down | Boundless; richness a **guess** |
+| Spanner durability, speed, energy (silver, gold, titanium) | 1200/30/13, 1100/30/14, 1500/30/20 | **guess** on the iron spanner's pattern; repair per hit Boundless's |
+| Atmosphere food recipes | prime meat, spicy beans, rice, flour | **guess** (Boundless's need an amalgam we lack) |
