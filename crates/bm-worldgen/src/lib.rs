@@ -770,7 +770,37 @@ pub struct Generator {
     tunnel_b: Fbm,
     /// The planet's biomes (milestone 19); None: version 3's one landscape.
     biome: Option<BiomeWorld>,
+    /// Tree sites already decided, by lattice square: neighbouring chunks
+    /// ask about most of the same squares. Only a cache: every answer is a
+    /// pure function of the square.
+    tree_sites: Cache<Option<TreeHit>>,
+    /// Each chunk column's land (the chunk and its margin), shared by the
+    /// chunks stacked in it. Only a cache, like `tree_sites`.
+    spans: Cache<std::sync::Arc<Vec<Column>>>,
 }
+
+/// Chunk columns' land the cache holds before it starts again (each about
+/// 35 KB).
+const SPAN_CACHE: usize = 512;
+
+/// A tree site: its column, ground height, biome and tree kind (indices),
+/// and the seed it grows from.
+#[derive(Clone, Copy, Debug)]
+struct TreeHit {
+    x: i64,
+    z: i64,
+    h: i64,
+    biome: u8,
+    tree: u8,
+    seed: u64,
+}
+
+/// A cache shared by the threads generating a planet, keyed by a square or
+/// chunk column.
+type Cache<T> = std::sync::Mutex<std::collections::HashMap<(i64, i64), T>>;
+
+/// Tree sites the cache holds before it starts again.
+const TREE_SITE_CACHE: usize = 200_000;
 
 /// A biome's land and blocks, resolved for generating.
 struct BiomeLand {
@@ -788,7 +818,24 @@ struct BiomeLand {
     beach: Option<BlockId>,
     snow_above: Option<i64>,
     tree_density: f64,
+    /// Its trees, resolved, and their weights' total.
+    trees: Vec<LandTree>,
+    tree_weight: f64,
 }
+
+/// A tree kind a biome grows, its wood resolved.
+struct LandTree {
+    shape: trees::Shape,
+    weight: f64,
+    size: f64,
+    /// Trunk, leaves, second leaves.
+    wood: [BlockId; 3],
+}
+
+/// Trees grow from one hashed column in each square this wide, so a tree
+/// is a function of the world and crosses chunk borders whole. Divides 32,
+/// so every planet width holds whole squares.
+const TREE_CELL: i64 = 4;
 
 /// What a biome planet adds to the generator.
 struct BiomeWorld {
@@ -803,11 +850,14 @@ struct BiomeWorld {
     rocks: Vec<BlockId>,
     river_bed: [BlockId; 3],
     any_trees: bool,
+    /// The furthest any of its trees reaches sideways, and up.
+    tree_reach: i64,
+    tree_up: i64,
 }
 
 /// One column of a biome planet: its height, the biome it belongs to and how
 /// much a river cuts it (0 to 1).
-#[derive(Clone, Copy, Default)]
+#[derive(Clone, Copy, Debug, Default)]
 struct Column {
     h: i64,
     biome: u8,
@@ -841,7 +891,25 @@ impl BiomeWorld {
                 .iter()
                 .map(|[top, under]| Ok((id(top)?, id(under)?, !SOFT_COVER.contains(&top.as_str()))))
                 .collect::<Result<Vec<_>, RegistryError>>()?;
+            let mut trees = Vec::new();
+            let specs = if b.trees.is_empty() && b.tree_density > 0.0 {
+                vec![biomes::TreeSpec::default()]
+            } else {
+                b.trees.clone()
+            };
+            for t in &specs {
+                let [tr, lv, l2] = t.wood();
+                trees.push(LandTree {
+                    shape: t.shape,
+                    weight: t.weight.max(0.0),
+                    size: t.size.clamp(0.0, 1.0),
+                    wood: [id(tr)?, id(lv)?, id(l2)?],
+                });
+            }
+            let tree_weight = trees.iter().map(|t| t.weight).sum();
             lands.push(BiomeLand {
+                trees,
+                tree_weight,
                 base: b.base,
                 hills: b.hills,
                 mountains: b.mountains,
@@ -869,9 +937,25 @@ impl BiomeWorld {
             }
         }
         let strata = Self::strata(cfg, &kinds, 512);
+        let tree_reach = lands
+            .iter()
+            .filter(|l| l.tree_density > 0.0)
+            .flat_map(|l| &l.trees)
+            .map(|t| t.shape.reach().0 as i64)
+            .max()
+            .unwrap_or(0);
+        let tree_up = lands
+            .iter()
+            .filter(|l| l.tree_density > 0.0)
+            .flat_map(|l| &l.trees)
+            .map(|t| t.shape.reach().1 as i64)
+            .max()
+            .unwrap_or(0);
         Ok(Self {
+            tree_reach,
+            tree_up,
             layout: biomes::Layout::new(&cfg.biomes, width, cfg.biome_size, cfg.seed),
-            any_trees: lands.iter().any(|l| l.tree_density > 0.0),
+            any_trees: lands.iter().any(|l| l.tree_density > 0.0 && l.tree_weight > 0.0),
             lands,
             rivers: Fbm::new(k(2901), width, 520.0, 2, 0.5),
             patch: Fbm::new(k(2902), width, 96.0, 2, 0.5),
@@ -1003,8 +1087,11 @@ impl Generator {
         } else {
             Some(BiomeWorld::new(&cfg, registry, w, k)?)
         };
+        let biome_tree_up = biome.as_ref().map_or(0, |b| b.tree_up + 2);
         Ok(Self {
             biome,
+            tree_sites: std::sync::Mutex::new(std::collections::HashMap::new()),
+            spans: std::sync::Mutex::new(std::collections::HashMap::new()),
             shape,
             ids,
             ores,
@@ -1016,7 +1103,9 @@ impl Generator {
             region_b: Fbm::new(k(1002), w, REGION_FEATURE, 2, 0.5),
             region_wobble: Fbm::new(k(1003), w, REGION_WOBBLE_FEATURE, 2, 0.5),
             width: w as f64,
-            tree_top: (cfg.trunk_min + cfg.trunk_extra.max(1) + 1).max(TREE_MAX_HEIGHT),
+            tree_top: (cfg.trunk_min + cfg.trunk_extra.max(1) + 1)
+                .max(TREE_MAX_HEIGHT)
+                .max(biome_tree_up),
             water_level: cfg.sea_level + cfg.water_offset,
             continent: Fbm::new(k(1), w, 700.0, 3, 0.5),
             hills: Fbm::new(k(2), w, 160.0, 4, 0.5),
@@ -1056,6 +1145,29 @@ impl Generator {
             + hills * 14.0 * (0.4 + land)
             + mask * land * ridge * ridge * self.cfg.mountain_height;
         (h.floor() as i64).clamp(4, self.shape.height_blocks() - self.tree_top - 4)
+    }
+
+    /// The columns of the chunk column at `origin` and `m` around it,
+    /// `[dz][dx]`, from the cache or computed.
+    fn span_columns(&self, bw: &BiomeWorld, origin: BlockPos, span: usize, m: i64) -> std::sync::Arc<Vec<Column>> {
+        let key = (origin.x, origin.z);
+        if let Some(c) = self.spans.lock().ok().and_then(|s| s.get(&key).cloned()) {
+            return c;
+        }
+        let mut columns = Vec::with_capacity(span * span);
+        for dz in 0..span {
+            for dx in 0..span {
+                columns.push(self.column(bw, origin.x + dx as i64 - m, origin.z + dz as i64 - m));
+            }
+        }
+        let columns = std::sync::Arc::new(columns);
+        if let Ok(mut s) = self.spans.lock() {
+            if s.len() >= SPAN_CACHE {
+                s.clear();
+            }
+            s.insert(key, columns.clone());
+        }
+        columns
     }
 
     /// A column of a biome planet: the blend of the nearby cells' land, cut
@@ -1165,18 +1277,16 @@ impl Generator {
         let m = TREE_REACH + 1;
         let span = (cs + 2 * m) as usize;
         let mut heights = vec![0i64; span * span];
-        let mut columns = Vec::new();
+        let columns = match &self.biome {
+            Some(bw) => self.span_columns(bw, origin, span, m),
+            None => std::sync::Arc::new(Vec::new()),
+        };
         let mut max_h = i64::MIN;
         for dz in 0..span {
             for dx in 0..span {
-                let (x, z) = (origin.x + dx as i64 - m, origin.z + dz as i64 - m);
                 let h = match &self.biome {
-                    Some(bw) => {
-                        let c = self.column(bw, x, z);
-                        columns.push(c);
-                        c.h
-                    }
-                    None => self.surface_height(x, z),
+                    Some(_) => columns[dz * span + dx].h,
+                    None => self.surface_height(origin.x + dx as i64 - m, origin.z + dz as i64 - m),
                 };
                 heights[dz * span + dx] = h;
                 max_h = max_h.max(h);
@@ -1358,11 +1468,13 @@ impl Generator {
             }
         }
 
-        let density_at = |lx: i64, lz: i64| match &self.biome {
-            Some(bw) => bw.lands[column_at(lx, lz).biome as usize].tree_density,
-            None => cfg.tree_density,
-        };
-        self.place_trees(pos, &mut blocks, &height_at, &density_at, &regions);
+        match &self.biome {
+            Some(bw) => self.place_biome_trees(bw, origin, &mut blocks, max_h),
+            None => {
+                let density_at = |_: i64, _: i64| cfg.tree_density;
+                self.place_trees(pos, &mut blocks, &height_at, &density_at, &regions);
+            }
+        }
         self.place_flora(origin, &mut blocks, &height_at);
         Chunk::from_dense_states(&blocks)
     }
@@ -1506,6 +1618,164 @@ impl Generator {
         }
         let extra = self.cfg.trunk_extra.max(1);
         Some(self.cfg.trunk_min.max(1) + (hash01(self.cfg.seed ^ 0x7ee2, x, 0, z) * extra as f64) as i64)
+    }
+
+    /// The tree that grows from the lattice square `(ci, cj)` of a biome
+    /// planet (canonical squares), if any: its column, the column's height,
+    /// the kind and the seed it grows from. Trees stand on dry, gentle
+    /// ground of a biome that grows them, as thick as its density and the
+    /// forest noise allow, never on a river or over a cave mouth.
+    fn biome_tree_uncached(&self, bw: &BiomeWorld, ci: i64, cj: i64) -> Option<TreeHit> {
+        let seed = self.cfg.seed;
+        let h0 = hash3(seed ^ 0x07ee_5eed, ci, 0, cj);
+        let x = ci * TREE_CELL + (h0 & 3) as i64;
+        let z = cj * TREE_CELL + ((h0 >> 2) & 3) as i64;
+        // Cheap tests first: the dice, then the land.
+        let roll = ((h0 >> 11) as f64) / (1u64 << 53) as f64;
+        let land = &bw.lands[bw.layout.biome_at(x as f64, z as f64) as usize];
+        if land.tree_weight <= 0.0 || land.tree_density <= 0.0 {
+            return None;
+        }
+        let forest = smoothstep(-0.2, 0.4, self.forest.sample2(x as f64, z as f64, self.width));
+        let chance = land.tree_density * (0.15 + 2.0 * forest) * (TREE_CELL * TREE_CELL) as f64;
+        if roll >= chance {
+            return None;
+        }
+        let c = self.column(bw, x, z);
+        let land = &bw.lands[c.biome as usize];
+        if land.tree_weight <= 0.0 || c.river > 0.05 {
+            return None;
+        }
+        let sea = self.cfg.sea_level;
+        if c.h < sea.max(self.water_level) + 2 || c.h >= sea + self.cfg.tree_line {
+            return None;
+        }
+        let near = |dx: i64, dz: i64| self.column(bw, x + dx, z + dz).h;
+        let slope = (near(1, 0) - near(-1, 0)).abs().max((near(0, 1) - near(0, -1)).abs());
+        if slope >= 2 || self.is_cave_at(x, c.h, z) || self.is_cave_at(x, c.h - 1, z) {
+            return None;
+        }
+        let mut pick = hash01(seed ^ 0x07ee_5a1c, x, 0, z) * land.tree_weight;
+        let tree = land
+            .trees
+            .iter()
+            .position(|t| {
+                pick -= t.weight;
+                pick < 0.0
+            })
+            .unwrap_or(0);
+        Some(TreeHit {
+            x,
+            z,
+            h: c.h,
+            biome: c.biome,
+            tree: tree as u8,
+            seed: hash3(seed ^ 0x07ee_59a0, x, 0, z),
+        })
+    }
+
+    /// [`Self::biome_tree_uncached`], remembered.
+    fn biome_tree(&self, bw: &BiomeWorld, ci: i64, cj: i64) -> Option<TreeHit> {
+        if let Some(hit) = self.tree_sites.lock().ok().and_then(|m| m.get(&(ci, cj)).copied()) {
+            return hit;
+        }
+        let hit = self.biome_tree_uncached(bw, ci, cj);
+        if let Ok(mut m) = self.tree_sites.lock() {
+            if m.len() >= TREE_SITE_CACHE {
+                m.clear();
+            }
+            m.insert((ci, cj), hit);
+        }
+        hit
+    }
+
+    /// Plants a biome planet's trees in the chunk at `origin`: every tree
+    /// whose lattice square lies within reach, whole where it overlaps.
+    fn place_biome_trees(&self, bw: &BiomeWorld, origin: BlockPos, blocks: &mut [BlockState], max_h: i64) {
+        if !bw.any_trees || origin.y > max_h + self.tree_top {
+            return;
+        }
+        let cs = CHUNK_SIZE as i64;
+        let w = self.shape.width_blocks();
+        let r = bw.tree_reach + 1;
+        let air = self.ids.air;
+        let state = |id: BlockId, wx: i64, wz: i64| match self.colours.slot(id) {
+            Some(slot) => {
+                let (a, b) = self.region_point(wx, wz);
+                BlockState::coloured(id, self.colours.blocks[slot].pick(a, b))
+            }
+            None => BlockState::plain(id),
+        };
+        let c0 = (origin.x - r).div_euclid(TREE_CELL);
+        let c1 = (origin.x + cs + r).div_euclid(TREE_CELL);
+        let k0 = (origin.z - r).div_euclid(TREE_CELL);
+        let k1 = (origin.z + cs + r).div_euclid(TREE_CELL);
+        let n = w / TREE_CELL;
+        for cj in k0..=k1 {
+            for ci in c0..=c1 {
+                let Some(hit) = self.biome_tree(bw, ci.rem_euclid(n), cj.rem_euclid(n)) else {
+                    continue;
+                };
+                let (tx, tz, h, seed) = (hit.x, hit.z, hit.h, hit.seed);
+                let tree = &bw.lands[hit.biome as usize].trees[hit.tree as usize];
+                // Where it stands as seen from this chunk (its lap).
+                let bx = tx + (ci - ci.rem_euclid(n)) * TREE_CELL;
+                let bz = tz + (cj - cj.rem_euclid(n)) * TREE_CELL;
+                let (_, up) = tree.shape.reach();
+                if origin.y > h + 1 + up as i64 || origin.y + cs <= h - 6 {
+                    continue;
+                }
+                let size = (tree.size + (hash01(seed, 1, 0, 0) - 0.5) * 0.6).clamp(0.0, 1.0);
+                let grown = tree.shape.grow(seed, size);
+                let parts = [
+                    state(tree.wood[0], tx, tz),
+                    state(tree.wood[1], tx, tz),
+                    state(tree.wood[2], tx, tz),
+                ];
+                let leafy = |id: BlockId| id == air || id == tree.wood[1] || id == tree.wood[2];
+                let mut put = |x: i64, y: i64, z: i64, st: BlockState, trunk: bool| {
+                    let (dx, dy, dz) = (x - origin.x, y - origin.y, z - origin.z);
+                    if (0..cs).contains(&dx) && (0..cs).contains(&dy) && (0..cs).contains(&dz) {
+                        let i = LocalPos::new(dx as u8, dy as u8, dz as u8).index();
+                        let here = blocks[i].id;
+                        if here == air || (trunk && leafy(here)) {
+                            blocks[i] = st;
+                        }
+                    }
+                };
+                for &(dx, dy, dz, part) in &grown.blocks {
+                    let (x, y, z) = (bx + dx as i64, h + 1 + dy as i64, bz + dz as i64);
+                    let (st, trunk) = match part {
+                        trees::Part::Trunk => (parts[0], true),
+                        trees::Part::Leaves => (parts[1], false),
+                        trees::Part::Leaves2 => (parts[2], false),
+                    };
+                    put(x, y, z, st, trunk);
+                    // A trunk's foot reaches down to the ground under it, so
+                    // wide trunks and roots never stand on air.
+                    if trunk && dy == 0 && (dx, dz) != (0, 0) {
+                        let ground = self.column(bw, x.rem_euclid(w), z.rem_euclid(w)).h;
+                        for fy in (ground + 1).max(h - 5)..y {
+                            put(x, fy, z, st, true);
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    /// The colour-region fields at canonical column `(wx, wz)`, sampled
+    /// directly (trees reach past the chunk's region lattice).
+    fn region_point(&self, wx: i64, wz: i64) -> (f64, f64) {
+        if self.colours.is_empty() {
+            return (0.0, 0.0);
+        }
+        let (x, z) = (wx as f64, wz as f64);
+        let w = self.region_wobble.sample2(x, z, self.width) * REGION_WOBBLE;
+        (
+            self.region_a.sample2(x, z, self.width) + w,
+            self.region_b.sample2(x, z, self.width) - w,
+        )
     }
 
     /// The tree density of canonical column `(x, z)`.
@@ -1707,6 +1977,28 @@ impl Generator {
             return false;
         }
         // No trunk or canopy over the spot.
+        if let Some(bw) = &self.biome {
+            let r = bw.tree_reach + 1;
+            let n = w / TREE_CELL;
+            for cj in (z - r).div_euclid(TREE_CELL)..=(z + r).div_euclid(TREE_CELL) {
+                for ci in (x - r).div_euclid(TREE_CELL)..=(x + r).div_euclid(TREE_CELL) {
+                    if let Some(hit) = self.biome_tree(bw, ci.rem_euclid(n), cj.rem_euclid(n)) {
+                        let (tx, tz) = (hit.x, hit.z);
+                        let tree = &bw.lands[hit.biome as usize].trees[hit.tree as usize];
+                        let reach = tree.shape.reach().0 as i64;
+                        // Wrapped distances: the planet is a torus.
+                        let wrap = |a: i64, b: i64| {
+                            let d = (a - b).rem_euclid(w);
+                            d.min(w - d)
+                        };
+                        if wrap(tx, x) <= reach + 1 && wrap(tz, z) <= reach + 1 {
+                            return false;
+                        }
+                    }
+                }
+            }
+            return true;
+        }
         for dz in -TREE_REACH..=TREE_REACH {
             for dx in -TREE_REACH..=TREE_REACH {
                 let (nx, nz) = at(dx, dz);
@@ -2129,6 +2421,55 @@ mod tests {
         assert_eq!(rocks.len(), 3, "{rocks:?}");
     }
 
+    /// Biome trees are whole across chunk borders: every trunk block stands
+    /// on something (trunk, ground or a root), looked up in whichever chunk
+    /// holds the block under it, and every kind of trunk grows somewhere.
+    #[test]
+    fn biome_trees_stand_on_something_across_chunks() {
+        let blocks = BlockRegistry::builtin();
+        let cfg = PlanetKinds::builtin(&blocks).get("temperate").unwrap().generation(7);
+        let g = Generator::new(PlanetShape::new(48, 12), cfg, &blocks).unwrap();
+        let trunks = [id("trunk"), id("pale_trunk"), id("gnarled_trunk")];
+        let mut cache: std::collections::HashMap<ChunkPos, Chunk> = std::collections::HashMap::new();
+        let mut at = |p: BlockPos| {
+            let c = cache.entry(p.chunk()).or_insert_with(|| g.generate(p.chunk()));
+            c.get(p.local())
+        };
+        let mut seen = std::collections::BTreeSet::new();
+        let mut checked = 0;
+        for cz in 16..21 {
+            for cx in 16..21 {
+                for cy in 4..6 {
+                    let c = g.generate(ChunkPos::new(cx, cy, cz));
+                    if c.uniform().is_some() {
+                        continue;
+                    }
+                    let o = ChunkPos::new(cx, cy, cz).origin();
+                    for (i, b) in c.to_dense().iter().enumerate() {
+                        if !trunks.contains(b) {
+                            continue;
+                        }
+                        seen.insert(*b);
+                        let (lx, ly, lz) = ((i % 32) as i64, (i / 1024) as i64, ((i / 32) % 32) as i64);
+                        let below = at(BlockPos::new(o.x + lx, o.y + ly - 1, o.z + lz));
+                        // Branches reach sideways: only trunk blocks with a
+                        // trunk or air beside them at the same height and
+                        // nothing over air below count as hanging.
+                        if below == id("air") {
+                            let side = [(1, 0), (-1, 0), (0, 1), (0, -1)].iter().any(|(dx, dz)| {
+                                trunks.contains(&at(BlockPos::new(o.x + lx + dx, o.y + ly, o.z + lz + dz)))
+                            });
+                            assert!(side, "a lone trunk over air at {:?}", (o.x + lx, o.y + ly, o.z + lz));
+                        }
+                        checked += 1;
+                    }
+                }
+            }
+        }
+        assert!(checked > 50, "{checked} trunk blocks");
+        assert!(seen.len() >= 2, "{seen:?}");
+    }
+
     /// Steep ground shows bare rock: no turf where a column rises 4 or more
     /// over its neighbours.
     #[test]
@@ -2186,20 +2527,22 @@ mod tests {
         let want: Vec<(String, u64)> = PINNED_V4.iter().map(|(n, h)| (n.to_string(), *h)).collect();
         assert_eq!(got, want, "terrain changed");
     }
+    // Re-pinned for M19 part 2's trees (2026-10-25) without a bump:
+    // generator 4 had not left the branch, so no planet held the old pins.
     const PINNED_V4: [(&str, u64); 13] = [
-        ("temperate", 0xbdd7_1608_f874_4cac),
-        ("arid", 0xeea7_e556_2255_3e75),
-        ("frozen", 0x73ca_70b3_cd59_57ab),
-        ("lush", 0x01bf_33f8_e373_8d21),
-        ("overgrown", 0x0f17_6a2c_f621_72b2),
-        ("rustland", 0x9ead_9c1e_3198_6769),
-        ("cinderland", 0xb9a7_68d9_608f_a6f1),
-        ("acrid", 0xcd82_bc98_9a45_da0d),
-        ("blighted", 0x0b4b_8979_c804_c207),
-        ("glacial", 0x2bc6_8d97_de08_7641),
-        ("stormy", 0xbc1d_4ae9_8f02_431b),
-        ("scorched", 0x8ba0_8151_5242_76ba),
-        ("ember", 0x3a69_6f04_c91a_04d7),
+        ("temperate", 0x0929_d78c_1f40_39c0),
+        ("arid", 0x7542_0e8c_b9aa_407d),
+        ("frozen", 0xd8ba_157b_3c51_7163),
+        ("lush", 0xa5aa_5853_72a9_b14f),
+        ("overgrown", 0x2add_7385_9eff_9dd5),
+        ("rustland", 0x0708_8503_db98_6502),
+        ("cinderland", 0x1e3e_f245_9faa_ee76),
+        ("acrid", 0x10fd_15a8_ffe0_d27a),
+        ("blighted", 0xfd7f_d73a_cf90_cff9),
+        ("glacial", 0xcc05_7992_1461_dc04),
+        ("stormy", 0x84da_06bc_0265_7c0f),
+        ("scorched", 0x7f02_63e7_b7c3_1f62),
+        ("ember", 0x3690_9a4d_9323_56aa),
     ];
     // The version 3 pins: every kind's settings without biomes (what planets
     // saved before generator 4 hold) still make them.

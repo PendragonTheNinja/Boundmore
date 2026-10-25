@@ -16,6 +16,7 @@
 //! come from the cell a column belongs to.
 
 use crate::noise::{Fbm, hash01, hash3};
+use crate::trees::Shape;
 use serde::{Deserialize, Serialize};
 
 /// One biome as a planet saves it: its climate, its land and what covers it.
@@ -52,6 +53,70 @@ pub struct BiomeSpec {
     pub snow_above: Option<i64>,
     /// Chance a column grows a tree (where the forest noise allows).
     pub tree_density: f64,
+    /// The trees that grow, by weight (milestone 19 part 2). Empty: the
+    /// broad crown of the shape's own wood.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub trees: Vec<TreeSpec>,
+}
+
+/// One kind of tree a biome grows: a shape, how often against the others,
+/// its size (0 to 1, a little either way per tree) and its wood ("": the
+/// shape's own, [`default_wood`]).
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct TreeSpec {
+    pub shape: Shape,
+    pub weight: f64,
+    pub size: f64,
+    pub trunk: String,
+    pub leaves: String,
+    /// Fruit on a fruit tree, snow on a snowy conifer.
+    pub leaves2: String,
+}
+
+impl Default for TreeSpec {
+    fn default() -> Self {
+        Self {
+            shape: Shape::BroadCrown,
+            weight: 1.0,
+            size: 0.5,
+            trunk: String::new(),
+            leaves: String::new(),
+            leaves2: String::new(),
+        }
+    }
+}
+
+impl TreeSpec {
+    /// Its trunk, leaves and second leaves, the shape's own where unnamed.
+    pub fn wood(&self) -> [&str; 3] {
+        fn or<'a>(s: &'a str, d: &'static str) -> &'a str {
+            if s.is_empty() { d } else { s }
+        }
+        let d = default_wood(self.shape);
+        [or(&self.trunk, d[0]), or(&self.leaves, d[1]), or(&self.leaves2, d[2])]
+    }
+}
+
+/// Each shape's own wood, after Boundless's trees (research 5.2): its
+/// twisted trunk and waxy leaves are Boundmore's gnarled trunk and glossy
+/// foliage, its lustrous trunk the pale trunk, its exotic leaves fronds,
+/// its lush leaves foliage.
+pub fn default_wood(shape: Shape) -> [&'static str; 3] {
+    match shape {
+        Shape::BroadCrown => ["gnarled_trunk", "glossy_foliage", "glossy_foliage"],
+        Shape::FruitTree => ["trunk", "foliage", "glossy_foliage"],
+        Shape::Conifer => ["gnarled_trunk", "fronds", "fronds"],
+        Shape::SnowyConifer => ["gnarled_trunk", "fronds", "snow"],
+        Shape::Palm | Shape::BentPalm => ["gnarled_trunk", "fronds", "fronds"],
+        Shape::GiantConifer => ["pale_trunk", "fronds", "fronds"],
+        Shape::FlatTop => ["gnarled_trunk", "glossy_foliage", "glossy_foliage"],
+        Shape::SwampTree => ["gnarled_trunk", "foliage", "foliage"],
+        Shape::JungleTree => ["pale_trunk", "foliage", "foliage"],
+        Shape::DeadTree | Shape::FallenLog => ["gnarled_trunk", "foliage", "foliage"],
+        Shape::Stump => ["trunk", "foliage", "foliage"],
+        Shape::Bush => ["trunk", "foliage", "foliage"],
+    }
 }
 
 impl Default for BiomeSpec {
@@ -73,6 +138,7 @@ impl Default for BiomeSpec {
             beach: "sand".into(),
             snow_above: None,
             tree_density: 0.0,
+            trees: Vec::new(),
         }
     }
 }
@@ -84,6 +150,7 @@ impl BiomeSpec {
             .iter()
             .flat_map(|p| p.iter().map(String::as_str))
             .chain([self.rock.as_str(), self.cliff.as_str(), self.beach.as_str()])
+            .chain(self.trees.iter().flat_map(|t| t.wood()))
             .filter(|n| !n.is_empty())
     }
 }

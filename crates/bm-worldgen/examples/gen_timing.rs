@@ -1,6 +1,8 @@
 //! Chunk generation time per planet kind.
 //!
-//! `cargo run --release -p bm-worldgen --example gen_timing`
+//! `cargo run --release -p bm-worldgen --example gen_timing [-- --single]`
+//! (`--single`: each kind without its biomes, as planets made before
+//! generator 4)
 //!
 //! Generates the same 16×16-column, 8-chunk-tall block of a 2048-block planet
 //! for each kind on one thread and prints the mean time per chunk (every chunk,
@@ -14,6 +16,13 @@ fn main() {
     let blocks = BlockRegistry::builtin();
     let mut configs: Vec<(String, PlanetGenConfig)> = vec![("default".into(), PlanetGenConfig::default())];
     configs.extend(kinds(&blocks));
+    // Each kind as planets made before generator 4 hold it: one landscape.
+    if std::env::args().any(|a| a == "--single") {
+        for (name, cfg) in &mut configs {
+            name.push_str(" (single)");
+            cfg.biomes.clear();
+        }
+    }
     for (name, mut cfg) in configs {
         cfg.seed = 42;
         let g = Generator::new(PlanetShape::new(64, 12), cfg, &blocks).unwrap();

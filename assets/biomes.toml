@@ -20,6 +20,9 @@
 #   cliff, beach  top of steep ground (default: its rock); shore (default sand)
 #   snow_above  snow tops land this far above the sea
 #   tree_density  chance a column grows a tree where the forest noise allows
+#   trees       [{ shape, weight, size 0 to 1, trunk, leaves, leaves2 }]: the
+#               shapes (bm-worldgen trees.rs) it grows; wood defaults to the
+#               shape's own (biomes.rs default_wood)
 # Sizes and densities are GUESSES calibrated by eye (docs/feel.md).
 
 [[biome]]
@@ -32,7 +35,8 @@ hills = 5.0
 hill_size = 140.0
 cover = [["turf", "soil"], ["meadow_turf", "clay"]]
 rock = "stone"
-tree_density = 0.002
+tree_density = 0.003
+trees = [{ shape = "fruit_tree", weight = 2.0 }, { shape = "broad_crown", weight = 1.0 }, { shape = "bush", weight = 3.0 }]
 
 [[biome]]
 name = "rolling_hills"
@@ -45,6 +49,7 @@ hill_size = 180.0
 cover = [["turf", "soil"], ["moss_turf", "peat"]]
 rock = "limestone"
 tree_density = 0.006
+trees = [{ shape = "broad_crown", weight = 2.0 }, { shape = "fruit_tree", weight = 1.0 }, { shape = "bush", weight = 2.0 }]
 
 [[biome]]
 name = "woodland"
@@ -57,6 +62,7 @@ hill_size = 120.0
 cover = [["turf", "soil"], ["moss_turf", "peat"]]
 rock = "basalt"
 tree_density = 0.03
+trees = [{ shape = "broad_crown", weight = 3.0 }, { shape = "broad_crown", weight = 2.0, trunk = "pale_trunk", leaves = "glossy_foliage" }, { shape = "bush", weight = 1.0 }, { shape = "fallen_log", weight = 0.3 }, { shape = "stump", weight = 0.2 }]
 
 [[biome]]
 name = "lakeland"
@@ -68,7 +74,8 @@ hills = 10.0
 hill_size = 90.0
 cover = [["meadow_turf", "clay"], ["turf", "soil"]]
 rock = "stone"
-tree_density = 0.004
+tree_density = 0.005
+trees = [{ shape = "swamp_tree", weight = 1.0 }, { shape = "broad_crown", weight = 1.0 }, { shape = "bush", weight = 1.0 }]
 
 [[biome]]
 name = "low_mountains"
@@ -82,7 +89,8 @@ mountains = 55.0
 mountain_size = 260.0
 cover = [["turf", "soil"]]
 rock = "basalt"
-tree_density = 0.004
+tree_density = 0.005
+trees = [{ shape = "conifer", weight = 3.0 }, { shape = "dead_tree", weight = 0.3 }, { shape = "bush", weight = 1.0 }]
 
 [[biome]]
 name = "sandy_flats"
@@ -94,7 +102,8 @@ hills = 4.0
 hill_size = 100.0
 cover = [["sand", "sand"]]
 rock = "limestone"
-tree_density = 0.0
+tree_density = 0.0015
+trees = [{ shape = "palm", weight = 1.0 }, { shape = "bent_palm", weight = 1.0 }, { shape = "bush", weight = 0.5 }]
 
 [[biome]]
 name = "tundra"
@@ -106,7 +115,8 @@ hills = 6.0
 hill_size = 110.0
 cover = [["moss_turf", "peat"], ["snow", "peat"]]
 rock = "stone"
-tree_density = 0.002
+tree_density = 0.003
+trees = [{ shape = "snowy_conifer", weight = 1.0 }, { shape = "bush", weight = 1.0 }, { shape = "dead_tree", weight = 0.5 }]
 
 [[biome]]
 name = "high_plateau"
@@ -120,6 +130,7 @@ rivers = false
 cover = [["meadow_turf", "clay"]]
 rock = "limestone"
 tree_density = 0.003
+trees = [{ shape = "flat_top", weight = 2.0 }, { shape = "bush", weight = 1.0 }]
 
 [[biome]]
 name = "dunes"
@@ -132,7 +143,8 @@ hill_size = 48.0
 rivers = false
 cover = [["sand", "sand"]]
 rock = "limestone"
-tree_density = 0.0
+tree_density = 0.0003
+trees = [{ shape = "dead_tree", weight = 1.0 }]
 
 [[biome]]
 name = "salt_flats"
@@ -144,7 +156,8 @@ hills = 1.5
 hill_size = 200.0
 cover = [["sand", "limestone"], ["gravel", "limestone"]]
 rock = "limestone"
-tree_density = 0.0
+tree_density = 0.0002
+trees = [{ shape = "dead_tree", weight = 1.0 }]
 
 [[biome]]
 name = "snowfield"
@@ -158,6 +171,7 @@ cover = [["snow", "soil"]]
 rock = "stone"
 snow_above = -200
 tree_density = 0.004
+trees = [{ shape = "snowy_conifer", weight = 1.0 }]
 
 [[biome]]
 name = "swamp"
@@ -171,6 +185,7 @@ cover = [["mud", "peat"], ["moss_turf", "peat"]]
 beach = "mud"
 rock = "stone"
 tree_density = 0.02
+trees = [{ shape = "swamp_tree", weight = 3.0 }, { shape = "bush", weight = 1.0 }, { shape = "fallen_log", weight = 0.5 }]
 
 [[biome]]
 name = "pine_hills"
@@ -183,6 +198,7 @@ hill_size = 160.0
 cover = [["moss_turf", "peat"], ["turf", "soil"]]
 rock = "stone"
 tree_density = 0.03
+trees = [{ shape = "conifer", weight = 4.0 }, { shape = "giant_conifer", weight = 0.2 }, { shape = "fallen_log", weight = 0.3 }, { shape = "stump", weight = 0.3 }]
 
 [[biome]]
 name = "open_sea"
@@ -209,7 +225,8 @@ mountain_size = 340.0
 cover = [["turf", "soil"], ["gravel", "stone"]]
 rock = "basalt"
 snow_above = 90
-tree_density = 0.003
+tree_density = 0.004
+trees = [{ shape = "conifer", weight = 2.0 }, { shape = "snowy_conifer", weight = 1.0 }, { shape = "dead_tree", weight = 0.3 }]
 
 [[biome]]
 name = "mesa"
@@ -222,7 +239,8 @@ hill_size = 150.0
 terrace = 9.0
 cover = [["sand", "limestone"]]
 rock = "limestone"
-tree_density = 0.0
+tree_density = 0.0015
+trees = [{ shape = "dead_tree", weight = 1.0 }, { shape = "bush", weight = 1.0 }]
 
 [[biome]]
 name = "canyon_lands"
@@ -234,7 +252,8 @@ hills = 6.0
 hill_size = 90.0
 cover = [["gravel", "limestone"], ["sand", "limestone"]]
 rock = "limestone"
-tree_density = 0.001
+tree_density = 0.0015
+trees = [{ shape = "dead_tree", weight = 1.0 }, { shape = "flat_top", weight = 0.5 }]
 
 [[biome]]
 name = "bog"
@@ -247,7 +266,8 @@ hill_size = 40.0
 cover = [["mud", "mud"], ["moss_turf", "peat"]]
 beach = "mud"
 rock = "stone"
-tree_density = 0.008
+tree_density = 0.01
+trees = [{ shape = "swamp_tree", weight = 2.0 }, { shape = "dead_tree", weight = 1.0 }, { shape = "bush", weight = 1.0 }]
 
 [[biome]]
 name = "ash_plain"
@@ -260,7 +280,8 @@ hill_size = 90.0
 cover = [["ash", "basalt"], ["gravel", "gravel"]]
 beach = "gravel"
 rock = "basalt"
-tree_density = 0.0
+tree_density = 0.0015
+trees = [{ shape = "dead_tree", weight = 1.0 }]
 
 [[biome]]
 name = "jungle"
@@ -272,7 +293,8 @@ hills = 16.0
 hill_size = 110.0
 cover = [["moss_turf", "peat"], ["meadow_turf", "clay"]]
 rock = "basalt"
-tree_density = 0.05
+tree_density = 0.04
+trees = [{ shape = "jungle_tree", weight = 3.0 }, { shape = "palm", weight = 1.0 }, { shape = "bush", weight = 2.0 }]
 
 [[biome]]
 name = "glacier"
@@ -302,7 +324,8 @@ mountain_size = 220.0
 cover = [["gravel", "stone"], ["turf", "soil"]]
 rock = "basalt"
 snow_above = 100
-tree_density = 0.001
+tree_density = 0.002
+trees = [{ shape = "conifer", weight = 1.0 }, { shape = "dead_tree", weight = 1.0 }]
 
 [[biome]]
 name = "badlands"
@@ -315,7 +338,8 @@ hill_size = 70.0
 terrace = 6.0
 cover = [["gravel", "gravel"], ["ash", "basalt"]]
 rock = "basalt"
-tree_density = 0.0
+tree_density = 0.001
+trees = [{ shape = "dead_tree", weight = 1.0 }]
 
 [[biome]]
 name = "tall_forest"
@@ -327,7 +351,8 @@ hills = 14.0
 hill_size = 140.0
 cover = [["turf", "soil"], ["moss_turf", "peat"]]
 rock = "stone"
-tree_density = 0.06
+tree_density = 0.04
+trees = [{ shape = "giant_conifer", weight = 1.0 }, { shape = "broad_crown", weight = 2.0 }, { shape = "conifer", weight = 1.0 }]
 
 [[biome]]
 name = "isles"
@@ -340,6 +365,7 @@ hill_size = 70.0
 cover = [["meadow_turf", "clay"]]
 rock = "limestone"
 tree_density = 0.01
+trees = [{ shape = "palm", weight = 2.0 }, { shape = "bent_palm", weight = 2.0 }, { shape = "bush", weight = 1.0 }]
 
 [[biome]]
 name = "volcanic_slopes"
@@ -354,7 +380,8 @@ mountain_size = 200.0
 cover = [["ash", "basalt"]]
 beach = "gravel"
 rock = "basalt"
-tree_density = 0.0
+tree_density = 0.001
+trees = [{ shape = "dead_tree", weight = 1.0 }]
 
 [[biome]]
 name = "frost_peaks"
@@ -369,7 +396,8 @@ mountain_size = 240.0
 cover = [["snow", "stone"], ["gravel", "stone"]]
 rock = "stone"
 snow_above = 30
-tree_density = 0.0
+tree_density = 0.002
+trees = [{ shape = "snowy_conifer", weight = 1.0 }]
 
 [[biome]]
 name = "thicket"
@@ -381,4 +409,5 @@ hills = 5.0
 hill_size = 60.0
 cover = [["moss_turf", "peat"], ["mud", "peat"]]
 rock = "basalt"
-tree_density = 0.07
+tree_density = 0.05
+trees = [{ shape = "swamp_tree", weight = 1.0 }, { shape = "jungle_tree", weight = 1.0 }, { shape = "bush", weight = 3.0 }]
