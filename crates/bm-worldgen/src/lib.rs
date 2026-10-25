@@ -12,6 +12,7 @@
 
 pub mod kinds;
 pub mod noise;
+pub mod trees;
 
 pub use kinds::{KindError, PlanetKind, PlanetKinds};
 
