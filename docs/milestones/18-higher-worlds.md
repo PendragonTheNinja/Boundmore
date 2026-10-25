@@ -192,3 +192,17 @@ Boundmore's worlds stop at tier 3. Boundless's best materials (gold, titanium, g
 - [x] Verified: 662 tests (`acid_air_runs_down_as_predicted_and_a_ward_stops_it` end to end, with the client's replay matching the server exactly); upgrade check from save version 11 ("upgraded the universe from save version 11 to 12 (2 characters with full air; stations as they were)", each old planet "medium_coal_seam added to its ores", Wildmere also hard coal); a fresh character on Thornreach chokes in the real client (`docs/media/m18-thornreach.jpg`; the nine worlds `docs/media/m18-worlds.jpg`)
 
 Open: the guesses (Measure list); load test with 50 bots on the new worlds; whether the new worlds' looks suit Nathan (`docs/media/m18-worlds.jpg`; the plaza round each shrine shows plain green turf even where the world colours its turf).
+
+### Part 2
+
+*Built 2026-10-25 (art in progress); awaiting Nathan's play-test.* Protocol 27, `SAVE_VERSION` 13.
+
+- [x] Generation: four ore knobs (`max_depth`, `water_depth` with `near_water`, `land_height`, `under`), off by default; six gem seams on their worlds by Boundless's intent (`gems_grow_on_their_own_worlds_by_their_rules`); relic core seams on every world, appended to old planets' ores (re-pinned; `appending_m18_only_turns_rock_into_coal` covers them)
+- [x] Core: `spark::power_scale` (the early-access curve, fitted to the guide's example and the measured marble series; a need of 0 read as 2,400, a guess), coil constants; `power` on recipes; `powers` and `coil_power` on blocks; `hard` blocks and `advanced` chisels (`hard_blocks_take_only_advanced_chisels`)
+- [x] Server: `machines::machine_coils` (coils across one block of air, straight or diagonal, one level up or down; a coil serves the lowest-keyed machine it faces), stations hear their coils, wait for power ("Needs N power: add power coils"), scale time and spark by power and save the pace, wear coils with each craft; spanners mend coils; the forge's power feeds Effectiveness; the station view shows power and coils
+- [x] Data: twelve coil blocks and their recipes (Boundless's: iron furnace base, components, machined metal, a compact gem; advanced: titanium furnace base, refined gems, a relic core, 1,500 power), the titanium furnace, bark from trunks on tier 3+, leather, compact coal (soft, medium, hard; 500, 1,000, 2,000 power), rough, compact and refined gems, gem tools, grapples, spanners and advanced chisels (1,500 power)
+- [x] Client: the power line in the machine window; hard blocks refused to ordinary chisels in prediction
+- [x] Verified: game tests pass (`coils_power_a_compactor_past_its_need` end to end: 4 coils wait, a fifth starts it, a spanner mends a coil); store upgrade test from version 12; upgrade check (a version 12 universe opened as 13: "0 stations rewritten with no power coils"; every planet gained relic cores, the gem worlds their gems); load test, 50 bots on four worlds, sandbox shared with a compiling agent: the M17 server averaged 0.5, 1.0 and 1.4 ms a tick over its three reports, this one 0.6, 1.2 and 1.3 (a first sample read 0.8, 1.2, 1.9): within the sandbox's noise
+- [ ] Art: gem seams, coils, titanium furnace, relic core seam, gem items and gear (an agent is painting them; until then they fall back to block colours)
+
+Open: every guess in part 2 (coil wear capacity and wear per craft, the curve for unpowered recipes, gem placement widths, mining XP); gem spanners are not yet "most effective" on their own machine (a flat 10,000 everywhere); the gem worlds' looks.

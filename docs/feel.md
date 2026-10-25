@@ -278,3 +278,9 @@ Boundless's live tree and tables exactly (Nathan, 2026-10-20), in Boundmore's na
 | Titanium, medium and hard coal | 70+, 20+ and 50+ down | Boundless; richness a **guess** |
 | Spanner durability, speed, energy (silver, gold, titanium) | 1200/30/13, 1100/30/14, 1500/30/20 | **guess** on the iron spanner's pattern; repair per hit Boundless's |
 | Atmosphere food recipes | prime meat, spicy beans, rice, flour | **guess** (Boundless's need an amalgam we lack) |
+| Gem places | amethyst under 1 to 8 of water or within 4 of it, 5 to 40 down; emerald under 10+ of water, 2 to 60 down; sapphire in land 20 to 80 above sea, 10 to 75 down; topaz in land 80+ above sea, 10+ down; diamond in land 60+ above sea, 70+ down; ruby under sand or gravel, 50 to 70 down | Boundless's intent (t/14255) and depths (tuning 4.3), read against Boundmore's sea at 128; "shallow" and the shore width are **guesses** |
+| Power over the need | the first 100 above cuts 50%, each 100 adds 1,250 / need percent, floor 25%; time and spark alike | early-access guide (low-medium); spark following it a **guess** |
+| Power curve for recipes that need none | read as a need of 2,400 | **guess**, fitted to "stops at about 16 advanced coils" |
+| Coil wear | 10,000 a coil, each craft wears every coil by the recipe's wear | **guess** (players' reports disagree: 7,500 to 189,000) |
+| Coil placement | two blocks out across air, straight or diagonal, one level up or down; the lowest-keyed machine wins a shared coil | one-metre gap Boundless's; the rest **guesses** |
+| Gem spanners | 10,000 a hit everywhere (Boundless: "most effective" on their own machine) | the per-machine bonus is not built |
