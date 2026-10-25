@@ -304,12 +304,17 @@ enum Metal {
     Stone,
     Copper,
     Iron,
+    /// Silver, gold and titanium gear (milestone 18) is made of alloy, so
+    /// it shows the alloy's colour.
+    Silver,
+    Gold,
+    Titanium,
 }
 
 impl Metal {
     /// Cast metal: smooth, with a sheen and a glint.
     fn cast(self) -> bool {
-        matches!(self, Metal::Copper | Metal::Iron)
+        !matches!(self, Metal::Wood | Metal::Stone)
     }
 
     fn ramp(self) -> Ramp {
@@ -318,6 +323,9 @@ impl Metal {
             Metal::Stone => stone_ramp(),
             Metal::Copper => copper_ramp(),
             Metal::Iron => steel_ramp(),
+            Metal::Silver => crate::spark::alloy_ramp(),
+            Metal::Gold => crate::worlds::gold_alloy_ramp(),
+            Metal::Titanium => crate::worlds::titanium_alloy_ramp(),
         }
     }
 
@@ -328,6 +336,9 @@ impl Metal {
             Metal::Stone => "stone",
             Metal::Copper => "copper",
             Metal::Iron => "iron",
+            Metal::Silver => "silver",
+            Metal::Gold => "gold",
+            Metal::Titanium => "titanium",
         };
         seed(&format!("{metal}_{tool}"))
     }
@@ -349,7 +360,7 @@ impl Metal {
                 };
                 streak + knot
             }
-            Metal::Copper | Metal::Iron => 0.0,
+            _ => 0.0,
         }
     }
 }
@@ -574,7 +585,7 @@ fn shovel(metal: Metal) -> Tex {
     });
     match metal {
         Metal::Stone | Metal::Wood => lashing(&mut icon, f, metal, b0 - 0.6, 2.2, 1.9),
-        Metal::Copper | Metal::Iron => {
+        _ => {
             // A riveted collar round the top of the handle.
             icon.layer(true, |x, y| {
                 let (u, v) = f.uv(x, y);
@@ -1349,13 +1360,29 @@ pub fn paint_icon(name: &str) -> Option<Tex> {
         "iron_spanner" => spanner(Metal::Iron),
         "wood_tiller" => tiller(Metal::Wood),
         "metal_tiller" => tiller(Metal::Iron),
+        "silver_hammer" => hammer(Metal::Silver),
+        "silver_shovel" => shovel(Metal::Silver),
+        "silver_axe" => axe(Metal::Silver),
+        "gold_hammer" => hammer(Metal::Gold),
+        "gold_shovel" => shovel(Metal::Gold),
+        "gold_axe" => axe(Metal::Gold),
+        "titanium_hammer" => hammer(Metal::Titanium),
+        "titanium_shovel" => shovel(Metal::Titanium),
+        "titanium_axe" => axe(Metal::Titanium),
+        "silver_grapple" => grapple(Metal::Silver, false),
+        "gold_grapple" => grapple(Metal::Gold, false),
+        "titanium_grapple" => grapple(Metal::Titanium, false),
+        "silver_spanner" => spanner(Metal::Silver),
+        "gold_spanner" => spanner(Metal::Gold),
+        "titanium_spanner" => spanner(Metal::Titanium),
         other => {
             return crate::gathered::paint(other)
                 .or_else(|| crate::food::paint(other))
                 .or_else(|| crate::farming::paint_icon(other))
                 .or_else(|| crate::creatures::paint(other))
                 .or_else(|| crate::spark::paint_icon(other))
-                .or_else(|| crate::forge::paint_icon(other));
+                .or_else(|| crate::forge::paint_icon(other))
+                .or_else(|| crate::worlds::paint_icon(other));
         }
     })
 }

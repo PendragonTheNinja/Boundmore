@@ -880,7 +880,7 @@ fn cog() -> Tex {
 
 /// Compact metal: a pressed cube in three-quarter view, a groove round its
 /// middle and a square stamped in its top.
-fn compact(ramp: Ramp) -> Tex {
+pub(crate) fn compact(ramp: Ramp) -> Tex {
     let (apex, l, r, ctr) = (
         (16.0f32, 3.5f32),
         (4.0f32, 10.0f32),
@@ -945,7 +945,7 @@ fn compact(ramp: Ramp) -> Tex {
 
 /// Refined metal: a thick polished disc in three-quarter view, a sheen
 /// across its face and a turned ring cut in it.
-fn refined(ramp: Ramp) -> Tex {
+pub(crate) fn refined(ramp: Ramp) -> Tex {
     let (cx, cy, rx, ry, h) = (16.0f32, 12.0f32, 13.0f32, 6.5f32, 7.0f32);
     let mut icon = Icon::new();
     icon.layer(false, |x, y| {
@@ -989,7 +989,7 @@ fn refined(ramp: Ramp) -> Tex {
 
 /// Machined metal: a hex nut, its six facets lit from the top left, a
 /// bevel round its threaded hole.
-fn machined(ramp: Ramp) -> Tex {
+pub(crate) fn machined(ramp: Ramp) -> Tex {
     let hex: Vec<P> = (0..6)
         .map(|i| {
             let a = i as f32 / 6.0 * TAU;

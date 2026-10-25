@@ -24,6 +24,7 @@ pub mod sheet;
 pub mod spark;
 pub mod stations;
 pub mod tex;
+pub mod worlds;
 
 use tex::Tex;
 
@@ -79,10 +80,22 @@ pub fn catalogue_names() -> Vec<String> {
     names
 }
 
+/// The catalogue's textures, then any painted ahead of the catalogue
+/// naming them (`worlds::BLOCKS`), so their files are ready when it does.
+fn painted_names() -> Vec<String> {
+    let mut names = catalogue_names();
+    for n in worlds::BLOCKS {
+        if !names.iter().any(|m| m == n) {
+            names.push(n.to_string());
+        }
+    }
+    names
+}
+
 /// Paints every catalogue texture with its variants. An error names any
 /// texture the catalogue wants that no painter knows.
 pub fn families() -> Result<Vec<Family>, String> {
-    catalogue_names()
+    painted_names()
         .into_iter()
         .map(|name| {
             let count = if VARIED.contains(&name.as_str()) {
@@ -140,6 +153,12 @@ pub fn icon_names() -> Vec<String> {
         let name = def.icon.clone().unwrap_or_else(|| def.name.clone());
         if !names.contains(&name) {
             names.push(name);
+        }
+    }
+    // Icons painted ahead of the catalogue naming them.
+    for n in worlds::ICONS {
+        if !names.iter().any(|m| m == n) {
+            names.push(n.to_string());
         }
     }
     names

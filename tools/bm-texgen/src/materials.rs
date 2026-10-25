@@ -14,7 +14,7 @@ pub(crate) fn stone_ramp() -> Ramp {
     ])
 }
 
-fn deep_stone_ramp() -> Ramp {
+pub(crate) fn deep_stone_ramp() -> Ramp {
     Ramp::from_hex(&[0x1c1a2c, 0x2a2740, 0x3a3654, 0x4b4766, 0x5e5a7a, 0x75718f, 0x938ca8])
 }
 
@@ -1254,6 +1254,82 @@ pub fn coal_seam(ctx: Ctx) -> Tex {
     ore(ctx, stone(ctx), &style, &coal_ramp())
 }
 
+/// Gold seam (milestone 18): warm yellow-gold nuggets, rounder and fewer
+/// than silver's, with a soft inner glow and bright rims, set in stone.
+pub fn gold_seam(ctx: Ctx) -> Tex {
+    let style = OreStyle {
+        salt: seed("gold_seam"),
+        spacing: 10.5,
+        radius: 4.0,
+        keep: 0.7,
+        facet: 2.2,
+        tone: 0.62,
+        spread: 0.3,
+        rim_tone: 0.96,
+        glow: 0.2,
+        glints: 0.5,
+        outline: Rgba::hex(0x3a1c14),
+    };
+    ore(ctx, stone(ctx), &style, &crate::worlds::gold_ramp())
+}
+
+/// Titanium seam (milestone 18): small pale blue-white metallic crystals,
+/// sharp and bright, in dark deep rock.
+pub fn titanium_seam(ctx: Ctx) -> Tex {
+    let style = OreStyle {
+        salt: seed("titanium_seam"),
+        spacing: 8.5,
+        radius: 3.6,
+        keep: 0.85,
+        facet: 1.9,
+        tone: 0.66,
+        spread: 0.36,
+        rim_tone: 0.98,
+        glow: 0.12,
+        glints: 0.6,
+        outline: Rgba::hex(0x0c0a18),
+    };
+    ore(ctx, deep_stone(ctx), &style, &crate::worlds::titanium_ramp())
+}
+
+/// Medium coal seam (milestone 18): bigger, closer lumps than the coal
+/// seam's, a deeper black with a glossy rim and many glints.
+pub fn medium_coal_seam(ctx: Ctx) -> Tex {
+    let style = OreStyle {
+        salt: seed("medium_coal_seam"),
+        spacing: 10.0,
+        radius: 5.6,
+        keep: 0.92,
+        facet: 3.0,
+        tone: 0.3,
+        spread: 0.4,
+        rim_tone: 0.78,
+        glow: 0.04,
+        glints: 0.4,
+        outline: Rgba::hex(0x0a0810),
+    };
+    ore(ctx, stone(ctx), &style, &crate::worlds::medium_coal_ramp())
+}
+
+/// Hard coal seam (milestone 18): big angular plates of black coal with a
+/// faint blue-violet sheen on their lit faces.
+pub fn hard_coal_seam(ctx: Ctx) -> Tex {
+    let style = OreStyle {
+        salt: seed("hard_coal_seam"),
+        spacing: 10.0,
+        radius: 5.6,
+        keep: 0.95,
+        facet: 3.8,
+        tone: 0.36,
+        spread: 0.5,
+        rim_tone: 0.8,
+        glow: 0.0,
+        glints: 0.35,
+        outline: Rgba::hex(0x0a0618),
+    };
+    ore(ctx, stone(ctx), &style, &crate::worlds::hard_coal_ramp())
+}
+
 /// Iron vein: knots of rust-red ore grown through with silvery steel-blue
 /// nodules, the stone round them stained with rust. Redder and duller than
 /// copper's bright orange, with cold metal glints copper does not have.
@@ -1987,6 +2063,10 @@ pub fn paint_named(name: &str, variant: u32) -> Option<Tex> {
         "meteor_shell" => meteor_shell,
         "meteor_heart" => meteor_heart,
         "silver_seam" => silver_seam,
+        "gold_seam" => gold_seam,
+        "titanium_seam" => titanium_seam,
+        "medium_coal_seam" => medium_coal_seam,
+        "hard_coal_seam" => hard_coal_seam,
         other => {
             if let Some(t) = crate::farming::paint_crop(other) {
                 return Some(t);

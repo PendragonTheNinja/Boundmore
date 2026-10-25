@@ -116,6 +116,11 @@ enum Fill {
 /// The shared bowl, with `fill` in `rgb` and, for some, a second colour of
 /// bits (herbs, berries).
 fn bowl(rgb: u32, fill: Fill, bits: u32, name: &str) -> Tex {
+    bowl_icon(rgb, fill, bits, name).finish()
+}
+
+/// `bowl`, not yet outlined, so a garnish can be laid on top.
+fn bowl_icon(rgb: u32, fill: Fill, bits: u32, name: &str) -> Icon {
     let wood = plank_ramp();
     let food = ramp(rgb, 0.3, 0.95);
     let bit = ramp(bits, 0.3, 0.95);
@@ -191,6 +196,126 @@ fn bowl(rgb: u32, fill: Fill, bits: u32, name: &str) -> Tex {
             }
             _ => Some(food.pick(0.55 + lit, x, y)),
         }
+    });
+    icon
+}
+
+/// Spicy chilli (milestone 18): a bowl of orange-red chilli thick with
+/// dark beans, a whole red chilli pepper laid across the top.
+fn chilli() -> Tex {
+    let mut icon = bowl_icon(0xc8320e, Fill::Broth, 0x4a1a0c, "spicy_chilli");
+    pepper(&mut icon);
+    icon.finish()
+}
+
+/// A red chilli pepper with a green stalk, curved across the top right.
+fn pepper(icon: &mut Icon) {
+    let red = ramp(0xe02a1a, 0.3, 0.98);
+    let stalk = ramp(0x4aa040, 0.3, 0.9);
+    let (a, b, k) = ((14.0f32, 8.0f32), (27.0f32, 13.5f32), (21.5f32, 8.0f32));
+    // A quadratic curve from the stalk end `a` to the tip `b`, bowed by `k`.
+    let at = |t: f32| {
+        let s = 1.0 - t;
+        (
+            s * s * a.0 + 2.0 * s * t * k.0 + t * t * b.0,
+            s * s * a.1 + 2.0 * s * t * k.1 + t * t * b.1,
+        )
+    };
+    icon.layer(true, |x, y| {
+        let p = (c(x), c(y));
+        let mut best = (f32::MAX, 0.0f32);
+        for i in 0..24 {
+            let (t0, t1) = (i as f32 / 24.0, (i + 1) as f32 / 24.0);
+            let d = seg_dist(at(t0), at(t1), p);
+            if d < best.0 {
+                best = (d, t0);
+            }
+        }
+        let (d, t) = best;
+        let half = 2.6 * (1.0 - t * 0.75);
+        if d > half {
+            return None;
+        }
+        // Lit along its upper side, a highlight streak near the stalk end.
+        let up = p.1 < at(t).1;
+        let mut tone = 0.55 + if up { 0.15 } else { -0.15 };
+        if up && d > half * 0.35 && d < half * 0.75 && (0.1..0.5).contains(&t) {
+            tone = 1.0;
+        }
+        Some(red.pick(tone, x, y))
+    });
+    icon.layer(true, |x, y| {
+        let p = (c(x), c(y));
+        (seg_dist((10.5, 6.0), (14.5, 8.0), p) < 1.2 || (p.0 - 14.0).hypot(p.1 - 8.2) < 2.0)
+            .then(|| stalk.pick(0.6 - (p.1 - 7.0) * 0.08, x, y))
+    });
+}
+
+/// Hearty pie (milestone 18): a round pie in a tin dish, a crimped crust
+/// round its edge and three slits showing the meat inside; baked golden
+/// brown, or raw in pale dough.
+fn pie(raw: bool) -> Tex {
+    let crust = if raw {
+        ramp(0xf0dcb4, 0.55, 1.0)
+    } else {
+        ramp(0xd89a40, 0.3, 0.98)
+    };
+    let filling = ramp(if raw { 0xc0606a } else { 0x8a3a24 }, 0.3, 0.9);
+    let tin = steel_ramp();
+    let (cx, cy, rx, ry, wall) = (16.0f32, 14.5f32, 13.5f32, 7.5f32, 6.5f32);
+    let mut icon = Icon::new();
+    // The tin dish: a band below the rim ellipse, flaring to its foot.
+    icon.layer(false, |x, y| {
+        let p = (c(x), c(y));
+        let dy = p.1 - cy;
+        if !(0.0..=wall + ry).contains(&dy) {
+            return None;
+        }
+        let w = rx - (dy / (wall + ry)) * 1.8;
+        let foot = ((p.0 - cx) / w).hypot((dy - wall) / ry);
+        if (p.0 - cx).abs() > w || (dy > wall && foot > 1.0) {
+            return None;
+        }
+        let t = 0.6 - (p.0 - cx) / rx * 0.3 - dy / (wall + ry) * 0.2;
+        Some(tin.pick(if dy < 1.5 { t + 0.2 } else { t }, x, y))
+    });
+    // The crust's top: a domed ellipse with a scalloped, crimped edge.
+    icon.layer(true, |x, y| {
+        let p = (c(x), c(y));
+        let (u, v) = ((p.0 - cx) / rx, (p.1 - cy) / ry);
+        let r = u.hypot(v);
+        let ang = v.atan2(u);
+        let scallop = 1.0 + (ang * 14.0).cos() * 0.035;
+        if r > scallop {
+            return None;
+        }
+        let lit = -u * 0.25 - v * 0.2;
+        // The crimped rim: ridges round the edge.
+        if r > 0.78 {
+            let ridge = (ang * 14.0).cos();
+            return Some(crust.pick(0.55 + lit + ridge * 0.14, x, y));
+        }
+        // Three slits across the middle, showing the filling.
+        for k in -1..=1 {
+            let ox = cx + k as f32 * 5.0;
+            if seg_dist((ox - 1.5, cy - 2.5), (ox + 1.5, cy + 2.5), p) < 0.75 {
+                return Some(filling.pick(0.45, x, y));
+            }
+        }
+        // A glaze sheen on the dome, top left.
+        let sheen = !raw && ((u + 0.35).hypot(v + 0.4) - 0.22).abs() < 0.07;
+        let mut t = 0.62 + lit + (1.0 - r) * 0.12;
+        if sheen {
+            t += 0.2;
+        }
+        // Raw dough is dusted with flour in soft patches.
+        if raw {
+            let cell = (((p.0 * 0.4) as i32) * 11 + (p.1 * 0.4) as i32) as u32;
+            if unit(hash2(seed("raw_hearty_pie"), cell)) > 0.7 {
+                t += 0.18;
+            }
+        }
+        Some(crust.pick(t, x, y))
     });
     icon.finish()
 }
@@ -500,6 +625,11 @@ pub fn paint(name: &str) -> Option<Tex> {
         "rice_bag" => sack(0xa8b47a, 0xf6f2e6, Heap::Grains, None, name),
         "flour" => sack(0xe4dccc, 0xfaf6f0, Heap::Powder, Some(0x4a6ac0), name),
         "baking_powder" => sack(0x98aac4, 0xf2f6fc, Heap::Powder, Some(0xc84a3a), name),
+        // Milestone 18: the atmosphere dishes.
+        "spicy_chilli" => chilli(),
+        "spiced_rice" => bowl(0xf0c058, Fill::Risotto, 0xe0501c, name),
+        "raw_hearty_pie" => pie(true),
+        "hearty_pie" => pie(false),
         _ => return farm_dish(name),
     })
 }
