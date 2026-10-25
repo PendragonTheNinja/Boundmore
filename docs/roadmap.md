@@ -80,6 +80,8 @@ What a Boundless player expects to find, and where each stands. "Ours" is the Bo
 
 ## A worldgen pass (Nathan, 2026-10-25)
 
+**Now Milestone 19, Living Worlds** (`docs/milestones/19-living-worlds.md`): part 1 (biomes, rocks, soils, rivers) built 2026-10-25; parts 2 (trees, props) and 3 (vertical land, cave styles) follow. Old planets keep version 3 terrain.
+
 "Eventually we'll need to do another worldgen pass to make planets more interesting overall, and the different tree types, different stone types, et cetera." Boundless's worlds have three rock kinds (igneous, sedimentary, metamorphic) each with its trace ore, three wood and leaf kinds, several soils (silty, clay, peaty), mud, gravel and sand kinds, biomes per world type, cave networks, floating islands, lower seas, and per-type surface features (the official world-builder configs in `monumentalco/boundless.worlds`, CC BY 4.0, hold the shapes: biomes, noise, caves, strata; tuning 4.13.4). It changes generated terrain, so it bumps `GENERATOR_VERSION`, and the server must keep the old generator for planets already made (as it keeps version 2): a spec decides that first.
 
 ## Later art passes

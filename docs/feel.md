@@ -288,3 +288,17 @@ Boundless's live tree and tables exactly (Nathan, 2026-10-20), in Boundmore's na
 | Elemental creatures | 10% of spawns on a tier 5 world, 23% on tier 6 (50% by tier 8); x2 health, x1.5 armour and damage, twice the drops (their element's shards among them), +50% XP; may be exotic too | 10% to 50% a developer's (forum check 3); the tier slope an inference (Measure 7); the rest Boundless's data |
 | Resistance | physical 40%; the element table (0.8 itself, 0.6 and 0.3 neighbours, -0.3 opposite: double damage) | Vansten's table (tuning 3.3.3) |
 
+## Living worlds (M19, `docs/milestones/19-living-worlds.md`, `bm-worldgen/src/biomes.rs`)
+
+| Value | Now | Source, or guess |
+|---|---|---|
+| Biomes a planet keeps | 15, drawn 16 / 8 / 4 / 2 / 1 by tier set | Boundless's world configs |
+| Biome cell size | about 320 blocks | **guess** (Boundless's `biomeSize` 30, about 480 on worlds three times as wide; Measure 1) |
+| Blend between biomes | 48 blocks | **guess** |
+| River width | the river noise within 0.022 of zero, about 15 to 25 blocks | **guess** (Measure 3) |
+| Steep ground | turf and soils stop where the land rises 2 over 2 blocks (slope 1 in 1); anything bare above 4 | Boundless's `maxGradient` 1.25 |
+| Cover depth | 2 to 5 blocks | Boundless's `averageDepth` 3 ± 3 |
+| Beach | sand from 6 under to 2 over the sea, only within 3 of open water | Boundless's 58 to 67 against 64 |
+| Strata | from 9 under the sea: 4 thick bands (12 ± 4), 6 middle (6 ± 3), 12 thin (3 ± 1); wobble ± 9 over 110 blocks | Boundless's strata configs; counts and wobble **guesses** (Measure 4) |
+| Each biome's land, cover, rock and tree density | `assets/biomes.toml` | shapes after Boundless's labels; every number a **guess** calibrated on maps |
+
