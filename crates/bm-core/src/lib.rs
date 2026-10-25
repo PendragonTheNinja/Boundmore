@@ -52,6 +52,6 @@ pub use planet::PlanetShape;
 pub use plots::{PLOT_SIZE, PlotPos};
 pub use portal::{FrameError, PortalAxis, PortalFrame, find_frame};
 pub use raycast::{RayHit, raycast, raycast_shaped};
-pub use recipes::{Recipe, RecipeBook, RecipeError};
+pub use recipes::{Input, Recipe, RecipeBook, RecipeError};
 pub use shape::{ShapeFamily, edge_pairs, octant};
 pub use time::DayCycle;

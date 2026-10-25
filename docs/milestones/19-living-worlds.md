@@ -80,3 +80,5 @@ Today a Boundmore planet is one landscape: one noise heightmap, one stone, one s
 ## Status
 
 *Spec written 2026-10-25; part 1 in progress.*
+
+- [x] Recipe groups (rule 7 of Decided): `[[group]]` tables in `assets/recipes.toml` (`any_rock`, `any_trunk`, `any_leaves`, `any_soil`, `any_base_metal` for the copper or iron machine recipes, `any_base_alloy`, and each atmosphere line's pastes); a group input takes its members in the group's order (then `Inventory::remove`'s slot order), mixed members allowed. A station job keeps the items each craft took, saves them as runs of real items (the save format is unchanged; old jobs match the merged recipes) and refunds exactly those. The duplicated recipes (titanium alloy, the paste dishes, the copper or iron machines) are one each now. The crafting screen shows "Any Rock 3/4" with its members on hover. Protocol 31.

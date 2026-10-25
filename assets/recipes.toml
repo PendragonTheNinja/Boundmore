@@ -14,16 +14,59 @@
 # until creatures brought bone (milestone 13): now 1 sap + 1 bone, as in
 # Boundless.
 
+# Recipe groups (milestone 19, as Boundless's "Any Rock"): a recipe input may
+# name a group, and any of its items serves, mixed ones too, taken in the
+# order listed. `label` is what players see (by default the name in words).
+[[group]]
+name = "any_rock"
+items = ["stone", "basalt", "limestone"]
+
+[[group]]
+name = "any_trunk"
+items = ["trunk", "pale_trunk", "gnarled_trunk"]
+
+[[group]]
+name = "any_leaves"
+items = ["foliage", "fronds", "glossy_foliage"]
+
+[[group]]
+name = "any_soil"
+items = ["soil", "clay", "peat"]
+
+[[group]]
+name = "any_base_metal"
+label = "Any Base Metal Bar"
+items = ["copper_ingot", "iron_ingot"]
+
+[[group]]
+name = "any_base_alloy"
+items = ["silver_alloy", "gold_alloy"]
+
+[[group]]
+name = "acid_paste"
+label = "Any Acid Paste"
+items = ["corrosion_paste", "toxin_paste"]
+
+[[group]]
+name = "spark_paste"
+label = "Any Spark Paste"
+items = ["shock_paste", "chill_paste"]
+
+[[group]]
+name = "fire_paste"
+label = "Any Fire Paste"
+items = ["blast_paste", "burn_paste"]
+
 # By hand.
 [[recipe]]
 output = "timber"
 count = 2
-inputs = [["trunk", 1]]
+inputs = [["any_trunk", 1]]
 
 [[recipe]]
 output = "stick"
 count = 4
-inputs = [["trunk", 1]]
+inputs = [["any_trunk", 1]]
 
 [[recipe]]
 output = "crafting_table"
@@ -35,15 +78,15 @@ inputs = []
 
 [[recipe]]
 output = "wood_hammer"
-inputs = [["timber", 4], ["stick", 4], ["foliage", 4]]
+inputs = [["timber", 4], ["stick", 4], ["any_leaves", 4]]
 
 [[recipe]]
 output = "wood_shovel"
-inputs = [["timber", 4], ["stick", 4], ["foliage", 4]]
+inputs = [["timber", 4], ["stick", 4], ["any_leaves", 4]]
 
 [[recipe]]
 output = "wood_axe"
-inputs = [["timber", 4], ["stick", 4], ["foliage", 4]]
+inputs = [["timber", 4], ["stick", 4], ["any_leaves", 4]]
 
 [[recipe]]
 output = "torch"
@@ -54,7 +97,7 @@ inputs = [["stick", 1], ["flint", 1]]
 [[recipe]]
 output = "stones"
 count = 2
-inputs = [["stone", 1]]
+inputs = [["any_rock", 1]]
 station = "crafting_table"
 seconds = 10.0
 
@@ -67,28 +110,28 @@ seconds = 10.0
 
 [[recipe]]
 output = "stone_hammer"
-inputs = [["stones", 4], ["stick", 4], ["foliage", 4]]
+inputs = [["stones", 4], ["stick", 4], ["any_leaves", 4]]
 station = "crafting_table"
 seconds = 10.0
 xp = 4
 
 [[recipe]]
 output = "stone_shovel"
-inputs = [["stones", 4], ["stick", 4], ["foliage", 4]]
+inputs = [["stones", 4], ["stick", 4], ["any_leaves", 4]]
 station = "crafting_table"
 seconds = 10.0
 xp = 4
 
 [[recipe]]
 output = "stone_axe"
-inputs = [["stones", 4], ["stick", 4], ["foliage", 4]]
+inputs = [["stones", 4], ["stick", 4], ["any_leaves", 4]]
 station = "crafting_table"
 seconds = 10.0
 xp = 4
 
 [[recipe]]
 output = "square_chisel"
-inputs = [["stones", 4], ["stick", 4], ["foliage", 4]]
+inputs = [["stones", 4], ["stick", 4], ["any_leaves", 4]]
 station = "crafting_table"
 seconds = 10.0
 xp = 4
@@ -112,15 +155,7 @@ xp = 4
 [[recipe]]
 output = "workbench"
 count = 4
-inputs = [["timber", 10], ["copper_ingot", 3], ["relic_fragment", 1]]
-station = "crafting_table"
-seconds = 60.0
-xp = 6
-
-[[recipe]]
-output = "workbench"
-count = 4
-inputs = [["timber", 10], ["iron_ingot", 3], ["relic_fragment", 1]]
+inputs = [["timber", 10], ["any_base_metal", 3], ["relic_fragment", 1]]
 station = "crafting_table"
 seconds = 60.0
 xp = 6
@@ -160,7 +195,7 @@ xp = 8
 
 [[recipe]]
 output = "glass"
-inputs = [["sand", 2], ["soil", 2]]
+inputs = [["sand", 2], ["any_soil", 2]]
 station = "furnace"
 seconds = 30.0
 heat = 100
@@ -178,7 +213,7 @@ xp = 5
 [[recipe]]
 output = "brick"
 count = 4
-inputs = [["soil", 2], ["sand", 2]]
+inputs = [["any_soil", 2], ["sand", 2]]
 station = "furnace"
 seconds = 30.0
 heat = 200
@@ -188,16 +223,7 @@ xp = 6
 [[recipe]]
 output = "extractor"
 count = 4
-inputs = [["stones", 10], ["copper_ingot", 3], ["relic_fragment", 3]]
-station = "workbench"
-seconds = 180.0
-xp = 12
-wear = 14
-
-[[recipe]]
-output = "extractor"
-count = 4
-inputs = [["stones", 10], ["iron_ingot", 3], ["relic_fragment", 3]]
+inputs = [["stones", 10], ["any_base_metal", 3], ["relic_fragment", 3]]
 station = "workbench"
 seconds = 180.0
 xp = 12
@@ -355,7 +381,7 @@ wear = 6
 
 [[recipe]]
 output = "stone_sling"
-inputs = [["stones", 4], ["stick", 4], ["foliage", 4]]
+inputs = [["stones", 4], ["stick", 4], ["any_leaves", 4]]
 station = "crafting_table"
 seconds = 10.0
 xp = 4
@@ -485,16 +511,7 @@ wear = 6
 
 [[recipe]]
 output = "spark_generator"
-inputs = [["iron_furnace", 1], ["copper_ingot", 3], ["relic_component", 3], ["cog", 15]]
-station = "workbench"
-seconds = 450.0
-xp = 48
-wear = 29
-skill = { name = "machine_crafting", level = 1 }
-
-[[recipe]]
-output = "spark_generator"
-inputs = [["iron_furnace", 1], ["iron_ingot", 3], ["relic_component", 3], ["cog", 15]]
+inputs = [["iron_furnace", 1], ["any_base_metal", 3], ["relic_component", 3], ["cog", 15]]
 station = "workbench"
 seconds = 450.0
 xp = 48
@@ -504,17 +521,7 @@ skill = { name = "machine_crafting", level = 1 }
 [[recipe]]
 output = "spark_link"
 count = 10
-inputs = [["copper_ingot", 6], ["relic_fragment", 1]]
-station = "workbench"
-seconds = 60.0
-xp = 6
-wear = 7
-skill = { name = "machine_crafting", level = 1 }
-
-[[recipe]]
-output = "spark_link"
-count = 10
-inputs = [["iron_ingot", 6], ["relic_fragment", 1]]
+inputs = [["any_base_metal", 6], ["relic_fragment", 1]]
 station = "workbench"
 seconds = 60.0
 xp = 6
@@ -550,17 +557,7 @@ skill = { name = "machine_crafting", level = 1 }
 [[recipe]]
 output = "mixer"
 count = 4
-inputs = [["stones", 10], ["copper_ingot", 3], ["relic_fragment", 6]]
-station = "workbench"
-seconds = 450.0
-xp = 28
-wear = 29
-skill = { name = "machine_crafting", level = 1 }
-
-[[recipe]]
-output = "mixer"
-count = 4
-inputs = [["stones", 10], ["iron_ingot", 3], ["relic_fragment", 6]]
+inputs = [["stones", 10], ["any_base_metal", 3], ["relic_fragment", 6]]
 station = "workbench"
 seconds = 450.0
 xp = 28
@@ -696,7 +693,7 @@ wear = 35
 
 [[recipe]]
 output = "stone_spanner"
-inputs = [["stones", 4], ["stick", 4], ["foliage", 4]]
+inputs = [["stones", 4], ["stick", 4], ["any_leaves", 4]]
 station = "crafting_table"
 seconds = 10.0
 xp = 4
@@ -963,24 +960,14 @@ skill = { name = "food_crafting", level = 2 }
 
 [[recipe]]
 output = "wood_tiller"
-inputs = [["timber", 2], ["stick", 1], ["foliage", 1]]
+inputs = [["timber", 2], ["stick", 1], ["any_leaves", 1]]
 station = "crafting_table"
 seconds = 10.0
 xp = 2
 
 [[recipe]]
 output = "metal_tiller"
-inputs = [["copper_ingot", 3], ["stick", 4], ["cotton_cloth", 1]]
-station = "workbench"
-seconds = 240.0
-spark = 200
-xp = 38
-wear = 11
-skill = { name = "tool_crafting", level = 1 }
-
-[[recipe]]
-output = "metal_tiller"
-inputs = [["iron_ingot", 3], ["stick", 4], ["cotton_cloth", 1]]
+inputs = [["any_base_metal", 3], ["stick", 4], ["cotton_cloth", 1]]
 station = "workbench"
 seconds = 240.0
 spark = 200
@@ -1335,7 +1322,7 @@ skill = { name = "machine_crafting", level = 2 }
 
 [[recipe]]
 output = "charcoal"
-inputs = [["trunk", 1]]
+inputs = [["any_trunk", 1]]
 station = "furnace"
 seconds = 120.0
 heat = 100
@@ -1620,16 +1607,7 @@ wear = 14
 
 [[recipe]]
 output = "titanium_alloy"
-inputs = [["titanium_ingot", 1], ["silver_alloy", 2]]
-station = "mixer"
-seconds = 60.0
-spark = 200
-xp = 15
-wear = 15
-
-[[recipe]]
-output = "titanium_alloy"
-inputs = [["titanium_ingot", 1], ["gold_alloy", 2]]
+inputs = [["titanium_ingot", 1], ["any_base_alloy", 2]]
 station = "mixer"
 seconds = 60.0
 spark = 200
@@ -1860,9 +1838,9 @@ skill = { name = "tech_crafting", level = 2 }
 
 # Atmosphere food (Boundless's recipe data, single craft; data check
 # 2026-10-25): a paste is an elemental shard and fresh blood; each line's
-# dishes take either paste of its line (acid: corrosion or toxin; charged:
-# shock or chill; burning: blast or burn). Acid and charged dishes add rock
-# salt.
+# dishes take either paste of its line, through the line's recipe group
+# (acid: corrosion or toxin; charged: shock or chill; burning: blast or
+# burn). Acid and charged dishes add rock salt.
 
 [[recipe]]
 output = "corrosion_paste"
@@ -1946,7 +1924,7 @@ skill = { name = "food_crafting", level = 5 }
 
 [[recipe]]
 output = "raw_acid_chilli"
-inputs = [["prime_meat", 2], ["spicy_bean", 2], ["corrosion_paste", 1], ["tuber", 2], ["rock_salt", 1]]
+inputs = [["prime_meat", 2], ["spicy_bean", 2], ["acid_paste", 1], ["tuber", 2], ["rock_salt", 1]]
 station = "mixer"
 seconds = 120.0
 xp = 12
@@ -1955,7 +1933,7 @@ skill = { name = "food_crafting", level = 1 }
 
 [[recipe]]
 output = "raw_acid_rice"
-inputs = [["prime_meat", 5], ["spicy_bean", 4], ["corrosion_paste", 2], ["rice_bag", 2], ["rock_salt", 1]]
+inputs = [["prime_meat", 5], ["spicy_bean", 4], ["acid_paste", 2], ["rice_bag", 2], ["rock_salt", 1]]
 station = "mixer"
 seconds = 160.0
 spark = 200
@@ -1965,37 +1943,7 @@ skill = { name = "food_crafting", level = 3 }
 
 [[recipe]]
 output = "raw_acid_pie"
-inputs = [["prime_meat", 10], ["spicy_bean", 8], ["corrosion_paste", 4], ["flour", 2], ["purified_butter", 2], ["rock_salt", 1]]
-station = "mixer"
-seconds = 180.0
-spark = 400
-power = 1000
-xp = 22
-wear = 28
-skill = { name = "food_crafting", level = 5 }
-
-[[recipe]]
-output = "raw_acid_chilli"
-inputs = [["prime_meat", 2], ["spicy_bean", 2], ["toxin_paste", 1], ["tuber", 2], ["rock_salt", 1]]
-station = "mixer"
-seconds = 120.0
-xp = 12
-wear = 21
-skill = { name = "food_crafting", level = 1 }
-
-[[recipe]]
-output = "raw_acid_rice"
-inputs = [["prime_meat", 5], ["spicy_bean", 4], ["toxin_paste", 2], ["rice_bag", 2], ["rock_salt", 1]]
-station = "mixer"
-seconds = 160.0
-spark = 200
-xp = 18
-wear = 26
-skill = { name = "food_crafting", level = 3 }
-
-[[recipe]]
-output = "raw_acid_pie"
-inputs = [["prime_meat", 10], ["spicy_bean", 8], ["toxin_paste", 4], ["flour", 2], ["purified_butter", 2], ["rock_salt", 1]]
+inputs = [["prime_meat", 10], ["spicy_bean", 8], ["acid_paste", 4], ["flour", 2], ["purified_butter", 2], ["rock_salt", 1]]
 station = "mixer"
 seconds = 180.0
 spark = 400
@@ -2033,7 +1981,7 @@ skill = { name = "food_crafting", level = 5 }
 
 [[recipe]]
 output = "raw_spark_chilli"
-inputs = [["prime_meat", 2], ["spicy_bean", 2], ["shock_paste", 1], ["tuber", 2], ["rock_salt", 1]]
+inputs = [["prime_meat", 2], ["spicy_bean", 2], ["spark_paste", 1], ["tuber", 2], ["rock_salt", 1]]
 station = "mixer"
 seconds = 120.0
 xp = 12
@@ -2042,7 +1990,7 @@ skill = { name = "food_crafting", level = 1 }
 
 [[recipe]]
 output = "raw_spark_rice"
-inputs = [["prime_meat", 5], ["spicy_bean", 4], ["shock_paste", 2], ["rice_bag", 2], ["rock_salt", 1]]
+inputs = [["prime_meat", 5], ["spicy_bean", 4], ["spark_paste", 2], ["rice_bag", 2], ["rock_salt", 1]]
 station = "mixer"
 seconds = 160.0
 spark = 200
@@ -2052,37 +2000,7 @@ skill = { name = "food_crafting", level = 3 }
 
 [[recipe]]
 output = "raw_spark_pie"
-inputs = [["prime_meat", 10], ["spicy_bean", 8], ["shock_paste", 4], ["flour", 2], ["purified_butter", 2], ["rock_salt", 1]]
-station = "mixer"
-seconds = 180.0
-spark = 400
-power = 1000
-xp = 22
-wear = 28
-skill = { name = "food_crafting", level = 5 }
-
-[[recipe]]
-output = "raw_spark_chilli"
-inputs = [["prime_meat", 2], ["spicy_bean", 2], ["chill_paste", 1], ["tuber", 2], ["rock_salt", 1]]
-station = "mixer"
-seconds = 120.0
-xp = 12
-wear = 21
-skill = { name = "food_crafting", level = 1 }
-
-[[recipe]]
-output = "raw_spark_rice"
-inputs = [["prime_meat", 5], ["spicy_bean", 4], ["chill_paste", 2], ["rice_bag", 2], ["rock_salt", 1]]
-station = "mixer"
-seconds = 160.0
-spark = 200
-xp = 18
-wear = 26
-skill = { name = "food_crafting", level = 3 }
-
-[[recipe]]
-output = "raw_spark_pie"
-inputs = [["prime_meat", 10], ["spicy_bean", 8], ["chill_paste", 4], ["flour", 2], ["purified_butter", 2], ["rock_salt", 1]]
+inputs = [["prime_meat", 10], ["spicy_bean", 8], ["spark_paste", 4], ["flour", 2], ["purified_butter", 2], ["rock_salt", 1]]
 station = "mixer"
 seconds = 180.0
 spark = 400
@@ -2120,7 +2038,7 @@ skill = { name = "food_crafting", level = 5 }
 
 [[recipe]]
 output = "raw_fire_chilli"
-inputs = [["prime_meat", 2], ["spicy_bean", 2], ["blast_paste", 1], ["tuber", 2]]
+inputs = [["prime_meat", 2], ["spicy_bean", 2], ["fire_paste", 1], ["tuber", 2]]
 station = "mixer"
 seconds = 120.0
 xp = 12
@@ -2129,7 +2047,7 @@ skill = { name = "food_crafting", level = 1 }
 
 [[recipe]]
 output = "raw_fire_rice"
-inputs = [["prime_meat", 5], ["spicy_bean", 4], ["blast_paste", 2], ["rice_bag", 2]]
+inputs = [["prime_meat", 5], ["spicy_bean", 4], ["fire_paste", 2], ["rice_bag", 2]]
 station = "mixer"
 seconds = 160.0
 spark = 200
@@ -2139,37 +2057,7 @@ skill = { name = "food_crafting", level = 3 }
 
 [[recipe]]
 output = "raw_fire_pie"
-inputs = [["prime_meat", 10], ["spicy_bean", 8], ["blast_paste", 4], ["flour", 2], ["purified_butter", 2]]
-station = "mixer"
-seconds = 180.0
-spark = 400
-power = 1000
-xp = 22
-wear = 28
-skill = { name = "food_crafting", level = 5 }
-
-[[recipe]]
-output = "raw_fire_chilli"
-inputs = [["prime_meat", 2], ["spicy_bean", 2], ["burn_paste", 1], ["tuber", 2]]
-station = "mixer"
-seconds = 120.0
-xp = 12
-wear = 21
-skill = { name = "food_crafting", level = 1 }
-
-[[recipe]]
-output = "raw_fire_rice"
-inputs = [["prime_meat", 5], ["spicy_bean", 4], ["burn_paste", 2], ["rice_bag", 2]]
-station = "mixer"
-seconds = 160.0
-spark = 200
-xp = 16
-wear = 26
-skill = { name = "food_crafting", level = 3 }
-
-[[recipe]]
-output = "raw_fire_pie"
-inputs = [["prime_meat", 10], ["spicy_bean", 8], ["burn_paste", 4], ["flour", 2], ["purified_butter", 2]]
+inputs = [["prime_meat", 10], ["spicy_bean", 8], ["fire_paste", 4], ["flour", 2], ["purified_butter", 2]]
 station = "mixer"
 seconds = 180.0
 spark = 400

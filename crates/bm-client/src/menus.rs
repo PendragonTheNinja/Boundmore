@@ -1542,17 +1542,25 @@ fn recipe_row(
                         }
                     });
                     ui.horizontal_wrapped(|ui| {
-                        for (item, need) in &recipe.inputs {
-                            let have = v.items.inventory.count(*item);
-                            let colour = if have >= *need as u32 { MUTED } else { SHORT };
-                            item_chip(
-                                ui,
-                                &ItemStack::new(*item, 1),
-                                v.items,
-                                v.icons,
-                                22.0,
-                                egui::RichText::new(format!("{have}/{need}")).color(colour).small(),
-                            );
+                        for input in &recipe.inputs {
+                            let view = v.items.input_view(input);
+                            let colour = if view.have >= input.count as u32 { MUTED } else { SHORT };
+                            let label = egui::RichText::new(view.label).color(colour).small();
+                            match view.hover {
+                                // A group: its icon, its name, and what serves.
+                                Some(hover) => {
+                                    ui.horizontal(|ui| {
+                                        ui.spacing_mut().item_spacing.x = 4.0;
+                                        let (rect, resp) = ui.allocate_exact_size(Vec2::splat(22.0), Sense::hover());
+                                        paint_icon(ui.painter(), rect, v.icons.get(&ItemStack::new(view.icon, 1)), 1.0);
+                                        resp.on_hover_text(&hover);
+                                        ui.label(label).on_hover_text(hover);
+                                    });
+                                }
+                                None => {
+                                    item_chip(ui, &ItemStack::new(view.icon, 1), v.items, v.icons, 22.0, label);
+                                }
+                            }
                         }
                     });
                 });

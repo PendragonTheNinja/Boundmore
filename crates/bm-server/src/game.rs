@@ -2633,7 +2633,7 @@ impl Game {
                             emptied.push(p);
                         }
                         if planet.stations.has_contents(p) {
-                            items.extend(planet.stations.take(p, &self.recipes));
+                            items.extend(planet.stations.take(p, &self.items));
                         }
                         let Some(current) = planet.world.state(p) else { continue };
                         let generated = reference.state(p.local());

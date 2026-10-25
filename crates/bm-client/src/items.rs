@@ -9,8 +9,8 @@
 use bm_core::forge::{Action, Gear, Held, IngredientDef, TraitKind};
 use bm_core::items::{BombStats, SlingStats, ToolStats};
 use bm_core::{
-    BlockPos, BlockRegistry, Colour, ColourPalette, INVENTORY_SLOTS, Inventory, ItemDef, ItemError, ItemId, ItemKind,
-    ItemRegistry, ItemStack, Recipe, RecipeBook, ShapeFamily, Station, ToolClass,
+    BlockPos, BlockRegistry, Colour, ColourPalette, INVENTORY_SLOTS, Input, Inventory, ItemDef, ItemError, ItemId,
+    ItemKind, ItemRegistry, ItemStack, Recipe, RecipeBook, ShapeFamily, Station, ToolClass,
 };
 use bm_protocol::ClientMsg;
 use std::collections::HashMap;
@@ -44,7 +44,12 @@ impl Items {
         inventory.sanitize(&registry);
         let recipes = recipes
             .into_iter()
-            .filter(|r| registry.contains(r.output) && r.inputs.iter().all(|(i, _)| registry.contains(*i)))
+            .filter(|r| {
+                registry.contains(r.output)
+                    && r.inputs
+                        .iter()
+                        .all(|input| input.items.iter().all(|i| registry.contains(*i)))
+            })
             .collect();
         Ok(Self {
             registry,
@@ -323,12 +328,46 @@ impl Items {
 
     /// How many times `recipe` can be made from what is carried now.
     pub fn craft_max(&self, recipe: &Recipe) -> u16 {
-        recipe
-            .inputs
+        if recipe.inputs.is_empty() {
+            return 0;
+        }
+        recipe.max_crafts(&self.inventory).min(u16::MAX as u32) as u16
+    }
+
+    /// How a recipe input reads in a crafting screen: the item whose icon
+    /// it shows (a group's first member carried, else its first), its words
+    /// ("Any Rock 3/4", or "3/4" beside a plain item's icon), how many are
+    /// carried (a group's members together), and for a group what serves.
+    pub fn input_view(&self, input: &Input) -> InputView {
+        let have = input.have(&self.inventory);
+        let icon = input
+            .items
             .iter()
-            .map(|(item, n)| (self.inventory.count(*item) / (*n).max(1) as u32).min(u16::MAX as u32) as u16)
-            .min()
-            .unwrap_or(0)
+            .copied()
+            .find(|i| self.inventory.count(*i) > 0)
+            .or(input.items.first().copied())
+            .unwrap_or(ItemId(0));
+        let count = format!("{have}/{}", input.count);
+        let (label, hover) = match &input.group {
+            Some(group) => {
+                let names: Vec<String> = input
+                    .items
+                    .iter()
+                    .filter_map(|i| self.registry.get(*i).map(|d| d.display.clone()))
+                    .collect();
+                (
+                    format!("{group} {count}"),
+                    Some(format!("{group}: {}", names.join(", "))),
+                )
+            }
+            None => (count, None),
+        };
+        InputView {
+            icon,
+            label,
+            have,
+            hover,
+        }
     }
 
     /// The recipes a crafting screen offers, with their indices: in the
@@ -612,6 +651,16 @@ pub fn ingredient_cost(d: &IngredientDef) -> String {
     }
 }
 
+/// A recipe input as a crafting screen shows it ([`Items::input_view`]).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct InputView {
+    pub icon: ItemId,
+    pub label: String,
+    pub have: u32,
+    /// A group's members, for its tooltip.
+    pub hover: Option<String>,
+}
+
 /// 1 to 5 as I to V, for buff ranks.
 pub fn roman(n: u8) -> &'static str {
     ["", "I", "II", "III", "IV", "V"].get(n as usize).copied().unwrap_or("")
@@ -798,6 +847,39 @@ mod tests {
         i.set_token_names(vec![(17, "1 by 2, Saffra, near 5, 6".into())]);
         assert!(i.tooltip(&bound).ends_with("Links to: 1 by 2, Saffra, near 5, 6"));
         assert!(!i.tooltip(&bound).contains('\u{2014}'));
+    }
+
+    #[test]
+    fn a_group_input_shows_its_name_and_the_members_together() {
+        let mut i = items();
+        let id = |n: &str| i.registry.id(n).unwrap();
+        let (stones, basalt, limestone) = (id("stones"), id("basalt"), id("limestone"));
+        let r = i
+            .recipes
+            .recipes
+            .iter()
+            .find(|r| r.output == stones && r.inputs[0].accepts(basalt))
+            .unwrap()
+            .clone();
+        let v = i.input_view(&r.inputs[0]);
+        assert_eq!((v.label.as_str(), v.have, v.icon), ("Any Rock 0/1", 0, id("stone")));
+        assert_eq!(v.hover.as_deref(), Some("Any Rock: Stone, Basalt, Limestone"));
+        i.inventory.add(&i.registry, limestone, 2);
+        i.inventory.add(&i.registry, basalt, 1);
+        let v = i.input_view(&r.inputs[0]);
+        assert_eq!((v.label.as_str(), v.have, v.icon), ("Any Rock 3/1", 3, basalt));
+        assert_eq!(i.craft_max(&r), 3);
+        assert!(!v.label.contains('\u{2014}'));
+        // A plain item reads as its count only, beside its icon.
+        let hammer = i
+            .recipes
+            .recipes
+            .iter()
+            .find(|r| r.output == id("stone_hammer"))
+            .unwrap();
+        let v = i.input_view(&hammer.inputs[0]);
+        assert_eq!((v.label.as_str(), v.hover.clone()), ("0/4", None));
+        assert_eq!(hammer.inputs[2].group.as_deref(), Some("Any Leaves"));
     }
 
     #[test]

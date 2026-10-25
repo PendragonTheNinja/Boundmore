@@ -1649,7 +1649,8 @@ impl Demo {
         let mut made = 0;
         for _ in 0..count {
             let mut trial = self.inv.clone();
-            if r.inputs.iter().any(|(i, n)| trial.remove(*i, *n).is_none()) {
+            let Some(plan) = r.plan(&trial, 1) else { break };
+            if plan.iter().flatten().any(|(i, n)| trial.remove(*i, *n).is_none()) {
                 break;
             }
             if r.station == Station::Hand && trial.add_all(&self.items, r.output, r.output_count).is_none() {

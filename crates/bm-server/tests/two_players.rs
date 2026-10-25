@@ -3,7 +3,7 @@
 use bm_core::skills::{Character, xp_for_level};
 use bm_core::spark;
 use bm_core::{
-    BlockId, BlockPos, BlockRegistry, BlockState, Chiselling, Chunk, ChunkPos, Colour, Inventory, ItemRegistry,
+    BlockId, BlockPos, BlockRegistry, BlockState, Chiselling, Chunk, ChunkPos, Colour, Input, Inventory, ItemRegistry,
     ItemStack, PlayerInput, PlayerState, PlotPos, ShapeFamily, Station,
 };
 use bm_net::quinn::Connection;
@@ -989,8 +989,9 @@ async fn crafting_by_hand_at_a_table_and_at_a_four_block_workbench() {
         "Alice",
         &[
             (0, "workbench", 5, 0),
-            (5, "trunk", 6, 0),
-            (6, "stone", 1, 0),
+            (5, "trunk", 5, 0),
+            (6, "basalt", 1, 0),
+            (7, "pale_trunk", 1, 0),
             (10, "stones", 6, 0),
             (11, "glow_crystal", 1, 0),
             (12, "copper_ingot", 3, 0),
@@ -1007,14 +1008,18 @@ async fn crafting_by_hand_at_a_table_and_at_a_four_block_workbench() {
         }
     }
 
-    // Hand recipes are instant and all or nothing; 2 timber a trunk.
+    // Hand recipes are instant and all or nothing; 2 timber a trunk, any
+    // trunk (a recipe group, milestone 19), the plain trunk first.
     let timber = alice.recipe("timber");
     craft_at(&mut alice, timber, 7, None).await;
     alice.notice("You do not have the materials").await;
-    assert_eq!(alice.count("trunk"), 6);
+    assert_eq!((alice.count("trunk"), alice.count("pale_trunk")), (5, 1));
     craft_at(&mut alice, timber, 5, None).await;
     alice.settle().await;
-    assert_eq!((alice.count("trunk"), alice.count("timber")), (1, 10));
+    assert_eq!(
+        (alice.count("trunk"), alice.count("pale_trunk"), alice.count("timber")),
+        (0, 1, 10)
+    );
     let r = alice.recipe("crafting_table");
     craft_at(&mut alice, r, 1, None).await;
     alice.settle().await;
@@ -1039,17 +1044,18 @@ async fn crafting_by_hand_at_a_table_and_at_a_four_block_workbench() {
     // Hand recipes work at a table too, still instantly.
     craft_at(&mut alice, timber, 1, Some(table)).await;
     alice.settle().await;
-    assert_eq!((alice.count("trunk"), alice.count("timber")), (0, 2));
+    assert_eq!((alice.count("pale_trunk"), alice.count("timber")), (0, 2));
     // A workbench recipe is not made at a table.
     let r = alice.recipe("claim_stone");
     craft_at(&mut alice, r, 1, Some(table)).await;
     alice.notice("That is made at a Workbench").await;
-    // Stones from rock, over time; the table cannot be broken meanwhile.
+    // Stones from any rock (basalt here), over time; the table cannot be
+    // broken meanwhile.
     craft_at(&mut alice, stones, 1, Some(table)).await;
     let queued = alice.station(|v| !v.jobs.is_empty()).await;
     assert_eq!(queued.jobs[0].recipe, stones);
     alice.settle().await;
-    assert_eq!(alice.count("stone"), 0, "inputs taken at once");
+    assert_eq!(alice.count("basalt"), 0, "inputs taken at once");
     alice
         .station(|v| v.jobs.first().is_some_and(|j| j.progress > 0.05))
         .await;
@@ -4503,7 +4509,10 @@ async fn a_sling_kills_a_creature_for_xp_and_bone_and_bone_makes_glue() {
     assert!(place(&mut alice, 2, top, 3, None).await.0);
     let glue = alice.recipe("glue");
     let r = &alice.welcome.recipes[glue as usize];
-    assert_eq!(r.inputs, vec![(alice.item("sap"), 1), (alice.item("bone"), 1)]);
+    assert_eq!(
+        r.inputs,
+        vec![Input::item(alice.item("sap"), 1), Input::item(alice.item("bone"), 1)]
+    );
     look_at_station(&mut alice, base, |v| v.idle.is_none()).await;
     craft_at(&mut alice, glue, 1, Some(base)).await;
     alice.station(|v| !v.jobs.is_empty()).await;
