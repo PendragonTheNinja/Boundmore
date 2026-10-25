@@ -188,6 +188,17 @@ impl TestClient {
         self.inv.count(self.item(name))
     }
 
+    /// Every stack carried outside the hand slot, with its slot.
+    fn carried(&self) -> Vec<(usize, ItemStack)> {
+        self.inv
+            .slots
+            .iter()
+            .enumerate()
+            .filter(|&(i, _)| i != HAND as usize)
+            .filter_map(|(i, s)| s.map(|s| (i, s)))
+            .collect()
+    }
+
     /// The block under the player's feet where they arrived.
     fn feet(&self) -> BlockPos {
         let s = self.spawn.pos;
@@ -847,7 +858,7 @@ async fn accounts_register_log_in_and_refuse() {
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn edits_positions_and_inventories_survive_a_restart() {
     let dir = tempfile::tempdir().unwrap();
-    let (feet, moved_to) = {
+    let (feet, moved_to, dug) = {
         let server = bm_server::start(config(dir.path())).unwrap();
         let mut alice = TestClient::register(&server, "Alice").await;
         let feet = alice.feet();
@@ -855,9 +866,16 @@ async fn edits_positions_and_inventories_survive_a_restart() {
         assert!(alice.dig(1, feet).await.0);
         tokio::time::sleep(Duration::from_millis(500)).await;
         let (_, _, state, _) = alice.latest_snapshot().await;
+        let dug = alice.carried();
+        // Turf can give a bonus tuber now and then (M16), so count what
+        // came, not a fixed number.
+        assert!(
+            dug.iter().map(|s| s.1.count).sum::<u16>() >= 1,
+            "she dug something: {dug:?}"
+        );
         drop(alice);
         server.stop();
-        (feet, state.pos)
+        (feet, state.pos, dug)
     };
     let server = bm_server::start(config(dir.path())).unwrap();
     let mut alice = TestClient::login(&server, "Alice").await;
@@ -867,19 +885,7 @@ async fn edits_positions_and_inventories_survive_a_restart() {
         alice.welcome.spawn.pos,
         moved_to
     );
-    assert_eq!(
-        alice
-            .inv
-            .slots
-            .iter()
-            .enumerate()
-            .filter(|&(i, _)| i != HAND as usize)
-            .filter_map(|(_, s)| s.as_ref())
-            .map(|s| s.count)
-            .sum::<u16>(),
-        1,
-        "kept what she dug"
-    );
+    assert_eq!(alice.carried(), dug, "kept what she dug");
     alice.wait_for_chunk(feet.chunk()).await;
     assert_eq!(
         alice.chunks[&feet.chunk()].get(feet.local()),
@@ -5053,6 +5059,8 @@ impl TestClient {
     /// fight is over. Idle inputs pass time, so energy comes back.
     async fn fight_until(&mut self, melee: u8, mut done: impl FnMut(&TestClient) -> bool) {
         let shape = self.shape();
+        // What the last look saw, for the failure message.
+        let mut seen = String::new();
         for _ in 0..600 {
             // About as many inputs as the 300 ms `settle` waits (60 a second),
             // so the server never falls behind them.
@@ -5073,6 +5081,14 @@ impl TestClient {
                 .unwrap();
             let ServerDatagram::Snapshot { you, creatures, .. } = snap;
             let eye = you.pos + glam::DVec3::new(0.0, self.welcome.movement.eye_height, 0.0);
+            seen = format!(
+                "eye {eye:.2}; living {:?}",
+                creatures
+                    .iter()
+                    .filter(|c| living.contains(&c.id))
+                    .map(|c| (c.id, c.pos))
+                    .collect::<Vec<_>>()
+            );
             let near = creatures.iter().filter(|c| living.contains(&c.id)).find(|c| {
                 let at = glam::DVec3::new(c.pos[0] as f64, c.pos[1] as f64 + 0.45, c.pos[2] as f64);
                 shape.delta(eye, at).length() < 7.0
@@ -5090,7 +5106,7 @@ impl TestClient {
             })
             .await;
         }
-        panic!("the fight did not end");
+        panic!("the fight did not end: {seen}; {:?}", self.notices);
     }
 }
 

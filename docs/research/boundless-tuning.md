@@ -2102,3 +2102,124 @@ Read for `docs/milestones/17-forging.md`. Sources: mayumi's forge simulator (`bo
 **Effectiveness evidence**: the coil's text: "If there is an excess of Power when Forging an Item, Forge Momentum will be increased" (wiki Centraforge Power Coil, +100 power a basic coil). A diamond heavy hammer with a full forging build: 194% at 17 advanced coils, 6% less for each coil removed, 200% (the cap) at 18 (Kurokaze, t/30053, 2019-05). Before the 200% cap: "100 power = 1% of efficiency" with the epic (t/18102, 2018-09). Rift, blink, umbris and totems sit at the low end, about 35 to 42% with 24 coils (t/30053, t/31987). The formula itself is not published; Boundmore's guess is in the spec and `feel.md`.
 
 **Recipes** (`compiled-recipes.json`; extractor unless said; single craft; XP, wear, Forge Ingredient Crafting level): Charcoal: furnace, 1 trunk, 120 s, heat 100, 4 XP. Ancient vital essence: 1 small fossil (60 s, 4 XP, wear 7), 1 medium (240 s, 100 spark, 8 XP, wear 17), 1 large (600 s, 200 spark, 500 power). Compound base: 1 glass, 1 reactive lamella, 1 charcoal (level 1, 4 XP, wear 6). Gum base: glass, syrup, fleshy leaf (1). Resin base: glass, sap, ancient vital essence (1). Paste base: glass, 2 spicy beans, 1 bitter bean, 200 spark (1, 8 XP). Catalyst base: glass, 2 inky leaves, cobalt, 200 spark (2). Solvent base: glass, viscous blood, olivine, 200 spark (2). Compounds and the rest: inputs as in 5.8's table, with their levels: level 1 compounds, all gums, setting resin, deconstruction resin 1, boon removal solvent 1, defect and quirk transmute solvents need no power (all level 1); every other ingredient needs 500 to 3,000 power. Centraforge: workbench, 10 stones, 3 any base alloy, 6 tech remnants, 1 tech component, 400 spark, 900 s, wear 55, 46 XP, Machine Crafting 2, makes 4. Centraforge power coil: 1 iron furnace base, 3 machined gold alloy, 1 compact amethyst, 3 tech components, 800 spark (Machine Crafting 2); advanced: titanium furnace base, 3 machined titanium alloy, 2 refined amethyst, 6 components, 1 device, 2,000 spark, 1,500 power (Machine Crafting 3).
+
+### 4.13 Higher worlds, power and gems (checked 2026-10-25)
+
+Read for the higher-world, power-coil and gem milestones. Fills gaps in 4.1 to 4.9, 3.3.3, 3.9 and 5.4; numbers already there are not repeated.
+
+**Access on 2026-10-25 (read first):** every primary source was unreachable from the sandbox this time: the proxy refused boundless.mayumi.fi, boundlessinfo.com, pfiffel.com, api.boundlexx.app, boundless.fandom.com and web.archive.org (403), and forum.playboundless.com, the wiki and the fan sites no longer resolve in DNS for the fetch tool. What follows comes from (a) the boundlexx source code on GitHub (`github.com/AngellusMortis/boundlexx`, cloned; its world model encodes the protection rules), and (b) web-search summaries of forum and wiki pages (the search engine read the page; I saw only its summary, not the page). Search-summary lines are marked **[S]** and are at most medium confidence even when they quote a dev. Nothing from the data files could be re-checked; where an earlier section already cites them, that section wins.
+
+#### 4.13.1 Atmosphere hazard
+
+| World type | Atmosphere (protection skill line) | Source |
+|---|---|---|
+| Lush, Corrosive, Toxic, (Umbris T7) | Caustic | boundlexx `boundless/models/world.py` `atmosphere_name` (game-data API code, high); matches 4.2 |
+| Metal, Shock, Chill, (Rift T7) | Potent | same, high |
+| Coal, Blast, Burn, (Blink T7) | Volatile | same, high |
+| Any type at T1 to T3 | none ("Normal") | same, high |
+
+| Tier | Hazard (points needed) | Skill ranks needed (rank gives +1/1/1/2/2) | Source |
+|---|---|---|---|
+| T4 | 1 | 1 | boundlexx `protection_points` / `protection` (high); 5.4a skill text |
+| T5 | 3 | 3 | same |
+| T6 | 5 | 4 | same |
+| T7 | 7 | 5 (max) | same |
+| T8 | 10 | 5 + the rank 3 atmosphere food (+3) | same ("5 levels + Pie") |
+
+How the hazard works (Release 198, 2018-09, and the staff reply in t/16261, 2018-09-13; [S], medium-high since several summaries agree):
+- Protection = atmosphere skill points of the world's line + an atmosphere food's points. Protected when protection >= hazard; then protected indefinitely (no timer). Before R198 there was a protection timer and T4 took your highest resistance of any line; R198 split it into the three lines and removed the timer (t/16358 [S]).
+- Unprotected: a debuff shows, and **its number is the shortfall** (hazard minus protection). Fog rolls in right up to you (and up to the portal you came through); an **air bar** drains and a drowning countdown shows in the centre of the screen; at the end you suffocate until defeated (R198 notes t/16254 [S]; wiki World page [S]; PSNProfiles trophy guide [S]). Applies indoors too ("you suffocate until defeated, even indoors", PSNProfiles [S]); nothing found says underground or altitude matters, so read it as world-wide (medium).
+- Protected: the fog rolls back and the air bar refills (R198 [S]).
+- Food warning: in the last minute of an atmosphere food's buff the fog closes in to 30 m (staff, t/16261 [S]).
+- Atmosphere food is an ordinary food buff: it replaces any other food buff (one food buff at a time, 3.9), so a T8 visitor cannot also eat shielding or invigorating food (t/27251, 2019 [S]). Food values stay as 3.9: +1/+2/+3 for 30 min.
+- Data strings name "Caustic / Hazardous / Potent / Volatile Atmosphere Damage", an atmosphere protection buff and an atmosphere debuff (t/53218, list from the data files [S]); "Hazardous" is unexplained (maybe exoworlds' rising atmosphere in their last 30 min, 4.2; guess).
+- **Not found:** the air bar's length in seconds, whether a bigger shortfall drains it faster or hurts more, the damage per tick once it is empty, and whether it blocks regeneration. The debuff showing the shortfall suggests the shortfall matters (guess).
+
+#### 4.13.2 Machine power and power coils
+
+| Rule | Value | Source | Conf. |
+|---|---|---|---|
+| Coil power | basic +100, advanced +300 | 4.6 (WIKI); repeated by forum t/52603 and PSNProfiles guide [S] | M-H |
+| Coils per machine | at most 24, so 7,200 power (24 advanced) | t/52603, t/45183, PSNProfiles [S]; 4.6 | M-H |
+| Placement | about a 1 m (one block) air gap between coil and machine; a power beam shows when it connects | wiki coil pages (Refinery, Centraforge, Chrysominter, Advanced Power Coil, v244) [S] | M |
+| Diagonals | coils connect diagonally as well as straight; an off-centre diagonal did not | t/12363 (2018, EA) [S] | L-M |
+| Shared coils | a coil touching two machines of its type joins the northern one first, then the western | t/12363 [S] | L |
+| Coil wear | coils wear with use; a worn coil gives no power (no damage, no loss), and worn coils keep wearing; any spanner repairs them, stone very slowly | t/13079, t/27900 [S] | M |
+| Coil wear capacity | one player measured about 5,000 repaired from worn, guessed 7,500 to 8,000 full (t/13079, EA 2018); another saw an advanced coil needing 189,000 to repair (t/27900, 2019) | [S] | L, conflicting |
+| Wear per craft | not found; long crafts (3 to 4 h) wore enough coils to stop mid-queue (t/13079 [S]). The wiki "wear" numbers on coil pages (basic 55/120/180, advanced 100/140/200) are the workbench's wear for crafting the coil, not the coil's own | [S] | L |
+
+**Power above the minimum** (the formula is still unpublished; best evidence):
+- Player guide "Power - Time Reduction" (t/12444, about April 2018, early access, [S]): the first 100 power above the recipe's requirement cuts **time** by 50%; each further 100 above it (counting the first) adds `100 / (8 × requirement)` percent; time never goes below 25% of base (a 75% cap). Worked example: requirement 1,500 and 600 excess gives 50 + 6 × 0.83 = 55%, which the author timed in game to within a second. Undefined for requirement 0 as written. Low-medium (EA, may have changed at launch).
+- Recipes with no requirement: the cut stops growing after about 16 advanced coils (t/45183, 2020 [S]); a refinery mass craft went 11:44 → 11:41 from 12 to 14 advanced coils and no lower at 24 (same). Consistent with the 25% floor. Medium.
+- **Spark**, one measured series (t/52603, 2020-2021, [S]): a marble recipe needing 800 power, mass craft, advanced coils: 3 coils (100 excess) 4,780 spark; 6 (1,000) 3,328; 12 (2,800) 2,409; 16 (4,000) 2,341; 24 (6,400) 2,338. Flat from about 12 coils above the requirement. If 2,338 is the 25% floor the base is about 9,350 and the points sit at 51%, 36%, 26%, 25%, 25% of base: close to the guide's curve but about 3 to 5 points above it at low excess, so the spark rule is probably not identical to the time rule (inference, low).
+- Players' rule of thumb: no-power recipes gain little beyond a few coils; 1,200 to 2,000 power recipes want 14 to 18; 24 only for heavy mass crafts (t/52603 [S]).
+- The machine queue level labels in the game's recipe data are Standard, Powered, Overdriven, Supercharged (boundlexx `models/game.py` `MachineLevelType`, from the game's `recipes.msgpack` field `machineLevel`, next to `powerRequired`; high that the fields exist, their thresholds unknown).
+- Every machine had at least one recipe needing power (some up to 2,400 to 3,000) (t/24489 [S], medium). The per-recipe `powerRequired` list (MAY `recipes.js`) could not be re-fetched; the thresholds known so far are in 4.6, 4.8, 4.9 and 5.9: workbench recipes needing power include gem gear 1,500, lucent gear 3,000, portal conduit 1,000 and advanced coils 1,500; elsewhere, large fossil essence 500 (extractor) and compact coal 500 to 2,000 (compactor). So the workbench needs power for gem tools and anything advanced, not for anything up to titanium.
+
+#### 4.13.3 Gems: seams, items and gem gear
+
+Most of this is already known; where it lives:
+
+| What | Value | Where / source | Conf. |
+|---|---|---|---|
+| Gem seam block health | 2,400 base × tier multiplier (T5 7,200, T6 9,600), minus tier armour per hit | 2.2 | H |
+| Gem seam hardness | above 3: basic (metal) chisels cannot cut it; advanced (gem) chisels can (hardness 10) | 2.1 | H |
+| Rough gems per seam block | T1-4 1.0, T5 1.5, T6-7 1.8, T8 2.2 expected | 4.4 (PF-DROP) | H |
+| Roll structure behind it (diamond) | 1 always; +1 at 50% from T5; +1 more at 30% from T6 | boundlesscrafting.com Diamond Seam page [S]; the sums match 4.4 | M |
+| Rough → compact → refined | 10 rough → 1 compact (compactor 240 s, 800 spark); 1 compact → 1 refined (refinery 120 s, 800 spark) | 4.8 | H |
+| Gem tools (hammer, shovel, axe) | damage, speed, crit, durability, energy per swing per gem | 2.1 and 4.9 | H |
+| Gem grapples | durability 2,000, energy 150, shot speed, length, reel per gem | 4.9 | H |
+| Gem (advanced) chisels | speed 80, durability 2,000, energy 20, hardness 10; cut kind per gem | 2.1, 4.9 | H |
+| Gem gear recipe | 3 refined gem + leather + enriched bonding agent; workbench 1,800 s, 2,000 spark, **1,500 power** | 4.9 | H |
+| Gem spanners | wear removed 10,000 a hit; each gem spanner is named for one machine (diamond workbench, ruby compactor, sapphire extractor, topaz refinery, emerald mixer, amethyst centraforge, the same pairing as the coils) and is "most effective at mending" that machine and its coils; metal spanners are general | 4.6; wiki Spanner page and Tech Crafting level 3 list [S] | M (how much less it does on other machines: not found) |
+| Gem spanner recipe extras | 6 cogs | 4.9 | H |
+| Where each gem spawns | 4.3 | | M-H |
+| Gem elements in combat | 3.3.3 | | H |
+
+Gem spanner durability and speed per gem, and the energy per spanner hit per gem, were not found (2.1 gives only the 30 to 70 speed, 500 to 2,000 durability, 4 to 50 energy range over all spanners).
+
+#### 4.13.4 Gold, titanium and coal seams
+
+Already complete elsewhere; nothing new found:
+- Yields per block by tier: 4.4 (gold 1.0/1.0/1.0/1.5/1.5/1.7/1.7/2.05; titanium and hard coal 1.0 to T4, 1.5 T5, 1.8 T6-7, 2.2 T8; medium coal 1.0/1.0/1.5/1.5/1.7/1.7/2.05/2.05).
+- Smelting: gold bar 180 s heat 400, titanium bar 240 s heat 600 (4.8); alloys and compacting 4.8; coal as spark fuel and compacted coal 4.7.
+- Placement: 4.3 (gold T4+ at altitude 10 to 20, 25+ deep; titanium T4 Metal and every type from T5, 70+ deep; hard coal 50+ deep).
+- Gold and titanium tools, grapples, chisels: 2.1, 4.9. Spanners: wear removed gold 2,000, titanium 6,000 (4.6); their own durability and speed: not found.
+
+**Which world types exist at which tier** (official world-builder configs, `github.com/monumentalco/boundless.worlds` `config/worlds/release/`, CC BY 4.0, last commit 2021-01-22; file names use 0-based tiers, so `toxic_world_4` is T5; high):
+
+| Type | Tiers with a config | Sea (level, liquid) | Lower sea | Size (chunks of 16) |
+|---|---|---|---|---|
+| Lush | T1 to T4 | 64 water | 16 water | 288 |
+| Metal | T3 to T7 | 64 **lava** | 16 lava | 288 (T6 192) |
+| Coal | T3 to T7 | 64 water | 16 lava | 288 (T6 192) |
+| Corrosive, Toxic, Shock | T5 to T7 | 64 water | 16 lava | 288 |
+| Chill | T5 to T7 | 64 water | 16 **water** | 288 |
+| Blast | T5 to T7 | **32** water | 16 lava | 288 (T5 exo 192) |
+| Burn | T5 to T7 | 64 **lava** | 16 lava | 288 |
+| Umbris | T7, T8 | 64 lava | 16 water | 192 |
+| Rift, Blink | T7, T8 | 64 water | 16 lava | 192 |
+
+Each config names a server-side profile (`toxic_world_profile_tier_4` and so on) that holds resources, creatures and atmosphere; the profiles are not in the repository. The repo is terrain and biome shapes only (biomes, noise, caves, strata, colours); it is a possible later source for world-generation shape, not for numbers asked here. Gem worlds share the colour sets `gem-4` (T5) and `gem-5` (T6, T7).
+
+#### 4.13.5 Creatures on T4 to T6 worlds
+
+Brief; nothing per world type was found beyond 3.2:
+- Creature power tiers per world tier (3.2.1, WIKI Hopper, medium): T4 Inhospitable worlds hold creature tiers 1 to 3, T5 Turbulent 1 to 4, T6 Fierce and up 1 to 5. Roadrunners only at creature tiers 1 to 3; hoppers from T3 worlds; spitters and wildstock everywhere; cuttletrunks everywhere they are not excluded (3.2).
+- Elemental creatures: only on the six gem-element types (Corrosive, Toxic, Shock, Chill, Blast, Burn), so from T5; each carries that world's element (Corrosive world → corrosion, Toxic → toxin, Shock → shock, Chill → chill, Blast → blast, Burn → burn); a fixed chance per spawn, +100% HP, +50% damage and armour (3.2.2, 3.3.3; "T5+ planets have elements associated with them, and mobs have a chance to spawn with that element", wiki Creature [S]). Lush, Metal and Coal worlds at T4 have no elemental creatures (no element), medium.
+- Lucent creatures on Umbris, Rift and Blink (T7) (3.2.2).
+- Every world picks two variants per creature race and a random bundle of attacks (3.2.3).
+- The boundlexx world record keeps each world's creature colours for cuttletrunk, hopper, hunter, roadrunner, spitter and wildstock (`WorldCreatureColor`), not which creatures spawn (high; so no API source lists spawns per world).
+
+#### 4.13.6 Conflicts
+
+- A PSNProfiles guide table [S] calls Lush a "safe" atmosphere; boundlexx's code gives T4 Lush the Caustic line with hazard 1. Prefer boundlexx (built from the game's world data). High.
+- Coil wear capacity: about 7,500 to 8,000 (EA player, t/13079) vs an advanced coil needing 189,000 repair (t/27900). Neither is data; unresolved.
+
+#### 4.13.7 Open
+
+- Atmosphere: air bar length (s), damage per tick once empty, whether a bigger shortfall drains faster, whether it stops regeneration, any altitude or underground rule (none found; read as world-wide). **Ask Nathan to measure:** on a T4 world with 0 protection, time from arrival to the countdown, the countdown's length, and health lost per tick after it.
+- Power: the exact time and spark formula after launch (the only formula is the EA guide); coil wear capacity and wear per craft; the full `powerRequired` list per machine (MAY `recipes.js`, blocked today; re-fetch when reachable); the power thresholds behind Standard / Powered / Overdriven / Supercharged.
+- Gem and metal spanners' own durability, speed and energy per material; how much worse a gem spanner is on another machine.
+- Creature spawn lists per world type and tier (server profiles never published).
+- Sources to retry when the proxy allows: boundless.mayumi.fi, boundlessinfo.com, pfiffel.com, api.boundlexx.app, boundless.fandom.com (all 403 on 2026-10-25), forum.playboundless.com (no DNS on 2026-10-25; may be gone).
