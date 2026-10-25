@@ -237,6 +237,7 @@ pub fn new_record(
             let mut g = kind.generation(spec.seed);
             if !biomes {
                 g.biomes.clear();
+                g.cave_tier = 0;
             }
             g
         },

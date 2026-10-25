@@ -164,6 +164,16 @@ pub struct PlanetGenConfig {
     /// Biome cells are about this many blocks across (a **guess**: Boundless's
     /// were about 480 on worlds three times as wide).
     pub biome_size: f64,
+    /// The planet's tier for its caves (milestone 19 part 3): 0 is version
+    /// 3's caves; 1 and up add flat caves, from 2 linings, from 3 rooms and
+    /// crooked tunnels, from 5 great halls and tall caves, from 6 shafts
+    /// and pillars (Boundless's cave sets by tier).
+    #[serde(skip_serializing_if = "is_zero")]
+    pub cave_tier: u8,
+}
+
+fn is_zero(v: &u8) -> bool {
+    *v == 0
 }
 
 /// A lower sea: what open caves fill with, up to which height.
@@ -349,6 +359,7 @@ impl Default for PlanetGenConfig {
             colours: BTreeMap::new(),
             biomes: Vec::new(),
             biome_size: 320.0,
+            cave_tier: 0,
         }
     }
 }
@@ -361,6 +372,7 @@ impl PlanetGenConfig {
     fn single(self) -> Self {
         Self {
             biomes: Vec::new(),
+            cave_tier: 0,
             ..self
         }
     }
@@ -770,6 +782,16 @@ pub struct Generator {
     tunnel_b: Fbm,
     /// The planet's biomes (milestone 19); None: version 3's one landscape.
     biome: Option<BiomeWorld>,
+    /// Cave styles by tier (milestone 19 part 3; 0: version 3's caves).
+    cave_tier: u8,
+    flat_caves: Fbm,
+    halls: Fbm,
+    tall_caves: Fbm,
+    shafts: Fbm,
+    pillars: Fbm,
+    /// What lines cave walls from tier 2: the three rocks, then the rarer
+    /// linings (ice, sand, ash, gravel).
+    linings: Vec<BlockId>,
     /// Tree sites already decided, by lattice square: neighbouring chunks
     /// ask about most of the same squares. Only a cache: every answer is a
     /// pure function of the square.
@@ -821,6 +843,7 @@ struct BiomeLand {
     /// Its trees, resolved, and their weights' total.
     trees: Vec<LandTree>,
     tree_weight: f64,
+    lift: Option<biomes::Lift>,
 }
 
 /// A tree kind a biome grows, its wood resolved.
@@ -853,6 +876,9 @@ struct BiomeWorld {
     /// The furthest any of its trees reaches sideways, and up.
     tree_reach: i64,
     tree_up: i64,
+    /// Lifted land's noise, and whether any biome lifts.
+    lift: Fbm,
+    any_lift: bool,
 }
 
 /// One column of a biome planet: its height, the biome it belongs to and how
@@ -862,7 +888,15 @@ struct Column {
     h: i64,
     biome: u8,
     river: f64,
+    /// Lifted land: the band (empty when `lift_hi <= lift_lo`) and how much
+    /// of it is solid, faded toward the biome's border.
+    lift_lo: i64,
+    lift_hi: i64,
+    lift_fill: f64,
 }
+
+/// Lifted land fades this far into its band's top and bottom (blocks).
+const LIFT_FADE: f64 = 8.0;
 
 /// Height over which neighbouring biomes' land blends (a **guess**).
 const BIOME_BLEND: f64 = 48.0;
@@ -912,6 +946,7 @@ impl BiomeWorld {
             lands.push(BiomeLand {
                 trees,
                 tree_weight,
+                lift: b.lift.clone(),
                 base: b.base,
                 hills: b.hills,
                 mountains: b.mountains,
@@ -956,6 +991,8 @@ impl BiomeWorld {
         Ok(Self {
             tree_reach,
             tree_up,
+            lift: Fbm::new(k(2904), width, 34.0, 3, 0.5),
+            any_lift: cfg.biomes.iter().any(|b| b.lift.is_some()),
             layout: biomes::Layout::new(&cfg.biomes, width, cfg.biome_size, cfg.seed),
             any_trees: lands.iter().any(|l| l.tree_density > 0.0 && l.tree_weight > 0.0),
             lands,
@@ -1007,18 +1044,55 @@ impl BiomeWorld {
     }
 }
 
-/// Cave values at one lattice point.
+/// Cave values at one lattice point. `flat` and `hall` are milestone 19's
+/// cave styles, read only on planets with a cave tier.
 #[derive(Clone, Copy, Default)]
 struct Cave {
     cavern: f64,
     tunnel: f64,
+    flat: f64,
+    hall: f64,
+    /// The planet's cave tier (0: version 3's caves).
+    tier: u8,
 }
 
 impl Cave {
+    /// Rooms open wider and tunnels wind thicker from tier 3.
+    fn thresholds(self) -> (f64, f64) {
+        if self.tier >= 3 { (0.39, 0.068) } else { (0.42, 0.055) }
+    }
+
     fn open(self) -> bool {
-        self.cavern > 0.42 || self.tunnel < 0.055
+        let (cavern, tunnel) = self.thresholds();
+        self.cavern > cavern
+            || self.tunnel < tunnel
+            || (self.tier >= 1 && self.flat > FLAT_OPEN)
+            || (self.tier >= 5 && self.hall > HALL_OPEN)
+    }
+
+    /// Close to a cave's wall (inside rock): where a lining goes.
+    fn near_wall(self) -> bool {
+        let (cavern, tunnel) = self.thresholds();
+        self.cavern > cavern - 0.06
+            || self.tunnel < tunnel + 0.03
+            || (self.tier >= 1 && self.flat > FLAT_OPEN - 0.06)
+            || (self.tier >= 5 && self.hall > HALL_OPEN - 0.06)
     }
 }
+
+/// Flat caves open where their stretched noise passes this (a **guess**).
+const FLAT_OPEN: f64 = 0.5;
+/// Great halls and tall caves open where theirs passes this (a **guess**).
+const HALL_OPEN: f64 = 0.48;
+/// Great halls and tall caves stay this far under the sea.
+const HALL_BELOW_SEA: i64 = 24;
+/// Shafts (tier 6 and up): round pits, one at a hashed spot in some squares
+/// `SHAFT_CELL` across, open from `SHAFT_TOP` under the surface down
+/// `SHAFT_DEPTH` (sizes **guesses**).
+const SHAFT_CELL: i64 = 32;
+const SHAFT_CHANCE: f64 = 0.35;
+const SHAFT_TOP: i64 = 10;
+const SHAFT_DEPTH: i64 = 70;
 
 /// Where a block sits in the chunk's lattice: the flat indices of the eight
 /// surrounding lattice points (`[x][y][z]` order) and the fractions between.
@@ -1090,8 +1164,23 @@ impl Generator {
             Some(BiomeWorld::new(&cfg, registry, w, k)?)
         };
         let biome_tree_up = biome.as_ref().map_or(0, |b| b.tree_up + 2);
+        let linings = if cfg.cave_tier >= 2 {
+            ["stone", "basalt", "limestone", "ice", "sand", "ash", "gravel"]
+                .iter()
+                .filter_map(|n| registry.id(n).ok())
+                .collect()
+        } else {
+            Vec::new()
+        };
         Ok(Self {
             biome,
+            cave_tier: cfg.cave_tier,
+            flat_caves: Fbm::new(k(3001), w, 90.0, 2, 0.5),
+            halls: Fbm::new(k(3002), w, 150.0, 2, 0.5),
+            tall_caves: Fbm::new(k(3003), w, 48.0, 2, 0.5),
+            shafts: Fbm::new(k(3004), w, 70.0, 1, 0.5),
+            pillars: Fbm::new(k(3005), w, 14.0, 1, 0.5),
+            linings,
             tree_sites: std::sync::Mutex::new(std::collections::HashMap::new()),
             spans: std::sync::Mutex::new(std::collections::HashMap::new()),
             shape,
@@ -1220,10 +1309,33 @@ impl Generator {
         } else {
             near[0].1
         };
+        let h = (h.floor() as i64).clamp(4, self.shape.height_blocks() - self.tree_top - 4);
+        let (mut lift_lo, mut lift_hi, mut lift_fill) = (0, 0, 0.0);
+        if let Some(l) = &bw.lands[biome as usize].lift {
+            let base = if l.from_ground { h } else { self.cfg.sea_level };
+            lift_lo = base + l.lo as i64;
+            lift_hi = (base + l.hi as i64).min(self.shape.height_blocks() - 8);
+            // Thinner toward other biomes, so islands end before the border.
+            let own = near[..n]
+                .iter()
+                .filter(|c| c.1 == biome)
+                .map(|c| c.0)
+                .fold(f64::MAX, f64::min);
+            let other = near[..n]
+                .iter()
+                .filter(|c| c.1 != biome)
+                .map(|c| c.0)
+                .fold(f64::MAX, f64::min);
+            let edge = ((other - own) / (BIOME_BLEND * 2.0)).clamp(0.0, 1.0);
+            lift_fill = l.fill - (1.0 - edge) * 0.7;
+        }
         Column {
-            h: (h.floor() as i64).clamp(4, self.shape.height_blocks() - self.tree_top - 4),
+            h,
             biome,
             river,
+            lift_lo,
+            lift_hi,
+            lift_fill,
         }
     }
 
@@ -1232,10 +1344,50 @@ impl Generator {
         let w = self.width;
         let a = self.tunnel_a.sample3(fx, fy * 1.4, fz, w);
         let b = self.tunnel_b.sample3(fx, fy * 1.4, fz, w);
+        let tier = self.cave_tier;
+        let flat = if tier >= 1 {
+            self.flat_caves.sample3(fx, fy * 3.0, fz, w)
+        } else {
+            -1.0
+        };
+        let hall = if tier >= 5 && y < self.cfg.sea_level - HALL_BELOW_SEA {
+            let wide = self.halls.sample3(fx, fy * 4.0, fz, w);
+            let tall = self.tall_caves.sample3(fx, fy * 0.4, fz, w) - 0.04;
+            // Pillars hold the great halls up (tier 6 and up).
+            if tier >= 6 && self.pillars.sample2(fx, fz, w) > 0.42 {
+                -1.0
+            } else {
+                wide.max(tall)
+            }
+        } else {
+            -1.0
+        };
         Cave {
             cavern: self.caverns.sample3(fx, fy * 1.6, fz, w),
             tunnel: a.abs().max(b.abs()),
+            flat,
+            hall,
+            tier,
         }
+    }
+
+    /// Whether a shaft opens at canonical `(x, y, z)` under a surface at `h`
+    /// (tier 6 and up).
+    fn shaft_at(&self, x: i64, y: i64, z: i64, h: i64) -> bool {
+        if self.cave_tier < 6 || y > h - SHAFT_TOP || y <= h - SHAFT_TOP - SHAFT_DEPTH {
+            return false;
+        }
+        let (ci, cj) = (x.div_euclid(SHAFT_CELL), z.div_euclid(SHAFT_CELL));
+        let seed = self.cfg.seed ^ 0x5_4af7;
+        if hash01(seed, ci, 0, cj) >= SHAFT_CHANCE {
+            return false;
+        }
+        let at = |k: i64| 6 + (hash01(seed, ci, k, cj) * (SHAFT_CELL - 12) as f64) as i64;
+        let (sx, sz) = (ci * SHAFT_CELL + at(1), cj * SHAFT_CELL + at(2));
+        // A little wobble with depth so the pit is not a ruled tube.
+        let r = 1.5 + hash01(seed, ci, 3, cj) * 2.0 + self.shafts.sample2(x as f64, y as f64, self.width) * 0.8;
+        let (dx, dz) = ((x - sx) as f64, (z - sz) as f64);
+        dx * dx + dz * dz <= r * r
     }
 
     /// Interpolated cave values at any block, from the world-aligned lattice.
@@ -1254,6 +1406,9 @@ impl Generator {
         Cave {
             cavern: trilerp(c.map(|c| c.cavern), tx, ty, tz),
             tunnel: trilerp(c.map(|c| c.tunnel), tx, ty, tz),
+            flat: trilerp(c.map(|c| c.flat), tx, ty, tz),
+            hall: trilerp(c.map(|c| c.hall), tx, ty, tz),
+            tier: self.cave_tier,
         }
     }
 
@@ -1297,10 +1452,56 @@ impl Generator {
         let column_at = |lx: i64, lz: i64| columns[((lz + m) as usize) * span + (lx + m) as usize];
         let height_at = |lx: i64, lz: i64| heights[((lz + m) as usize) * span + (lx + m) as usize];
 
+        // Lifted land reaches above the ground: the highest band in reach.
+        let lift_top = columns
+            .iter()
+            .filter(|c| c.lift_hi > c.lift_lo)
+            .map(|c| c.lift_hi)
+            .max();
         // Sky fast path: most chunks on a planet are empty air.
-        if origin.y > max_h + self.tree_top && origin.y > water_level {
+        if origin.y > max_h.max(lift_top.unwrap_or(i64::MIN)) + self.tree_top && origin.y > water_level {
             return Chunk::empty();
         }
+        // The lifted land's noise on the chunk's lattice, when a band
+        // crosses the chunk.
+        let top_y = origin.y + cs - 1;
+        let lifting = self.biome.as_ref().is_some_and(|bw| bw.any_lift)
+            && columns
+                .iter()
+                .any(|c| c.lift_hi > c.lift_lo && c.lift_lo <= top_y + 3 && c.lift_hi >= origin.y);
+        let mut lift_lattice = Vec::new();
+        if let (true, Some(bw)) = (lifting, &self.biome) {
+            lift_lattice.reserve_exact(LATTICE);
+            for j in 0..COARSE_N {
+                for k in 0..COARSE_N {
+                    for i in 0..COARSE_N {
+                        let (x, y, z) = (
+                            (origin.x + i as i64 * COARSE) as f64,
+                            (origin.y + j as i64 * COARSE) as f64,
+                            (origin.z + k as i64 * COARSE) as f64,
+                        );
+                        lift_lattice.push(bw.lift.sample3(x, y * 1.3, z, self.width));
+                    }
+                }
+            }
+        }
+        // Whether lifted land is solid at `wy` in column `c` (chunk column
+        // `(lx, lz)`): the lattice inside the chunk, the noise above it.
+        let lifted = |c: &Column, lx: i64, wy: i64, lz: i64, wx: i64, wz: i64| -> bool {
+            if c.lift_hi <= c.lift_lo || wy < c.lift_lo || wy > c.lift_hi {
+                return false;
+            }
+            let n = if wy <= top_y && !lift_lattice.is_empty() {
+                Cell::at(lx, wy - origin.y, lz).lerp(|i| lift_lattice[i])
+            } else {
+                match &self.biome {
+                    Some(bw) => bw.lift.sample3(wx as f64, wy as f64 * 1.3, wz as f64, self.width),
+                    None => return false,
+                }
+            };
+            let fade = (((wy - c.lift_lo) as f64).min((c.lift_hi - wy) as f64) / LIFT_FADE).clamp(0.0, 1.0);
+            n + c.lift_fill - (1.0 - fade) * 0.8 > 0.0
+        };
 
         // Cave and ore lattice, only if some of the chunk is underground.
         let underground = origin.y <= max_h;
@@ -1327,9 +1528,13 @@ impl Generator {
                 }
             }
         }
+        let tier = self.cave_tier;
         let cave_in = |cell: &Cell| Cave {
             cavern: cell.lerp(|i| caves[i].cavern),
             tunnel: cell.lerp(|i| caves[i].tunnel),
+            flat: if tier >= 1 { cell.lerp(|i| caves[i].flat) } else { -1.0 },
+            hall: if tier >= 5 { cell.lerp(|i| caves[i].hall) } else { -1.0 },
+            tier,
         };
 
         // Colour regions, decided per column: every coloured block in a
@@ -1339,7 +1544,7 @@ impl Generator {
         let mut ore_column = vec![true; self.ores.len()];
 
         let seed = cfg.seed;
-        let top = origin.y + cs - 1;
+        let top = top_y;
         let mut blocks = vec![BlockState::plain(ids.air); CHUNK_VOLUME];
         for lz in 0..cs {
             for lx in 0..cs {
@@ -1403,14 +1608,30 @@ impl Generator {
                         height_at(lx + dx, lz + dz)
                     });
                 }
-                let y_end = top.min(h.max(water_level));
+                let col = if lifting { column_at(lx, lz) } else { Column::default() };
+                let y_end = top.min(h.max(water_level).max(if lifting { col.lift_hi } else { 0 }));
                 for wy in origin.y..=y_end {
                     let ly = wy - origin.y;
                     let mut b = if wy == 0 || (wy <= 2 && hash01(seed ^ 0xbed, wx, wy, wz) < 0.6 / wy as f64) {
                         ids.bedrock
                     } else if wy > h {
-                        // y_end stops this at the water line.
-                        if wy > water_level - cfg.ice_depth {
+                        if lifting && lifted(&col, lx, wy, lz, wx, wz) {
+                            // Lifted land: its biome's cover on top, the
+                            // under block below that, then rock.
+                            let land = &self.biome.as_ref().expect("lifting").lands[col.biome as usize];
+                            if !lifted(&col, lx, wy + 1, lz, wx, wz) {
+                                match land.snow_above {
+                                    Some(above) if wy >= sea + above => ids.snow,
+                                    _ => land.cover[0].0,
+                                }
+                            } else if !lifted(&col, lx, wy + 3, lz, wx, wz) {
+                                land.cover[0].1
+                            } else {
+                                rock_at(wy)
+                            }
+                        } else if wy > water_level {
+                            ids.air
+                        } else if wy > water_level - cfg.ice_depth {
                             ids.ice
                         } else {
                             ids.water
@@ -1432,7 +1653,8 @@ impl Generator {
                         b != ids.bedrock && b != ids.water && b != ids.ice && (h >= water_level || wy < h - 6);
                     if underground && carveable {
                         let cell = Cell::at(lx, ly, lz);
-                        if cave_in(&cell).open() {
+                        let cave = cave_in(&cell);
+                        if cave.open() || self.shaft_at(wx, wy, wz, h) {
                             b = match ids.lower {
                                 Some((level, sea)) if wy <= level => sea,
                                 _ => ids.air,
@@ -1453,6 +1675,17 @@ impl Generator {
                             }
                             if let Some(ore) = ore_hit {
                                 b = ore;
+                            } else if !self.linings.is_empty() && wy < h - 2 && cave.near_wall() {
+                                // A lining (tier 2 and up): one kind per
+                                // stretch of cave, most often a rock.
+                                let pick = hash01(seed ^ 0x11_1e, wx >> 4, wy >> 4, wz >> 4);
+                                let n = self.linings.len();
+                                let i = if pick < 0.9 {
+                                    (pick / 0.9 * 3.0) as usize % 3
+                                } else {
+                                    3 + ((pick - 0.9) / 0.1 * (n - 3) as f64) as usize % (n - 3)
+                                };
+                                b = self.linings[i.min(n - 1)];
                             } else if wy < sea - cfg.glow_depth
                                 && ly < cs - 1
                                 && cave_in(&Cell::at(lx, ly + 1, lz)).open()
@@ -2432,6 +2665,7 @@ mod tests {
         let cfg = PlanetKinds::builtin(&blocks).get("temperate").unwrap().generation(7);
         let g = Generator::new(PlanetShape::new(48, 12), cfg, &blocks).unwrap();
         let trunks = [id("trunk"), id("pale_trunk"), id("gnarled_trunk")];
+        let air = id("air");
         let mut cache: std::collections::HashMap<ChunkPos, Chunk> = std::collections::HashMap::new();
         let mut at = |p: BlockPos| {
             let c = cache.entry(p.chunk()).or_insert_with(|| g.generate(p.chunk()));
@@ -2457,7 +2691,7 @@ mod tests {
                         // Branches reach sideways: only trunk blocks with a
                         // trunk or air beside them at the same height and
                         // nothing over air below count as hanging.
-                        if below == id("air") {
+                        if below == air {
                             let side = [(1, 0), (-1, 0), (0, 1), (0, -1)].iter().any(|(dx, dz)| {
                                 trunks.contains(&at(BlockPos::new(o.x + lx + dx, o.y + ly, o.z + lz + dz)))
                             });
@@ -2470,6 +2704,100 @@ mod tests {
         }
         assert!(checked > 50, "{checked} trunk blocks");
         assert!(seen.len() >= 2, "{seen:?}");
+    }
+
+    /// Part 3: a planet of only floating isles holds land well clear of the
+    /// ground, topped with its cover; the same planet without the lift has
+    /// none, and caves by tier add shafts on tier 6 and linings from tier 2.
+    #[test]
+    fn lifted_land_floats_and_caves_follow_the_tier() {
+        let blocks = BlockRegistry::builtin();
+        let cat = crate::BiomeCatalogue::builtin();
+        let isles = cat
+            .biomes
+            .iter()
+            .find(|b| b.spec.name == "sky_isles")
+            .unwrap()
+            .spec
+            .clone();
+        let cfg = PlanetGenConfig {
+            seed: 3,
+            biomes: vec![isles.clone()],
+            ..Default::default()
+        };
+        let shape = PlanetShape::new(16, 12);
+        let g = Generator::new(shape, cfg.clone(), &blocks).unwrap();
+        let flat = Generator::new(
+            shape,
+            PlanetGenConfig {
+                biomes: vec![crate::BiomeSpec { lift: None, ..isles }],
+                ..cfg
+            },
+            &blocks,
+        )
+        .unwrap();
+        let (limestone, air) = (id("limestone"), id("air"));
+        let count = |g: &Generator| {
+            let mut n = 0;
+            let mut tops = std::collections::BTreeSet::new();
+            for cz in 0..16 {
+                for cx in 0..16 {
+                    for cy in 5..8 {
+                        let c = g.generate(ChunkPos::new(cx, cy, cz));
+                        let o = ChunkPos::new(cx, cy, cz).origin();
+                        for lz in (0..32).step_by(4) {
+                            for lx in (0..32).step_by(4) {
+                                let ground = g.surface_height(o.x + lx, o.z + lz);
+                                for ly in 0..32 {
+                                    let b = c.get(LocalPos::new(lx as u8, ly as u8, lz as u8));
+                                    if o.y + ly as i64 > ground + 20 && b == limestone {
+                                        n += 1;
+                                        if c.get(LocalPos::new(lx as u8, (ly + 1).min(31) as u8, lz as u8)) != air {
+                                            tops.insert(c.get(LocalPos::new(
+                                                lx as u8,
+                                                (ly + 1).min(31) as u8,
+                                                lz as u8,
+                                            )));
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            (n, tops)
+        };
+        let (lifted, tops) = count(&g);
+        assert!(lifted > 200, "{lifted} lifted rock blocks");
+        assert!(tops.contains(&id("turf")) || tops.contains(&id("soil")), "{tops:?}");
+        assert_eq!(count(&flat).0, 0);
+
+        // Shafts only from tier 6; linings from tier 2.
+        let tiered = |tier: u8| {
+            Generator::new(
+                shape,
+                PlanetGenConfig {
+                    seed: 5,
+                    biomes: g.cfg.biomes.clone(),
+                    cave_tier: tier,
+                    ..Default::default()
+                },
+                &blocks,
+            )
+            .unwrap()
+        };
+        let (t1, t6) = (tiered(1), tiered(6));
+        let shafts = |g: &Generator| {
+            (0..512)
+                .step_by(2)
+                .flat_map(|x| (0..512).step_by(2).map(move |z| (x, z)))
+                .filter(|&(x, z)| g.shaft_at(x, 100, z, 140))
+                .count()
+        };
+        assert_eq!(shafts(&t1), 0);
+        assert!(shafts(&t6) > 10, "{}", shafts(&t6));
+        assert!(t1.linings.is_empty() && !tiered(2).linings.is_empty());
     }
 
     /// Steep ground shows bare rock: no turf where a column rises 4 or more
@@ -2529,22 +2857,23 @@ mod tests {
         let want: Vec<(String, u64)> = PINNED_V4.iter().map(|(n, h)| (n.to_string(), *h)).collect();
         assert_eq!(got, want, "terrain changed");
     }
-    // Re-pinned for M19 part 2's trees and rock outcrops (2026-10-25) without a bump:
+    // Re-pinned for M19 part 2's trees and outcrops and part 3's lifted land
+    // and caves (2026-10-25) without a bump:
     // generator 4 had not left the branch, so no planet held the old pins.
     const PINNED_V4: [(&str, u64); 13] = [
-        ("temperate", 0x0929_d78c_1f40_39c0),
-        ("arid", 0x90de_5b37_1031_8726),
-        ("frozen", 0xd8ba_157b_3c51_7163),
-        ("lush", 0xa5aa_5853_72a9_b14f),
-        ("overgrown", 0x2add_7385_9eff_9dd5),
-        ("rustland", 0x0708_8503_db98_6502),
-        ("cinderland", 0x1e3e_f245_9faa_ee76),
-        ("acrid", 0x10fd_15a8_ffe0_d27a),
-        ("blighted", 0xfd7f_d73a_cf90_cff9),
-        ("glacial", 0xcc05_7992_1461_dc04),
-        ("stormy", 0x84da_06bc_0265_7c0f),
-        ("scorched", 0x79dd_d5be_8182_53f1),
-        ("ember", 0x7427_46ae_3937_aa73),
+        ("temperate", 0x1c45_7b1d_cfba_bc48),
+        ("arid", 0xf87d_9467_37d9_33a9),
+        ("frozen", 0xc9ee_c353_8b86_8989),
+        ("lush", 0xf8ac_414c_a1b1_e0e3),
+        ("overgrown", 0xcaf5_a93b_71fe_63f2),
+        ("rustland", 0x339d_5b75_3ef9_fb6f),
+        ("cinderland", 0x8815_3bae_6647_234e),
+        ("acrid", 0x7583_155b_9b3d_d99a),
+        ("blighted", 0x99d5_27dd_6f4e_7d50),
+        ("glacial", 0xca3b_e5e4_bdf2_4821),
+        ("stormy", 0x04cd_101d_e331_2a41),
+        ("scorched", 0x1b0d_ef2b_2a2e_6956),
+        ("ember", 0x5ae9_9f35_c4a7_7236),
     ];
     // The version 3 pins: every kind's settings without biomes (what planets
     // saved before generator 4 hold) still make them.
@@ -3375,12 +3704,13 @@ mod tests {
     #[test]
     fn spawn_is_on_dry_solid_standable_ground() {
         let blocks = BlockRegistry::builtin();
+        let (water, ice) = (id("water"), id("ice"));
         for (name, _, g) in all_kinds() {
             let s = g.spawn_point();
             assert!(s.y > g.config().sea_level + 1, "{name}: spawn at {s:?}");
             let below = block_at(&g, s.offset(0, -1, 0));
             assert!(
-                blocks.get(below).solid && below != id("water") && below != id("ice"),
+                blocks.get(below).solid && below != water && below != ice,
                 "{name}: standing on {}",
                 blocks.get(below).name
             );

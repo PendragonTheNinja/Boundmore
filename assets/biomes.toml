@@ -412,3 +412,130 @@ cover = [["moss_turf", "peat"], ["mud", "peat"]]
 rock = "basalt"
 tree_density = 0.05
 trees = [{ shape = "swamp_tree", weight = 1.0 }, { shape = "jungle_tree", weight = 1.0 }, { shape = "bush", weight = 3.0 }]
+
+# Milestone 19 part 3: lifted land (Boundless's 3D biomes: about a third of
+# the wildest set). `lift` = { from_ground, lo, hi, fill }: a band of 3D noise
+# made solid, floating above the sea or rising from the ground.
+[[biome]]
+name = "sky_isles"
+set = 3
+labels = ["floating", "islands", "lush", "warm"]
+climate = [0.3, 0.6, 0.65, 0.7]
+weight = 0.8
+base = 3.0
+hills = 6.0
+hill_size = 110.0
+cover = [["turf", "soil"], ["meadow_turf", "clay"]]
+rock = "limestone"
+tree_density = 0.006
+trees = [{ shape = "broad_crown", weight = 1.0 }, { shape = "bush", weight = 2.0 }, { shape = "boulder_pile", weight = 0.5 }]
+lift = { lo = 45.0, hi = 90.0, fill = -0.12 }
+
+[[biome]]
+name = "arched_shelves"
+set = 3
+labels = ["floating", "rocky", "hills"]
+climate = [0.65, 0.55, 0.35, 0.3]
+weight = 0.8
+base = 10.0
+hills = 12.0
+hill_size = 120.0
+cover = [["meadow_turf", "clay"], ["gravel", "limestone"]]
+rock = "limestone"
+tree_density = 0.003
+trees = [{ shape = "flat_top", weight = 1.0 }, { shape = "outcrop", weight = 1.0 }]
+lift = { lo = 30.0, hi = 62.0, fill = 0.12 }
+
+[[biome]]
+name = "overhang_cliffs"
+set = 4
+labels = ["rocky", "mountains", "forest", "cool"]
+climate = [0.8, 0.4, 0.55, 0.55]
+weight = 0.8
+base = 16.0
+hills = 18.0
+hill_size = 140.0
+cover = [["moss_turf", "peat"], ["turf", "soil"]]
+rock = "basalt"
+tree_density = 0.02
+trees = [{ shape = "conifer", weight = 3.0 }, { shape = "outcrop", weight = 1.0 }, { shape = "fallen_log", weight = 0.3 }]
+lift = { from_ground = true, lo = 2.0, hi = 40.0, fill = -0.08 }
+
+[[biome]]
+name = "floating_meadows"
+set = 5
+labels = ["floating", "islands", "lush", "liquid"]
+climate = [0.1, 0.6, 0.8, 0.8]
+weight = 0.9
+base = -12.0
+hills = 14.0
+hill_size = 90.0
+cover = [["moss_turf", "peat"], ["meadow_turf", "clay"]]
+rock = "stone"
+tree_density = 0.01
+trees = [{ shape = "swamp_tree", weight = 1.0 }, { shape = "broad_crown", weight = 1.0 }, { shape = "bush", weight = 2.0 }]
+lift = { lo = 40.0, hi = 110.0, fill = -0.05 }
+
+[[biome]]
+name = "spire_fields"
+set = 5
+labels = ["rocky", "mountains", "wasteland", "desert", "hot"]
+climate = [0.7, 0.8, 0.15, 0.1]
+weight = 0.8
+base = 8.0
+hills = 8.0
+hill_size = 80.0
+cover = [["gravel", "limestone"], ["sand", "limestone"]]
+rock = "limestone"
+tree_density = 0.002
+trees = [{ shape = "dead_tree", weight = 1.0 }, { shape = "outcrop", weight = 2.0 }]
+lift = { from_ground = true, lo = 0.0, hi = 70.0, fill = -0.28 }
+
+[[biome]]
+name = "frozen_spires"
+set = 5
+labels = ["ice", "cold", "mountains", "rocky"]
+climate = [0.8, 0.05, 0.45, 0.1]
+weight = 0.8
+base = 14.0
+hills = 10.0
+hill_size = 100.0
+cover = [["snow", "stone"]]
+rock = "stone"
+snow_above = -200
+tree_density = 0.002
+trees = [{ shape = "snowy_conifer", weight = 1.0 }, { shape = "boulder_pile", weight = 1.0 }]
+lift = { from_ground = true, lo = 0.0, hi = 60.0, fill = -0.25 }
+
+[[biome]]
+name = "shattered_sky"
+set = 6
+labels = ["floating", "mountains", "rocky", "crater"]
+climate = [0.9, 0.5, 0.3, 0.2]
+weight = 0.9
+base = -6.0
+hills = 20.0
+hill_size = 100.0
+mountains = 60.0
+mountain_size = 200.0
+cover = [["gravel", "basalt"], ["turf", "soil"]]
+rock = "basalt"
+tree_density = 0.003
+trees = [{ shape = "dead_tree", weight = 1.0 }, { shape = "conifer", weight = 1.0 }, { shape = "outcrop", weight = 1.0 }]
+lift = { lo = 40.0, hi = 120.0, fill = -0.16 }
+
+[[biome]]
+name = "ember_crags"
+set = 6
+labels = ["hot", "wasteland", "crater", "rocky"]
+climate = [0.6, 1.0, 0.05, 0.0]
+weight = 0.9
+base = 10.0
+hills = 16.0
+hill_size = 70.0
+cover = [["ash", "basalt"], ["gravel", "basalt"]]
+beach = "gravel"
+rock = "basalt"
+tree_density = 0.002
+trees = [{ shape = "dead_tree", weight = 1.0 }, { shape = "outcrop", weight = 2.0 }]
+lift = { from_ground = true, lo = 0.0, hi = 45.0, fill = -0.15 }

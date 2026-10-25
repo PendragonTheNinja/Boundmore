@@ -56,10 +56,13 @@ impl PlanetKind {
             ),
             None => Vec::new(),
         };
+        // A biome planet's caves follow its tier (milestone 19 part 3).
+        let cave_tier = if biomes.is_empty() { 0 } else { self.tier };
         PlanetGenConfig {
             seed,
             colours,
             biomes,
+            cave_tier,
             ..self.generation.clone()
         }
     }

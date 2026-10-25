@@ -57,6 +57,36 @@ pub struct BiomeSpec {
     /// broad crown of the shape's own wood.
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub trees: Vec<TreeSpec>,
+    /// Land lifted off the ground (milestone 19 part 3): floating islands,
+    /// raised shelves, overhangs.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub lift: Option<Lift>,
+}
+
+/// Vertical land: a 3D noise made solid in a height band (Boundless's
+/// `threeD` terrain).
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct Lift {
+    /// The band floats at a height above the sea (islands, shelves), or
+    /// rises from the ground (overhangs, spires).
+    pub from_ground: bool,
+    /// The band, blocks above the sea (or the ground).
+    pub lo: f64,
+    pub hi: f64,
+    /// How much of the band is solid: -0.5 (wisps) to 0.5 (nearly full).
+    pub fill: f64,
+}
+
+impl Default for Lift {
+    fn default() -> Self {
+        Self {
+            from_ground: false,
+            lo: 40.0,
+            hi: 90.0,
+            fill: 0.0,
+        }
+    }
 }
 
 /// One kind of tree a biome grows: a shape, how often against the others,
@@ -146,6 +176,7 @@ impl Default for BiomeSpec {
             snow_above: None,
             tree_density: 0.0,
             trees: Vec::new(),
+            lift: None,
         }
     }
 }
