@@ -33,11 +33,13 @@
 //! table the same and costs nothing).
 
 use crate::forging::{self, ForgeData, Forging, Sealed};
+use crate::machines::Coil;
 use crate::store::{SavedJob, SavedStack, SavedStation, load_slots, save_slots};
 use bm_core::forge::QueueBand;
 use bm_core::spark::{self, MACHINE_WEAR};
 use bm_core::{BlockPos, Inventory, ItemRegistry, ItemStack, Recipe, RecipeBook, Station, TICK_HZ};
 use bm_protocol::{JobView, StationView};
+use std::collections::BTreeMap;
 use std::collections::{BTreeSet, HashMap, VecDeque};
 
 /// Stacks of finished items a station holds.
@@ -64,6 +66,11 @@ pub trait Surroundings {
     fn generators(&self, machine: BlockPos) -> Option<Vec<BlockPos>>;
     /// The share of a recipe's heat the furnace keyed at `furnace` burns.
     fn heat_share(&self, furnace: BlockPos) -> Option<f32>;
+    /// The power coils serving the machine keyed at `machine` (milestone
+    /// 18; empty: none).
+    fn coils(&self, _machine: BlockPos) -> Option<Vec<Coil>> {
+        Some(Vec::new())
+    }
 }
 
 /// No world: no links, stone furnaces (tests, and stations nobody built).
@@ -89,6 +96,8 @@ pub enum Wait {
     Spark(u32),
     /// Worn out: waits for a spanner.
     Worn,
+    /// Its coils give less power than the recipe needs (milestone 18).
+    Power(u32),
 }
 
 impl Wait {
@@ -100,6 +109,7 @@ impl Wait {
             Wait::NoGrid => Some(NO_SPARK.into()),
             Wait::Spark(n) => Some(format!("Not enough spark (needs {n})")),
             Wait::Worn => Some(WORN_OUT.into()),
+            Wait::Power(n) => Some(format!("Needs {n} power: add power coils")),
         }
     }
 }
@@ -113,6 +123,12 @@ fn burn_ticks(spark: u32) -> u32 {
 /// Ticks one craft of `recipe` takes (at least one).
 pub fn craft_ticks(recipe: &Recipe) -> u64 {
     ((recipe.seconds as f64 * TICK_HZ as f64).round() as u64).max(1)
+}
+
+/// Ticks one craft takes at `scale` thousandths of its base time (power,
+/// milestone 18; 1,000 with none).
+pub fn scaled_ticks(recipe: &Recipe, scale: u16) -> u64 {
+    ((craft_ticks(recipe) as f64 * f64::from(scale.clamp(1, 1000)) / 1000.0).round() as u64).max(1)
 }
 
 /// Takes `times` crafts' inputs from `inv`, all or nothing, returning the
@@ -269,10 +285,18 @@ pub struct StationData {
     pub blocks: u32,
     /// A forge's session and queue (milestone 17).
     pub forge: Option<Box<ForgeData>>,
+    /// Each power coil's wear left, by where it stands (milestone 18): the
+    /// coils this machine has heard of. Saved.
+    pub coils: BTreeMap<BlockPos, u32>,
+    /// The current craft's time and spark, in thousandths of the recipe's
+    /// (power cuts them; 1,000 with none). Saved, so a restart resumes at
+    /// the same pace.
+    pub scale: u16,
     /// What the surroundings last said: the generators a machine's links
     /// reach, a furnace's heat share (not saved; asked again).
     grid: Heard<Vec<BlockPos>>,
     heat_share: Heard<f32>,
+    heard_coils: Heard<Vec<Coil>>,
 }
 
 /// Something a station last heard from its surroundings: kept for when
@@ -305,9 +329,41 @@ impl StationData {
             burn_elapsed: 0,
             blocks: 1,
             forge: None,
+            coils: BTreeMap::new(),
+            scale: 1000,
             grid: Heard(None),
             heat_share: Heard(None),
+            heard_coils: Heard(None),
         }
+    }
+
+    /// Asks which coils serve it now: coils gone are forgotten, new ones
+    /// start mended. Returns the power.
+    pub fn hear_coils(&mut self, pos: BlockPos, env: &dyn Surroundings) -> u32 {
+        if let Some(coils) = env.coils(pos) {
+            self.coils.retain(|p, _| coils.iter().any(|c| c.pos == *p));
+            for c in &coils {
+                self.coils.entry(c.pos).or_insert(spark::COIL_WEAR);
+            }
+            self.heard_coils.0 = Some(coils);
+        }
+        self.power()
+    }
+
+    /// Power from the coils it last heard of that are not worn out.
+    pub fn power(&self) -> u32 {
+        self.heard_coils.0.as_ref().map_or(0, |cs| {
+            cs.iter()
+                .filter(|c| self.coils.get(&c.pos).is_some_and(|w| *w > 0))
+                .map(|c| c.power)
+                .sum()
+        })
+    }
+
+    /// How many coils serve it, and how many of those are worn out.
+    pub fn coil_count(&self) -> (usize, usize) {
+        let worn = self.coils.values().filter(|w| **w == 0).count();
+        (self.coils.len(), worn)
     }
 
     /// Nothing worth keeping a record for.
@@ -317,6 +373,7 @@ impl StationData {
             && self.spark == 0
             && self.burn_total == 0
             && (!spark::wears(self.kind) || self.wear >= MACHINE_WEAR)
+            && self.coils.values().all(|w| *w >= spark::COIL_WEAR)
     }
 
     /// A generator group's store: the most it holds.
@@ -464,6 +521,12 @@ impl Stations {
         for (pos, saved) in saved {
             let mut st = StationData::new(saved.kind, saved.wear);
             st.started = saved.started;
+            st.coils = saved
+                .coils
+                .iter()
+                .map(|(p, w)| (*p, (*w).min(spark::COIL_WEAR)))
+                .collect();
+            st.scale = saved.scale.clamp(1, 1000);
             st.heat = saved.heat;
             st.xp = saved.xp;
             if saved.kind == Station::SparkGenerator {
@@ -513,6 +576,10 @@ impl Stations {
                 None => st.wait,
                 Some(_) if st.kind == Station::Furnace => Some(Wait::Heat),
                 Some(_) if spark::wears(st.kind) && st.wear == 0 => Some(Wait::Worn),
+                Some(r) if r.power > 0 => {
+                    s.retry.insert(pos);
+                    Some(Wait::Power(r.power))
+                }
                 Some(r) => {
                     s.retry.insert(pos);
                     Some(Wait::Spark(r.spark))
@@ -627,7 +694,7 @@ impl Stations {
         } else {
             self.active.remove(&pos);
         }
-        if matches!(wait, Some(Wait::NoGrid | Wait::Spark(_))) {
+        if matches!(wait, Some(Wait::NoGrid | Wait::Spark(_) | Wait::Power(_))) {
             self.retry.insert(pos);
         } else {
             self.retry.remove(&pos);
@@ -660,7 +727,14 @@ impl Stations {
                 return Some(Wait::Heat);
             }
         }
-        if recipe.spark > 0 {
+        // Power (milestone 18): the coils as they stand now.
+        st.hear_coils(pos, env);
+        let Some(scale) = spark::power_scale(recipe.power, st.power()) else {
+            return Some(Wait::Power(recipe.power));
+        };
+        let scale = ((scale * 1000.0).round() as u16).clamp(1, 1000);
+        let spark_cost = ((recipe.spark as u64 * scale as u64).div_ceil(1000)) as u32;
+        if spark_cost > 0 {
             if let Some(grid) = env.generators(pos) {
                 st.grid.0 = Some(grid);
             }
@@ -668,12 +742,35 @@ impl Stations {
             if grid.is_empty() {
                 return Some(Wait::NoGrid);
             }
-            if !self.draw_spark(&grid, recipe.spark) {
-                return Some(Wait::Spark(recipe.spark));
+            if !self.draw_spark(&grid, spark_cost) {
+                return Some(Wait::Spark(spark_cost));
             }
         }
+        st.scale = scale;
         st.wear = st.wear.saturating_sub(recipe.wear as u32);
+        // Working coils wear with the craft (milestone 18, a guess: by the
+        // recipe's wear).
+        if let Some(heard) = &st.heard_coils.0 {
+            for c in heard {
+                if let Some(w) = st.coils.get_mut(&c.pos).filter(|w| **w > 0) {
+                    *w = w.saturating_sub(recipe.wear as u32);
+                }
+            }
+        }
         None
+    }
+
+    /// The power of the forge (or any machine) keyed at `pos`, its coils
+    /// asked again (milestone 18).
+    pub fn forge_power(&mut self, pos: BlockPos, env: &dyn Surroundings) -> u32 {
+        match self.map.get_mut(&pos) {
+            Some(st) => {
+                let p = st.hear_coils(pos, env);
+                self.dirty.insert(pos);
+                p
+            }
+            None => env.coils(pos).map_or(0, |cs| cs.iter().map(|c| c.power).sum()),
+        }
     }
 
     /// Spark the generator groups keyed at `grid` hold together.
@@ -818,6 +915,22 @@ impl Stations {
     /// Repairs the machine keyed at `pos` by `amount` wear (a spanner hit),
     /// up to `MACHINE_WEAR`; a worn-out queue starts again. Returns the wear
     /// it has now.
+    /// Mends the coil at `coil` that serves the machine keyed at `pos` by
+    /// `amount` (milestone 18); returns the coil's wear now. A worn-out
+    /// machine waiting for power tries again.
+    pub fn repair_coil(&mut self, pos: BlockPos, kind: Station, coil: BlockPos, amount: u32) -> u32 {
+        let fresh = self.fresh(kind);
+        let st = self.map.entry(pos).or_insert(fresh);
+        let w = st.coils.entry(coil).or_insert(spark::COIL_WEAR);
+        *w = w.saturating_add(amount).min(spark::COIL_WEAR);
+        let wear = *w;
+        if matches!(st.wait, Some(Wait::Power(_))) {
+            self.retry.insert(pos);
+        }
+        self.dirty.insert(pos);
+        wear
+    }
+
     #[allow(clippy::too_many_arguments)]
     pub fn repair(
         &mut self,
@@ -1007,7 +1120,7 @@ impl Stations {
                 changed.push(pos);
                 continue;
             };
-            if tick < st.started + craft_ticks(recipe) {
+            if tick < st.started + scaled_ticks(recipe, st.scale) {
                 continue;
             }
             // The output and any containers given back, all or nothing.
@@ -1318,6 +1431,7 @@ impl Stations {
                 wear,
                 spark: None,
                 forge: None,
+                power: None,
             };
         };
         let jobs = st
@@ -1327,7 +1441,7 @@ impl Stations {
             .map(|(i, j)| {
                 let progress = match (i, recipes.get(j.recipe)) {
                     (0, Some(r)) if st.wait.is_none() => {
-                        (tick.saturating_sub(st.started) as f32 / craft_ticks(r) as f32).clamp(0.0, 1.0)
+                        (tick.saturating_sub(st.started) as f32 / scaled_ticks(r, st.scale) as f32).clamp(0.0, 1.0)
                     }
                     _ => 0.0,
                 };
@@ -1349,6 +1463,7 @@ impl Stations {
             wear,
             spark: None,
             forge: None,
+            power: None,
         }
     }
 
@@ -1443,6 +1558,8 @@ fn save_station(st: &StationData, items: &ItemRegistry, recipes: &RecipeBook) ->
             .map(|j| j.containers.iter().filter_map(|c| SavedStack::new(items, c)).collect())
             .collect(),
         forge: st.forge.as_ref().map(|f| forging::save_forge(f, items)),
+        coils: st.coils.iter().map(|(p, w)| (*p, *w)).collect(),
+        scale: st.scale,
     }
 }
 

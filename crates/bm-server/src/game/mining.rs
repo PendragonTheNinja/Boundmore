@@ -322,8 +322,17 @@ impl Game {
         let is_machine = self
             .machine(pi, canon)
             .is_some_and(|m| bm_core::spark::wears(m.kind) && m.idle.is_none());
-        if !is_machine {
-            return self.swing_refused(id, seq, pos, Refusal::Told("A spanner repairs machines".into()));
+        let is_coil = {
+            let w = &self.planets[pi].world;
+            w.block(canon).is_some_and(|b| w.registry.get(b).powers.is_some())
+        };
+        if !is_machine && !is_coil {
+            return self.swing_refused(
+                id,
+                seq,
+                pos,
+                Refusal::Told("A spanner repairs machines and power coils".into()),
+            );
         }
         let tool = skilled_tool(&tool, &effects);
         let p = self.players.get_mut(&id).expect("present");
@@ -332,14 +341,17 @@ impl Game {
             return self.swing_refused(id, seq, pos, Refusal::Quiet("too tired"));
         }
         let amount = bm_core::spark::repair_per_hit(tool.repair, effects.spanner_mastery);
-        if let Some((key, wear)) = self.repair_machine(pi, canon, amount)
+        let mended = if is_coil {
+            self.repair_coil(pi, canon, amount)
+                .map(|(pos, wear)| (pos, wear, bm_core::spark::COIL_WEAR))
+        } else {
+            self.repair_machine(pi, canon, amount)
+                .map(|(pos, wear)| (pos, wear, bm_core::spark::MACHINE_WEAR))
+        };
+        if let Some((pos, wear, max)) = mended
             && let Some(p) = self.players.get(&id)
         {
-            p.out.send(&ServerMsg::MachineWear {
-                pos: key,
-                wear,
-                max: bm_core::spark::MACHINE_WEAR,
-            });
+            p.out.send(&ServerMsg::MachineWear { pos, wear, max });
         }
         self.wear_swung_tool(id, slot, &effects);
     }

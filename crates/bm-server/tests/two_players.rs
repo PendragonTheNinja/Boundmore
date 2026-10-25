@@ -1325,6 +1325,8 @@ async fn a_workbench_saved_at_one_block_joins_its_machine() {
                         blocks: 1,
                         containers: Vec::new(),
                         forge: None,
+                        coils: Vec::new(),
+                        scale: 1000,
                     }),
                 )],
                 ..Default::default()
@@ -5310,6 +5312,79 @@ async fn spanner_hit(c: &mut TestClient, seq: u32, pos: BlockPos, slot: u8) -> (
     }
 }
 
+/// Milestone 18 part 2, acceptance 2 and 3: a compactor on the grid with
+/// four coils (400 power) waits for compact coal's 500 and says why; a fifth
+/// coil starts it at a quicker pace; the window shows the power; coils wear
+/// with the craft and a spanner mends one.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn coils_power_a_compactor_past_its_need() {
+    let dir = tempfile::tempdir().unwrap();
+    seed(
+        dir.path(),
+        "Alice",
+        &[
+            (0, "compactor", 4, 0),
+            (1, "spark_link", 1, 0),
+            (2, "spark_generator", 1, 0),
+            (3, "coal", 15, 0),
+            (4, "compactor_coil", 5, 0),
+            (5, "iron_spanner", 1, 0),
+            (6, "hard_coal", 2, 0),
+        ],
+    );
+    let server = bm_server::start(config(dir.path())).unwrap();
+    let mut alice = TestClient::login(&server, "Alice").await;
+    let shape = alice.shape();
+    let feet = alice.feet();
+    wait_around(&mut alice, feet, 8).await;
+    let at = |dx, dy, dz| shape.wrap_block(feet.offset(dx, dy, dz));
+    let compactor: Vec<BlockPos> = (1..=4).map(|dx| at(dx, 1, 2)).collect();
+    for (i, p) in compactor.iter().enumerate() {
+        assert!(place(&mut alice, 1 + i as u32, *p, 0, None).await.0);
+    }
+    assert!(place(&mut alice, 10, at(1, 2, 2), 1, None).await.0, "a link on top");
+    assert!(
+        place(&mut alice, 11, at(1, 3, 2), 2, None).await.0,
+        "a generator on the link"
+    );
+    // Four coils across one block of air from the compactor.
+    for (i, dx) in (1..=4).enumerate() {
+        assert!(place(&mut alice, 20 + i as u32, at(dx, 1, 4), 4, None).await.0);
+    }
+    look_at_station(&mut alice, at(1, 3, 2), |_| true).await;
+    // Hard coal: 800 spark over 30 s.
+    fuel(&mut alice, at(1, 3, 2), 6, 2, true).await;
+    let v = look_at_station(&mut alice, compactor[0], |v| v.power.is_some_and(|p| p.coils == 4)).await;
+    assert_eq!(v.power.map(|p| (p.power, p.worn)), Some((400, 0)));
+    let compact = alice.recipe("compact_coal");
+    craft_at(&mut alice, compact, 1, Some(compactor[0])).await;
+    let v = alice
+        .station(|v| v.pos == compactor[0] && !v.jobs.is_empty() && v.idle.is_some())
+        .await;
+    assert_eq!(v.idle.as_deref(), Some("Needs 500 power: add power coils"));
+
+    // A fifth coil, on the row's other side: the craft starts.
+    look_at_station(&mut alice, at(1, 3, 2), |v| v.spark.is_some_and(|s| s.stored >= 200)).await;
+    alice
+        .send(ClientMsg::WatchStation {
+            pos: Some(compactor[0]),
+        })
+        .await;
+    assert!(place(&mut alice, 30, at(3, 1, 0), 4, None).await.0);
+    let running = alice
+        .station(|v| v.pos == compactor[0] && v.jobs.first().is_some_and(|j| j.progress > 0.0))
+        .await;
+    assert_eq!(running.idle, None);
+    assert_eq!(running.power.map(|p| (p.power, p.coils)), Some((500, 5)));
+    // The craft wore every coil by its wear.
+    alice.ready();
+    let swung = spanner_hit(&mut alice, 40, at(1, 1, 4), 5).await;
+    assert_eq!(swung.0, at(1, 1, 4), "the spanner mends the coil itself");
+    assert_eq!(swung.2, bm_core::spark::COIL_WEAR);
+    assert!(swung.1 <= bm_core::spark::COIL_WEAR);
+    server.stop();
+}
+
 /// Milestone 15, acceptance 1 and 2: a mixer off the grid waits and says
 /// why; a link to a fuelled generator puts it on the grid; its silver alloy
 /// takes its 100 spark as it starts, and the craft wears the mixer by 12;
@@ -5457,7 +5532,7 @@ async fn a_worn_out_workbench_waits_for_a_spanner() {
     alice.ready();
     let swung = alice.swing(10, ground, 1).await;
     assert!(matches!(swung, Swung::Refused(_, 0)), "{swung:?}");
-    alice.notice("A spanner repairs machines").await;
+    alice.notice("A spanner repairs machines and power coils").await;
 
     // A copper spanner removes 400 wear a hit; the first cog starts and
     // takes its 6.

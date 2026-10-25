@@ -1315,6 +1315,7 @@ impl Demo {
                 wear: s.wear,
                 spark: s.spark,
                 forge: s.forge.as_ref().map(|f| Box::new(Self::forge_view(f))),
+                power: None,
             };
             self.events.push_back(NetEvent::Msg(ServerMsg::Station(view)));
         }
@@ -2493,15 +2494,20 @@ impl Demo {
                 }
             }
             EditAction::Chisel { slot, octants, restore } => {
-                let chisel = self
-                    .inv
-                    .get(slot as usize)
-                    .and_then(|s| self.items.get(s.item))
-                    .and_then(|d| d.chisel());
+                let def = self.inv.get(slot as usize).and_then(|s| self.items.get(s.item));
+                let advanced = def.is_some_and(|d| d.chisel_advanced());
+                let chisel = def.and_then(|d| d.chisel());
                 match chisel {
                     Some((family, precise, _)) => {
-                        match bm_core::chisel::apply(self.blocks.get(old), old_state, family, precise, octants, restore)
-                        {
+                        match bm_core::chisel::apply(
+                            self.blocks.get(old),
+                            old_state,
+                            family,
+                            precise,
+                            advanced,
+                            octants,
+                            restore,
+                        ) {
                             Ok(shape) => {
                                 self.wear(slot as usize);
                                 (BlockState { shape, ..old_state }, true)

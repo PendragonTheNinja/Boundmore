@@ -114,6 +114,17 @@ pub struct BlockDef {
     /// recipes, which then run over time inside it.
     #[serde(default)]
     pub station: Option<Station>,
+    /// Hard (milestone 18, Boundless's hardness above 3): only advanced
+    /// chisels shape it (gem seams, hard coal).
+    #[serde(default)]
+    pub hard: bool,
+    /// A power coil (milestone 18): the kind of machine it powers, across
+    /// one block of air.
+    #[serde(default)]
+    pub powers: Option<Station>,
+    /// A coil's power (Boundless: 100, advanced 300).
+    #[serde(default)]
+    pub coil_power: u32,
     /// Slots of storage inside (0: none). A storage block with anything in
     /// it cannot be broken.
     #[serde(default)]

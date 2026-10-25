@@ -1987,17 +1987,14 @@ impl Game {
                 if slot >= HOTBAR_SLOTS {
                     return Err("not a hotbar slot".into());
                 }
-                let (family, precise, _) = p
-                    .inventory
-                    .get(slot)
-                    .and_then(|s| self.items.get(s.item))
-                    .and_then(|d| d.chisel())
-                    .ok_or("not a chisel")?;
+                let def = p.inventory.get(slot).and_then(|s| self.items.get(s.item));
+                let advanced = def.is_some_and(|d| d.chisel_advanced());
+                let (family, precise, _) = def.and_then(|d| d.chisel()).ok_or("not a chisel")?;
                 let state = world.state(canon).ok_or("chunk not resident")?;
                 // The chisels epic lets any chisel make a precise (one
                 // octant) cut, as well as its own.
                 let precise = precise || (p.effects.chisel_epic && octants.count_ones() == 1);
-                let new = chisel::apply(reg.get(current), state, family, precise, octants, restore)?;
+                let new = chisel::apply(reg.get(current), state, family, precise, advanced, octants, restore)?;
                 if restore {
                     // Filling back must not close over a player: the octants
                     // put back are the solid boxes of `Shape(!octants)`.

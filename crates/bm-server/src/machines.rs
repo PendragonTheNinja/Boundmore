@@ -256,6 +256,124 @@ pub fn grid_generators(
     Some(found)
 }
 
+/// Where a coil may stand from a machine block: two blocks out, straight or
+/// diagonal, at its height or one up or down (milestone 18: Boundless's
+/// one-metre gap; the diagonals and the height are a **guess**).
+const COIL_REACH: [(i64, i64); 8] = [(2, 0), (-2, 0), (0, 2), (0, -2), (2, 2), (2, -2), (-2, 2), (-2, -2)];
+
+/// A coil serving a machine: where it stands and the power it gives.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Coil {
+    pub pos: BlockPos,
+    pub power: u32,
+}
+
+/// The coils that serve the working machine `m` (milestone 18): coil blocks
+/// that power its kind, standing two blocks out from one of its blocks
+/// with a non-solid block between. A coil facing several machines of its
+/// kind serves the one with the lowest key, so each coil serves one. At
+/// most [`spark::MAX_COILS`](bm_core::spark::MAX_COILS), first by position.
+/// None when a block the answer needs is not resident.
+pub fn machine_coils(
+    reg: &BlockRegistry,
+    shape: PlanetShape,
+    block: impl Fn(BlockPos) -> Option<BlockId> + Copy,
+    m: &Machine,
+) -> Option<Vec<Coil>> {
+    if m.idle.is_some() {
+        return Some(Vec::new());
+    }
+    let at = |p: BlockPos| -> Option<Option<BlockPos>> {
+        if !shape.contains_y(p.y) {
+            return Some(None);
+        }
+        let p = shape.wrap_block(p);
+        block(p).map(|_| Some(p))
+    };
+    let mut coils: Vec<Coil> = Vec::new();
+    for &b in &m.blocks {
+        for (dx, dz) in COIL_REACH {
+            for dy in -1..=1 {
+                let Some(c) = at(b.offset(dx, dy, dz))? else { continue };
+                let def = reg.get(block(c)?);
+                if def.powers != Some(m.kind) || coils.iter().any(|k| k.pos == c) {
+                    continue;
+                }
+                let Some(gap) = at(b.offset(dx / 2, dy, dz / 2))? else {
+                    continue;
+                };
+                if reg.get(block(gap)?).solid || m.blocks.contains(&gap) {
+                    continue;
+                }
+                // Which machine of this kind the coil faces first.
+                let mut owner = m.key;
+                for (ex, ez) in COIL_REACH {
+                    for ey in -1..=1 {
+                        let Some(o) = at(c.offset(-ex, -ey, -ez))? else {
+                            continue;
+                        };
+                        if m.blocks.contains(&o) || reg.get(block(o)?).station != Some(m.kind) {
+                            continue;
+                        }
+                        let Some(g) = at(c.offset(-ex / 2, -ey, -ez / 2))? else {
+                            continue;
+                        };
+                        if reg.get(block(g)?).solid {
+                            continue;
+                        }
+                        if let Some(other) = machine_at(reg, shape, block, o).filter(|x| x.idle.is_none())
+                            && order(&other.key) < order(&owner)
+                        {
+                            owner = other.key;
+                        }
+                    }
+                }
+                if owner == m.key {
+                    coils.push(Coil {
+                        pos: c,
+                        power: def.coil_power.max(1),
+                    });
+                }
+            }
+        }
+    }
+    coils.sort_by_key(|c| order(&c.pos));
+    coils.truncate(bm_core::spark::MAX_COILS);
+    Some(coils)
+}
+
+/// The machine the coil at `coil` serves, if any (milestone 18). None when
+/// a block the answer needs is not resident; Some(None) when it serves none.
+pub fn coil_machine(
+    reg: &BlockRegistry,
+    shape: PlanetShape,
+    block: impl Fn(BlockPos) -> Option<BlockId> + Copy,
+    coil: BlockPos,
+) -> Option<Option<Machine>> {
+    let Some(kind) = reg.get(block(coil)?).powers else {
+        return Some(None);
+    };
+    for (dx, dz) in COIL_REACH {
+        for dy in -1..=1 {
+            let p = coil.offset(-dx, -dy, -dz);
+            if !shape.contains_y(p.y) {
+                continue;
+            }
+            let p = shape.wrap_block(p);
+            if reg.get(block(p)?).station != Some(kind) {
+                continue;
+            }
+            let Some(m) = machine_at(reg, shape, block, p) else {
+                continue;
+            };
+            if machine_coils(reg, shape, block, &m)?.iter().any(|c| c.pos == coil) {
+                return Some(Some(m));
+            }
+        }
+    }
+    Some(None)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

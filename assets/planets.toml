@@ -133,6 +133,14 @@ size = 11.0
 threshold = 0.6
 min_y = 10
 min_depth = 20
+[[kind.generation.ores]]
+# Milestone 18 part 2: relic cores (Boundless's ancient tech device), every
+# world, 75+ above the floor, 5+ under the surface. Richness a guess.
+block = "relic_core_seam"
+size = 8.0
+threshold = 0.64
+min_y = 75
+min_depth = 5
 # Flora (all placement a guess): spikeleaf on the beaches and in dry
 # patches of turf so a new player finds fibrous leaves early, ferns and
 # roots on turf, lilies by the water, snowbells above the snow line,
@@ -329,6 +337,14 @@ size = 11.0
 threshold = 0.6
 min_y = 10
 min_depth = 20
+[[kind.generation.ores]]
+# Milestone 18 part 2: relic cores (Boundless's ancient tech device), every
+# world, 75+ above the floor, 5+ under the surface. Richness a guess.
+block = "relic_core_seam"
+size = 8.0
+threshold = 0.64
+min_y = 75
+min_depth = 5
 # Flora (a guess): spikeleaf plentiful on the dunes, with cactus and
 # aloe (no turf here, so they take the sand); boulders on sand and rock.
 [[kind.generation.flora]]
@@ -514,6 +530,14 @@ size = 11.0
 threshold = 0.6
 min_y = 10
 min_depth = 20
+[[kind.generation.ores]]
+# Milestone 18 part 2: relic cores (Boundless's ancient tech device), every
+# world, 75+ above the floor, 5+ under the surface. Richness a guess.
+block = "relic_core_seam"
+size = 8.0
+threshold = 0.64
+min_y = 75
+min_depth = 5
 # Flora (a guess): snowbells on the snow; boulders on snow and rock.
 [[kind.generation.flora]]
 block = "frostbell"
@@ -707,6 +731,14 @@ size = 9.0
 threshold = 0.63
 max_y = 60
 min_depth = 50
+[[kind.generation.ores]]
+# Milestone 18 part 2: relic cores (Boundless's ancient tech device), every
+# world, 75+ above the floor, 5+ under the surface. Richness a guess.
+block = "relic_core_seam"
+size = 8.0
+threshold = 0.64
+min_y = 75
+min_depth = 5
 # Flora (a guess): the most plants, lilies by the water, spikeleaf on
 # the beaches, snowbells on the peaks, boulders on rock and turf.
 [[kind.generation.flora]]
@@ -938,6 +970,14 @@ threshold = 0.58
 min_y = 8
 max_y = 26
 min_depth = 25
+[[kind.generation.ores]]
+# Milestone 18 part 2: relic cores (Boundless's ancient tech device), every
+# world, 75+ above the floor, 5+ under the surface. Richness a guess.
+block = "relic_core_seam"
+size = 8.0
+threshold = 0.64
+min_y = 75
+min_depth = 5
 # Flora (a guess): the most plants, lilies by the water, spikeleaf on
 # the beaches, snowbells on the peaks, boulders on rock and turf.
 [[kind.generation.flora]]
@@ -1181,6 +1221,14 @@ size = 8.0
 threshold = 0.6
 min_y = 10
 min_depth = 70
+[[kind.generation.ores]]
+# Milestone 18 part 2: relic cores (Boundless's ancient tech device), every
+# world, 75+ above the floor, 5+ under the surface. Richness a guess.
+block = "relic_core_seam"
+size = 8.0
+threshold = 0.64
+min_y = 75
+min_depth = 5
 # Flora (a guess): spikeleaf plentiful on the dunes, with cactus and
 # aloe (no turf here, so they take the sand); boulders on sand and rock.
 [[kind.generation.flora]]
@@ -1390,6 +1438,14 @@ threshold = 0.58
 min_y = 8
 max_y = 26
 min_depth = 25
+[[kind.generation.ores]]
+# Milestone 18 part 2: relic cores (Boundless's ancient tech device), every
+# world, 75+ above the floor, 5+ under the surface. Richness a guess.
+block = "relic_core_seam"
+size = 8.0
+threshold = 0.64
+min_y = 75
+min_depth = 5
 # Flora (all placement a guess): spikeleaf on the beaches and in dry
 # patches of turf so a new player finds fibrous leaves early, ferns and
 # roots on turf, lilies by the water, snowbells above the snow line,
@@ -1628,6 +1684,14 @@ min_depth = 5
 max_depth = 40
 water_depth = [1, 8]
 near_water = 4
+[[kind.generation.ores]]
+# Milestone 18 part 2: relic cores (Boundless's ancient tech device), every
+# world, 75+ above the floor, 5+ under the surface. Richness a guess.
+block = "relic_core_seam"
+size = 8.0
+threshold = 0.64
+min_y = 75
+min_depth = 5
 # Flora (all placement a guess): spikeleaf on the beaches and in dry
 # patches of turf so a new player finds fibrous leaves early, ferns and
 # roots on turf, lilies by the water, snowbells above the snow line,
@@ -1863,6 +1927,14 @@ threshold = 0.55
 min_depth = 2
 max_depth = 60
 water_depth = [10, 400]
+[[kind.generation.ores]]
+# Milestone 18 part 2: relic cores (Boundless's ancient tech device), every
+# world, 75+ above the floor, 5+ under the surface. Richness a guess.
+block = "relic_core_seam"
+size = 8.0
+threshold = 0.64
+min_y = 75
+min_depth = 5
 # Flora (all placement a guess): spikeleaf on the beaches and in dry
 # patches of turf so a new player finds fibrous leaves early, ferns and
 # roots on turf, lilies by the water, snowbells above the snow line,
@@ -2102,6 +2174,14 @@ threshold = 0.57
 min_depth = 10
 max_depth = 75
 land_height = [20, 80]
+[[kind.generation.ores]]
+# Milestone 18 part 2: relic cores (Boundless's ancient tech device), every
+# world, 75+ above the floor, 5+ under the surface. Richness a guess.
+block = "relic_core_seam"
+size = 8.0
+threshold = 0.64
+min_y = 75
+min_depth = 5
 # Flora (a guess): snowbells on the snow; boulders on snow and rock.
 [[kind.generation.flora]]
 block = "frostbell"
@@ -2319,6 +2399,14 @@ size = 7.0
 threshold = 0.57
 min_depth = 10
 land_height = [80, 1000]
+[[kind.generation.ores]]
+# Milestone 18 part 2: relic cores (Boundless's ancient tech device), every
+# world, 75+ above the floor, 5+ under the surface. Richness a guess.
+block = "relic_core_seam"
+size = 8.0
+threshold = 0.64
+min_y = 75
+min_depth = 5
 # Flora (all placement a guess): spikeleaf on the beaches and in dry
 # patches of turf so a new player finds fibrous leaves early, ferns and
 # roots on turf, lilies by the water, snowbells above the snow line,
@@ -2560,6 +2648,14 @@ size = 7.0
 threshold = 0.56
 min_depth = 70
 land_height = [60, 1000]
+[[kind.generation.ores]]
+# Milestone 18 part 2: relic cores (Boundless's ancient tech device), every
+# world, 75+ above the floor, 5+ under the surface. Richness a guess.
+block = "relic_core_seam"
+size = 8.0
+threshold = 0.64
+min_y = 75
+min_depth = 5
 # Flora (a guess): spikeleaf plentiful on the dunes, with cactus and
 # aloe (no turf here, so they take the sand); boulders on sand and rock.
 [[kind.generation.flora]]
@@ -2791,6 +2887,14 @@ threshold = 0.55
 min_depth = 50
 max_depth = 70
 under = ["sand", "gravel"]
+[[kind.generation.ores]]
+# Milestone 18 part 2: relic cores (Boundless's ancient tech device), every
+# world, 75+ above the floor, 5+ under the surface. Richness a guess.
+block = "relic_core_seam"
+size = 8.0
+threshold = 0.64
+min_y = 75
+min_depth = 5
 # Flora (a guess): spikeleaf plentiful on the dunes, with cactus and
 # aloe (no turf here, so they take the sand); boulders on sand and rock.
 [[kind.generation.flora]]

@@ -29,6 +29,11 @@ pub struct Recipe {
     /// The crafting skill and level it needs (`skills::Effects::crafting`).
     #[serde(default)]
     pub skill: Option<SkillGate>,
+    /// Power the machine needs from its coils (milestone 18; 0: none).
+    /// Power above it makes the craft quicker and cheaper
+    /// (`spark::power_scale`).
+    #[serde(default)]
+    pub power: u32,
 }
 
 /// A recipe's crafting-skill requirement.
@@ -83,6 +88,8 @@ struct RecipeEntry {
     spark: u32,
     #[serde(default)]
     wear: u16,
+    #[serde(default)]
+    power: u32,
 }
 
 fn one() -> u16 {
@@ -131,6 +138,7 @@ impl RecipeBook {
                 skill: e.skill.clone(),
                 spark: e.spark,
                 wear: if crate::spark::wears(e.station) { e.wear } else { 0 },
+                power: e.power,
             });
         }
         Ok(Self { recipes })

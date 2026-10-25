@@ -12,7 +12,7 @@ use crate::planet::Planet;
 use crate::world::World;
 use bm_core::spark;
 use bm_core::{BlockId, BlockPos, INVENTORY_SLOTS, ItemStack, Station};
-use bm_protocol::{ServerMsg, SparkView, StationView};
+use bm_protocol::{PowerView, ServerMsg, SparkView, StationView};
 
 /// Whether placing a spark generator `id` at `canon` would join groups that
 /// each hold fuel: joined generators share one fuel slot.
@@ -69,6 +69,12 @@ impl Surroundings for PlanetEnv<'_> {
 
     fn heat_share(&self, furnace: BlockPos) -> Option<f32> {
         self.world.block(furnace).map(|b| self.world.registry.get(b).heat_share)
+    }
+
+    fn coils(&self, machine: BlockPos) -> Option<Vec<crate::machines::Coil>> {
+        let w = self.world;
+        let m = self.machine(machine)?;
+        machines::machine_coils(&w.registry, w.shape, |p| w.block(p), &m)
     }
 }
 
@@ -339,6 +345,7 @@ impl Game {
         let idle = machine.and_then(|m| m.idle);
         let mut view = planet.stations.view(key, kind, idle, self.tick, &self.recipes);
         view.spark = self.spark_view(pi, key, kind, blocks);
+        view.power = self.power_view(pi, key, kind);
         if kind == Station::Forge {
             view.forge = Some(Box::new(self.forge_view(pi, key, viewer)));
         }
@@ -376,6 +383,32 @@ impl Game {
             }
             _ => None,
         }
+    }
+
+    /// What powers a machine (milestone 18): its coils as they stand, with
+    /// the wear its record keeps (a coil it has not heard of is mended).
+    fn power_view(&self, pi: usize, key: BlockPos, kind: Station) -> Option<PowerView> {
+        if !spark::wears(kind) {
+            return None;
+        }
+        let planet = &self.planets[pi];
+        let w = &planet.world;
+        let coils = self
+            .machine(pi, key)
+            .and_then(|m| machines::machine_coils(&w.registry, w.shape, |p| w.block(p), &m))
+            .unwrap_or_default();
+        let record = planet.stations.get(key);
+        let left = |p: BlockPos| {
+            record
+                .and_then(|r| r.coils.get(&p).copied())
+                .unwrap_or(spark::COIL_WEAR)
+        };
+        let worn = coils.iter().filter(|c| left(c.pos) == 0).count();
+        Some(PowerView {
+            power: coils.iter().filter(|c| left(c.pos) > 0).map(|c| c.power).sum(),
+            coils: coils.len().min(u8::MAX as usize) as u8,
+            worn: worn.min(u8::MAX as usize) as u8,
+        })
     }
 
     /// A spark generator block was placed at `canon`: the groups it joined
@@ -456,6 +489,18 @@ impl Game {
             .repair(key, m.kind, amount, self.tick, &self.items, &self.recipes, &env);
         self.push_station(pi, key);
         Some((key, wear))
+    }
+
+    /// A spanner hit on a power coil at `canon` (milestone 18): mends it in
+    /// the record of the machine it serves; returns the coil and its wear
+    /// now, or None if it serves no machine.
+    pub(super) fn repair_coil(&mut self, pi: usize, canon: BlockPos, amount: u32) -> Option<(BlockPos, u32)> {
+        let w = &self.planets[pi].world;
+        let m = machines::coil_machine(&w.registry, w.shape, |p| w.block(p), canon)??;
+        let key = self.machine_record(pi, &m);
+        let wear = self.planets[pi].stations.repair_coil(key, m.kind, canon, amount);
+        self.push_station(pi, key);
+        Some((canon, wear))
     }
 
     /// Sends a station's state to everyone on its planet watching it.

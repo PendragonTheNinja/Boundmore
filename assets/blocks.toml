@@ -209,7 +209,7 @@ health = "hard"
 textures = { side = "trunk_side", top = "trunk_top", bottom = "trunk_top" }
 material = "wood"
 fuel = 30
-bonus = [{ item = "sap", per_tier = [0.08, 0.08, 0.08, 0.08, 0.12, 0.12, 0.12, 0.12] }]
+bonus = [{ item = "sap", per_tier = [0.08, 0.08, 0.08, 0.08, 0.12, 0.12, 0.12, 0.12] }, { item = "bark", per_tier = [0, 0, 0.03, 0.03, 0.03, 0.04, 0.04, 0.04] }]
 mine_xp = 2
 build_xp = 8
 
@@ -1940,6 +1940,7 @@ build_xp = 0
 
 [[block]]
 name = "hard_coal_seam"
+hard = true
 colourable = false
 color = [30, 30, 40]
 solid = true
@@ -1993,6 +1994,7 @@ build_xp = 0
 # Yields by tier are Boundless's (tuning 4.4); mining XP a guess.
 [[block]]
 name = "amethyst_seam"
+hard = true
 colourable = false
 color = [168, 110, 220]
 solid = true
@@ -2010,6 +2012,7 @@ build_xp = 0
 
 [[block]]
 name = "emerald_seam"
+hard = true
 colourable = false
 color = [60, 190, 110]
 solid = true
@@ -2027,6 +2030,7 @@ build_xp = 0
 
 [[block]]
 name = "sapphire_seam"
+hard = true
 colourable = false
 color = [70, 110, 230]
 solid = true
@@ -2044,6 +2048,7 @@ build_xp = 0
 
 [[block]]
 name = "topaz_seam"
+hard = true
 colourable = false
 color = [240, 180, 60]
 solid = true
@@ -2061,6 +2066,7 @@ build_xp = 0
 
 [[block]]
 name = "diamond_seam"
+hard = true
 colourable = false
 color = [200, 240, 250]
 solid = true
@@ -2078,6 +2084,7 @@ build_xp = 0
 
 [[block]]
 name = "ruby_seam"
+hard = true
 colourable = false
 color = [220, 40, 70]
 solid = true
@@ -2091,4 +2098,252 @@ material = "rock"
 drops = "rough_ruby"
 bonus = [{ item = "rough_ruby", per_tier = [0, 0, 0, 0, 0.5, 0.8, 0.8, 1.2] }]
 mine_xp = 120
+build_xp = 0
+
+# Milestone 18 part 2: power coils (rule 33 to 39). Each powers machines of
+# one kind across one block of air; advanced coils give 300.
+[[block]]
+name = "workbench_coil"
+colourable = false
+color = [200, 236, 248]
+solid = true
+opaque = true
+translucent = false
+breakable = true
+placeable = true
+health = "soft"
+textures = { all = "workbench_coil" }
+material = "rock"
+powers = "workbench"
+coil_power = 100
+build_xp = 8
+
+[[block]]
+name = "advanced_workbench_coil"
+colourable = false
+color = [200, 236, 248]
+solid = true
+opaque = true
+translucent = false
+breakable = true
+placeable = true
+health = "soft"
+textures = { all = "advanced_workbench_coil" }
+material = "rock"
+powers = "workbench"
+coil_power = 300
+build_xp = 16
+
+[[block]]
+name = "compactor_coil"
+colourable = false
+color = [214, 52, 76]
+solid = true
+opaque = true
+translucent = false
+breakable = true
+placeable = true
+health = "soft"
+textures = { all = "compactor_coil" }
+material = "rock"
+powers = "compactor"
+coil_power = 100
+build_xp = 8
+
+[[block]]
+name = "advanced_compactor_coil"
+colourable = false
+color = [214, 52, 76]
+solid = true
+opaque = true
+translucent = false
+breakable = true
+placeable = true
+health = "soft"
+textures = { all = "advanced_compactor_coil" }
+material = "rock"
+powers = "compactor"
+coil_power = 300
+build_xp = 16
+
+[[block]]
+name = "extractor_coil"
+colourable = false
+color = [72, 112, 228]
+solid = true
+opaque = true
+translucent = false
+breakable = true
+placeable = true
+health = "soft"
+textures = { all = "extractor_coil" }
+material = "rock"
+powers = "extractor"
+coil_power = 100
+build_xp = 8
+
+[[block]]
+name = "advanced_extractor_coil"
+colourable = false
+color = [72, 112, 228]
+solid = true
+opaque = true
+translucent = false
+breakable = true
+placeable = true
+health = "soft"
+textures = { all = "advanced_extractor_coil" }
+material = "rock"
+powers = "extractor"
+coil_power = 300
+build_xp = 16
+
+[[block]]
+name = "refinery_coil"
+colourable = false
+color = [236, 176, 64]
+solid = true
+opaque = true
+translucent = false
+breakable = true
+placeable = true
+health = "soft"
+textures = { all = "refinery_coil" }
+material = "rock"
+powers = "refinery"
+coil_power = 100
+build_xp = 8
+
+[[block]]
+name = "advanced_refinery_coil"
+colourable = false
+color = [236, 176, 64]
+solid = true
+opaque = true
+translucent = false
+breakable = true
+placeable = true
+health = "soft"
+textures = { all = "advanced_refinery_coil" }
+material = "rock"
+powers = "refinery"
+coil_power = 300
+build_xp = 16
+
+[[block]]
+name = "mixer_coil"
+colourable = false
+color = [64, 188, 112]
+solid = true
+opaque = true
+translucent = false
+breakable = true
+placeable = true
+health = "soft"
+textures = { all = "mixer_coil" }
+material = "rock"
+powers = "mixer"
+coil_power = 100
+build_xp = 8
+
+[[block]]
+name = "advanced_mixer_coil"
+colourable = false
+color = [64, 188, 112]
+solid = true
+opaque = true
+translucent = false
+breakable = true
+placeable = true
+health = "soft"
+textures = { all = "advanced_mixer_coil" }
+material = "rock"
+powers = "mixer"
+coil_power = 300
+build_xp = 16
+
+[[block]]
+name = "forge_coil"
+colourable = false
+color = [168, 112, 218]
+solid = true
+opaque = true
+translucent = false
+breakable = true
+placeable = true
+health = "soft"
+textures = { all = "forge_coil" }
+material = "rock"
+powers = "forge"
+coil_power = 100
+build_xp = 8
+
+[[block]]
+name = "advanced_forge_coil"
+colourable = false
+color = [168, 112, 218]
+solid = true
+opaque = true
+translucent = false
+breakable = true
+placeable = true
+health = "soft"
+textures = { all = "advanced_forge_coil" }
+material = "rock"
+powers = "forge"
+coil_power = 300
+build_xp = 16
+
+# Milestone 18 part 2: the titanium furnace (heat x0.25, Boundless).
+[[block]]
+name = "titanium_furnace"
+colourable = false
+color = [150, 170, 190]
+top_color = [176, 196, 214]
+solid = true
+opaque = true
+translucent = false
+breakable = true
+placeable = true
+health = "hard"
+textures = { top = "titanium_furnace_top", side = "titanium_furnace_side", bottom = "stone" }
+material = "rock"
+station = "furnace"
+light = 7
+assembly = "furnace_base"
+heat_share = 0.25
+build_xp = 24
+
+[[block]]
+name = "titanium_furnace_crucible"
+colourable = false
+color = [160, 180, 200]
+solid = true
+opaque = true
+translucent = false
+breakable = true
+placeable = true
+health = "hard"
+textures = { top = "titanium_furnace_crucible_top", side = "titanium_furnace_crucible_side", bottom = "titanium_furnace_crucible_top" }
+material = "rock"
+assembly = "furnace_crucible"
+build_xp = 24
+
+# Relic cores (Boundless's ancient tech device): every world, 75+ above the
+# floor, 5+ under the surface; yields as titanium (tuning 4.3, 4.4).
+[[block]]
+name = "relic_core_seam"
+colourable = false
+color = [96, 140, 150]
+solid = true
+opaque = true
+translucent = false
+breakable = true
+placeable = false
+health = "seam"
+textures = { all = "relic_core_seam" }
+material = "rock"
+drops = "relic_core"
+bonus = [{ item = "relic_core", per_tier = [0, 0, 0, 0, 0.5, 0.8, 0.8, 1.2] }]
+mine_xp = 80
 build_xp = 0

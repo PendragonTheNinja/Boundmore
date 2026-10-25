@@ -111,7 +111,7 @@ const V2_STATIONS: TableDefinition<&[u8], &[u8]> = TableDefinition::new("station
 /// 11 (M17): a forge's station record saves its session and queued item
 /// ([`SavedStation::forge`]); older stations are rewritten with none (no
 /// forges existed).
-pub const SAVE_VERSION: u32 = 12;
+pub const SAVE_VERSION: u32 = 13;
 
 /// The universe file in the data directory.
 pub const UNIVERSE_FILE: &str = "universe.redb";
@@ -523,6 +523,11 @@ pub struct SavedStation {
     pub containers: Vec<Vec<SavedStack>>,
     /// A forge's session and queued item (save version 11).
     pub forge: Option<crate::forging::SavedForge>,
+    /// Power coils' wear left, by where each stands (save version 13).
+    pub coils: Vec<(BlockPos, u32)>,
+    /// The current craft's pace in thousandths of the recipe's time (save
+    /// version 13; 1,000 with no power).
+    pub scale: u16,
 }
 
 /// The station layout save versions 9 and 10 wrote, kept only to read them
@@ -567,12 +572,66 @@ mod v10 {
                 containers: s.containers,
                 // No forges existed.
                 forge: None,
+                coils: Vec::new(),
+                scale: 1000,
             }
         }
     }
 }
 
 pub use v10::SavedStation as V10SavedStation;
+
+/// The station layout save versions 11 and 12 wrote, kept only to read them
+/// for the upgrade.
+mod v12 {
+    use super::*;
+
+    #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+    pub struct SavedStation {
+        pub kind: Station,
+        pub jobs: Vec<SavedJob>,
+        pub started: u64,
+        pub output: Vec<Option<SavedStack>>,
+        pub fuel: Option<SavedStack>,
+        pub heat: u32,
+        pub waiting: bool,
+        pub xp: u32,
+        pub wear: u32,
+        pub spark: u32,
+        pub burn_total: u32,
+        pub burn_elapsed: u32,
+        pub blocks: u32,
+        pub containers: Vec<Vec<SavedStack>>,
+        pub forge: Option<crate::forging::SavedForge>,
+    }
+
+    impl From<SavedStation> for super::SavedStation {
+        fn from(s: SavedStation) -> Self {
+            Self {
+                kind: s.kind,
+                jobs: s.jobs,
+                started: s.started,
+                output: s.output,
+                fuel: s.fuel,
+                heat: s.heat,
+                waiting: s.waiting,
+                xp: s.xp,
+                wear: s.wear,
+                spark: s.spark,
+                burn_total: s.burn_total,
+                burn_elapsed: s.burn_elapsed,
+                blocks: s.blocks,
+                containers: s.containers,
+                forge: s.forge,
+                // No coils existed.
+                coils: Vec::new(),
+                scale: 1000,
+            }
+        }
+    }
+}
+
+pub use v12::SavedStation as V12SavedStation;
 
 /// The player layout save versions 9 to 11 wrote, kept only to read them
 /// for the upgrade.
@@ -649,6 +708,8 @@ mod v8 {
                 blocks: s.blocks,
                 containers: Vec::new(),
                 forge: None,
+                coils: Vec::new(),
+                scale: 1000,
             }
         }
     }
@@ -718,6 +779,8 @@ mod v7 {
                 blocks: 1,
                 containers: Vec::new(),
                 forge: None,
+                coils: Vec::new(),
+                scale: 1000,
             }
         }
     }
@@ -755,6 +818,8 @@ mod v3 {
                 blocks: 1,
                 containers: Vec::new(),
                 forge: None,
+                coils: Vec::new(),
+                scale: 1000,
             }
         }
     }
@@ -796,6 +861,8 @@ mod v4 {
                 blocks: 1,
                 containers: Vec::new(),
                 forge: None,
+                coils: Vec::new(),
+                scale: 1000,
             }
         }
     }
@@ -1145,8 +1212,11 @@ impl Store {
                         9 | 10 => upgrade_stations(&tx, from, |b| {
                             postcard::from_bytes::<v10::SavedStation>(b).map(Into::into)
                         })?,
-                        // 11 to 12 changed only players.
-                        _ => 0,
+                        // 12 to 13 gave stations their coils; 11 to 12
+                        // changed only players.
+                        _ => upgrade_stations(&tx, from, |b| {
+                            postcard::from_bytes::<v12::SavedStation>(b).map(Into::into)
+                        })?,
                     };
                     // Version 6 to 7 only adds tables (skies, discoveries),
                     // which read as empty until written.
@@ -1157,11 +1227,13 @@ impl Store {
                     } else if from <= 8 {
                         // Versions 6 to 8 share a player layout.
                         upgrade_players(&tx, from, |b| postcard::from_bytes::<v8::PlayerData>(b).map(Into::into))?
-                    } else {
+                    } else if from <= 11 {
                         // Versions 9 to 11 share a player layout; 12 adds air.
                         upgrade_players(&tx, from, |b| {
                             postcard::from_bytes::<v11::PlayerData>(b).map(Into::into)
                         })?
+                    } else {
+                        0
                     };
                     let u = UniverseMeta {
                         save_version: SAVE_VERSION,
@@ -1170,10 +1242,15 @@ impl Store {
                     tx.open_table(META)?
                         .insert("universe", postcard::to_stdvec(&u)?.as_slice())?;
                     tx.commit()?;
-                    if from == 11 {
+                    if from == 12 {
+                        tracing::info!(
+                            "upgraded the universe from save version 12 to {SAVE_VERSION} ({stations} stations \
+                             rewritten with no power coils; characters as they were)"
+                        );
+                    } else if from == 11 {
                         tracing::info!(
                             "upgraded the universe from save version 11 to {SAVE_VERSION} ({players} characters \
-                             with full air; stations as they were)"
+                             with full air; {stations} stations with no power coils)"
                         );
                     } else if from == 10 {
                         tracing::info!(
@@ -2137,6 +2214,8 @@ mod tests {
             blocks: 1,
             containers: Vec::new(),
             forge: None,
+            coils: Vec::new(),
+            scale: 1000,
         };
         let claim = SavedClaim {
             planet: 2,
@@ -2336,6 +2415,8 @@ mod tests {
             blocks: 1,
             containers: Vec::new(),
             forge: None,
+            coils: Vec::new(),
+            scale: 1000,
         };
         s.write(&WriteBatch {
             stations: vec![(u16::MAX, BlockPos::new(1, 1, 1), Some(st.clone()))],
@@ -2780,6 +2861,65 @@ mod tests {
         assert_eq!(s.player("alice").unwrap().unwrap(), p);
     }
 
+    /// A version 12 universe opens: every station keeps everything and has
+    /// no coils yet, at the normal pace; it is marked version 13.
+    #[test]
+    fn a_version_12_universe_gives_stations_no_coils() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("u.redb");
+        let old = V12SavedStation {
+            kind: Station::Compactor,
+            jobs: Vec::new(),
+            started: 7,
+            output: vec![None; 2],
+            fuel: None,
+            heat: 0,
+            waiting: false,
+            xp: 3,
+            wear: 4321,
+            spark: 0,
+            burn_total: 0,
+            burn_elapsed: 0,
+            blocks: 1,
+            containers: Vec::new(),
+            forge: None,
+        };
+        let spot = BlockPos::new(3, 40, 5);
+        {
+            let s = Store::open(&path).unwrap();
+            let tx = s.db.begin_write().unwrap();
+            tx.open_table(META)
+                .unwrap()
+                .insert(
+                    "universe",
+                    postcard::to_stdvec(&UniverseMeta {
+                        save_version: 12,
+                        chunk_format: CHUNK_FORMAT_VERSION,
+                    })
+                    .unwrap()
+                    .as_slice(),
+                )
+                .unwrap();
+            tx.open_table(STATIONS)
+                .unwrap()
+                .insert(
+                    block_key(1, spot).as_slice(),
+                    postcard::to_stdvec(&old).unwrap().as_slice(),
+                )
+                .unwrap();
+            tx.commit().unwrap();
+        }
+        let s = Store::open(&path).unwrap();
+        assert!(s.universe(&kinds()).unwrap().is_none());
+        let st = s.stations(1).unwrap();
+        assert_eq!(st, vec![(spot, old.clone().into())]);
+        assert_eq!((st[0].1.wear, st[0].1.coils.len(), st[0].1.scale), (4321, 0, 1000));
+        drop(s);
+        let s = Store::open(&path).unwrap();
+        assert!(s.universe(&kinds()).unwrap().is_none(), "reopens as it is");
+        assert_eq!(s.stations(1).unwrap(), st);
+    }
+
     /// A version 11 universe (M17) opens: every character keeps everything
     /// and has full air; it is marked version 12 and reopens as it is.
     #[test]
@@ -2885,6 +3025,8 @@ mod tests {
             blocks: 1,
             containers: Vec::new(),
             forge: None,
+            coils: Vec::new(),
+            scale: 1000,
         };
         let spot = BlockPos::new(3, -4, 5);
         {

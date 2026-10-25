@@ -1414,10 +1414,12 @@ mod tests {
     }
 
     /// A kind's settings as planets made before M18 saved them: without the
-    /// coal seams appended to the ores (medium coal everywhere, hard coal on
-    /// tier 3). Only the four kinds that existed before M18 have such
+    /// seams appended to the ores (medium coal everywhere, hard coal on tier
+    /// 3, relic cores everywhere). Only the four kinds that existed before M18 have such
     /// planets.
     fn before_m18(mut cfg: PlanetGenConfig) -> PlanetGenConfig {
+        assert_eq!(cfg.ores.last().map(|o| o.block.as_str()), Some("relic_core_seam"));
+        cfg.ores.pop();
         if cfg.ores.last().map(|o| o.block.as_str()) == Some("hard_coal_seam") {
             cfg.ores.pop();
         }
@@ -1711,19 +1713,19 @@ mod tests {
     // (`PINNED_M17`, checked in `appending_m18_only_turns_rock_into_coal`).
     const PINNED: [(&str, u64); 14] = [
         ("default", 0x6bc9_e59d_8877_7736),
-        ("temperate", 0x76a6_36c1_13f8_f35b),
-        ("arid", 0xee50_ee54_4498_53f4),
-        ("frozen", 0x1be4_f48d_f602_cd05),
-        ("lush", 0xce44_41df_fbcd_2de5),
-        ("overgrown", 0xc4c9_503a_3673_e8a3),
-        ("rustland", 0x7357_b341_e729_e4d9),
-        ("cinderland", 0x0ac7_055c_c27b_183d),
-        ("acrid", 0x9539_8597_36c8_3fde),
-        ("blighted", 0xe8df_2f34_0408_6f26),
-        ("glacial", 0x56c9_f330_e475_5a93),
-        ("stormy", 0xad63_8d85_5531_7e01),
-        ("scorched", 0xa45d_7ef3_71b1_002c),
-        ("ember", 0x89ab_bfe5_b4be_b027),
+        ("temperate", 0xaae5_c5bd_f326_8a63),
+        ("arid", 0x1e58_8500_d8a3_d120),
+        ("frozen", 0x8d82_1743_4246_6964),
+        ("lush", 0x4878_da2d_016c_ec27),
+        ("overgrown", 0x8831_bcaa_b529_9f85),
+        ("rustland", 0xfa04_575f_2b25_bbd5),
+        ("cinderland", 0xb1c5_f24e_e00d_6755),
+        ("acrid", 0x2a22_4a1c_33b4_5015),
+        ("blighted", 0x8ae4_33e0_5ea0_2841),
+        ("glacial", 0xc357_442f_7e20_db2b),
+        ("stormy", 0xda7e_6340_af03_6d5d),
+        ("scorched", 0x021e_f8ca_e477_3cac),
+        ("ember", 0xaeb5_1ddb_19a2_549d),
     ];
     const PINNED_M17: [(&str, u64); 4] = [
         ("temperate", 0xa10a_36aa_5d69_57f1),
@@ -1773,9 +1775,9 @@ mod tests {
         }
     }
 
-    /// M18 appended medium coal to every kind's ores (and hard coal to the
-    /// lush kind's): an existing planet's unsaved chunks may only turn rock
-    /// into coal.
+    /// M18 appended medium coal and relic cores to every kind's ores (and
+    /// hard coal to the lush kind's): an existing planet's unsaved chunks may
+    /// only turn rock into those.
     #[test]
     fn appending_m18_only_turns_rock_into_coal() {
         let blocks = BlockRegistry::builtin();
@@ -1783,7 +1785,7 @@ mod tests {
         // Glow crystals sit in rock under cave floors; coal takes that rock
         // first, as any ore does.
         let rock = ["stone", "deep_stone", "sandstone", "glow_crystal"].map(id);
-        let coal = [id("medium_coal_seam"), id("hard_coal_seam")];
+        let coal = [id("medium_coal_seam"), id("hard_coal_seam"), id("relic_core_seam")];
         for k in original_kinds(&kinds) {
             let with = k.generation(42);
             // A cave fungus whose rock floor became coal no longer grows.
@@ -1793,7 +1795,7 @@ mod tests {
             let new = Generator::new(shape, with, &blocks).unwrap();
             let pinned = PINNED_M17.iter().find(|(n, _)| *n == k.name).expect("pinned").1;
             assert_eq!(fingerprint(&old), pinned, "{} before M18 keeps its terrain", k.name);
-            let mut found = [0; 2];
+            let mut found = [0; 3];
             for x in 0..12 {
                 for y in 0..5 {
                     let pos = ChunkPos::new(x * 5, y, x * 11);
@@ -1811,7 +1813,11 @@ mod tests {
                     }
                 }
             }
-            assert!(found[0] > 0, "{}: medium coal {found:?}", k.name);
+            assert!(
+                found[0] > 0 && found[2] > 0,
+                "{}: medium coal and relic cores {found:?}",
+                k.name
+            );
             assert_eq!(
                 found[1] > 0,
                 k.name == "lush",

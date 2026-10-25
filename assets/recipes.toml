@@ -2006,3 +2006,840 @@ seconds = 120.0
 spark = 800
 xp = 24
 wear = 29
+
+# Milestone 18 part 2: power, the titanium furnace, leather and gem gear
+# (Boundless's inputs, times, spark and power, tuning 4.6 to 4.9; XP and
+# wear guesses on the earlier pattern).
+[[recipe]]
+output = "titanium_furnace"
+inputs = [["titanium_alloy", 6], ["flint", 16]]
+station = "workbench"
+seconds = 180.0
+spark = 400
+xp = 24
+wear = 14
+skill = { name = "machine_crafting", level = 2 }
+
+[[recipe]]
+output = "titanium_furnace_crucible"
+inputs = [["titanium_alloy", 6]]
+station = "workbench"
+seconds = 180.0
+spark = 400
+xp = 24
+wear = 14
+skill = { name = "machine_crafting", level = 2 }
+
+[[recipe]]
+output = "workbench_coil"
+inputs = [["iron_furnace", 1], ["relic_component", 3], ["machined_copper", 3], ["compact_diamond", 1]]
+station = "workbench"
+seconds = 900.0
+spark = 800
+xp = 40
+wear = 29
+skill = { name = "machine_crafting", level = 2 }
+
+[[recipe]]
+output = "workbench_coil"
+inputs = [["iron_furnace", 1], ["relic_component", 3], ["machined_iron", 3], ["compact_diamond", 1]]
+station = "workbench"
+seconds = 900.0
+spark = 800
+xp = 40
+wear = 29
+skill = { name = "machine_crafting", level = 2 }
+
+[[recipe]]
+output = "workbench_coil"
+inputs = [["iron_furnace", 1], ["relic_component", 3], ["machined_gold_alloy", 3], ["compact_diamond", 1]]
+station = "workbench"
+seconds = 900.0
+spark = 800
+xp = 40
+wear = 29
+skill = { name = "machine_crafting", level = 2 }
+
+[[recipe]]
+output = "advanced_workbench_coil"
+inputs = [["titanium_furnace", 1], ["machined_titanium_alloy", 3], ["refined_diamond", 2], ["relic_component", 6], ["relic_core", 1]]
+station = "workbench"
+seconds = 1800.0
+spark = 2000
+power = 1500
+xp = 80
+wear = 40
+skill = { name = "machine_crafting", level = 3 }
+
+[[recipe]]
+output = "advanced_workbench_coil"
+inputs = [["titanium_furnace", 1], ["machined_gold_alloy", 3], ["refined_diamond", 2], ["relic_component", 6], ["relic_core", 1]]
+station = "workbench"
+seconds = 1800.0
+spark = 2000
+power = 1500
+xp = 80
+wear = 40
+skill = { name = "machine_crafting", level = 3 }
+
+[[recipe]]
+output = "advanced_workbench_coil"
+inputs = [["titanium_furnace", 1], ["machined_silver_alloy", 3], ["refined_diamond", 2], ["relic_component", 6], ["relic_core", 1]]
+station = "workbench"
+seconds = 1800.0
+spark = 2000
+power = 1500
+xp = 80
+wear = 40
+skill = { name = "machine_crafting", level = 3 }
+
+[[recipe]]
+output = "compactor_coil"
+inputs = [["iron_furnace", 1], ["relic_component", 3], ["machined_copper", 3], ["compact_ruby", 1]]
+station = "workbench"
+seconds = 900.0
+spark = 800
+xp = 40
+wear = 29
+skill = { name = "machine_crafting", level = 2 }
+
+[[recipe]]
+output = "compactor_coil"
+inputs = [["iron_furnace", 1], ["relic_component", 3], ["machined_iron", 3], ["compact_ruby", 1]]
+station = "workbench"
+seconds = 900.0
+spark = 800
+xp = 40
+wear = 29
+skill = { name = "machine_crafting", level = 2 }
+
+[[recipe]]
+output = "compactor_coil"
+inputs = [["iron_furnace", 1], ["relic_component", 3], ["machined_gold_alloy", 3], ["compact_ruby", 1]]
+station = "workbench"
+seconds = 900.0
+spark = 800
+xp = 40
+wear = 29
+skill = { name = "machine_crafting", level = 2 }
+
+[[recipe]]
+output = "advanced_compactor_coil"
+inputs = [["titanium_furnace", 1], ["machined_titanium_alloy", 3], ["refined_ruby", 2], ["relic_component", 6], ["relic_core", 1]]
+station = "workbench"
+seconds = 1800.0
+spark = 2000
+power = 1500
+xp = 80
+wear = 40
+skill = { name = "machine_crafting", level = 3 }
+
+[[recipe]]
+output = "advanced_compactor_coil"
+inputs = [["titanium_furnace", 1], ["machined_gold_alloy", 3], ["refined_ruby", 2], ["relic_component", 6], ["relic_core", 1]]
+station = "workbench"
+seconds = 1800.0
+spark = 2000
+power = 1500
+xp = 80
+wear = 40
+skill = { name = "machine_crafting", level = 3 }
+
+[[recipe]]
+output = "advanced_compactor_coil"
+inputs = [["titanium_furnace", 1], ["machined_silver_alloy", 3], ["refined_ruby", 2], ["relic_component", 6], ["relic_core", 1]]
+station = "workbench"
+seconds = 1800.0
+spark = 2000
+power = 1500
+xp = 80
+wear = 40
+skill = { name = "machine_crafting", level = 3 }
+
+[[recipe]]
+output = "extractor_coil"
+inputs = [["iron_furnace", 1], ["relic_component", 3], ["machined_copper", 3], ["compact_sapphire", 1]]
+station = "workbench"
+seconds = 900.0
+spark = 800
+xp = 40
+wear = 29
+skill = { name = "machine_crafting", level = 2 }
+
+[[recipe]]
+output = "extractor_coil"
+inputs = [["iron_furnace", 1], ["relic_component", 3], ["machined_iron", 3], ["compact_sapphire", 1]]
+station = "workbench"
+seconds = 900.0
+spark = 800
+xp = 40
+wear = 29
+skill = { name = "machine_crafting", level = 2 }
+
+[[recipe]]
+output = "extractor_coil"
+inputs = [["iron_furnace", 1], ["relic_component", 3], ["machined_gold_alloy", 3], ["compact_sapphire", 1]]
+station = "workbench"
+seconds = 900.0
+spark = 800
+xp = 40
+wear = 29
+skill = { name = "machine_crafting", level = 2 }
+
+[[recipe]]
+output = "advanced_extractor_coil"
+inputs = [["titanium_furnace", 1], ["machined_titanium_alloy", 3], ["refined_sapphire", 2], ["relic_component", 6], ["relic_core", 1]]
+station = "workbench"
+seconds = 1800.0
+spark = 2000
+power = 1500
+xp = 80
+wear = 40
+skill = { name = "machine_crafting", level = 3 }
+
+[[recipe]]
+output = "advanced_extractor_coil"
+inputs = [["titanium_furnace", 1], ["machined_gold_alloy", 3], ["refined_sapphire", 2], ["relic_component", 6], ["relic_core", 1]]
+station = "workbench"
+seconds = 1800.0
+spark = 2000
+power = 1500
+xp = 80
+wear = 40
+skill = { name = "machine_crafting", level = 3 }
+
+[[recipe]]
+output = "advanced_extractor_coil"
+inputs = [["titanium_furnace", 1], ["machined_silver_alloy", 3], ["refined_sapphire", 2], ["relic_component", 6], ["relic_core", 1]]
+station = "workbench"
+seconds = 1800.0
+spark = 2000
+power = 1500
+xp = 80
+wear = 40
+skill = { name = "machine_crafting", level = 3 }
+
+[[recipe]]
+output = "refinery_coil"
+inputs = [["iron_furnace", 1], ["relic_component", 3], ["machined_copper", 3], ["compact_topaz", 1]]
+station = "workbench"
+seconds = 900.0
+spark = 800
+xp = 40
+wear = 29
+skill = { name = "machine_crafting", level = 2 }
+
+[[recipe]]
+output = "refinery_coil"
+inputs = [["iron_furnace", 1], ["relic_component", 3], ["machined_iron", 3], ["compact_topaz", 1]]
+station = "workbench"
+seconds = 900.0
+spark = 800
+xp = 40
+wear = 29
+skill = { name = "machine_crafting", level = 2 }
+
+[[recipe]]
+output = "refinery_coil"
+inputs = [["iron_furnace", 1], ["relic_component", 3], ["machined_gold_alloy", 3], ["compact_topaz", 1]]
+station = "workbench"
+seconds = 900.0
+spark = 800
+xp = 40
+wear = 29
+skill = { name = "machine_crafting", level = 2 }
+
+[[recipe]]
+output = "advanced_refinery_coil"
+inputs = [["titanium_furnace", 1], ["machined_titanium_alloy", 3], ["refined_topaz", 2], ["relic_component", 6], ["relic_core", 1]]
+station = "workbench"
+seconds = 1800.0
+spark = 2000
+power = 1500
+xp = 80
+wear = 40
+skill = { name = "machine_crafting", level = 3 }
+
+[[recipe]]
+output = "advanced_refinery_coil"
+inputs = [["titanium_furnace", 1], ["machined_gold_alloy", 3], ["refined_topaz", 2], ["relic_component", 6], ["relic_core", 1]]
+station = "workbench"
+seconds = 1800.0
+spark = 2000
+power = 1500
+xp = 80
+wear = 40
+skill = { name = "machine_crafting", level = 3 }
+
+[[recipe]]
+output = "advanced_refinery_coil"
+inputs = [["titanium_furnace", 1], ["machined_silver_alloy", 3], ["refined_topaz", 2], ["relic_component", 6], ["relic_core", 1]]
+station = "workbench"
+seconds = 1800.0
+spark = 2000
+power = 1500
+xp = 80
+wear = 40
+skill = { name = "machine_crafting", level = 3 }
+
+[[recipe]]
+output = "mixer_coil"
+inputs = [["iron_furnace", 1], ["relic_component", 3], ["machined_copper", 3], ["compact_emerald", 1]]
+station = "workbench"
+seconds = 900.0
+spark = 800
+xp = 40
+wear = 29
+skill = { name = "machine_crafting", level = 2 }
+
+[[recipe]]
+output = "mixer_coil"
+inputs = [["iron_furnace", 1], ["relic_component", 3], ["machined_iron", 3], ["compact_emerald", 1]]
+station = "workbench"
+seconds = 900.0
+spark = 800
+xp = 40
+wear = 29
+skill = { name = "machine_crafting", level = 2 }
+
+[[recipe]]
+output = "mixer_coil"
+inputs = [["iron_furnace", 1], ["relic_component", 3], ["machined_gold_alloy", 3], ["compact_emerald", 1]]
+station = "workbench"
+seconds = 900.0
+spark = 800
+xp = 40
+wear = 29
+skill = { name = "machine_crafting", level = 2 }
+
+[[recipe]]
+output = "advanced_mixer_coil"
+inputs = [["titanium_furnace", 1], ["machined_titanium_alloy", 3], ["refined_emerald", 2], ["relic_component", 6], ["relic_core", 1]]
+station = "workbench"
+seconds = 1800.0
+spark = 2000
+power = 1500
+xp = 80
+wear = 40
+skill = { name = "machine_crafting", level = 3 }
+
+[[recipe]]
+output = "advanced_mixer_coil"
+inputs = [["titanium_furnace", 1], ["machined_gold_alloy", 3], ["refined_emerald", 2], ["relic_component", 6], ["relic_core", 1]]
+station = "workbench"
+seconds = 1800.0
+spark = 2000
+power = 1500
+xp = 80
+wear = 40
+skill = { name = "machine_crafting", level = 3 }
+
+[[recipe]]
+output = "advanced_mixer_coil"
+inputs = [["titanium_furnace", 1], ["machined_silver_alloy", 3], ["refined_emerald", 2], ["relic_component", 6], ["relic_core", 1]]
+station = "workbench"
+seconds = 1800.0
+spark = 2000
+power = 1500
+xp = 80
+wear = 40
+skill = { name = "machine_crafting", level = 3 }
+
+[[recipe]]
+output = "forge_coil"
+inputs = [["iron_furnace", 1], ["relic_component", 3], ["machined_copper", 3], ["compact_amethyst", 1]]
+station = "workbench"
+seconds = 900.0
+spark = 800
+xp = 40
+wear = 29
+skill = { name = "machine_crafting", level = 2 }
+
+[[recipe]]
+output = "forge_coil"
+inputs = [["iron_furnace", 1], ["relic_component", 3], ["machined_iron", 3], ["compact_amethyst", 1]]
+station = "workbench"
+seconds = 900.0
+spark = 800
+xp = 40
+wear = 29
+skill = { name = "machine_crafting", level = 2 }
+
+[[recipe]]
+output = "forge_coil"
+inputs = [["iron_furnace", 1], ["relic_component", 3], ["machined_gold_alloy", 3], ["compact_amethyst", 1]]
+station = "workbench"
+seconds = 900.0
+spark = 800
+xp = 40
+wear = 29
+skill = { name = "machine_crafting", level = 2 }
+
+[[recipe]]
+output = "advanced_forge_coil"
+inputs = [["titanium_furnace", 1], ["machined_titanium_alloy", 3], ["refined_amethyst", 2], ["relic_component", 6], ["relic_core", 1]]
+station = "workbench"
+seconds = 1800.0
+spark = 2000
+power = 1500
+xp = 80
+wear = 40
+skill = { name = "machine_crafting", level = 3 }
+
+[[recipe]]
+output = "advanced_forge_coil"
+inputs = [["titanium_furnace", 1], ["machined_gold_alloy", 3], ["refined_amethyst", 2], ["relic_component", 6], ["relic_core", 1]]
+station = "workbench"
+seconds = 1800.0
+spark = 2000
+power = 1500
+xp = 80
+wear = 40
+skill = { name = "machine_crafting", level = 3 }
+
+[[recipe]]
+output = "advanced_forge_coil"
+inputs = [["titanium_furnace", 1], ["machined_silver_alloy", 3], ["refined_amethyst", 2], ["relic_component", 6], ["relic_core", 1]]
+station = "workbench"
+seconds = 1800.0
+spark = 2000
+power = 1500
+xp = 80
+wear = 40
+skill = { name = "machine_crafting", level = 3 }
+
+[[recipe]]
+output = "leather"
+inputs = [["hide", 4], ["bark", 4]]
+station = "refinery"
+seconds = 60.0
+spark = 200
+power = 500
+xp = 10
+wear = 29
+
+[[recipe]]
+output = "compact_coal"
+inputs = [["coal", 10]]
+station = "compactor"
+seconds = 120.0
+spark = 200
+power = 500
+xp = 12
+wear = 29
+
+[[recipe]]
+output = "compact_medium_coal"
+inputs = [["medium_coal", 10]]
+station = "compactor"
+seconds = 240.0
+spark = 400
+power = 1000
+xp = 12
+wear = 29
+
+[[recipe]]
+output = "compact_hard_coal"
+inputs = [["hard_coal", 10]]
+station = "compactor"
+seconds = 480.0
+spark = 800
+power = 2000
+xp = 12
+wear = 29
+
+[[recipe]]
+output = "amethyst_hammer"
+inputs = [["refined_amethyst", 3], ["stick", 4], ["leather", 1], ["strong_bonding_agent", 1]]
+station = "workbench"
+seconds = 1800.0
+spark = 2000
+power = 1500
+xp = 60
+wear = 40
+skill = { name = "tool_crafting", level = 3 }
+
+[[recipe]]
+output = "amethyst_shovel"
+inputs = [["refined_amethyst", 3], ["stick", 4], ["leather", 1], ["strong_bonding_agent", 1]]
+station = "workbench"
+seconds = 1800.0
+spark = 2000
+power = 1500
+xp = 60
+wear = 40
+skill = { name = "tool_crafting", level = 3 }
+
+[[recipe]]
+output = "amethyst_axe"
+inputs = [["refined_amethyst", 3], ["stick", 4], ["leather", 1], ["strong_bonding_agent", 1]]
+station = "workbench"
+seconds = 1800.0
+spark = 2000
+power = 1500
+xp = 60
+wear = 40
+skill = { name = "tool_crafting", level = 3 }
+
+[[recipe]]
+output = "amethyst_grapple"
+inputs = [["refined_amethyst", 3], ["leather", 1], ["strong_bonding_agent", 1], ["relic_component", 1], ["relic_fragment", 5]]
+station = "workbench"
+seconds = 1800.0
+spark = 2000
+power = 1500
+xp = 60
+wear = 40
+skill = { name = "tech_crafting", level = 3 }
+
+[[recipe]]
+output = "amethyst_spanner"
+inputs = [["refined_amethyst", 3], ["stick", 4], ["leather", 1], ["strong_bonding_agent", 1], ["cog", 6]]
+station = "workbench"
+seconds = 1800.0
+spark = 2000
+power = 1500
+xp = 60
+wear = 40
+skill = { name = "tech_crafting", level = 3 }
+
+[[recipe]]
+output = "amethyst_chisel"
+inputs = [["refined_amethyst", 3], ["stick", 4], ["leather", 1], ["strong_bonding_agent", 1]]
+station = "workbench"
+seconds = 1800.0
+spark = 2000
+power = 1500
+xp = 60
+wear = 40
+skill = { name = "tech_crafting", level = 3 }
+
+[[recipe]]
+output = "emerald_hammer"
+inputs = [["refined_emerald", 3], ["stick", 4], ["leather", 1], ["strong_bonding_agent", 1]]
+station = "workbench"
+seconds = 1800.0
+spark = 2000
+power = 1500
+xp = 60
+wear = 40
+skill = { name = "tool_crafting", level = 3 }
+
+[[recipe]]
+output = "emerald_shovel"
+inputs = [["refined_emerald", 3], ["stick", 4], ["leather", 1], ["strong_bonding_agent", 1]]
+station = "workbench"
+seconds = 1800.0
+spark = 2000
+power = 1500
+xp = 60
+wear = 40
+skill = { name = "tool_crafting", level = 3 }
+
+[[recipe]]
+output = "emerald_axe"
+inputs = [["refined_emerald", 3], ["stick", 4], ["leather", 1], ["strong_bonding_agent", 1]]
+station = "workbench"
+seconds = 1800.0
+spark = 2000
+power = 1500
+xp = 60
+wear = 40
+skill = { name = "tool_crafting", level = 3 }
+
+[[recipe]]
+output = "emerald_grapple"
+inputs = [["refined_emerald", 3], ["leather", 1], ["strong_bonding_agent", 1], ["relic_component", 1], ["relic_fragment", 5]]
+station = "workbench"
+seconds = 1800.0
+spark = 2000
+power = 1500
+xp = 60
+wear = 40
+skill = { name = "tech_crafting", level = 3 }
+
+[[recipe]]
+output = "emerald_spanner"
+inputs = [["refined_emerald", 3], ["stick", 4], ["leather", 1], ["strong_bonding_agent", 1], ["cog", 6]]
+station = "workbench"
+seconds = 1800.0
+spark = 2000
+power = 1500
+xp = 60
+wear = 40
+skill = { name = "tech_crafting", level = 3 }
+
+[[recipe]]
+output = "emerald_chisel"
+inputs = [["refined_emerald", 3], ["stick", 4], ["leather", 1], ["strong_bonding_agent", 1]]
+station = "workbench"
+seconds = 1800.0
+spark = 2000
+power = 1500
+xp = 60
+wear = 40
+skill = { name = "tech_crafting", level = 3 }
+
+[[recipe]]
+output = "sapphire_hammer"
+inputs = [["refined_sapphire", 3], ["stick", 4], ["leather", 1], ["strong_bonding_agent", 1]]
+station = "workbench"
+seconds = 1800.0
+spark = 2000
+power = 1500
+xp = 60
+wear = 40
+skill = { name = "tool_crafting", level = 3 }
+
+[[recipe]]
+output = "sapphire_shovel"
+inputs = [["refined_sapphire", 3], ["stick", 4], ["leather", 1], ["strong_bonding_agent", 1]]
+station = "workbench"
+seconds = 1800.0
+spark = 2000
+power = 1500
+xp = 60
+wear = 40
+skill = { name = "tool_crafting", level = 3 }
+
+[[recipe]]
+output = "sapphire_axe"
+inputs = [["refined_sapphire", 3], ["stick", 4], ["leather", 1], ["strong_bonding_agent", 1]]
+station = "workbench"
+seconds = 1800.0
+spark = 2000
+power = 1500
+xp = 60
+wear = 40
+skill = { name = "tool_crafting", level = 3 }
+
+[[recipe]]
+output = "sapphire_grapple"
+inputs = [["refined_sapphire", 3], ["leather", 1], ["strong_bonding_agent", 1], ["relic_fragment", 1]]
+station = "workbench"
+seconds = 1800.0
+spark = 2000
+power = 1500
+xp = 60
+wear = 40
+skill = { name = "tech_crafting", level = 3 }
+
+[[recipe]]
+output = "sapphire_spanner"
+inputs = [["refined_sapphire", 3], ["stick", 4], ["leather", 1], ["strong_bonding_agent", 1], ["cog", 6]]
+station = "workbench"
+seconds = 1800.0
+spark = 2000
+power = 1500
+xp = 60
+wear = 40
+skill = { name = "tech_crafting", level = 3 }
+
+[[recipe]]
+output = "sapphire_chisel"
+inputs = [["refined_sapphire", 3], ["stick", 4], ["leather", 1], ["strong_bonding_agent", 1]]
+station = "workbench"
+seconds = 1800.0
+spark = 2000
+power = 1500
+xp = 60
+wear = 40
+skill = { name = "tech_crafting", level = 3 }
+
+[[recipe]]
+output = "topaz_hammer"
+inputs = [["refined_topaz", 3], ["stick", 4], ["leather", 1], ["strong_bonding_agent", 1]]
+station = "workbench"
+seconds = 1800.0
+spark = 2000
+power = 1500
+xp = 60
+wear = 40
+skill = { name = "tool_crafting", level = 3 }
+
+[[recipe]]
+output = "topaz_shovel"
+inputs = [["refined_topaz", 3], ["stick", 4], ["leather", 1], ["strong_bonding_agent", 1]]
+station = "workbench"
+seconds = 1800.0
+spark = 2000
+power = 1500
+xp = 60
+wear = 40
+skill = { name = "tool_crafting", level = 3 }
+
+[[recipe]]
+output = "topaz_axe"
+inputs = [["refined_topaz", 3], ["stick", 4], ["leather", 1], ["strong_bonding_agent", 1]]
+station = "workbench"
+seconds = 1800.0
+spark = 2000
+power = 1500
+xp = 60
+wear = 40
+skill = { name = "tool_crafting", level = 3 }
+
+[[recipe]]
+output = "topaz_grapple"
+inputs = [["refined_topaz", 3], ["leather", 1], ["strong_bonding_agent", 1], ["relic_fragment", 1]]
+station = "workbench"
+seconds = 1800.0
+spark = 2000
+power = 1500
+xp = 60
+wear = 40
+skill = { name = "tech_crafting", level = 3 }
+
+[[recipe]]
+output = "topaz_spanner"
+inputs = [["refined_topaz", 3], ["stick", 4], ["leather", 1], ["strong_bonding_agent", 1], ["cog", 6]]
+station = "workbench"
+seconds = 1800.0
+spark = 2000
+power = 1500
+xp = 60
+wear = 40
+skill = { name = "tech_crafting", level = 3 }
+
+[[recipe]]
+output = "topaz_chisel"
+inputs = [["refined_topaz", 3], ["stick", 4], ["leather", 1], ["strong_bonding_agent", 1]]
+station = "workbench"
+seconds = 1800.0
+spark = 2000
+power = 1500
+xp = 60
+wear = 40
+skill = { name = "tech_crafting", level = 3 }
+
+[[recipe]]
+output = "diamond_hammer"
+inputs = [["refined_diamond", 3], ["stick", 4], ["leather", 1], ["strong_bonding_agent", 1]]
+station = "workbench"
+seconds = 1800.0
+spark = 2000
+power = 1500
+xp = 60
+wear = 40
+skill = { name = "tool_crafting", level = 3 }
+
+[[recipe]]
+output = "diamond_shovel"
+inputs = [["refined_diamond", 3], ["stick", 4], ["leather", 1], ["strong_bonding_agent", 1]]
+station = "workbench"
+seconds = 1800.0
+spark = 2000
+power = 1500
+xp = 60
+wear = 40
+skill = { name = "tool_crafting", level = 3 }
+
+[[recipe]]
+output = "diamond_axe"
+inputs = [["refined_diamond", 3], ["stick", 4], ["leather", 1], ["strong_bonding_agent", 1]]
+station = "workbench"
+seconds = 1800.0
+spark = 2000
+power = 1500
+xp = 60
+wear = 40
+skill = { name = "tool_crafting", level = 3 }
+
+[[recipe]]
+output = "diamond_grapple"
+inputs = [["refined_diamond", 3], ["leather", 1], ["strong_bonding_agent", 1], ["relic_component", 1], ["relic_fragment", 5]]
+station = "workbench"
+seconds = 1800.0
+spark = 2000
+power = 1500
+xp = 60
+wear = 40
+skill = { name = "tech_crafting", level = 3 }
+
+[[recipe]]
+output = "diamond_spanner"
+inputs = [["refined_diamond", 3], ["stick", 4], ["leather", 1], ["strong_bonding_agent", 1], ["cog", 6]]
+station = "workbench"
+seconds = 1800.0
+spark = 2000
+power = 1500
+xp = 60
+wear = 40
+skill = { name = "tech_crafting", level = 3 }
+
+[[recipe]]
+output = "diamond_chisel"
+inputs = [["refined_diamond", 3], ["stick", 4], ["leather", 1], ["strong_bonding_agent", 1]]
+station = "workbench"
+seconds = 1800.0
+spark = 2000
+power = 1500
+xp = 60
+wear = 40
+skill = { name = "tech_crafting", level = 3 }
+
+[[recipe]]
+output = "ruby_hammer"
+inputs = [["refined_ruby", 3], ["stick", 4], ["leather", 1], ["strong_bonding_agent", 1]]
+station = "workbench"
+seconds = 1800.0
+spark = 2000
+power = 1500
+xp = 60
+wear = 40
+skill = { name = "tool_crafting", level = 3 }
+
+[[recipe]]
+output = "ruby_shovel"
+inputs = [["refined_ruby", 3], ["stick", 4], ["leather", 1], ["strong_bonding_agent", 1]]
+station = "workbench"
+seconds = 1800.0
+spark = 2000
+power = 1500
+xp = 60
+wear = 40
+skill = { name = "tool_crafting", level = 3 }
+
+[[recipe]]
+output = "ruby_axe"
+inputs = [["refined_ruby", 3], ["stick", 4], ["leather", 1], ["strong_bonding_agent", 1]]
+station = "workbench"
+seconds = 1800.0
+spark = 2000
+power = 1500
+xp = 60
+wear = 40
+skill = { name = "tool_crafting", level = 3 }
+
+[[recipe]]
+output = "ruby_grapple"
+inputs = [["refined_ruby", 3], ["leather", 1], ["strong_bonding_agent", 1], ["relic_component", 1], ["relic_fragment", 5]]
+station = "workbench"
+seconds = 1800.0
+spark = 2000
+power = 1500
+xp = 60
+wear = 40
+skill = { name = "tech_crafting", level = 3 }
+
+[[recipe]]
+output = "ruby_spanner"
+inputs = [["refined_ruby", 3], ["stick", 4], ["leather", 1], ["strong_bonding_agent", 1], ["cog", 6]]
+station = "workbench"
+seconds = 1800.0
+spark = 2000
+power = 1500
+xp = 60
+wear = 40
+skill = { name = "tech_crafting", level = 3 }
+
+[[recipe]]
+output = "ruby_chisel"
+inputs = [["refined_ruby", 3], ["stick", 4], ["leather", 1], ["strong_bonding_agent", 1]]
+station = "workbench"
+seconds = 1800.0
+spark = 2000
+power = 1500
+xp = 60
+wear = 40
+skill = { name = "tech_crafting", level = 3 }

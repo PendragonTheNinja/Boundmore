@@ -1450,3 +1450,285 @@ name = "compact_ruby"
 
 [[item]]
 name = "refined_ruby"
+
+# Milestone 18 part 2 (docs/milestones/18-higher-worlds.md rules 33 to 43).
+[[item]]
+name = "relic_core"
+
+[[item]]
+name = "bark"
+
+[[item]]
+name = "leather"
+
+# Compacted coal burns long (Boundless's spark and seconds, tuning 4.7).
+[[item]]
+name = "compact_coal"
+fuel = 1500
+
+[[item]]
+name = "compact_medium_coal"
+fuel = 4500
+
+[[item]]
+name = "compact_hard_coal"
+fuel = 15000
+
+# Gem gear: Boundless's stats (tuning 2.1, 4.9).
+[[item]]
+name = "amethyst_hammer"
+flex = 70
+rank = 100
+stack = 1
+tool = { class = "hammer", damage = 1000, action_speed = 38.0, crit_chance = 0.2, durability = 2400 }
+
+[[item]]
+name = "amethyst_shovel"
+flex = 70
+rank = 100
+stack = 1
+tool = { class = "shovel", damage = 1000, action_speed = 38.0, crit_chance = 0.2, durability = 2400 }
+
+[[item]]
+name = "amethyst_axe"
+flex = 70
+rank = 100
+stack = 1
+tool = { class = "axe", damage = 1000, action_speed = 38.0, crit_chance = 0.2, durability = 2400 }
+
+[[item]]
+name = "amethyst_grapple"
+flex = 70
+rank = 100
+stack = 1
+grapple = { range = 15.0, shot_speed = 55.0, reel_in = 40.0, reel_out = 30.0, durability = 2000, energy = 150 }
+
+[[item]]
+name = "amethyst_spanner"
+flex = 70
+rank = 100
+stack = 1
+tool = { class = "spanner", action_speed = 50.0, durability = 2000, energy = 30, repair = 10000 }
+
+[[item]]
+name = "amethyst_chisel"
+display = "Amethyst Precise Square Chisel"
+flex = 70
+rank = 100
+stack = 1
+chisel = { family = "square", precise = true, durability = 2000, energy = 20, advanced = true }
+
+[[item]]
+name = "emerald_hammer"
+flex = 80
+rank = 100
+stack = 1
+tool = { class = "hammer", damage = 1800, action_speed = 15.0, crit_chance = 0.2, durability = 2000 }
+
+[[item]]
+name = "emerald_shovel"
+flex = 80
+rank = 100
+stack = 1
+tool = { class = "shovel", damage = 1800, action_speed = 15.0, crit_chance = 0.2, durability = 2000 }
+
+[[item]]
+name = "emerald_axe"
+flex = 80
+rank = 100
+stack = 1
+tool = { class = "axe", damage = 1800, action_speed = 15.0, crit_chance = 0.2, durability = 2000 }
+
+[[item]]
+name = "emerald_grapple"
+flex = 80
+rank = 100
+stack = 1
+grapple = { range = 30.0, shot_speed = 35.0, reel_in = 40.0, reel_out = 30.0, durability = 2000, energy = 150 }
+
+[[item]]
+name = "emerald_spanner"
+flex = 80
+rank = 100
+stack = 1
+tool = { class = "spanner", action_speed = 50.0, durability = 2000, energy = 30, repair = 10000 }
+
+[[item]]
+name = "emerald_chisel"
+display = "Emerald Precise Bevel Chisel"
+flex = 80
+rank = 100
+stack = 1
+chisel = { family = "bevel", precise = true, durability = 2000, energy = 20, advanced = true }
+
+[[item]]
+name = "sapphire_hammer"
+flex = 75
+rank = 100
+stack = 1
+tool = { class = "hammer", damage = 1300, action_speed = 30.0, crit_chance = 0.2, durability = 2200 }
+
+[[item]]
+name = "sapphire_shovel"
+flex = 75
+rank = 100
+stack = 1
+tool = { class = "shovel", damage = 1300, action_speed = 30.0, crit_chance = 0.2, durability = 2200 }
+
+[[item]]
+name = "sapphire_axe"
+flex = 75
+rank = 100
+stack = 1
+tool = { class = "axe", damage = 1300, action_speed = 30.0, crit_chance = 0.2, durability = 2200 }
+
+[[item]]
+name = "sapphire_grapple"
+flex = 75
+rank = 100
+stack = 1
+grapple = { range = 20.0, shot_speed = 45.0, reel_in = 35.0, reel_out = 45.0, durability = 2000, energy = 150 }
+
+[[item]]
+name = "sapphire_spanner"
+flex = 75
+rank = 100
+stack = 1
+tool = { class = "spanner", action_speed = 50.0, durability = 2000, energy = 30, repair = 10000 }
+
+[[item]]
+name = "sapphire_chisel"
+display = "Sapphire Square Chisel"
+flex = 75
+rank = 100
+stack = 1
+chisel = { family = "square", precise = false, durability = 2000, energy = 20, advanced = true }
+
+[[item]]
+name = "topaz_hammer"
+flex = 70
+rank = 100
+stack = 1
+tool = { class = "hammer", damage = 1100, action_speed = 38.0, durability = 2400 }
+
+[[item]]
+name = "topaz_shovel"
+flex = 70
+rank = 100
+stack = 1
+tool = { class = "shovel", damage = 1100, action_speed = 38.0, durability = 2400 }
+
+[[item]]
+name = "topaz_axe"
+flex = 70
+rank = 100
+stack = 1
+tool = { class = "axe", damage = 1100, action_speed = 38.0, durability = 2400 }
+
+[[item]]
+name = "topaz_grapple"
+flex = 70
+rank = 100
+stack = 1
+grapple = { range = 15.0, shot_speed = 40.0, reel_in = 55.0, reel_out = 25.0, durability = 2000, energy = 150 }
+
+[[item]]
+name = "topaz_spanner"
+flex = 70
+rank = 100
+stack = 1
+tool = { class = "spanner", action_speed = 50.0, durability = 2000, energy = 30, repair = 10000 }
+
+[[item]]
+name = "topaz_chisel"
+display = "Topaz Precise Slope Chisel"
+flex = 70
+rank = 100
+stack = 1
+chisel = { family = "slope", precise = true, durability = 2000, energy = 20, advanced = true }
+
+[[item]]
+name = "diamond_hammer"
+flex = 80
+rank = 100
+stack = 1
+tool = { class = "hammer", damage = 1900, action_speed = 15.0, durability = 2000 }
+
+[[item]]
+name = "diamond_shovel"
+flex = 80
+rank = 100
+stack = 1
+tool = { class = "shovel", damage = 1900, action_speed = 15.0, durability = 2000 }
+
+[[item]]
+name = "diamond_axe"
+flex = 80
+rank = 100
+stack = 1
+tool = { class = "axe", damage = 1900, action_speed = 15.0, durability = 2000 }
+
+[[item]]
+name = "diamond_grapple"
+flex = 80
+rank = 100
+stack = 1
+grapple = { range = 30.0, shot_speed = 35.0, reel_in = 30.0, reel_out = 40.0, durability = 2000, energy = 150 }
+
+[[item]]
+name = "diamond_spanner"
+flex = 80
+rank = 100
+stack = 1
+tool = { class = "spanner", action_speed = 50.0, durability = 2000, energy = 30, repair = 10000 }
+
+[[item]]
+name = "diamond_chisel"
+display = "Diamond Bevel Chisel"
+flex = 80
+rank = 100
+stack = 1
+chisel = { family = "bevel", precise = false, durability = 2000, energy = 20, advanced = true }
+
+[[item]]
+name = "ruby_hammer"
+flex = 75
+rank = 100
+stack = 1
+tool = { class = "hammer", damage = 1400, action_speed = 30.0, durability = 2200 }
+
+[[item]]
+name = "ruby_shovel"
+flex = 75
+rank = 100
+stack = 1
+tool = { class = "shovel", damage = 1400, action_speed = 30.0, durability = 2200 }
+
+[[item]]
+name = "ruby_axe"
+flex = 75
+rank = 100
+stack = 1
+tool = { class = "axe", damage = 1400, action_speed = 30.0, durability = 2200 }
+
+[[item]]
+name = "ruby_grapple"
+flex = 75
+rank = 100
+stack = 1
+grapple = { range = 20.0, shot_speed = 45.0, reel_in = 45.0, reel_out = 35.0, durability = 2000, energy = 150 }
+
+[[item]]
+name = "ruby_spanner"
+flex = 75
+rank = 100
+stack = 1
+tool = { class = "spanner", action_speed = 50.0, durability = 2000, energy = 30, repair = 10000 }
+
+[[item]]
+name = "ruby_chisel"
+display = "Ruby Slope Chisel"
+flex = 75
+rank = 100
+stack = 1
+chisel = { family = "slope", precise = false, durability = 2000, energy = 20, advanced = true }

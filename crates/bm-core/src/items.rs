@@ -129,6 +129,10 @@ pub enum ItemKind {
         durability: u16,
         /// Energy a cut costs (`energy`).
         energy: u16,
+        /// An advanced chisel (milestone 18, Boundless's gem chisels): it
+        /// also cuts hard blocks (gem seams, hard coal).
+        #[serde(default)]
+        advanced: bool,
     },
     /// Fires a hook that sticks where it strikes, to swing from and climb
     /// (`movement::step`). One use per shot.
@@ -301,6 +305,11 @@ impl ItemDef {
     }
 
     /// `(family, precise, durability)` for a chisel.
+    /// Whether it is an advanced chisel (cuts hard blocks too).
+    pub fn chisel_advanced(&self) -> bool {
+        matches!(self.kind, ItemKind::Chisel { advanced: true, .. })
+    }
+
     pub fn chisel(&self) -> Option<(ShapeFamily, bool, u16)> {
         match self.kind {
             ItemKind::Chisel {
@@ -557,6 +566,8 @@ struct ChiselEntry {
     /// Boundless's basic chisels cost 10 a cut (tuning 4.9).
     #[serde(default = "chisel_energy")]
     energy: u16,
+    #[serde(default)]
+    advanced: bool,
 }
 
 fn chisel_energy() -> u16 {
@@ -668,6 +679,7 @@ impl ItemRegistry {
                     precise: c.precise,
                     durability: c.durability,
                     energy: c.energy,
+                    advanced: c.advanced,
                 },
                 (None, None, Some(g)) => ItemKind::Grapple {
                     range: g.range,

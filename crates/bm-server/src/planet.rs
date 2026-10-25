@@ -549,6 +549,7 @@ mod tests {
             "small_fossil_seam",
             "medium_fossil_seam",
             "medium_coal_seam",
+            "relic_core_seam",
         ];
         for (i, name) in tail.iter().enumerate() {
             assert_eq!(kind.ores[n - tail.len() + i].block, *name);
@@ -613,10 +614,10 @@ mod tests {
         let mut saved = new_record(0, &spec, 12, &kinds).unwrap();
         let full = saved.generation.clone();
         // Before the relic seam, milestone 15's relic cache and silver,
-        // milestone 17's fossils and milestone 18's medium and hard coal.
+        // milestone 17's fossils and milestone 18's coal and relic cores.
         let n = saved.generation.ores.len();
-        assert_eq!(saved.generation.ores[n - 7].block, "relic_seam");
-        saved.generation.ores.truncate(n - 7);
+        assert_eq!(saved.generation.ores[n - 8].block, "relic_seam");
+        saved.generation.ores.truncate(n - 8);
         saved.generation.flora.clear();
         let old_ores = saved.generation.ores.clone();
         store.put_planet(0, &saved).unwrap();
@@ -630,7 +631,7 @@ mod tests {
         let reopened = store.planet(0).unwrap().unwrap().generation;
         assert_eq!(reopened, full, "saved");
         assert_eq!(reopened.ores[..old_ores.len()], old_ores[..]);
-        assert_eq!(reopened.ores.last().unwrap().block, "hard_coal_seam");
+        assert_eq!(reopened.ores.last().unwrap().block, "relic_core_seam");
         open(&store, 0, &spec, 12, 4, &cat, Vec::new()).unwrap();
         assert_eq!(store.planet(0).unwrap().unwrap().generation, full, "once");
     }

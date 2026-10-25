@@ -25,7 +25,7 @@ use glam::DVec3;
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
 
 /// Bump on any change to a message below. Client and server must match.
-pub const PROTOCOL_VERSION: u32 = 26;
+pub const PROTOCOL_VERSION: u32 = 27;
 
 /// QUIC application protocol name; also refuses non-Boundmore peers early.
 pub const ALPN: &[u8] = b"boundmore/1";
@@ -393,6 +393,18 @@ pub struct StationView {
     pub spark: Option<SparkView>,
     /// A forge's session and queue (milestone 17); None for other stations.
     pub forge: Option<Box<ForgeView>>,
+    /// Power from coils (milestone 18); None for machines that take none.
+    pub power: Option<PowerView>,
+}
+
+/// A machine's power as its window shows it (milestone 18).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PowerView {
+    /// Power from its working coils.
+    pub power: u32,
+    /// Coils serving it, and how many of them are worn out.
+    pub coils: u8,
+    pub worn: u8,
 }
 
 /// Spark as a station's window shows it.

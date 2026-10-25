@@ -1811,6 +1811,7 @@ impl App {
         // A chisel in hand cuts with the left button and fills with the
         // right, instead of breaking and placing.
         let chisel = held.and_then(|h| s.items.def(&h)).and_then(|d| d.chisel());
+        let advanced = held.and_then(|h| s.items.def(&h)).is_some_and(|d| d.chisel_advanced());
         s.place_cooldown -= dt;
         s.chisel = None;
         if let (Some((family, precise, _)), Some(hit)) = (chisel, s.target) {
@@ -1832,7 +1833,7 @@ impl App {
                 s.place_cooldown = PLACE_REPEAT;
                 let state = s.world.state(hit.block).unwrap_or(BlockState::AIR);
                 let def = s.world.registry.get(state.id);
-                match bm_core::chisel::apply(def, state, family, precise, octants, restore) {
+                match bm_core::chisel::apply(def, state, family, precise, advanced, octants, restore) {
                     Ok(new) => {
                         // Filling back over ourselves would be refused.
                         let filled = Shape::new(family, !octants).unwrap_or(Shape::FULL);

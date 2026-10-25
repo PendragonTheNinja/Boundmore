@@ -1718,7 +1718,7 @@ pub(crate) fn machine_panel(ui: &mut Ui, kind: Station, view: &StationView) {
         .spark
         .filter(|_| kind != Station::SparkGenerator)
         .and_then(|s| spark_text(kind, &s).map(|t| (t, s)));
-    if view.wear.is_none() && spark.is_none() {
+    if view.wear.is_none() && spark.is_none() && view.power.is_none() {
         return;
     }
     heading(ui, "Machine");
@@ -1739,8 +1739,33 @@ pub(crate) fn machine_panel(ui: &mut Ui, kind: Station, view: &StationView) {
         ui.label(egui::RichText::new(text).color(SPARK_GOLD).strong());
         thin_bar(ui, s.stored as f32 / s.capacity.max(1) as f32, SPARK_GOLD);
     }
+    if let Some(text) = view.power.and_then(power_text) {
+        ui.add_space(4.0);
+        ui.label(egui::RichText::new(text).color(POWER_BLUE).strong());
+    }
     ui.add_space(12.0);
 }
+
+/// The power line of a machine's window (milestone 18): "Power 1,500 from
+/// 15 coils (1 worn out)"; None with no coils.
+pub fn power_text(p: bm_protocol::PowerView) -> Option<String> {
+    if p.coils == 0 {
+        return None;
+    }
+    let coils = if p.coils == 1 {
+        "1 coil".to_string()
+    } else {
+        format!("{} coils", p.coils)
+    };
+    let mut text = format!("Power {} from {coils}", grouped(p.power as u64));
+    if p.worn > 0 {
+        text.push_str(&format!(" ({} worn out)", p.worn));
+    }
+    Some(text)
+}
+
+/// The power line's colour.
+const POWER_BLUE: Color32 = Color32::from_rgb(130, 200, 255);
 
 /// A furnace's (or spark generator's) fuel slot and banked heat (or stored
 /// spark), and the fuel in the pack to feed it with: click a pack stack to
@@ -2356,6 +2381,30 @@ fn paint_planet_faded(painter: &egui::Painter, centre: egui::Pos2, radius: f32, 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_power_line_counts_coils() {
+        use bm_protocol::PowerView;
+        assert_eq!(power_text(PowerView::default()), None);
+        assert_eq!(
+            power_text(PowerView {
+                power: 1500,
+                coils: 16,
+                worn: 1
+            })
+            .as_deref(),
+            Some("Power 1,500 from 16 coils (1 worn out)")
+        );
+        assert_eq!(
+            power_text(PowerView {
+                power: 100,
+                coils: 1,
+                worn: 0
+            })
+            .as_deref(),
+            Some("Power 100 from 1 coil")
+        );
+    }
 
     #[test]
     fn the_air_bar_shows_only_when_it_matters_and_says_why() {

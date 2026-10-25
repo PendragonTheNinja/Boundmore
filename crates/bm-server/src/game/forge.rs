@@ -118,8 +118,14 @@ impl Game {
             }
         });
         let seed = self.forge_seed();
-        // No power until coils exist.
-        let session = Session::new(gear_stack, gear, forger.stats(flex, 0.0), slots, seed);
+        // The forge's power from its coils (milestone 18) raises
+        // Effectiveness.
+        let power = {
+            let planet = &mut self.planets[pi];
+            let env = super::stations::PlanetEnv::new(&planet.world, self.spark_link);
+            planet.stations.forge_power(key, &env)
+        };
+        let session = Session::new(gear_stack, gear, forger.stats(flex, power as f64), slots, seed);
         self.planets[pi]
             .stations
             .begin_forge(key, Forging { account, name, session });
