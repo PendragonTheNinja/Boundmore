@@ -1896,3 +1896,113 @@ seconds = 480.0
 heat = 300
 xp = 32
 skill = { name = "food_crafting", level = 4 }
+
+# Milestone 18 part 2: gems (Boundless's times and spark, tuning 4.8;
+# XP and wear guesses on the alloy pattern).
+[[recipe]]
+output = "compact_amethyst"
+inputs = [["rough_amethyst", 10]]
+station = "compactor"
+seconds = 240.0
+spark = 800
+xp = 30
+wear = 29
+
+[[recipe]]
+output = "refined_amethyst"
+inputs = [["compact_amethyst", 1]]
+station = "refinery"
+seconds = 120.0
+spark = 800
+xp = 24
+wear = 29
+
+[[recipe]]
+output = "compact_emerald"
+inputs = [["rough_emerald", 10]]
+station = "compactor"
+seconds = 240.0
+spark = 800
+xp = 30
+wear = 29
+
+[[recipe]]
+output = "refined_emerald"
+inputs = [["compact_emerald", 1]]
+station = "refinery"
+seconds = 120.0
+spark = 800
+xp = 24
+wear = 29
+
+[[recipe]]
+output = "compact_sapphire"
+inputs = [["rough_sapphire", 10]]
+station = "compactor"
+seconds = 240.0
+spark = 800
+xp = 30
+wear = 29
+
+[[recipe]]
+output = "refined_sapphire"
+inputs = [["compact_sapphire", 1]]
+station = "refinery"
+seconds = 120.0
+spark = 800
+xp = 24
+wear = 29
+
+[[recipe]]
+output = "compact_topaz"
+inputs = [["rough_topaz", 10]]
+station = "compactor"
+seconds = 240.0
+spark = 800
+xp = 30
+wear = 29
+
+[[recipe]]
+output = "refined_topaz"
+inputs = [["compact_topaz", 1]]
+station = "refinery"
+seconds = 120.0
+spark = 800
+xp = 24
+wear = 29
+
+[[recipe]]
+output = "compact_diamond"
+inputs = [["rough_diamond", 10]]
+station = "compactor"
+seconds = 240.0
+spark = 800
+xp = 30
+wear = 29
+
+[[recipe]]
+output = "refined_diamond"
+inputs = [["compact_diamond", 1]]
+station = "refinery"
+seconds = 120.0
+spark = 800
+xp = 24
+wear = 29
+
+[[recipe]]
+output = "compact_ruby"
+inputs = [["rough_ruby", 10]]
+station = "compactor"
+seconds = 240.0
+spark = 800
+xp = 30
+wear = 29
+
+[[recipe]]
+output = "refined_ruby"
+inputs = [["compact_ruby", 1]]
+station = "refinery"
+seconds = 120.0
+spark = 800
+xp = 24
+wear = 29

@@ -1395,3 +1395,58 @@ food = { hunger = 400, sick = true }
 [[item]]
 name = "hearty_pie"
 food = { hunger = 5000, buff = "breathing", rank = 3, minutes = 30 }
+
+# Milestone 18 part 2: gems, rough, compact and refined (rule 31).
+[[item]]
+name = "rough_amethyst"
+
+[[item]]
+name = "compact_amethyst"
+
+[[item]]
+name = "refined_amethyst"
+
+[[item]]
+name = "rough_emerald"
+
+[[item]]
+name = "compact_emerald"
+
+[[item]]
+name = "refined_emerald"
+
+[[item]]
+name = "rough_sapphire"
+
+[[item]]
+name = "compact_sapphire"
+
+[[item]]
+name = "refined_sapphire"
+
+[[item]]
+name = "rough_topaz"
+
+[[item]]
+name = "compact_topaz"
+
+[[item]]
+name = "refined_topaz"
+
+[[item]]
+name = "rough_diamond"
+
+[[item]]
+name = "compact_diamond"
+
+[[item]]
+name = "refined_diamond"
+
+[[item]]
+name = "rough_ruby"
+
+[[item]]
+name = "compact_ruby"
+
+[[item]]
+name = "refined_ruby"

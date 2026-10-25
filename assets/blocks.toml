@@ -1988,3 +1988,107 @@ drops = "titanium_ore"
 bonus = [{ item = "titanium_ore", per_tier = [0, 0, 0, 0, 0.5, 0.8, 0.8, 1.2] }]
 mine_xp = 100
 build_xp = 0
+
+# Milestone 18 part 2: gem seams (docs/milestones/18-higher-worlds.md rule 29).
+# Yields by tier are Boundless's (tuning 4.4); mining XP a guess.
+[[block]]
+name = "amethyst_seam"
+colourable = false
+color = [168, 110, 220]
+solid = true
+opaque = true
+translucent = false
+breakable = true
+placeable = false
+health = "seam"
+textures = { all = "amethyst_seam" }
+material = "rock"
+drops = "rough_amethyst"
+bonus = [{ item = "rough_amethyst", per_tier = [0, 0, 0, 0, 0.5, 0.8, 0.8, 1.2] }]
+mine_xp = 120
+build_xp = 0
+
+[[block]]
+name = "emerald_seam"
+colourable = false
+color = [60, 190, 110]
+solid = true
+opaque = true
+translucent = false
+breakable = true
+placeable = false
+health = "seam"
+textures = { all = "emerald_seam" }
+material = "rock"
+drops = "rough_emerald"
+bonus = [{ item = "rough_emerald", per_tier = [0, 0, 0, 0, 0.5, 0.8, 0.8, 1.2] }]
+mine_xp = 120
+build_xp = 0
+
+[[block]]
+name = "sapphire_seam"
+colourable = false
+color = [70, 110, 230]
+solid = true
+opaque = true
+translucent = false
+breakable = true
+placeable = false
+health = "seam"
+textures = { all = "sapphire_seam" }
+material = "rock"
+drops = "rough_sapphire"
+bonus = [{ item = "rough_sapphire", per_tier = [0, 0, 0, 0, 0.5, 0.8, 0.8, 1.2] }]
+mine_xp = 120
+build_xp = 0
+
+[[block]]
+name = "topaz_seam"
+colourable = false
+color = [240, 180, 60]
+solid = true
+opaque = true
+translucent = false
+breakable = true
+placeable = false
+health = "seam"
+textures = { all = "topaz_seam" }
+material = "rock"
+drops = "rough_topaz"
+bonus = [{ item = "rough_topaz", per_tier = [0, 0, 0, 0, 0.5, 0.8, 0.8, 1.2] }]
+mine_xp = 120
+build_xp = 0
+
+[[block]]
+name = "diamond_seam"
+colourable = false
+color = [200, 240, 250]
+solid = true
+opaque = true
+translucent = false
+breakable = true
+placeable = false
+health = "seam"
+textures = { all = "diamond_seam" }
+material = "rock"
+drops = "rough_diamond"
+bonus = [{ item = "rough_diamond", per_tier = [0, 0, 0, 0, 0.5, 0.8, 0.8, 1.2] }]
+mine_xp = 120
+build_xp = 0
+
+[[block]]
+name = "ruby_seam"
+colourable = false
+color = [220, 40, 70]
+solid = true
+opaque = true
+translucent = false
+breakable = true
+placeable = false
+health = "seam"
+textures = { all = "ruby_seam" }
+material = "rock"
+drops = "rough_ruby"
+bonus = [{ item = "rough_ruby", per_tier = [0, 0, 0, 0, 0.5, 0.8, 0.8, 1.2] }]
+mine_xp = 120
+build_xp = 0

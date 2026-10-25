@@ -1617,6 +1617,17 @@ size = 8.0
 threshold = 0.6
 min_y = 10
 min_depth = 70
+[[kind.generation.ores]]
+# Milestone 18 part 2: amethyst along the edges of shallow water (Boundless's
+# intent, t/14255): under 1 to 8 of water, or dry shore within 4 of it; 5 to
+# 40 under the surface. "Shallow" is a guess.
+block = "amethyst_seam"
+size = 7.0
+threshold = 0.55
+min_depth = 5
+max_depth = 40
+water_depth = [1, 8]
+near_water = 4
 # Flora (all placement a guess): spikeleaf on the beaches and in dry
 # patches of turf so a new player finds fibrous leaves early, ferns and
 # roots on turf, lilies by the water, snowbells above the snow line,
@@ -1843,6 +1854,15 @@ size = 8.0
 threshold = 0.6
 min_y = 10
 min_depth = 70
+[[kind.generation.ores]]
+# Milestone 18 part 2: emerald under deep water (10 or more), 2 to 60 under
+# the bed (Boundless).
+block = "emerald_seam"
+size = 7.0
+threshold = 0.55
+min_depth = 2
+max_depth = 60
+water_depth = [10, 400]
 # Flora (all placement a guess): spikeleaf on the beaches and in dry
 # patches of turf so a new player finds fibrous leaves early, ferns and
 # roots on turf, lilies by the water, snowbells above the snow line,
@@ -2073,6 +2093,15 @@ size = 8.0
 threshold = 0.6
 min_y = 10
 min_depth = 70
+[[kind.generation.ores]]
+# Milestone 18 part 2: sapphire inside hills: land 20 to 80 above sea, 10 to
+# 75 under the surface (Boundless).
+block = "sapphire_seam"
+size = 7.0
+threshold = 0.57
+min_depth = 10
+max_depth = 75
+land_height = [20, 80]
 # Flora (a guess): snowbells on the snow; boulders on snow and rock.
 [[kind.generation.flora]]
 block = "frostbell"
@@ -2282,6 +2311,14 @@ size = 8.0
 threshold = 0.6
 min_y = 10
 min_depth = 70
+[[kind.generation.ores]]
+# Milestone 18 part 2: topaz inside mountains: land 80+ above sea, 10+ under
+# the surface (Boundless).
+block = "topaz_seam"
+size = 7.0
+threshold = 0.57
+min_depth = 10
+land_height = [80, 1000]
 # Flora (all placement a guess): spikeleaf on the beaches and in dry
 # patches of turf so a new player finds fibrous leaves early, ferns and
 # roots on turf, lilies by the water, snowbells above the snow line,
@@ -2515,6 +2552,14 @@ size = 8.0
 threshold = 0.6
 min_y = 10
 min_depth = 70
+[[kind.generation.ores]]
+# Milestone 18 part 2: diamond deep under mountains: land 60+ above sea, 70+
+# under the surface (Boundless).
+block = "diamond_seam"
+size = 7.0
+threshold = 0.56
+min_depth = 70
+land_height = [60, 1000]
 # Flora (a guess): spikeleaf plentiful on the dunes, with cactus and
 # aloe (no turf here, so they take the sand); boulders on sand and rock.
 [[kind.generation.flora]]
@@ -2737,6 +2782,15 @@ size = 8.0
 threshold = 0.6
 min_y = 10
 min_depth = 70
+[[kind.generation.ores]]
+# Milestone 18 part 2: ruby under sandy ground (Boundless: below sandy
+# deserts; Ashfall's ground is gravel), 50 to 70 under the surface.
+block = "ruby_seam"
+size = 7.0
+threshold = 0.55
+min_depth = 50
+max_depth = 70
+under = ["sand", "gravel"]
 # Flora (a guess): spikeleaf plentiful on the dunes, with cactus and
 # aloe (no turf here, so they take the sand); boulders on sand and rock.
 [[kind.generation.flora]]

@@ -123,15 +123,50 @@ Boundmore's worlds stop at tier 3. Boundless's best materials (gold, titanium, g
 
 ## Part 2: gems and power
 
-*(Rules written when part 1 is built; outline here so part 1 leaves room.)*
+*Rules written 2026-10-25, after part 1 was built.*
 
-- **Gem seams** on their worlds (amethyst on Acrid, emerald on Blighted, sapphire on Glacial, topaz on Stormy, diamond on Scorched, ruby on Ember), placed by Boundless's intent: amethyst along the edges of shallow water, emerald under deep water, sapphire inside hills, topaz inside mountains, diamond deep under mountains, ruby under sandy ground. Generation gains the knobs these need (deepest depth, water above, height above sea).
-- **Gem items**: rough → compact (compactor 240 s, 800 spark) → refined (refinery 120 s, 800 spark). Gem seams and hard coal need an advanced chisel to shape.
-- **Power coils**: one per machine type, each needing a compact gem of its machine's gem (diamond workbench, ruby compactor, sapphire extractor, topaz refinery, emerald mixer, amethyst forge); +100 power each, 24 at most, one block's gap from the machine; they wear and are mended with spanners.
-- **Machine power**: a recipe may need a minimum power; power above it cuts time (the early-access formula: the first 100 above halves it, each further 100 adds 100 / (8 × requirement) percent, never below 25%) and spark (**guess**: the same curve).
-- **Gem gear** (1,500 power): tools, grapples, spanners and advanced chisels, Boundless's stats; leather (refinery, 500 power).
-- **The titanium furnace**; the forge's power share (M17's Effectiveness formula, refitted); the powered forge ingredients get recipes.
-- Advanced coils (+300) need titanium furnace bases and relic devices, which need large fossils and deep relics: decided in part 2.
+### Gems in the ground
+
+29. **Six gem seams** (`health = "seam"`, mining XP a **guess** at 120), each on the tier 5 and 6 world of its type only (Boundless: gems are native to their world type, tuning 4.2), with Boundless's yields (1.0 to tier 4, 1.5 on 5, 1.8 on 6 and 7, 2.2 on 8; tuning 4.4) and its places (tuning 4.3, the developers' intent: Tobelawe, t/14255). Boundmore's sea sits at 128 rather than 64, so "above the floor" heights stay Boundless's but the water and hill rules are read against Boundmore's own sea level:
+    - **Amethyst** (Violetmoor): along the edges of shallow water: columns under 1 to 8 blocks of water, or dry columns within 4 of such water (**guess** at "shallow"), 5 to 40 under the surface.
+    - **Emerald** (Mirefen): under deep water: columns under 10 or more blocks of water, 2 to 60 under the bed.
+    - **Sapphire** (Frostspire): inside hills: columns 20 to 80 above sea, 10 to 75 under the surface.
+    - **Topaz** (Stormcrown): inside mountains: columns 80 or more above sea, 10+ under the surface.
+    - **Diamond** (Sunscar): deep under mountains: columns 60+ above sea, 70+ under the surface.
+    - **Ruby** (Ashfall): under sandy or gravel ground (Boundless: below sandy deserts; Ashfall's ground is gravel), 50 to 70 under the surface.
+30. **Generation knobs** for these, each off by default so every existing ore keeps its terrain exactly: `max_depth` (deepest below the surface), `water_depth = [min, max]` (water over the column), `near_water` (blocks to the nearest such column, for the dry shore), `land_height = [min, max]` (the column's surface above sea), `under = [blocks]` (the column's top block). `GENERATOR_VERSION` stays: old ores read the defaults; the pins check it.
+31. **Gem items**: rough gem (the seam's drop) → compact gem (compactor, 10 → 1, 240 s, 800 spark) → refined gem (refinery, 1 → 1, 120 s, 800 spark), Boundless's. Gem blocks for building wait for decoration.
+32. **Hard blocks**: gem seams and hard coal have Boundless's hardness 10; the chisels Boundmore has (iron, M7) cut up to 3, so they are refused on them; part 2's **advanced chisels** cut anything.
+
+### Power
+
+33. **Power coils** (one block each, workbench; Boundless's recipe: 1 iron furnace base, 3 relic components, 3 machined copper, iron or gold alloy, 1 compact gem; 900 s, 800 spark; Machine Crafting 2). Which gem names the machine it powers: diamond workbench, ruby compactor, sapphire extractor, topaz refinery, emerald mixer, amethyst forge.
+34. **Placing**: a coil powers one machine of its type that it faces across exactly one block of air (Boundless's 1 m gap), straight or diagonal in the horizontal plane, at the same height or one up or down (**guess** at the diagonal rule); a coil that could serve two machines serves the one with the lowest key (Boundless picked by direction; here by key, so it is stable). At most 24 coils count per machine. The station view shows the machine's power and coil count.
+35. **Power** = 100 a working coil (advanced coils +300, below). Coils **wear**: each craft wears every coil that powers it by the recipe's wear (**guess**; Boundless's capacity is unknown, here 10,000 like a machine's), a worn-out coil gives no power until a spanner mends it, and spanners mend coils as they mend machines (a gem spanner mends its own machine's coils and that machine twice as fast, **guess** at Boundless's "most effective").
+36. **Recipes may need power** (`power` in `recipes.toml`): a machine short of it shows "Needs N power" and waits. Boundless's thresholds where known: gem gear 1,500, advanced coils 1,500, compact coal 500 / 1,000 / 2,000 (soft, medium, hard), large fossil essence 500, purified and fortified buckets 1,500 and the powered dishes and forge ingredients as their data says.
+37. **Power above the need** cuts the craft's time and spark, by the early-access formula (tuning 4.13.2, low-medium): the first 100 above cuts 50%; each further 100 adds 100 / (8 × need) percent (with a need of 0, read as 100); never below 25% of the base. Spark follows the same curve (**guess**; one player's series sits a few points above it).
+38. **The forge**: its power share in M17's Effectiveness becomes real (the forge's power, from amethyst coils); the formula stays M17's (Measure 1 there).
+39. **Advanced coils** (+300 power; workbench, 1,500 power): 1 titanium furnace base, 3 machined titanium alloy (or gold or silver alloy), 2 refined gems, 6 relic components, 1 relic core; 1,800 s, 2,000 spark. The **relic core** [ancient tech device] comes from a new **relic core seam** on every world, 75+ above the floor and 5+ under the surface (Boundless), appended to old planets' ores.
+40. **The titanium furnace** (base and crucible, workbench, Machine Crafting 2): Boundless's recipe (6 titanium alloy and 16 flint; 6 titanium alloy), 180 s and 400 spark each; heat multiplier 0.25 (a smelt burns a quarter of the heat).
+
+### Gem gear
+
+41. **Leather** (refinery, 4 hide + 4 bark, 60 s, 200 spark, 500 power). **Bark** drops from trunks on tier 3+ worlds (3%, 4% from tier 6; Boundless).
+42. **Gem tools** (hammer, shovel, axe), **grapples**, **spanners** and **advanced chisels**: Boundless's stats (tuning 2.1, 4.9), recipe 3 refined gem + 1 leather + 1 strong bonding agent (+ 4 sticks for tools and spanners, + 6 cogs for spanners, + 1 relic component and 5 fragments for grapples, topaz and sapphire 1 fragment), 1,800 s, 2,000 spark, 1,500 power, Tool or Tech Crafting 3. Advanced chisels: speed 80, durability 2,000, energy 20; the six cut kinds follow Boundless's wiki names onto Boundmore's families (amethyst square precise, diamond bevel, emerald bevel precise, sapphire square, ruby slope, topaz slope precise).
+43. **Gem spanners** mend 10,000 a hit; each is "most effective" on its machine (rule 35).
+
+### Formats, part 2
+
+44. Protocol 27: the station view carries power and coils; recipes carry `power`. `SAVE_VERSION` 13: stations save their coils' wear (coils are blocks; their wear lives with the machine they power, keyed by the coil's block). Planet records gain the relic core seam on opening.
+
+### Acceptance, part 2
+
+- Each gem shows up on its own world in its place, and nowhere else; the old planets' terrain is unchanged except for relic cores in unsaved chunks.
+- A workbench with 15 diamond coils (1,500 power) crafts a diamond hammer; with 14 it waits and says why; with 24 it is quicker and cheaper by the formula.
+- Coils wear with crafts, stop at zero and come back with a spanner; the station view shows power and coils.
+- A diamond hammer breaks tier 6 rock in Boundless's hit count; an iron chisel is refused on a gem seam and an advanced one cuts it.
+- The forge's Effectiveness rises with amethyst coils.
+- Upgrade check from save version 12; load test.
 
 ## Non-goals
 
@@ -147,11 +182,13 @@ Boundmore's worlds stop at tier 3. Boundless's best materials (gold, titanium, g
 
 ## Status
 
-*Spec written 2026-10-25. Part 1 in progress.*
+*Part 1 built 2026-10-25; awaiting Nathan's play-test.* Protocol 26, `SAVE_VERSION` 12.
 
-- [ ] Core: `atmosphere.rs` (lines, hazard, protection, air, choking) in `PlayerState` and `movement::step`; unit tests
-- [ ] Data: nine kinds, four seams, appended coal on old kinds, items, recipes, ward skills real, atmosphere food
-- [ ] Server: shortfall set before each step; planet list carries air; arrival notices; saves keep air
-- [ ] Client: shortfall set before prediction; air bar, shortfall icon, fog, travel window air; `--demo-ui air`
-- [ ] Art: four seams, new item icons, screenshots of each world
-- [ ] Verified: tests, upgrade check from 11, load test
+- [x] Core: `atmosphere.rs` (lines, hazard, wards, air, choking, the arrival warning, the fog distance) in `PlayerState` and `movement::step`; the Breathing food buff; ward skills real; 8 unit tests
+- [x] Data: nine kinds (`assets/planets.toml`), four seams, medium coal appended to every old kind and hard coal to lush (re-pinned, `appending_m18_only_turns_rock_into_coal`); items, recipes, atmosphere food; the gravel worlds' plants also grow on gravel; Mirefen takes the temperate plant list (its beaches are flooded)
+- [x] Server: the planet's air on the body at login and on every arrival; travel keeps the body (the warp fix); arrival and login warnings; saves keep air used (upgrade test from version 11)
+- [x] Client: the air bar and its tag, fog closing in, each world's air in the travel window, `--demo-ui air`
+- [x] Art (bm-texgen `worlds.rs`): four seams, 35 icons; `docs/media/m18-icons.png`
+- [x] Verified: 662 tests (`acid_air_runs_down_as_predicted_and_a_ward_stops_it` end to end, with the client's replay matching the server exactly); upgrade check from save version 11 ("upgraded the universe from save version 11 to 12 (2 characters with full air; stations as they were)", each old planet "medium_coal_seam added to its ores", Wildmere also hard coal); a fresh character on Thornreach chokes in the real client (`docs/media/m18-thornreach.jpg`; the nine worlds `docs/media/m18-worlds.jpg`)
+
+Open: the guesses (Measure list); load test with 50 bots on the new worlds; whether the new worlds' looks suit Nathan (`docs/media/m18-worlds.jpg`; the plaza round each shrine shows plain green turf even where the world colours its turf).

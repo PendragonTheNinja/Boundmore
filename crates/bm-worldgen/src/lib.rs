@@ -176,6 +176,20 @@ pub struct OreSpec {
     /// How far under the surface it starts: never within `min_depth` blocks
     /// of the column's top.
     pub min_depth: i64,
+    /// The deepest it goes under the column's top (milestone 18).
+    pub max_depth: i64,
+    /// Only under columns with this much water over them, inclusive
+    /// (milestone 18: emerald under deep water, amethyst at shallow edges).
+    pub water_depth: Option<[i64; 2]>,
+    /// With `water_depth`: dry columns within this many blocks (at most 4)
+    /// of such water count too (amethyst on the shore).
+    pub near_water: i64,
+    /// Only under columns whose top is this far above sea level, inclusive
+    /// (milestone 18: sapphire in hills, topaz and diamond in mountains).
+    pub land_height: Option<[i64; 2]>,
+    /// Only under columns topped by one of these blocks (milestone 18: ruby
+    /// under sand). Empty: any.
+    pub under: Vec<String>,
 }
 
 impl Default for OreSpec {
@@ -187,6 +201,11 @@ impl Default for OreSpec {
             min_y: 1,
             max_y: i64::MAX,
             min_depth: 0,
+            max_depth: i64::MAX,
+            water_depth: None,
+            near_water: 0,
+            land_height: None,
+            under: Vec::new(),
         }
     }
 }
@@ -281,6 +300,7 @@ impl Default for PlanetGenConfig {
                     min_y: 13,
                     max_y: i64::MAX,
                     min_depth: 6,
+                    ..Default::default()
                 },
                 OreSpec {
                     block: "copper_vein".into(),
@@ -289,6 +309,7 @@ impl Default for PlanetGenConfig {
                     min_y: 1,
                     max_y: 149,
                     min_depth: 0,
+                    ..Default::default()
                 },
             ],
             flora: Vec::new(),
@@ -341,6 +362,52 @@ struct Ore {
     min_y: i64,
     max_y: i64,
     min_depth: i64,
+    max_depth: i64,
+    water_depth: Option<[i64; 2]>,
+    near_water: i64,
+    land_height: Option<[i64; 2]>,
+    under: Vec<BlockId>,
+}
+
+impl Ore {
+    /// Whether the column (its top `h`, top block `surface`) may hold this
+    /// ore; `height_at` reads neighbouring tops for the shore rule. Every
+    /// rule is off by default, so ores without them pass everywhere.
+    fn column_allows(
+        &self,
+        h: i64,
+        surface: BlockId,
+        sea: i64,
+        water_level: i64,
+        height_at: impl Fn(i64, i64) -> i64,
+    ) -> bool {
+        if let Some([lo, hi]) = self.land_height
+            && !(lo..=hi).contains(&(h - sea))
+        {
+            return false;
+        }
+        if !self.under.is_empty() && !self.under.contains(&surface) {
+            return false;
+        }
+        if let Some([lo, hi]) = self.water_depth {
+            let wet = |h: i64| (lo..=hi).contains(&(water_level - h));
+            if !wet(h) {
+                let r = self.near_water.clamp(0, TREE_REACH + 1);
+                if r == 0 || water_level - h > 0 {
+                    return false;
+                }
+                let near = (-r..=r).step_by(2.max(r as usize / 2)).any(|dz| {
+                    (-r..=r)
+                        .step_by(2.max(r as usize / 2))
+                        .any(|dx| (dx, dz) != (0, 0) && wet(height_at(dx, dz)))
+                });
+                if !near {
+                    return false;
+                }
+            }
+        }
+        true
+    }
 }
 
 /// A [`FloraSpec`] resolved to ids, with its patch noise.
@@ -409,6 +476,8 @@ struct Ids {
     ice: BlockId,
     layer: BlockId,
     ores: Vec<BlockId>,
+    /// Each ore's `under` blocks, resolved.
+    ore_under: Vec<Vec<BlockId>>,
 }
 
 impl Ids {
@@ -435,6 +504,11 @@ impl Ids {
             ice: r.id(&cfg.ice)?,
             layer: r.id(&cfg.layer)?,
             ores: cfg.ores.iter().map(|o| r.id(&o.block)).collect::<Result<_, _>>()?,
+            ore_under: cfg
+                .ores
+                .iter()
+                .map(|o| o.under.iter().map(|n| r.id(n)).collect::<Result<Vec<_>, _>>())
+                .collect::<Result<_, _>>()?,
         })
     }
 }
@@ -695,14 +769,20 @@ impl Generator {
             .ores
             .iter()
             .zip(&ids.ores)
+            .zip(&ids.ore_under)
             .enumerate()
-            .map(|(i, (o, &block))| Ore {
+            .map(|(i, ((o, &block), under))| Ore {
                 block,
                 noise: Fbm::new(k(9 + i as u64), w, o.size, 1, 0.5),
                 threshold: o.threshold,
                 min_y: o.min_y,
                 max_y: o.max_y,
                 min_depth: o.min_depth,
+                max_depth: o.max_depth,
+                water_depth: o.water_depth,
+                near_water: o.near_water,
+                land_height: o.land_height,
+                under: under.clone(),
             })
             .collect();
         let flora = Flora::resolve(&cfg, registry, w)?;
@@ -858,6 +938,7 @@ impl Generator {
         // column takes the colour its region gives it.
         let regions = self.region_lattice(origin);
         let mut column_colours = vec![Colour::NATURAL; self.colours.blocks.len()];
+        let mut ore_column = vec![true; self.ores.len()];
 
         let seed = cfg.seed;
         let top = origin.y + cs - 1;
@@ -889,6 +970,13 @@ impl Generator {
                     soil_bottom
                 };
                 let deep_line = 60 + (hash01(seed ^ 0xdee9, wx, 0, wz) * 5.0) as i64;
+                // Which ores this column may hold (milestone 18's rules; every
+                // older ore passes).
+                for (ok, ore) in ore_column.iter_mut().zip(&self.ores) {
+                    *ok = ore.column_allows(h, surface, cfg.sea_level, water_level, |dx, dz| {
+                        height_at(lx + dx, lz + dz)
+                    });
+                }
                 let y_end = top.min(h.max(water_level));
                 for wy in origin.y..=y_end {
                     let ly = wy - origin.y;
@@ -923,9 +1011,11 @@ impl Generator {
                         } else if b == ids.stone || b == ids.deep_stone {
                             let mut ore_hit = None;
                             for (o, ore) in self.ores.iter().enumerate() {
-                                if wy >= ore.min_y
+                                if ore_column[o]
+                                    && wy >= ore.min_y
                                     && wy <= ore.max_y
                                     && wy <= h - ore.min_depth
+                                    && wy >= h.saturating_sub(ore.max_depth)
                                     && cell.lerp(|i| ore_lattice[i * n_ores + o]) > ore.threshold
                                 {
                                     ore_hit = Some(ore.block);
@@ -1630,10 +1720,10 @@ mod tests {
         ("cinderland", 0x0ac7_055c_c27b_183d),
         ("acrid", 0x9539_8597_36c8_3fde),
         ("blighted", 0xe8df_2f34_0408_6f26),
-        ("glacial", 0xde05_b9ff_a1bc_8a5b),
+        ("glacial", 0x56c9_f330_e475_5a93),
         ("stormy", 0xad63_8d85_5531_7e01),
         ("scorched", 0xa45d_7ef3_71b1_002c),
-        ("ember", 0x6bfd_e7f2_4d61_8d2b),
+        ("ember", 0x89ab_bfe5_b4be_b027),
     ];
     const PINNED_M17: [(&str, u64); 4] = [
         ("temperate", 0xa10a_36aa_5d69_57f1),
@@ -2035,6 +2125,65 @@ mod tests {
                 relics * 3 > coppers && relics < coppers * 3,
                 "{name}: relic {relics}, copper {coppers}"
             );
+        }
+    }
+
+    /// Milestone 18 part 2: each gem grows on its own world only, and only
+    /// where its rule allows (depth, water over it, height of the land).
+    #[test]
+    fn gems_grow_on_their_own_worlds_by_their_rules() {
+        let gems = [
+            ("acrid", "amethyst_seam"),
+            ("blighted", "emerald_seam"),
+            ("glacial", "sapphire_seam"),
+            ("stormy", "topaz_seam"),
+            ("scorched", "diamond_seam"),
+            ("ember", "ruby_seam"),
+        ];
+        let ids = gems.map(|(_, g)| id(g));
+        for (name, _, g) in all_kinds() {
+            let own = gems.iter().position(|(k, _)| *k == name);
+            let sea = g.cfg.sea_level;
+            let mut found = 0;
+            for cz in 0..8 {
+                for cx in 0..8 {
+                    for cy in 0..6 {
+                        let p = ChunkPos::new(cx * 8, cy, cz * 8 + cx);
+                        let c = g.generate(p);
+                        if !ids.iter().any(|i| c.may_contain(*i)) {
+                            continue;
+                        }
+                        for (i, b) in c.to_dense().into_iter().enumerate() {
+                            let Some(which) = ids.iter().position(|g| *g == b) else {
+                                continue;
+                            };
+                            assert_eq!(Some(which), own, "{name}: {} out of place", gems[which].1);
+                            let l = LocalPos::from_index(i);
+                            let (x, y, z) = (
+                                p.origin().x + l.x as i64,
+                                p.origin().y + l.y as i64,
+                                p.origin().z + l.z as i64,
+                            );
+                            let h = g.surface_height(x, z);
+                            let (depth, land, water) = (h - y, h - sea, g.water_level - h);
+                            let ok = match name.as_str() {
+                                "acrid" => (5..=40).contains(&depth) && water <= 8,
+                                "blighted" => (2..=60).contains(&depth) && water >= 10,
+                                "glacial" => (10..=75).contains(&depth) && (20..=80).contains(&land),
+                                "stormy" => depth >= 10 && land >= 80,
+                                "scorched" => depth >= 70 && land >= 60,
+                                _ => (50..=70).contains(&depth),
+                            };
+                            assert!(ok, "{name}: gem at depth {depth}, land {land}, water {water}");
+                            found += 1;
+                        }
+                    }
+                }
+            }
+            eprintln!("{name}: {found} gem blocks");
+            if own.is_some() {
+                assert!(found > 0, "{name}: no gems found");
+            }
         }
     }
 
