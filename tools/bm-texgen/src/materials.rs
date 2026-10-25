@@ -140,28 +140,28 @@ fn pebble_ramps() -> [Ramp; 4] {
 /// Shared recipe for cellular rock: slabs from a Voronoi pattern, each with
 /// its own tone and tilt, lit on its top-left rim and shaded on its
 /// bottom-right, with dark cracks along some (not all) of the joins.
-struct RockStyle {
-    salt: u32,
+pub(crate) struct RockStyle {
+    pub(crate) salt: u32,
     /// Minimum distance between slab centres: the slab size.
-    spacing: f32,
+    pub(crate) spacing: f32,
     /// Vertical scale of the metric: > 1 makes flat strata.
-    stretch: f32,
+    pub(crate) stretch: f32,
     /// Rim width in pixels.
-    bevel: f32,
+    pub(crate) bevel: f32,
     /// How much of the network of joins is open crack (0..1).
-    cracks: f32,
+    pub(crate) cracks: f32,
     /// Middle tone and per-slab spread.
-    tone: f32,
-    spread: f32,
+    pub(crate) tone: f32,
+    pub(crate) spread: f32,
     /// How strongly each slab tilts towards or away from the light.
-    tilt: f32,
+    pub(crate) tilt: f32,
     /// Strength of the rim lighting and of the soft interior mottling.
-    rim: f32,
-    mottle: f32,
+    pub(crate) rim: f32,
+    pub(crate) mottle: f32,
 }
 
 /// Per-pixel tone of a rock face.
-fn rock(ctx: Ctx, s: &RockStyle) -> Field {
+pub(crate) fn rock(ctx: Ctx, s: &RockStyle) -> Field {
     let sites = ctx.sites_stretched(s.salt, s.spacing, s.stretch);
     // Above 32 pixels: finer cracks, more octaves of mottling, and chips
     // (a second, smaller network of faint fractures inside each slab).
@@ -334,7 +334,7 @@ pub fn tilled_soil(ctx: Ctx) -> Tex {
 }
 
 /// Little dark two- and three-pixel clumps.
-fn specks(ctx: Ctx, tex: &mut Tex, salt: u32, spacing: f32, chance: f32, col: Rgba) {
+pub(crate) fn specks(ctx: Ctx, tex: &mut Tex, salt: u32, spacing: f32, chance: f32, col: Rgba) {
     if hires() {
         // More specks, each a block of (scale / detail) pixels per unit.
         let u = 1.0 / detail();
@@ -414,7 +414,12 @@ fn pebbles(ctx: Ctx, tex: &mut Tex, salt: u32, spacing: f32, chance: f32, ramp: 
 /// Grass seen from above: soft clumps lit on their top left, darker hollows,
 /// and short blades standing out of the clumps with a lit tip and a shadow.
 fn grass(ctx: Ctx, salt: u32) -> Tex {
-    let ramp = grass_ramp();
+    grass_with(ctx, salt, &grass_ramp(), 0)
+}
+
+/// `grass` in another ramp, its blades `taller` pixels longer.
+pub(crate) fn grass_with(ctx: Ctx, salt: u32, ramp: &Ramp, taller: i32) -> Tex {
+    let ramp = ramp.clone();
     let tufts = ctx.sites(salt, 5.5);
     let tone = Field::from_fn(|x, y| {
         let (fx, fy) = (c(x), c(y));
@@ -432,7 +437,7 @@ fn grass(ctx: Ctx, salt: u32) -> Tex {
     });
     let mut tex = paint(&ramp, &tone);
     if hires() {
-        grass_blades_fine(ctx, &mut tex, salt, &ramp);
+        grass_blades_fine(ctx, &mut tex, salt, &ramp, taller);
         return tex;
     }
     // Tufts of three blades standing out of the clumps: a tall middle
@@ -442,7 +447,7 @@ fn grass(ctx: Ctx, salt: u32) -> Tex {
             continue;
         }
         let (x, y) = (b.x as i32, b.y as i32);
-        let tall = 3 + (b.r[1] * 1.5) as i32;
+        let tall = 3 + (b.r[1] * 1.5) as i32 + taller;
         let lit = 0.72 + b.r[3] * 0.28;
         for (dx, len, top) in [(-1, tall - 1, 1), (0, tall, 0), (1, tall - 1, 1)] {
             for i in 0..len {
@@ -462,13 +467,13 @@ fn grass(ctx: Ctx, salt: u32) -> Tex {
 
 /// The blades of `grass` above 32 pixels: four times as many tufts at half
 /// the size, each blade a tapered stroke from a shaded foot to a lit tip.
-fn grass_blades_fine(ctx: Ctx, tex: &mut Tex, salt: u32, ramp: &Ramp) {
+fn grass_blades_fine(ctx: Ctx, tex: &mut Tex, salt: u32, ramp: &Ramp, taller: i32) {
     let u = 1.0 / detail();
     for b in ctx.sites(salt ^ 0x1234, 4.2 * u) {
         if b.r[0] > 0.75 {
             continue;
         }
-        let tall = (4.0 + b.r[1] * 2.5) * u;
+        let tall = (4.0 + b.r[1] * 2.5 + taller as f32) * u;
         let lit = 0.72 + b.r[3] * 0.28;
         let foot_y = b.y + tall + u;
         // A soft shadow where the tuft meets the ground, on its lower right.
@@ -496,7 +501,7 @@ fn grass_blades_fine(ctx: Ctx, tex: &mut Tex, salt: u32, ramp: &Ramp) {
 /// Paints a tapered stroke, in units, from `a` (width `w0`) to `b` (width
 /// `w1`), wrapping at the edges: `f` gets each covered pixel and how far
 /// along it lies (0 at `a`, 1 at `b`).
-fn stroke(a: (f32, f32), b: (f32, f32), w0: f32, w1: f32, mut f: impl FnMut(usize, usize, f32)) {
+pub(crate) fn stroke(a: (f32, f32), b: (f32, f32), w0: f32, w1: f32, mut f: impl FnMut(usize, usize, f32)) {
     let k = scale();
     let half = w0.max(w1) * 0.5;
     let (x0, x1) = (
@@ -530,15 +535,26 @@ pub fn turf_top(ctx: Ctx) -> Tex {
 /// Turf side: the soil face, with the grass hanging over its upper edge in
 /// a ragged painted fringe and a soft shadow under the fringe.
 pub fn turf_side(_ctx: Ctx) -> Tex {
-    let mut tex = soil(Ctx::BASE);
-    let salt = seed("turf_side");
-    let grass = grass_ramp();
+    turf_side_with(
+        soil(Ctx::BASE),
+        seed("turf_side"),
+        &grass_ramp(),
+        (4.0, 5.0),
+        Rgba::hex(0x24121e),
+    )
+}
+
+/// A turf side: `under` with a fringe of `grass` hanging over its top edge,
+/// `depth.0` pixels deep plus up to `depth.1` more in clumps, and a few
+/// longer blades; `shadow` is cast under the fringe.
+pub(crate) fn turf_side_with(under: Tex, salt: u32, grass: &Ramp, depth: (f32, f32), shadow: Rgba) -> Tex {
+    let mut tex = under;
     // Fringe depth per column, in clumps of a few columns, plus a few
     // longer blades that hang further.
     let depth: Vec<f32> = (0..SIZE)
         .map(|x| {
             let fx = c(x);
-            let mut d = 4.0 + crate::noise::fbm(salt, 8, 1, 2, fx, 0.5) * 5.0;
+            let mut d = depth.0 + crate::noise::fbm(salt, 8, 1, 2, fx, 0.5) * depth.1;
             let blade = unit(hash2(salt, x as u32));
             if blade > 0.78 {
                 d += 2.0 + (blade - 0.78) * 12.0;
@@ -560,7 +576,7 @@ pub fn turf_side(_ctx: Ctx) -> Tex {
             } else if fy < d + 1.5 {
                 // Shadow cast by the fringe onto the soil.
                 let base = tex.get(x, y);
-                tex.set(x, y, base.mix(Rgba::hex(0x24121e), 0.55));
+                tex.set(x, y, base.mix(shadow, 0.55));
             }
         }
     }
@@ -962,16 +978,19 @@ pub fn trunk_side(_ctx: Ctx) -> Tex {
 /// Trunk top: end grain in warm rings around a dark heart, a radial check
 /// crack, and a band of bark around the square edge.
 pub fn trunk_top(_ctx: Ctx) -> Tex {
-    let salt = seed("trunk_top");
-    let wood = end_grain_ramp();
-    let bark = bark_ramp();
+    trunk_top_with(seed("trunk_top"), &end_grain_ramp(), &bark_ramp(), 2.4, 1.6)
+}
+
+/// A trunk's end grain: rings `ring` pixels apart in `wood`, wobbling by
+/// `warp`, around a dark heart with one check crack, in a band of `bark`.
+pub(crate) fn trunk_top_with(salt: u32, wood: &Ramp, bark: &Ramp, ring: f32, warp: f32) -> Tex {
     Tex::from_fn(|x, y| {
         let (fx, fy) = (c(x) - 16.0, c(y) - 16.0);
         // Rounded square near the edge, round in the middle.
         let round = fx.hypot(fy);
         let square = (fx.powi(4) + fy.powi(4)).powf(0.25);
         let r = round + (square - round) * smoothstep(6.0, 14.0, round);
-        let r = r + (crate::noise::fbm(salt, 4, 4, 2, c(x), c(y)) - 0.5) * 1.6;
+        let r = r + (crate::noise::fbm(salt, 4, 4, 2, c(x), c(y)) - 0.5) * warp;
         if r > 13.6 {
             // Bark band, lit on the top-left of the block.
             let t = 0.45 + (r - 13.6) * 0.05 - (fx + fy) / 32.0 * 0.4;
@@ -980,7 +999,7 @@ pub fn trunk_top(_ctx: Ctx) -> Tex {
         if r > 12.8 {
             return bark.at(1);
         }
-        let ring = (r / 2.4).fract();
+        let ring = (r / ring).fract();
         let mut t = 0.6 - smoothstep(0.65, 0.95, ring) * 0.35;
         t -= (fx + fy) / 32.0 * 0.12;
         t -= smoothstep(10.0, 13.0, r) * 0.1;
@@ -2101,7 +2120,8 @@ pub fn paint_named(name: &str, variant: u32) -> Option<Tex> {
             crate::spark::painter(other)
                 .or_else(|| crate::forge::painter(other))
                 .or_else(|| flora::painter(other))
-                .or_else(|| crate::gems::painter(other))?
+                .or_else(|| crate::gems::painter(other))
+                .or_else(|| crate::living::painter(other))?
         }
     };
     Some(f(ctx))

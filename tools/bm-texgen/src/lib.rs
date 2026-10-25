@@ -16,6 +16,7 @@ pub mod forge;
 pub mod gathered;
 pub mod gems;
 pub mod icons;
+pub mod living;
 pub mod machines;
 pub mod materials;
 pub mod noise;
@@ -33,7 +34,7 @@ use tex::Tex;
 pub const VARIANTS: u32 = 3;
 
 /// Which textures get variants.
-pub const VARIED: [&str; 8] = [
+pub const VARIED: [&str; 17] = [
     "stone",
     "deep_stone",
     "soil",
@@ -42,6 +43,15 @@ pub const VARIED: [&str; 8] = [
     "gravel",
     "snow",
     "foliage",
+    "basalt",
+    "limestone",
+    "clay",
+    "peat",
+    "mud",
+    "meadow_turf_top",
+    "moss_turf_top",
+    "fronds",
+    "glossy_foliage",
 ];
 
 /// A texture and its variants (index 0 is the base).
