@@ -157,6 +157,7 @@ pub fn start(cfg: ServerConfig) -> Result<RunningServer> {
         claims_by_planet.entry(c.planet).or_default().push((id, c));
     }
     let cat = planet::Catalogue {
+        biomes: cfg.biomes,
         registry: &registry,
         items: &items,
         recipes: &recipes,

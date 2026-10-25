@@ -15,7 +15,7 @@ stages = ["dewberry_seed", "dewberry_bush_2", "dewberry_bush_3", "dewberry_bush_
 yield = "dewberry"
 hours = 3.0
 farming = 0
-ground = ["soil", "turf", "tilled_soil"]
+ground = ["soil", "turf", "clay", "meadow_turf", "peat", "moss_turf", "tilled_soil"]
 crop_base = 1.0
 crop_extra = 0.1
 
@@ -26,7 +26,7 @@ stages = ["tuber_bulb", "tuber_plant_2", "tuber_plant_3", "tuber_plant_4"]
 yield = "tuber"
 hours = 3.0
 farming = 0
-ground = ["soil", "turf", "tilled_soil"]
+ground = ["soil", "turf", "clay", "meadow_turf", "peat", "moss_turf", "tilled_soil"]
 crop_base = 1.0
 crop_extra = 0.1
 
@@ -37,7 +37,7 @@ stages = ["waxy_tuber_bulb", "waxy_tuber_plant_2", "waxy_tuber_plant_3", "waxy_t
 yield = "waxy_tuber"
 hours = 4.0
 farming = 1
-ground = ["soil", "turf", "tilled_soil"]
+ground = ["soil", "turf", "clay", "meadow_turf", "peat", "moss_turf", "tilled_soil"]
 crop_base = 0.2
 crop_extra = 0.1
 
@@ -48,7 +48,7 @@ stages = ["exotic_tuber_bulb", "exotic_tuber_plant_2", "exotic_tuber_plant_3", "
 yield = "exotic_tuber"
 hours = 6.0
 farming = 2
-ground = ["soil", "turf", "tilled_soil"]
+ground = ["soil", "turf", "clay", "meadow_turf", "peat", "moss_turf", "tilled_soil"]
 crop_base = 0.2
 crop_extra = 0.1
 
@@ -59,7 +59,7 @@ stages = ["oat_seed", "oats_2", "oats_3", "oats_4"]
 yield = "oat_grain"
 hours = 4.0
 farming = 1
-ground = ["soil", "turf", "tilled_soil"]
+ground = ["soil", "turf", "clay", "meadow_turf", "peat", "moss_turf", "tilled_soil"]
 crop_base = 0.2
 crop_extra = 0.1
 
@@ -70,7 +70,7 @@ stages = ["wheat_seed", "wheat_2", "wheat_3", "wheat_4"]
 yield = "wheat_grain"
 hours = 6.0
 farming = 2
-ground = ["soil", "turf", "tilled_soil"]
+ground = ["soil", "turf", "clay", "meadow_turf", "peat", "moss_turf", "tilled_soil"]
 crop_base = 0.2
 crop_extra = 0.1
 
@@ -81,7 +81,7 @@ stages = ["rice_seed", "rice_2", "rice_3", "rice_4"]
 yield = "rice_grain"
 hours = 6.0
 farming = 2
-ground = ["soil", "turf", "tilled_soil"]
+ground = ["soil", "turf", "clay", "meadow_turf", "peat", "moss_turf", "tilled_soil"]
 water = true
 crop_base = 0.2
 crop_extra = 0.1

@@ -7,6 +7,7 @@
 //! block may take (`[kind.colours]`), and a new planet picks its own few
 //! from them by seed ([`crate::pick_colours`]), saved with its settings.
 
+use crate::biomes::{BiomeCatalogue, BiomeChoice, BiomeSpec, pick_biomes};
 use crate::{ConfigError, PlanetGenConfig, palette, pick_colours};
 use bm_core::atmosphere::AirLine;
 use bm_core::{BlockRegistry, PlanetLook, RegistryError};
@@ -29,6 +30,11 @@ pub struct PlanetKind {
     /// Block name to the palette colour names a planet of this kind may give
     /// it (`[kind.colours]`).
     pub colours: BTreeMap<String, Vec<String>>,
+    /// The biomes a planet of this kind may draw (milestone 19); none: the
+    /// single landscape of its `generation` settings.
+    pub biome_choice: Option<BiomeChoice>,
+    /// The catalogue's biomes this kind allows, to draw from.
+    biome_pool: Vec<crate::biomes::BiomeEntry>,
     generation: PlanetGenConfig,
 }
 
@@ -40,9 +46,20 @@ impl PlanetKind {
     pub fn generation(&self, seed: u64) -> PlanetGenConfig {
         let mut colours = self.generation.colours.clone();
         colours.extend(pick_colours(&self.colours, seed));
+        let biomes: Vec<BiomeSpec> = match &self.biome_choice {
+            Some(choice) => pick_biomes(
+                &BiomeCatalogue {
+                    biomes: self.biome_pool.clone(),
+                },
+                choice,
+                seed,
+            ),
+            None => Vec::new(),
+        };
         PlanetGenConfig {
             seed,
             colours,
+            biomes,
             ..self.generation.clone()
         }
     }
@@ -83,6 +100,8 @@ struct KindEntry {
     colours: BTreeMap<String, Vec<String>>,
     #[serde(default)]
     generation: PlanetGenConfig,
+    #[serde(default)]
+    biomes: Option<BiomeChoice>,
 }
 
 #[derive(Clone, Debug, Default, PartialEq)]
@@ -91,7 +110,14 @@ pub struct PlanetKinds {
 }
 
 impl PlanetKinds {
+    /// Kinds from `source`, with no biome catalogue (every kind a single
+    /// landscape).
     pub fn from_toml(source: &str, blocks: &BlockRegistry) -> Result<Self, KindError> {
+        Self::with_biomes(source, &BiomeCatalogue::default(), blocks)
+    }
+
+    /// Kinds from `source`, drawing biomes from `catalogue`.
+    pub fn with_biomes(source: &str, catalogue: &BiomeCatalogue, blocks: &BlockRegistry) -> Result<Self, KindError> {
         let file: KindFile = toml::from_str(source)?;
         let mut kinds: Vec<PlanetKind> = Vec::new();
         for e in file.kind {
@@ -105,7 +131,18 @@ impl PlanetKinds {
                 .check(blocks)
                 .map_err(|err| KindError::Generation(e.name.clone(), err))?;
             check_colour_choices(&e.colours, blocks).map_err(|err| KindError::Generation(e.name.clone(), err))?;
+            let biome_pool: Vec<_> = match &e.biomes {
+                Some(_) => catalogue.biomes.clone(),
+                None => Vec::new(),
+            };
+            for b in &biome_pool {
+                for name in b.spec.blocks() {
+                    blocks.id(name).map_err(|err| KindError::Block(e.name.clone(), err))?;
+                }
+            }
             kinds.push(PlanetKind {
+                biome_choice: e.biomes.filter(|_| !catalogue.biomes.is_empty()),
+                biome_pool,
                 display: e.display.unwrap_or_else(|| title_case(&e.name)),
                 name: e.name,
                 tier: e.tier.max(1),
@@ -123,7 +160,12 @@ impl PlanetKinds {
     }
 
     pub fn builtin(blocks: &BlockRegistry) -> Self {
-        Self::from_toml(include_str!("../../../assets/planets.toml"), blocks).expect("assets/planets.toml is valid")
+        Self::with_biomes(
+            include_str!("../../../assets/planets.toml"),
+            &BiomeCatalogue::builtin(),
+            blocks,
+        )
+        .expect("assets/planets.toml is valid")
     }
 
     pub fn get(&self, name: &str) -> Option<&PlanetKind> {

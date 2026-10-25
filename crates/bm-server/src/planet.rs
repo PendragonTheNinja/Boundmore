@@ -205,7 +205,14 @@ pub fn guarded_plots(shape: PlanetShape, shrine: BlockPos, guard: i64) -> BTreeS
 
 /// A new planet's record from its spec. Days differ between planets: each
 /// has its own length and starts at another hour.
-pub fn new_record(id: u16, spec: &PlanetSpec, height_chunks: u32, kinds: &PlanetKinds) -> Result<SavedPlanet> {
+/// `biomes` false makes it the single landscape of generator 3 (tests).
+pub fn new_record(
+    id: u16,
+    spec: &PlanetSpec,
+    height_chunks: u32,
+    kinds: &PlanetKinds,
+    biomes: bool,
+) -> Result<SavedPlanet> {
     let kind = kinds
         .get(&spec.kind)
         .with_context(|| format!("planet {}: no planet kind `{}`", spec.name, spec.kind))?;
@@ -226,7 +233,13 @@ pub fn new_record(id: u16, spec: &PlanetSpec, height_chunks: u32, kinds: &Planet
         name: spec.name.clone(),
         kind: kind.name.clone(),
         shape: PlanetShape::new(spec.width_chunks, height_chunks),
-        generation: kind.generation(spec.seed),
+        generation: {
+            let mut g = kind.generation(spec.seed);
+            if !biomes {
+                g.biomes.clear();
+            }
+            g
+        },
         day,
         shrine: None,
     })
@@ -238,6 +251,8 @@ pub struct Catalogue<'a> {
     pub items: &'a ItemRegistry,
     pub recipes: &'a RecipeBook,
     pub kinds: &'a PlanetKinds,
+    /// New planets get their kind's biomes (`ServerConfig::biomes`).
+    pub biomes: bool,
 }
 
 /// Opens planet `id`: its saved record (created from `spec` if new), its
@@ -254,7 +269,7 @@ pub fn open(
     let mut saved = match store.planet(id)? {
         Some(s) => s,
         None => {
-            let s = new_record(id, spec, height_chunks, cat.kinds)?;
+            let s = new_record(id, spec, height_chunks, cat.kinds, cat.biomes)?;
             store.put_planet(id, &s)?;
             tracing::info!("created planet {} ({}), seed {}", s.name, s.kind, s.generation.seed);
             s
@@ -379,8 +394,27 @@ pub fn extend_ores(generation: &mut PlanetGenConfig, kind_ores: &[OreSpec]) -> V
 /// wins, so what an older planet grew stays where it was, and props appear
 /// only in chunks never saved. A planet made before M11 has none, so it
 /// gains the kind's whole list. Returns how many entries were appended.
+///
+/// Entries match on everything but their ground: a kind may widen an
+/// entry's `on` list (M19 added the new turfs, soils and rocks to every one)
+/// without cutting its older planets off from later plants.
 pub fn extend_flora(generation: &mut PlanetGenConfig, kind_flora: &[FloraSpec]) -> usize {
-    extend_list(&mut generation.flora, kind_flora).len()
+    let saved = &mut generation.flora;
+    let n = saved.len();
+    let bare = |f: &FloraSpec| FloraSpec {
+        on: Vec::new(),
+        ..f.clone()
+    };
+    if kind_flora.len() <= n
+        || kind_flora[..n]
+            .iter()
+            .zip(saved.iter())
+            .any(|(k, s)| bare(k) != bare(s))
+    {
+        return 0;
+    }
+    saved.extend_from_slice(&kind_flora[n..]);
+    kind_flora.len() - n
 }
 
 /// Appends `kind[saved.len()..]` to `saved` when `saved` is a strict prefix
@@ -601,6 +635,13 @@ mod tests {
         let before = odd.clone();
         assert_eq!(extend_flora(&mut odd, &kind.flora), 0);
         assert_eq!(odd, before);
+        // A planet saved when an entry's ground was narrower still gains
+        // what came after it (M19 widened every `on` list).
+        let mut narrow = kind.clone();
+        narrow.flora.truncate(1);
+        narrow.flora[0].on.truncate(1);
+        assert_eq!(extend_flora(&mut narrow, &kind.flora), kind.flora.len() - 1);
+        assert_eq!(narrow.flora[0].on.len(), 1, "its own entries stay as saved");
     }
 
     /// A planet saved before M11 (no relic seam, no flora) gains both on
@@ -614,7 +655,7 @@ mod tests {
         let items = ItemRegistry::builtin(&registry);
         let recipes = RecipeBook::builtin(&items);
         let spec = PlanetSpec::new("Old", "lush", 3, 16);
-        let mut saved = new_record(0, &spec, 12, &kinds).unwrap();
+        let mut saved = new_record(0, &spec, 12, &kinds, true).unwrap();
         let full = saved.generation.clone();
         // Before the relic seam, milestone 15's relic cache and silver,
         // milestone 17's fossils and milestone 18's coal and relic cores.
@@ -625,6 +666,7 @@ mod tests {
         let old_ores = saved.generation.ores.clone();
         store.put_planet(0, &saved).unwrap();
         let cat = Catalogue {
+            biomes: true,
             registry: &registry,
             items: &items,
             recipes: &recipes,
@@ -648,11 +690,12 @@ mod tests {
         let items = ItemRegistry::builtin(&registry);
         let recipes = RecipeBook::builtin(&items);
         let spec = PlanetSpec::new("Old", "temperate", 3, 16);
-        let mut saved = new_record(0, &spec, 12, &kinds).unwrap();
+        let mut saved = new_record(0, &spec, 12, &kinds, true).unwrap();
         let full = saved.generation.ores.clone();
         saved.generation.ores.pop();
         store.put_planet(0, &saved).unwrap();
         let cat = Catalogue {
+            biomes: true,
             registry: &registry,
             items: &items,
             recipes: &recipes,
@@ -668,7 +711,7 @@ mod tests {
         let store = Store::open(&dir.path().join("u.redb")).unwrap();
         let registry = BlockRegistry::builtin();
         let kinds = PlanetKinds::builtin(&registry);
-        let mut saved = new_record(1, &PlanetSpec::new("A", "temperate", 3, 16), 12, &kinds).unwrap();
+        let mut saved = new_record(1, &PlanetSpec::new("A", "temperate", 3, 16), 12, &kinds, true).unwrap();
         let g = Generator::new(saved.shape, saved.generation.clone(), &registry).unwrap();
         let s = ensure_shrine(&store, 1, &mut saved, &g, &registry).unwrap();
         assert_eq!(saved.shrine, Some(s));

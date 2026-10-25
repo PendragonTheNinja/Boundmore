@@ -144,6 +144,10 @@ pub struct ServerConfig {
     /// Discovering a region gives XP (milestone 14; off in tests that count
     /// XP exactly).
     pub discovery_xp: bool,
+    /// New planets get their kind's biomes (milestone 19). Off in tests
+    /// whose layouts beside the arrival point were built on the single
+    /// landscape.
+    pub biomes: bool,
     /// A meteor brought down at this offset (x, z) from the start planet's
     /// arrival point once a player is there, skipping the triggers and the
     /// distance rules (tests).
@@ -194,6 +198,7 @@ impl Default for ServerConfig {
             creatures_per_planet: 600,
             placed_creatures: Vec::new(),
             discovery_xp: true,
+            biomes: true,
             placed_meteor: None,
             machine_wear_start: None,
             forge_queue_seconds: None,

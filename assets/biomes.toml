@@ -1,0 +1,384 @@
+# Biomes (milestone 19, docs/milestones/19-living-worlds.md). The catalogue a
+# new planet draws its biomes from: Boundless's structure (research
+# docs/research/boundless-worldgen.md), Boundmore's own land. A planet copies
+# the biomes it draws into its saved settings, so edits here only reach new
+# planets.
+#
+#   set         tier set 1 (gentle) to 7 (wild): a planet of tier t draws most
+#               from set t - 1 (sets 1 for tiers 1 and 2), as Boundless did
+#   labels      what a planet kind's biome choice filters on
+#   climate     targets 0 to 1: altitude, temperature, humidity, vegetation
+#   weight      how strongly it claims cells near its climate (0.5 to 1)
+#   base        floor of the land, blocks above (or below) the sea
+#   hills, hill_size          rolling hills: amplitude and feature size
+#   mountains, mountain_size  ridged mountains: height and feature size
+#   terrace     land rises in flat steps this tall (0: smooth)
+#   rivers      rivers may cut it (default true)
+#   cover       [top, under] pairs patched by noise; turf and soils stop on
+#               slopes steeper than 1 in 1 (Boundless 1.25), showing the rock
+#   rock        the rock it is filled with (bands of the others cross it)
+#   cliff, beach  top of steep ground (default: its rock); shore (default sand)
+#   snow_above  snow tops land this far above the sea
+#   tree_density  chance a column grows a tree where the forest noise allows
+# Sizes and densities are GUESSES calibrated by eye (docs/feel.md).
+
+[[biome]]
+name = "meadow"
+set = 1
+labels = ["flat", "grassland", "lush", "warm"]
+climate = [0.35, 0.55, 0.55, 0.55]
+base = 5.0
+hills = 5.0
+hill_size = 140.0
+cover = [["turf", "soil"], ["meadow_turf", "clay"]]
+rock = "stone"
+tree_density = 0.002
+
+[[biome]]
+name = "rolling_hills"
+set = 1
+labels = ["hills", "lush", "warm"]
+climate = [0.5, 0.5, 0.6, 0.6]
+base = 10.0
+hills = 22.0
+hill_size = 180.0
+cover = [["turf", "soil"], ["moss_turf", "peat"]]
+rock = "limestone"
+tree_density = 0.006
+
+[[biome]]
+name = "woodland"
+set = 1
+labels = ["forest", "lush"]
+climate = [0.4, 0.5, 0.7, 0.85]
+base = 7.0
+hills = 9.0
+hill_size = 120.0
+cover = [["turf", "soil"], ["moss_turf", "peat"]]
+rock = "basalt"
+tree_density = 0.03
+
+[[biome]]
+name = "lakeland"
+set = 1
+labels = ["liquid", "lake", "lush"]
+climate = [0.15, 0.5, 0.8, 0.5]
+base = -8.0
+hills = 10.0
+hill_size = 90.0
+cover = [["meadow_turf", "clay"], ["turf", "soil"]]
+rock = "stone"
+tree_density = 0.004
+
+[[biome]]
+name = "low_mountains"
+set = 1
+labels = ["mountains", "hills"]
+climate = [0.75, 0.45, 0.5, 0.4]
+base = 12.0
+hills = 10.0
+hill_size = 150.0
+mountains = 55.0
+mountain_size = 260.0
+cover = [["turf", "soil"]]
+rock = "basalt"
+tree_density = 0.004
+
+[[biome]]
+name = "sandy_flats"
+set = 1
+labels = ["desert", "flat", "hot"]
+climate = [0.3, 0.85, 0.15, 0.15]
+base = 4.0
+hills = 4.0
+hill_size = 100.0
+cover = [["sand", "sand"]]
+rock = "limestone"
+tree_density = 0.0
+
+[[biome]]
+name = "tundra"
+set = 1
+labels = ["cold", "flat", "cool"]
+climate = [0.4, 0.1, 0.4, 0.3]
+base = 6.0
+hills = 6.0
+hill_size = 110.0
+cover = [["moss_turf", "peat"], ["snow", "peat"]]
+rock = "stone"
+tree_density = 0.002
+
+[[biome]]
+name = "high_plateau"
+set = 2
+labels = ["flat", "rocky"]
+climate = [0.85, 0.55, 0.4, 0.4]
+base = 34.0
+hills = 3.0
+hill_size = 80.0
+rivers = false
+cover = [["meadow_turf", "clay"]]
+rock = "limestone"
+tree_density = 0.003
+
+[[biome]]
+name = "dunes"
+set = 2
+labels = ["desert", "hot"]
+climate = [0.35, 0.95, 0.05, 0.05]
+base = 6.0
+hills = 14.0
+hill_size = 48.0
+rivers = false
+cover = [["sand", "sand"]]
+rock = "limestone"
+tree_density = 0.0
+
+[[biome]]
+name = "salt_flats"
+set = 2
+labels = ["desert", "flat", "wasteland", "hot"]
+climate = [0.2, 0.8, 0.2, 0.05]
+base = 2.0
+hills = 1.5
+hill_size = 200.0
+cover = [["sand", "limestone"], ["gravel", "limestone"]]
+rock = "limestone"
+tree_density = 0.0
+
+[[biome]]
+name = "snowfield"
+set = 2
+labels = ["cold", "ice"]
+climate = [0.5, 0.05, 0.5, 0.35]
+base = 8.0
+hills = 10.0
+hill_size = 130.0
+cover = [["snow", "soil"]]
+rock = "stone"
+snow_above = -200
+tree_density = 0.004
+
+[[biome]]
+name = "swamp"
+set = 2
+labels = ["swamp", "liquid", "lush", "warm"]
+climate = [0.1, 0.6, 0.95, 0.75]
+base = 1.0
+hills = 3.0
+hill_size = 50.0
+cover = [["mud", "peat"], ["moss_turf", "peat"]]
+beach = "mud"
+rock = "stone"
+tree_density = 0.02
+
+[[biome]]
+name = "pine_hills"
+set = 2
+labels = ["forest", "cool", "hills"]
+climate = [0.6, 0.3, 0.6, 0.8]
+base = 12.0
+hills = 20.0
+hill_size = 160.0
+cover = [["moss_turf", "peat"], ["turf", "soil"]]
+rock = "stone"
+tree_density = 0.03
+
+[[biome]]
+name = "open_sea"
+set = 2
+labels = ["sea", "liquid"]
+climate = [0.0, 0.5, 0.9, 0.3]
+base = -40.0
+hills = 10.0
+hill_size = 200.0
+cover = [["sand", "sand"], ["gravel", "gravel"]]
+rock = "stone"
+tree_density = 0.0
+
+[[biome]]
+name = "mountains"
+set = 3
+labels = ["mountains", "rocky", "cool"]
+climate = [0.95, 0.4, 0.5, 0.35]
+base = 18.0
+hills = 12.0
+hill_size = 160.0
+mountains = 110.0
+mountain_size = 340.0
+cover = [["turf", "soil"], ["gravel", "stone"]]
+rock = "basalt"
+snow_above = 90
+tree_density = 0.003
+
+[[biome]]
+name = "mesa"
+set = 3
+labels = ["desert", "rocky", "hot"]
+climate = [0.7, 0.85, 0.2, 0.1]
+base = 8.0
+hills = 30.0
+hill_size = 150.0
+terrace = 9.0
+cover = [["sand", "limestone"]]
+rock = "limestone"
+tree_density = 0.0
+
+[[biome]]
+name = "canyon_lands"
+set = 3
+labels = ["wasteland", "rocky", "hot"]
+climate = [0.7, 0.7, 0.3, 0.2]
+base = 28.0
+hills = 6.0
+hill_size = 90.0
+cover = [["gravel", "limestone"], ["sand", "limestone"]]
+rock = "limestone"
+tree_density = 0.001
+
+[[biome]]
+name = "bog"
+set = 3
+labels = ["swamp", "liquid", "cool"]
+climate = [0.1, 0.4, 1.0, 0.5]
+base = -1.0
+hills = 3.0
+hill_size = 40.0
+cover = [["mud", "mud"], ["moss_turf", "peat"]]
+beach = "mud"
+rock = "stone"
+tree_density = 0.008
+
+[[biome]]
+name = "ash_plain"
+set = 3
+labels = ["wasteland", "hot", "crater"]
+climate = [0.4, 0.9, 0.1, 0.0]
+base = 6.0
+hills = 8.0
+hill_size = 90.0
+cover = [["ash", "basalt"], ["gravel", "gravel"]]
+beach = "gravel"
+rock = "basalt"
+tree_density = 0.0
+
+[[biome]]
+name = "jungle"
+set = 3
+labels = ["forest", "lush", "warm"]
+climate = [0.4, 0.85, 0.9, 1.0]
+base = 8.0
+hills = 16.0
+hill_size = 110.0
+cover = [["moss_turf", "peat"], ["meadow_turf", "clay"]]
+rock = "basalt"
+tree_density = 0.05
+
+[[biome]]
+name = "glacier"
+set = 3
+labels = ["ice", "cold", "mountains"]
+climate = [0.75, 0.0, 0.6, 0.1]
+base = 16.0
+hills = 14.0
+hill_size = 120.0
+mountains = 50.0
+mountain_size = 220.0
+cover = [["snow", "stone"]]
+rock = "stone"
+snow_above = -200
+tree_density = 0.0
+
+[[biome]]
+name = "crags"
+set = 4
+labels = ["mountains", "rocky"]
+climate = [1.0, 0.35, 0.4, 0.2]
+base = 20.0
+hills = 10.0
+hill_size = 120.0
+mountains = 140.0
+mountain_size = 220.0
+cover = [["gravel", "stone"], ["turf", "soil"]]
+rock = "basalt"
+snow_above = 100
+tree_density = 0.001
+
+[[biome]]
+name = "badlands"
+set = 4
+labels = ["crater", "wasteland", "rocky"]
+climate = [0.5, 0.7, 0.2, 0.05]
+base = 10.0
+hills = 25.0
+hill_size = 70.0
+terrace = 6.0
+cover = [["gravel", "gravel"], ["ash", "basalt"]]
+rock = "basalt"
+tree_density = 0.0
+
+[[biome]]
+name = "tall_forest"
+set = 4
+labels = ["forest", "lush"]
+climate = [0.5, 0.6, 0.75, 1.0]
+base = 10.0
+hills = 14.0
+hill_size = 140.0
+cover = [["turf", "soil"], ["moss_turf", "peat"]]
+rock = "stone"
+tree_density = 0.06
+
+[[biome]]
+name = "isles"
+set = 4
+labels = ["islands", "liquid", "sea", "warm"]
+climate = [0.05, 0.75, 0.75, 0.6]
+base = -14.0
+hills = 22.0
+hill_size = 70.0
+cover = [["meadow_turf", "clay"]]
+rock = "limestone"
+tree_density = 0.01
+
+[[biome]]
+name = "volcanic_slopes"
+set = 4
+labels = ["hot", "wasteland", "crater", "rocky"]
+climate = [0.8, 1.0, 0.1, 0.0]
+base = 14.0
+hills = 8.0
+hill_size = 100.0
+mountains = 70.0
+mountain_size = 200.0
+cover = [["ash", "basalt"]]
+beach = "gravel"
+rock = "basalt"
+tree_density = 0.0
+
+[[biome]]
+name = "frost_peaks"
+set = 4
+labels = ["ice", "cold", "mountains", "rocky"]
+climate = [0.95, 0.05, 0.5, 0.1]
+base = 20.0
+hills = 10.0
+hill_size = 120.0
+mountains = 120.0
+mountain_size = 240.0
+cover = [["snow", "stone"], ["gravel", "stone"]]
+rock = "stone"
+snow_above = 30
+tree_density = 0.0
+
+[[biome]]
+name = "thicket"
+set = 4
+labels = ["forest", "swamp", "lush"]
+climate = [0.25, 0.7, 0.85, 0.95]
+base = 3.0
+hills = 5.0
+hill_size = 60.0
+cover = [["moss_turf", "peat"], ["mud", "peat"]]
+rock = "basalt"
+tree_density = 0.07

@@ -32,13 +32,30 @@ const DROP_SPREAD: f64 = 3.0;
 const FALL_HEIGHT: f64 = 220.0;
 /// Tries at finding a landing site.
 const SITE_TRIES: usize = 16;
-/// A wave creature that has moved less than this in [`STUCK_TICKS`], with
-/// no player within [`STUCK_NEAR`], is stuck (in a pit by the shell, say)
-/// and drops back in through a portal, so a meteor can always be beaten
-/// (**our rule**).
-const STUCK_MOVE: f64 = 0.5;
+/// A wave creature that has come no nearer than this to any player in
+/// [`STUCK_TICKS`], with no player within [`STUCK_NEAR`], is stuck (in a pit
+/// by the shell, say, pacing under its target) and drops back in through a
+/// portal, so a meteor can always be beaten (**our rule**). Measured as
+/// progress toward the players, not movement: a creature pacing in a pit
+/// moves all the time and never arrives.
+const STUCK_MOVE: f64 = 1.0;
 const STUCK_TICKS: u64 = 8 * 60;
 const STUCK_NEAR: f64 = 4.0;
+
+/// One look at a wave creature `gap` from the nearest player at `tick`,
+/// against `entry` (its nearest approach and since when): whether it is
+/// stuck and should drop back in (the entry starts again either way).
+fn stuck_step(entry: &mut (f64, u64), gap: f64, tick: u64) -> bool {
+    if gap <= STUCK_NEAR || gap < entry.0 - STUCK_MOVE {
+        *entry = (gap, tick);
+        false
+    } else if tick >= entry.1 + STUCK_TICKS {
+        *entry = (gap, tick);
+        true
+    } else {
+        false
+    }
+}
 
 /// A meteor's phase on the server.
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -85,8 +102,9 @@ pub(super) struct Meteor {
     /// The shell's blocks, and how many have been broken.
     pub shell: Vec<BlockPos>,
     pub broken: u32,
-    /// Each wave creature's position when last seen moving, and since when.
-    pub stuck: HashMap<u32, (DVec3, u64)>,
+    /// Each wave creature's nearest approach to a player since it last got
+    /// closer, and since when.
+    pub stuck: HashMap<u32, (f64, u64)>,
 }
 
 impl Meteor {
@@ -859,12 +877,12 @@ impl Game {
                 continue;
             };
             let pos = c.state.pos;
-            let entry = m.stuck.entry(cid).or_insert((pos, tick));
-            let near = players.iter().any(|p| shape.delta(pos, *p).length() <= STUCK_NEAR);
-            if near || shape.delta(entry.0, pos).length() > STUCK_MOVE {
-                *entry = (pos, tick);
-            } else if tick >= entry.1 + STUCK_TICKS {
-                *entry = (pos, tick);
+            let gap = players
+                .iter()
+                .map(|p| shape.delta(pos, *p).length())
+                .fold(f64::MAX, f64::min);
+            let entry = m.stuck.entry(cid).or_insert((gap, tick));
+            if stuck_step(entry, gap, tick) {
                 drop.push(cid);
             }
         }
@@ -1095,6 +1113,25 @@ mod tests {
             None,
             0,
         )
+    }
+
+    /// A creature pacing in a pit under its target moves all the time but
+    /// never gets closer: it is stuck (the meteor test once waited forever
+    /// on one 25 blocks under the player). One that closes in is not.
+    #[test]
+    fn a_creature_pacing_in_a_pit_counts_as_stuck() {
+        let mut pit = (25.0, 0);
+        let mut dropped = false;
+        for t in 1..=STUCK_TICKS {
+            let gap = if t % 2 == 0 { 25.0 } else { 24.4 };
+            dropped |= stuck_step(&mut pit, gap, t);
+        }
+        assert!(dropped, "pacing is not progress");
+        let mut coming = (25.0, 0);
+        for t in 1..=STUCK_TICKS * 2 {
+            let gap = 25.0 - t as f64 * 0.02;
+            assert!(!stuck_step(&mut coming, gap, t), "closing in at {t}");
+        }
     }
 
     #[test]

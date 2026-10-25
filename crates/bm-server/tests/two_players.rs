@@ -567,6 +567,9 @@ fn config(dir: &Path) -> ServerConfig {
         portal_epic_required: false,
         // Tests count XP exactly; discovery has its own test.
         discovery_xp: false,
+        // The layouts beside the arrival point were built on the single
+        // landscape; biome planets have their own test.
+        biomes: false,
         ..Default::default()
     }
 }
@@ -6333,4 +6336,43 @@ async fn a_gnawing_hammer_in_hand_makes_you_hungry() {
     assert!(s.hunger_points() >= 4, "hungry: {}", s.hunger_points());
     assert_eq!(s.full_energy(), 780);
     server.stop();
+}
+
+/// Milestone 19: a new planet of a kind with biomes saves the fifteen it
+/// drew, opens again unchanged, and a player arrives on solid ground beside
+/// its shrine.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn a_biome_planet_keeps_its_biomes_and_welcomes_players() {
+    let dir = tempfile::tempdir().unwrap();
+    let cfg = ServerConfig {
+        biomes: true,
+        planets: vec![PlanetSpec::new("Patchwork", "temperate", 7, 32)],
+        ..config(dir.path())
+    };
+    let server = bm_server::start(cfg.clone()).unwrap();
+    let mut alice = TestClient::register(&server, "Alice").await;
+    let feet = alice.feet();
+    alice.wait_for_chunk(feet.chunk()).await;
+    let ground = alice.chunks[&feet.chunk()].state(feet.local()).id;
+    let solid = alice.welcome.blocks[ground.0 as usize].solid;
+    assert!(solid, "arrived over {:?}", alice.welcome.blocks[ground.0 as usize].name);
+    alice.wait_for_chunk(alice.shrine().chunk()).await;
+    assert_eq!(
+        alice.chunks[&alice.shrine().chunk()].state(alice.shrine().local()).id,
+        alice.block("warp_shrine")
+    );
+    drop(alice);
+    server.stop();
+    let saved = {
+        let store = Store::open(&dir.path().join(UNIVERSE_FILE)).unwrap();
+        store.planet(0).unwrap().unwrap()
+    };
+    assert_eq!(saved.generation.biomes.len(), 15);
+    assert_eq!(saved.generator_version, bm_worldgen::GENERATOR_VERSION);
+    let server = bm_server::start(cfg).unwrap();
+    let alice = TestClient::login(&server, "Alice").await;
+    assert_eq!(alice.feet(), feet, "the same land again");
+    server.stop();
+    let store = Store::open(&dir.path().join(UNIVERSE_FILE)).unwrap();
+    assert_eq!(store.planet(0).unwrap().unwrap().generation, saved.generation);
 }

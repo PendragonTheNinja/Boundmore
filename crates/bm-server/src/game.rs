@@ -348,8 +348,9 @@ pub struct Game {
     /// Crop kinds and the blocks farming turns into one another
     /// (milestone 16 part 2).
     crops: bm_core::crops::CropKinds,
-    soil: BlockId,
-    turf: BlockId,
+    /// Each grass and the soil under it (milestone 19: three of each);
+    /// a tiller tills any of them, sowing on a grass bares its soil.
+    grass_soils: Vec<(BlockId, BlockId)>,
     tilled_soil: BlockId,
     /// Damaged blocks, by planet index (milestone 9; never saved).
     damage: Vec<DamageMap>,
@@ -579,8 +580,10 @@ impl Game {
         let spark_item = items.id("spark")?;
         let water_bucket = items.id("water_bucket")?;
         let crops = bm_core::crops::CropKinds::build(include_str!("../../../assets/crops.toml"), &registry, &items)?;
-        let soil = registry.id("soil")?;
-        let turf = registry.id("turf")?;
+        let grass_soils = [("turf", "soil"), ("meadow_turf", "clay"), ("moss_turf", "peat")]
+            .iter()
+            .map(|(g, s)| Ok((registry.id(g)?, registry.id(s)?)))
+            .collect::<Result<Vec<_>, bm_core::RegistryError>>()?;
         let tilled_soil = registry.id("tilled_soil")?;
         for p in &mut planets {
             p.farm = crate::farm::Farm::load(store.crops(p.id)?, &crops);
@@ -662,8 +665,7 @@ impl Game {
             spark_item,
             water_bucket,
             crops,
-            soil,
-            turf,
+            grass_soils,
             tilled_soil,
             damage: (0..planet_count).map(|_| DamageMap::default()).collect(),
             rng: std::time::SystemTime::now()

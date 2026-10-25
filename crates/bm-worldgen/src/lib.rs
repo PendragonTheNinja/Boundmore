@@ -10,10 +10,12 @@
 //! the economy, and a client that could generate terrain could see every vein
 //! on the planet.
 
+pub mod biomes;
 pub mod kinds;
 pub mod noise;
 pub mod trees;
 
+pub use biomes::{BiomeCatalogue, BiomeChoice, BiomeSpec};
 pub use kinds::{KindError, PlanetKind, PlanetKinds};
 
 use bm_core::{
@@ -39,7 +41,12 @@ use std::sync::OnceLock;
 /// version 2 planet's saved settings read as, still produce version 2's
 /// terrain block for block (`no_colours_reproduce_version_2`): see
 /// [`opens_generator_version`].
-pub const GENERATOR_VERSION: u32 = 3;
+///
+/// Version 4 (M19) adds biomes ([`PlanetGenConfig::biomes`]). Settings with
+/// no biomes, which is what every version 3 planet's saved settings read as,
+/// still produce version 3's terrain block for block
+/// (`no_biomes_reproduce_version_3`).
+pub const GENERATOR_VERSION: u32 = 4;
 
 /// Whether this generator reproduces, block for block, the terrain of a
 /// planet saved by generator `version` from that planet's saved settings, so
@@ -47,11 +54,12 @@ pub const GENERATOR_VERSION: u32 = 3;
 ///
 /// Version 2's settings have no `colours` field, so they read as no colours,
 /// and version 3 with no colours is version 2's terrain: a version 2 planet
-/// opens as a version 3 planet that keeps natural colours. Version 1 saved
+/// opens as a version 3 planet that keeps natural colours. Version 3's have
+/// no `biomes`, and version 4 with no biomes is version 3's terrain. Version 1 saved
 /// its settings in another layout ([`PlanetGenConfigV1`]) and is upgraded by
 /// the server's save conversion, not here.
 pub fn opens_generator_version(version: u32) -> bool {
-    version == GENERATOR_VERSION || version == 2
+    version == GENERATOR_VERSION || version == 3 || version == 2
 }
 
 /// The most palette colours a planet uses for one block: a main colour and
@@ -146,6 +154,16 @@ pub struct PlanetGenConfig {
     /// natural everywhere. Only colourable blocks may be listed.
     #[serde(skip_serializing_if = "BTreeMap::is_empty")]
     pub colours: BTreeMap<String, Vec<String>>,
+
+    /// The planet's biomes (milestone 19, [`biomes`]): drawn from the
+    /// catalogue when the planet is created and saved here. Empty (planets
+    /// made before generator 4, and the default) is version 3's single
+    /// landscape, block for block.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub biomes: Vec<BiomeSpec>,
+    /// Biome cells are about this many blocks across (a **guess**: Boundless's
+    /// were about 480 on worlds three times as wide).
+    pub biome_size: f64,
 }
 
 /// A lower sea: what open caves fill with, up to which height.
@@ -170,6 +188,8 @@ pub enum ConfigError {
     FloraSolid(String),
     #[error("flora `{0}`: lists no ground (`on`) to grow on")]
     FloraGround(String),
+    #[error("biome `{0}`: lists no cover")]
+    NoCover(String),
 }
 
 /// One ore in a planet's rock.
@@ -327,15 +347,36 @@ impl Default for PlanetGenConfig {
             ],
             flora: Vec::new(),
             colours: BTreeMap::new(),
+            biomes: Vec::new(),
+            biome_size: 320.0,
         }
     }
 }
 
 impl PlanetGenConfig {
+    /// These settings without biomes: version 3's single landscape (the
+    /// older tests check that path, which planets saved before generator 4
+    /// still take).
+    #[cfg(test)]
+    fn single(self) -> Self {
+        Self {
+            biomes: Vec::new(),
+            ..self
+        }
+    }
+
     /// Every block the settings name exists, and every colour is a palette
     /// colour on a colourable block.
     pub fn check(&self, blocks: &BlockRegistry) -> Result<(), ConfigError> {
         Ids::resolve(self, blocks)?;
+        for b in &self.biomes {
+            for name in b.blocks() {
+                blocks.id(name)?;
+            }
+            if b.cover.is_empty() {
+                return Err(ConfigError::NoCover(b.name.clone()));
+            }
+        }
         Flora::resolve(self, blocks, 1)?;
         BlockColours::resolve(&self.colours, blocks).map(|_| ())
     }
@@ -727,6 +768,157 @@ pub struct Generator {
     caverns: Fbm,
     tunnel_a: Fbm,
     tunnel_b: Fbm,
+    /// The planet's biomes (milestone 19); None: version 3's one landscape.
+    biome: Option<BiomeWorld>,
+}
+
+/// A biome's land and blocks, resolved for generating.
+struct BiomeLand {
+    base: f64,
+    hills: f64,
+    mountains: f64,
+    terrace: f64,
+    rivers: f64,
+    hill: Fbm,
+    ridge: Fbm,
+    /// (top, under, whether it covers steep ground).
+    cover: Vec<(BlockId, BlockId, bool)>,
+    rock: BlockId,
+    cliff: BlockId,
+    beach: Option<BlockId>,
+    snow_above: Option<i64>,
+    tree_density: f64,
+}
+
+/// What a biome planet adds to the generator.
+struct BiomeWorld {
+    layout: biomes::Layout,
+    lands: Vec<BiomeLand>,
+    rivers: Fbm,
+    patch: Fbm,
+    wobble: Fbm,
+    /// The rock band crossing each height (None: the biome's own rock).
+    strata: Vec<Option<BlockId>>,
+    /// Every block ores and glow crystals may replace.
+    rocks: Vec<BlockId>,
+    river_bed: [BlockId; 3],
+    any_trees: bool,
+}
+
+/// One column of a biome planet: its height, the biome it belongs to and how
+/// much a river cuts it (0 to 1).
+#[derive(Clone, Copy, Default)]
+struct Column {
+    h: i64,
+    biome: u8,
+    river: f64,
+}
+
+/// Height over which neighbouring biomes' land blends (a **guess**).
+const BIOME_BLEND: f64 = 48.0;
+/// A river channel where the river noise is within this of zero (a **guess**:
+/// about 15 to 25 blocks wide).
+const RIVER_WIDTH: f64 = 0.022;
+/// Strata bands start this far under the sea (Boundless: 55 against 64).
+const STRATA_BELOW_SEA: i64 = 9;
+
+/// Blocks that grass and soil cannot hold on steep ground (Boundless's
+/// `maxGradient` 1.25): everything else covers any slope.
+const SOFT_COVER: [&str; 7] = ["turf", "meadow_turf", "moss_turf", "soil", "clay", "peat", "mud"];
+
+impl BiomeWorld {
+    fn new(cfg: &PlanetGenConfig, r: &BlockRegistry, width: i64, k: impl Fn(u64) -> u64) -> Result<Self, ConfigError> {
+        let id = |n: &str| r.id(n);
+        let mut lands = Vec::with_capacity(cfg.biomes.len());
+        let mut rocks = vec![id("stone")?, id("deep_stone")?];
+        for (i, b) in cfg.biomes.iter().enumerate() {
+            let rock = id(&b.rock)?;
+            if !rocks.contains(&rock) {
+                rocks.push(rock);
+            }
+            let cover = b
+                .cover
+                .iter()
+                .map(|[top, under]| Ok((id(top)?, id(under)?, !SOFT_COVER.contains(&top.as_str()))))
+                .collect::<Result<Vec<_>, RegistryError>>()?;
+            lands.push(BiomeLand {
+                base: b.base,
+                hills: b.hills,
+                mountains: b.mountains,
+                terrace: b.terrace,
+                rivers: if b.rivers { 1.0 } else { 0.0 },
+                hill: Fbm::new(k(2001 + 2 * i as u64), width, b.hill_size.max(8.0), 3, 0.5),
+                ridge: Fbm::new(k(2002 + 2 * i as u64), width, b.mountain_size.max(16.0), 4, 0.5),
+                cover,
+                rock,
+                cliff: if b.cliff.is_empty() { rock } else { id(&b.cliff)? },
+                beach: if b.beach.is_empty() { None } else { Some(id(&b.beach)?) },
+                snow_above: b.snow_above,
+                tree_density: b.tree_density,
+            });
+        }
+        // The three rock kinds band every cliff (Boundless's strata), when
+        // the catalogue has them.
+        let kinds: Vec<BlockId> = ["stone", "basalt", "limestone"]
+            .iter()
+            .filter_map(|n| r.id(n).ok())
+            .collect();
+        for b in &kinds {
+            if !rocks.contains(b) {
+                rocks.push(*b);
+            }
+        }
+        let strata = Self::strata(cfg, &kinds, 512);
+        Ok(Self {
+            layout: biomes::Layout::new(&cfg.biomes, width, cfg.biome_size, cfg.seed),
+            any_trees: lands.iter().any(|l| l.tree_density > 0.0),
+            lands,
+            rivers: Fbm::new(k(2901), width, 520.0, 2, 0.5),
+            patch: Fbm::new(k(2902), width, 96.0, 2, 0.5),
+            wobble: Fbm::new(k(2903), width, 110.0, 2, 0.5),
+            strata,
+            rocks,
+            river_bed: [id("gravel")?, id("clay").unwrap_or(id("gravel")?), id("sand")?],
+        })
+    }
+
+    /// The band crossing each height up to `height`: from a little under the
+    /// sea up, thick, middle and thin bands of the rock kinds at hashed
+    /// heights, thinner ones laid over thicker (Boundless's strata: thick 12
+    /// ± 4 and middle 6 ± 3 of two kinds, thin 2 to 4 of any).
+    fn strata(cfg: &PlanetGenConfig, kinds: &[BlockId], height: usize) -> Vec<Option<BlockId>> {
+        let mut out = vec![None; height];
+        if kinds.is_empty() {
+            return out;
+        }
+        let lo = (cfg.sea_level - STRATA_BELOW_SEA).max(0);
+        let span = (height as i64 - lo).max(1);
+        let mut n = 0i64;
+        let draw = |n: &mut i64| {
+            *n += 1;
+            hash01(cfg.seed ^ 0x57a7_a000, *n, 0, 0)
+        };
+        // (how many, thickness, spread, which kinds may band)
+        for (count, thick, spread, thin_kinds) in [(4, 12.0, 4.0, false), (6, 6.0, 3.0, false), (12, 3.0, 1.0, true)] {
+            for _ in 0..count {
+                let centre = lo + (draw(&mut n) * span as f64) as i64;
+                let t = (thick + (draw(&mut n) * 2.0 - 1.0) * spread).max(2.0) as i64;
+                let pool: Vec<BlockId> = if thin_kinds || kinds.len() < 3 {
+                    kinds.to_vec()
+                } else {
+                    // Thick and middle bands are never the dark kind.
+                    vec![kinds[0], kinds[2]]
+                };
+                let rock = pool[((draw(&mut n) * pool.len() as f64) as usize).min(pool.len() - 1)];
+                for y in centre - t / 2..centre - t / 2 + t {
+                    if (0..height as i64).contains(&y) {
+                        out[y as usize] = Some(rock);
+                    }
+                }
+            }
+        }
+        out
+    }
 }
 
 /// Cave values at one lattice point.
@@ -806,7 +998,13 @@ impl Generator {
             })
             .collect();
         let flora = Flora::resolve(&cfg, registry, w)?;
+        let biome = if cfg.biomes.is_empty() {
+            None
+        } else {
+            Some(BiomeWorld::new(&cfg, registry, w, k)?)
+        };
         Ok(Self {
+            biome,
             shape,
             ids,
             ores,
@@ -842,6 +1040,9 @@ impl Generator {
 
     /// Y of the topmost terrain block in a column (before caves and trees).
     pub fn surface_height(&self, x: i64, z: i64) -> i64 {
+        if let Some(bw) = &self.biome {
+            return self.column(bw, x, z).h;
+        }
         let (x, z) = (x as f64, z as f64);
         let w = self.width;
         let c = self.continent.sample2(x, z, w);
@@ -855,6 +1056,61 @@ impl Generator {
             + hills * 14.0 * (0.4 + land)
             + mask * land * ridge * ridge * self.cfg.mountain_height;
         (h.floor() as i64).clamp(4, self.shape.height_blocks() - self.tree_top - 4)
+    }
+
+    /// A column of a biome planet: the blend of the nearby cells' land, cut
+    /// by rivers, and the biome it belongs to.
+    fn column(&self, bw: &BiomeWorld, x: i64, z: i64) -> Column {
+        let (fx, fz) = (x as f64, z as f64);
+        let w = self.width;
+        let sea = self.cfg.sea_level as f64;
+        let (near, n) = bw.layout.near(fx, fz);
+        let d0 = near[0].0;
+        let (mut sum, mut weights, mut rivers) = (0.0, 0.0, 0.0);
+        // Each biome counted once, at its nearest cell.
+        let mut seen = [false; 256];
+        for &(d, b) in &near[..n] {
+            let t = 1.0 - (d - d0) / BIOME_BLEND;
+            if t <= 0.0 || seen[b as usize] {
+                continue;
+            }
+            seen[b as usize] = true;
+            let wt = t * t;
+            let land = &bw.lands[b as usize];
+            let mut h = sea + land.base + land.hill.sample2(fx, fz, w) * 1.4 * land.hills;
+            if land.mountains > 0.0 {
+                let r = land.ridge.ridged2(fx, fz, w);
+                h += land.mountains * r * r;
+            }
+            if land.terrace > 0.0 {
+                let k = (h - sea) / land.terrace;
+                h = sea + (k.floor() + smoothstep(0.7, 1.0, k - k.floor())) * land.terrace;
+            }
+            sum += wt * h;
+            rivers += wt * land.rivers;
+            weights += wt;
+        }
+        let mut h = sum / weights;
+        // A river cuts to two under the water line, its banks easing out.
+        let r = bw.rivers.sample2(fx, fz, w).abs();
+        let river = smoothstep(RIVER_WIDTH, RIVER_WIDTH * 0.35, r) * (rivers / weights);
+        let bottom = (self.water_level - 2) as f64;
+        if river > 0.0 && h > bottom {
+            h -= (h - bottom) * river;
+        }
+        // A little jitter in which cell a border column belongs to, so biome
+        // edges are not ruled lines.
+        let jitter = (hash01(self.cfg.seed ^ 0xb0d3, x, 0, z) - 0.5) * 8.0;
+        let biome = if n > 1 && near[1].0 - d0 < jitter {
+            near[1].1
+        } else {
+            near[0].1
+        };
+        Column {
+            h: (h.floor() as i64).clamp(4, self.shape.height_blocks() - self.tree_top - 4),
+            biome,
+            river,
+        }
     }
 
     fn cave_at(&self, x: i64, y: i64, z: i64) -> Cave {
@@ -909,14 +1165,24 @@ impl Generator {
         let m = TREE_REACH + 1;
         let span = (cs + 2 * m) as usize;
         let mut heights = vec![0i64; span * span];
+        let mut columns = Vec::new();
         let mut max_h = i64::MIN;
         for dz in 0..span {
             for dx in 0..span {
-                let h = self.surface_height(origin.x + dx as i64 - m, origin.z + dz as i64 - m);
+                let (x, z) = (origin.x + dx as i64 - m, origin.z + dz as i64 - m);
+                let h = match &self.biome {
+                    Some(bw) => {
+                        let c = self.column(bw, x, z);
+                        columns.push(c);
+                        c.h
+                    }
+                    None => self.surface_height(x, z),
+                };
                 heights[dz * span + dx] = h;
                 max_h = max_h.max(h);
             }
         }
+        let column_at = |lx: i64, lz: i64| columns[((lz + m) as usize) * span + (lx + m) as usize];
         let height_at = |lx: i64, lz: i64| heights[((lz + m) as usize) * span + (lx + m) as usize];
 
         // Sky fast path: most chunks on a planet are empty air.
@@ -974,20 +1240,48 @@ impl Generator {
                     }
                 }
                 let slope = slope_at(&height_at, lx, lz);
-                let surface = self.surface_block(h, slope, wx, wz);
-                // Under the top: a few blocks of soil (or more of the surface
-                // block), then the planet's layer rock, then stone.
-                let (fill, soil_bottom) = if surface == ids.cliff {
-                    (surface, h)
-                } else if surface == ids.ground || surface == ids.snow {
-                    (ids.subsoil, h - 3)
-                } else {
-                    (surface, h - 3)
+                // The rock under the cover: the planet's stone, or on a biome
+                // planet the biome's rock crossed by strata bands.
+                let mut rock = ids.stone;
+                let (surface, fill, soil_bottom) = match &self.biome {
+                    None => {
+                        let surface = self.surface_block(h, slope, wx, wz);
+                        // Under the top: a few blocks of soil (or more of the
+                        // surface block), then the planet's layer rock, then
+                        // stone.
+                        if surface == ids.cliff {
+                            (surface, surface, h)
+                        } else if surface == ids.ground || surface == ids.snow {
+                            (surface, ids.subsoil, h - 3)
+                        } else {
+                            (surface, surface, h - 3)
+                        }
+                    }
+                    Some(bw) => {
+                        let c = column_at(lx, lz);
+                        rock = bw.lands[c.biome as usize].rock;
+                        let shore =
+                            (-3..=3i64).any(|dz| (-3..=3i64).any(|dx| height_at(lx + dx, lz + dz) < self.water_level));
+                        let (top, under) = self.biome_cover(bw, c, slope, shore, wx, wz);
+                        let depth = 2 + (hash01(seed ^ 0x5a2e, wx, 0, wz) * 4.0) as i64;
+                        (top, under, if under == rock { h } else { h - depth })
+                    }
                 };
-                let layer_bottom = if cfg.layer_depth > 0 {
+                let layer_bottom = if cfg.layer_depth > 0 && self.biome.is_none() {
                     soil_bottom - cfg.layer_depth - (hash01(seed ^ 0x5a2d, wx, 0, wz) * 4.0) as i64
                 } else {
                     soil_bottom
+                };
+                let wobble = match &self.biome {
+                    Some(bw) => (bw.wobble.sample2(wx as f64, wz as f64, self.width) * 9.0) as i64,
+                    None => 0,
+                };
+                let rock_at = |wy: i64| match &self.biome {
+                    Some(bw) if wy >= sea - STRATA_BELOW_SEA => {
+                        let band = (wy + wobble).clamp(0, bw.strata.len() as i64 - 1) as usize;
+                        bw.strata[band].unwrap_or(rock)
+                    }
+                    _ => rock,
                 };
                 let deep_line = 60 + (hash01(seed ^ 0xdee9, wx, 0, wz) * 5.0) as i64;
                 // Which ores this column may hold (milestone 18's rules; every
@@ -1018,7 +1312,7 @@ impl Generator {
                     } else if wy < deep_line {
                         ids.deep_stone
                     } else {
-                        ids.stone
+                        rock_at(wy)
                     };
                     // Never open a cave into the sea floor: static water would
                     // stand as a wall over the hole.
@@ -1031,7 +1325,7 @@ impl Generator {
                                 Some((level, sea)) if wy <= level => sea,
                                 _ => ids.air,
                             };
-                        } else if b == ids.stone || b == ids.deep_stone {
+                        } else if self.is_rock(b) {
                             let mut ore_hit = None;
                             for (o, ore) in self.ores.iter().enumerate() {
                                 if ore_column[o]
@@ -1064,7 +1358,11 @@ impl Generator {
             }
         }
 
-        self.place_trees(pos, &mut blocks, &height_at, &regions);
+        let density_at = |lx: i64, lz: i64| match &self.biome {
+            Some(bw) => bw.lands[column_at(lx, lz).biome as usize].tree_density,
+            None => cfg.tree_density,
+        };
+        self.place_trees(pos, &mut blocks, &height_at, &density_at, &regions);
         self.place_flora(origin, &mut blocks, &height_at);
         Chunk::from_dense_states(&blocks)
     }
@@ -1135,14 +1433,70 @@ impl Generator {
         }
     }
 
-    /// Whether a tree grows from canonical column `(x, z)`, and its trunk height.
-    fn tree_at(&self, x: i64, z: i64, h: i64) -> Option<i64> {
+    /// Rock that ores and glow crystals may replace: stone and deep stone,
+    /// and on a biome planet every rock kind.
+    #[inline]
+    fn is_rock(&self, b: BlockId) -> bool {
+        match &self.biome {
+            Some(bw) => bw.rocks.contains(&b),
+            None => b == self.ids.stone || b == self.ids.deep_stone,
+        }
+    }
+
+    /// A biome column's top block and the block under it: sea beds and
+    /// river beds under water, beaches at the shore (`shore`: open water
+    /// within three columns), snow above the biome's
+    /// snow line, its cover patched by noise elsewhere, and bare rock (its
+    /// cliff) where the ground is too steep for the cover to hold.
+    fn biome_cover(&self, bw: &BiomeWorld, c: Column, slope: i64, shore: bool, wx: i64, wz: i64) -> (BlockId, BlockId) {
+        let ids = &self.ids;
+        let land = &bw.lands[c.biome as usize];
         let sea = self.cfg.sea_level;
-        if self.cfg.tree_density <= 0.0 || h < sea.max(self.water_level) + 2 || h >= sea + self.cfg.tree_line {
+        let seed = self.cfg.seed;
+        if c.river > 0.25 && c.h < self.water_level {
+            let i = ((hash01(seed ^ 0x81fe, wx, 0, wz) * 3.0) as usize).min(2);
+            return (bw.river_bed[i], bw.river_bed[i]);
+        }
+        if c.h < sea - 6 {
+            let n = ids.seabed.len();
+            let i = ((hash01(seed ^ 0x9a7e1, wx, 0, wz) * n as f64) as usize).min(n - 1);
+            return (ids.seabed[i], ids.seabed[i]);
+        }
+        if let Some(beach) = land.beach
+            && c.h <= sea + 2
+            && shore
+            && slope < 4
+        {
+            return (beach, beach);
+        }
+        if slope >= 4 {
+            return (land.cliff, land.rock);
+        }
+        if let Some(above) = land.snow_above
+            && c.h >= sea + above
+        {
+            return (ids.snow, land.cover[0].1);
+        }
+        let n = land.cover.len();
+        let p = bw.patch.sample2(wx as f64, wz as f64, self.width);
+        let i = (((p * 1.4 + 0.5).clamp(0.0, 0.999)) * n as f64) as usize;
+        let (top, under, steep) = land.cover[i.min(n - 1)];
+        if slope >= 2 && !steep {
+            return (land.cliff, land.rock);
+        }
+        (top, under)
+    }
+
+    /// Whether a tree grows from canonical column `(x, z)`, and its trunk height.
+    /// `density` is the planet's tree density, or on a biome planet the
+    /// column's biome's ([`Self::tree_density`]).
+    fn tree_at(&self, x: i64, z: i64, h: i64, density: f64) -> Option<i64> {
+        let sea = self.cfg.sea_level;
+        if density <= 0.0 || h < sea.max(self.water_level) + 2 || h >= sea + self.cfg.tree_line {
             return None;
         }
         let forest = smoothstep(-0.2, 0.4, self.forest.sample2(x as f64, z as f64, self.width));
-        let density = self.cfg.tree_density * (0.15 + 2.0 * forest);
+        let density = density * (0.15 + 2.0 * forest);
         if hash01(self.cfg.seed ^ 0x7ee, x, 0, z) >= density {
             return None;
         }
@@ -1154,14 +1508,27 @@ impl Generator {
         Some(self.cfg.trunk_min.max(1) + (hash01(self.cfg.seed ^ 0x7ee2, x, 0, z) * extra as f64) as i64)
     }
 
+    /// The tree density of canonical column `(x, z)`.
+    fn tree_density(&self, x: i64, z: i64) -> f64 {
+        match &self.biome {
+            Some(bw) => bw.lands[bw.layout.biome_at(x as f64, z as f64) as usize].tree_density,
+            None => self.cfg.tree_density,
+        }
+    }
+
     fn place_trees(
         &self,
         pos: ChunkPos,
         blocks: &mut [BlockState],
         height_at: &impl Fn(i64, i64) -> i64,
+        density_at: &impl Fn(i64, i64) -> f64,
         regions: &[(f64, f64)],
     ) {
-        if self.cfg.tree_density <= 0.0 {
+        let any = match &self.biome {
+            Some(bw) => bw.any_trees,
+            None => self.cfg.tree_density > 0.0,
+        };
+        if !any {
             return;
         }
         let ids = &self.ids;
@@ -1188,7 +1555,9 @@ impl Generator {
                     continue;
                 }
                 let (wx, wz) = ((origin.x + lx).rem_euclid(w), (origin.z + lz).rem_euclid(w));
-                let Some(trunk) = self.tree_at(wx, wz, h) else { continue };
+                let Some(trunk) = self.tree_at(wx, wz, h, density_at(lx, lz)) else {
+                    continue;
+                };
                 let (trunk_state, foliage_state) = if regions.is_empty() {
                     (BlockState::plain(ids.trunk), BlockState::plain(ids.foliage))
                 } else {
@@ -1341,7 +1710,10 @@ impl Generator {
         for dz in -TREE_REACH..=TREE_REACH {
             for dx in -TREE_REACH..=TREE_REACH {
                 let (nx, nz) = at(dx, dz);
-                if self.tree_at(nx, nz, self.surface_height(nx, nz)).is_some() {
+                if self
+                    .tree_at(nx, nz, self.surface_height(nx, nz), self.tree_density(nx, nz))
+                    .is_some()
+                {
                     return false;
                 }
             }
@@ -1386,7 +1758,7 @@ mod tests {
 
     fn kind(name: &str) -> Generator {
         let blocks = BlockRegistry::builtin();
-        let cfg = PlanetKinds::builtin(&blocks).get(name).unwrap().generation(42);
+        let cfg = PlanetKinds::builtin(&blocks).get(name).unwrap().generation(42).single();
         Generator::new(PlanetShape::new(64, 12), cfg, &blocks).unwrap()
     }
 
@@ -1486,7 +1858,7 @@ mod tests {
             .kinds
             .iter()
             .map(|k| {
-                let g = Generator::new(PlanetShape::new(64, 12), k.generation(42), &blocks).unwrap();
+                let g = Generator::new(PlanetShape::new(64, 12), k.generation(42).single(), &blocks).unwrap();
                 (k.name.clone(), k.tier, g)
             })
             .collect()
@@ -1595,7 +1967,13 @@ mod tests {
         // same value (the terrain did not change).
         assert_eq!(fingerprint_ids(&generator()), 0x4d00_41c8_06c3_f24c);
         let blocks = BlockRegistry::builtin();
-        let temperate = before_wayshards(PlanetKinds::builtin(&blocks).get("temperate").unwrap().generation(42));
+        let temperate = before_wayshards(
+            PlanetKinds::builtin(&blocks)
+                .get("temperate")
+                .unwrap()
+                .generation(42)
+                .single(),
+        );
         assert_eq!(
             temperate.ores,
             generator().config().ores,
@@ -1623,7 +2001,7 @@ mod tests {
         let blocks = BlockRegistry::builtin();
         for (name, pinned) in PINNED_V2 {
             let k = PlanetKinds::builtin(&blocks);
-            let with = before_wayshards(k.get(name).unwrap().generation(42));
+            let with = before_wayshards(k.get(name).unwrap().generation(42).single());
             assert!(!with.colours.is_empty(), "{name} has no colours");
             let without = PlanetGenConfig {
                 colours: BTreeMap::new(),
@@ -1670,7 +2048,7 @@ mod tests {
         let wayshard = id("wayshard_vein");
         for (name, pinned) in PINNED_M7 {
             // As planets made between M8 and M11 have it, and before M8.
-            let full = kinds.get(name).unwrap().generation(42);
+            let full = kinds.get(name).unwrap().generation(42).single();
             let with = before_m11(full.clone());
             let without = before_wayshards(full);
             let shape = PlanetShape::new(64, 12);
@@ -1705,14 +2083,126 @@ mod tests {
     /// and re-pin, in the same commit (a change to a kind's data alone, such
     /// as M8's appended ore, re-pins without a bump only if planets saved
     /// with the old data still make their old terrain).
+    /// A biome planet: chunks are pure functions of their place (any order,
+    /// either side of the seam), and its land holds several biomes' covers,
+    /// rivers below the water line, and bands of all three rocks.
     #[test]
-    fn terrain_fingerprint_is_pinned() {
+    fn biome_planets_are_varied_and_seamless() {
+        let blocks = BlockRegistry::builtin();
+        let cfg = PlanetKinds::builtin(&blocks).get("temperate").unwrap().generation(7);
+        assert_eq!(cfg.biomes.len(), 15);
+        let shape = PlanetShape::new(48, 12);
+        let g = Generator::new(shape, cfg.clone(), &blocks).unwrap();
+        let again = Generator::new(shape, cfg, &blocks).unwrap();
+        let w = shape.width_blocks() as i32 / 32;
+        for p in [
+            ChunkPos::new(0, 4, 0),
+            ChunkPos::new(w - 1, 4, 3),
+            ChunkPos::new(20, 3, 31),
+        ] {
+            assert_eq!(g.generate(p).encode(), again.generate(p).encode());
+            let lap = ChunkPos::new(p.x + w, p.y, p.z - w);
+            assert_eq!(
+                g.generate(p).encode(),
+                g.generate(lap).encode(),
+                "{p:?} across the seam"
+            );
+        }
+        // Tops across the planet: several covers, and every rock kind in
+        // the walls under them.
+        let mut tops = std::collections::BTreeSet::new();
+        let mut rocks = std::collections::BTreeSet::new();
+        let rock_ids = [id("stone"), id("basalt"), id("limestone")];
+        for cz in (0..w).step_by(3) {
+            for cx in (0..w).step_by(3) {
+                let h = g.surface_height(cx as i64 * 32 + 5, cz as i64 * 32 + 9);
+                let c = g.generate(ChunkPos::new(cx, (h / 32) as i32, cz));
+                tops.insert(c.get(LocalPos::new(5, (h % 32) as u8, 9)));
+                for (i, b) in c.to_dense().iter().enumerate() {
+                    if rock_ids.contains(b) && i % 7 == 0 {
+                        rocks.insert(*b);
+                    }
+                }
+            }
+        }
+        assert!(tops.len() >= 4, "{tops:?}");
+        assert_eq!(rocks.len(), 3, "{rocks:?}");
+    }
+
+    /// Steep ground shows bare rock: no turf where a column rises 4 or more
+    /// over its neighbours.
+    #[test]
+    fn turf_never_holds_on_cliffs() {
+        let blocks = BlockRegistry::builtin();
+        let cfg = PlanetKinds::builtin(&blocks).get("stormy").unwrap().generation(11);
+        let g = Generator::new(PlanetShape::new(48, 12), cfg, &blocks).unwrap();
+        let soft = [id("turf"), id("meadow_turf"), id("moss_turf")];
+        let mut cliffs = 0;
+        for cz in 0..12 {
+            for cx in 0..12 {
+                for (lx, lz) in [(4i64, 4i64), (20, 13)] {
+                    let (x, z) = (cx * 32 + lx, cz * 32 + lz);
+                    let h = g.surface_height(x, z);
+                    let slope = (g.surface_height(x + 1, z) - g.surface_height(x - 1, z))
+                        .abs()
+                        .max((g.surface_height(x, z + 1) - g.surface_height(x, z - 1)).abs());
+                    if slope < 4 {
+                        continue;
+                    }
+                    cliffs += 1;
+                    let c = g.generate(ChunkPos::new(cx as i32, (h / 32) as i32, cz as i32));
+                    let top = c.get(LocalPos::new(lx as u8, (h % 32) as u8, lz as u8));
+                    assert!(!soft.contains(&top), "turf on a cliff at {x},{h},{z}");
+                }
+            }
+        }
+        assert!(cliffs > 0, "no cliffs to check");
+    }
+
+    #[test]
+    fn no_biomes_reproduce_version_3() {
         let mut got: Vec<(String, u64)> = vec![("default".into(), fingerprint(&generator()))];
         got.extend(all_kinds().iter().map(|(n, _, g)| (n.clone(), fingerprint(g))));
-        assert_eq!(GENERATOR_VERSION, 3);
         let want: Vec<(String, u64)> = PINNED.iter().map(|(n, h)| (n.to_string(), *h)).collect();
+        assert_eq!(got, want, "version 3 terrain changed");
+        assert!(opens_generator_version(3));
+    }
+
+    /// Pins what generator 4 makes for every built-in kind with its biomes.
+    /// If this fails the terrain changed: bump GENERATOR_VERSION and re-pin,
+    /// in the same commit.
+    #[test]
+    fn terrain_fingerprint_is_pinned() {
+        let blocks = BlockRegistry::builtin();
+        let got: Vec<(String, u64)> = PlanetKinds::builtin(&blocks)
+            .kinds
+            .iter()
+            .map(|k| {
+                let g = Generator::new(PlanetShape::new(64, 12), k.generation(42), &blocks).unwrap();
+                (k.name.clone(), fingerprint(&g))
+            })
+            .collect();
+        assert_eq!(GENERATOR_VERSION, 4);
+        let want: Vec<(String, u64)> = PINNED_V4.iter().map(|(n, h)| (n.to_string(), *h)).collect();
         assert_eq!(got, want, "terrain changed");
     }
+    const PINNED_V4: [(&str, u64); 13] = [
+        ("temperate", 0xbdd7_1608_f874_4cac),
+        ("arid", 0xeea7_e556_2255_3e75),
+        ("frozen", 0x73ca_70b3_cd59_57ab),
+        ("lush", 0x01bf_33f8_e373_8d21),
+        ("overgrown", 0x0f17_6a2c_f621_72b2),
+        ("rustland", 0x9ead_9c1e_3198_6769),
+        ("cinderland", 0xb9a7_68d9_608f_a6f1),
+        ("acrid", 0xcd82_bc98_9a45_da0d),
+        ("blighted", 0x0b4b_8979_c804_c207),
+        ("glacial", 0x2bc6_8d97_de08_7641),
+        ("stormy", 0xbc1d_4ae9_8f02_431b),
+        ("scorched", 0x8ba0_8151_5242_76ba),
+        ("ember", 0x3a69_6f04_c91a_04d7),
+    ];
+    // The version 3 pins: every kind's settings without biomes (what planets
+    // saved before generator 4 hold) still make them.
     // Generator 3 was re-pinned before release (2026-10-19) when colour
     // borders got their wobble and the temperate greens were retuned; no
     // planet had been made by the earlier version 3 outside tests. The kinds
@@ -1773,7 +2263,7 @@ mod tests {
         let rock = ["stone", "deep_stone", "sandstone"].map(id);
         let fossils = [id("small_fossil_seam"), id("medium_fossil_seam")];
         for k in original_kinds(&kinds) {
-            let with = k.generation(42);
+            let with = k.generation(42).single();
             let shape = PlanetShape::new(64, 12);
             let old = Generator::new(shape, before_m17(with.clone()), &blocks).unwrap();
             let new = Generator::new(shape, before_m18(with), &blocks).unwrap();
@@ -1811,7 +2301,7 @@ mod tests {
         let rock = ["stone", "deep_stone", "sandstone", "glow_crystal"].map(id);
         let coal = [id("medium_coal_seam"), id("hard_coal_seam"), id("relic_core_seam")];
         for k in original_kinds(&kinds) {
-            let with = k.generation(42);
+            let with = k.generation(42).single();
             // A cave fungus whose rock floor became coal no longer grows.
             let props: Vec<_> = with.flora.iter().map(|f| id(&f.block)).collect();
             let shape = PlanetShape::new(64, 12);
@@ -1867,7 +2357,7 @@ mod tests {
         let crops: Vec<BlockId> = CROP_FLORA.iter().map(|n| id(n)).collect();
         let mut grown = 0;
         for k in original_kinds(&kinds) {
-            let with = k.generation(42);
+            let with = k.generation(42).single();
             let shape = PlanetShape::new(64, 12);
             let old = Generator::new(shape, before_m16(with.clone()), &blocks).unwrap();
             let new = Generator::new(shape, before_m17(with), &blocks).unwrap();
@@ -1907,7 +2397,7 @@ mod tests {
         let rock = ["stone", "deep_stone", "sandstone"].map(id);
         let relic = id("relic_seam");
         for (name, pinned) in PINNED_M8 {
-            let with = kinds.get(name).unwrap().generation(42);
+            let with = kinds.get(name).unwrap().generation(42).single();
             let props: Vec<BlockId> = with.flora.iter().map(|f| id(&f.block)).collect();
             let shape = PlanetShape::new(64, 12);
             let old = Generator::new(shape, before_m11(with.clone()), &blocks).unwrap();
@@ -1945,7 +2435,7 @@ mod tests {
         let rock = ["stone", "deep_stone", "sandstone"].map(id);
         let (cache, silver) = (id("relic_cache"), id("silver_seam"));
         for k in original_kinds(&kinds) {
-            let with = k.generation(42);
+            let with = k.generation(42).single();
             let shape = PlanetShape::new(64, 12);
             let old = Generator::new(shape, before_m15(with.clone()), &blocks).unwrap();
             let new = Generator::new(shape, before_m16(with), &blocks).unwrap();
@@ -2768,10 +3258,10 @@ mod tests {
         let blocks = BlockRegistry::builtin();
         let kinds = PlanetKinds::builtin(&blocks);
         let k = kinds.get("temperate").unwrap();
-        assert_eq!(k.generation(5), k.generation(5));
+        assert_eq!(k.generation(5).single(), k.generation(5).single());
         let mut mains = std::collections::HashSet::new();
         for seed in 0..40 {
-            let cfg = k.generation(seed);
+            let cfg = k.generation(seed).single();
             assert!(cfg.check(&blocks).is_ok());
             assert_eq!(
                 cfg.colours.keys().collect::<Vec<_>>(),
@@ -2868,11 +3358,11 @@ mod tests {
     fn settings_round_trip_and_unnamed_fields_keep_defaults() {
         let blocks = BlockRegistry::builtin();
         for k in &PlanetKinds::builtin(&blocks).kinds {
-            let cfg = k.generation(9);
+            let cfg = k.generation(9).single();
             let text = toml::to_string(&cfg).unwrap();
             assert_eq!(toml::from_str::<PlanetGenConfig>(&text).unwrap(), cfg);
         }
         let kinds = PlanetKinds::from_toml("[[kind]]\nname = \"x\"\ntier = 1\n", &blocks).unwrap();
-        assert_eq!(kinds.kinds[0].generation(1), PlanetGenConfig::default());
+        assert_eq!(kinds.kinds[0].generation(1).single(), PlanetGenConfig::default());
     }
 }

@@ -61,8 +61,8 @@ impl Game {
                     || world.block(below.offset(dx, dy, dz)) == Some(water)
             });
         let epic = self.players.get(&id).is_some_and(|p| p.effects.farming_epic);
-        if ground == Some(self.turf) {
-            let soil = BlockState::plain(self.soil);
+        if let Some(&(_, soil)) = self.grass_soils.iter().find(|(g, _)| Some(*g) == ground) {
+            let soil = BlockState::plain(soil);
             self.change_block(pi, self.planets[pi].world.shape.wrap_block(below), soil, None);
         }
         let crop = Crop {
@@ -182,13 +182,13 @@ impl Game {
         true
     }
 
-    /// A tiller swung at `canon`: soil or turf with room above becomes tilled
+    /// A tiller swung at `canon`: any soil or grass with room above becomes tilled
     /// soil, for good. Anything else is refused (crops are harvested by the
     /// ordinary swing, before this is asked). Returns whether it tilled.
     pub(super) fn till(&mut self, id: u32, pi: usize, seq: u32, pos: BlockPos, canon: BlockPos) -> Result<(), Refusal> {
         let world = &self.planets[pi].world;
         let block = world.block(canon).ok_or("chunk not resident")?;
-        if block != self.soil && block != self.turf {
+        if !self.grass_soils.iter().any(|&(g, s)| block == g || block == s) {
             return Err(Refusal::Told("A tiller tills soil and turf".into()));
         }
         let above = world.block(canon.offset(0, 1, 0));

@@ -521,14 +521,16 @@ mod tests {
     use super::*;
     use bm_core::BlockRegistry;
 
-    /// Mean count of `item` from `n` breaks of `block` on `tier`.
+    /// Mean count of `item` from `n` breaks of `block` on `tier` (other bonus
+    /// drops ignored).
     fn mean(items: &ItemRegistry, block: BlockId, tier: u8, item: ItemId, n: u32) -> f64 {
         let mut rng = 12345;
         let mut total = 0u32;
         for _ in 0..n {
             for (i, c) in bonus_yield(items, block, tier, 1.0, &mut rng) {
-                assert_eq!(i, item);
-                total += c as u32;
+                if i == item {
+                    total += c as u32;
+                }
             }
         }
         total as f64 / n as f64
