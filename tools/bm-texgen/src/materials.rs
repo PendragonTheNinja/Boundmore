@@ -2073,7 +2073,8 @@ pub fn paint_named(name: &str, variant: u32) -> Option<Tex> {
             }
             crate::spark::painter(other)
                 .or_else(|| crate::forge::painter(other))
-                .or_else(|| flora::painter(other))?
+                .or_else(|| flora::painter(other))
+                .or_else(|| crate::gems::painter(other))?
         }
     };
     Some(f(ctx))

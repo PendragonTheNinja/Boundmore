@@ -309,6 +309,8 @@ enum Metal {
     Silver,
     Gold,
     Titanium,
+    /// Gem gear (milestone 18 part 2): the gem's own colour, cut smooth.
+    Gem(crate::gems::Gem),
 }
 
 impl Metal {
@@ -326,6 +328,7 @@ impl Metal {
             Metal::Silver => crate::spark::alloy_ramp(),
             Metal::Gold => crate::worlds::gold_alloy_ramp(),
             Metal::Titanium => crate::worlds::titanium_alloy_ramp(),
+            Metal::Gem(g) => g.ramp(),
         }
     }
 
@@ -339,6 +342,7 @@ impl Metal {
             Metal::Silver => "silver",
             Metal::Gold => "gold",
             Metal::Titanium => "titanium",
+            Metal::Gem(g) => g.name(),
         };
         seed(&format!("{metal}_{tool}"))
     }
@@ -359,6 +363,11 @@ impl Metal {
                     0.0
                 };
                 streak + knot
+            }
+            // Cut gem: broad flat facets in a diamond lattice.
+            Metal::Gem(_) => {
+                let (i, j) = (((u + v) / 3.4).floor() as i32, ((u - v) / 3.4).floor() as i32);
+                if (i + j) % 2 == 0 { 0.07 } else { -0.05 }
             }
             _ => 0.0,
         }
@@ -1320,6 +1329,35 @@ fn portal_token() -> Tex {
     icon.finish()
 }
 
+/// A gem's tool, grapple, spanner or advanced chisel (`ruby_axe`). Each
+/// gem's chisel cuts one family: amethyst precise square, diamond bevel,
+/// emerald precise bevel, sapphire square, ruby slope, topaz precise slope.
+fn gem_gear(name: &str) -> Option<Tex> {
+    use crate::gems::Gem;
+    let (gem, tool) = name.split_once('_')?;
+    let gem = Gem::from_name(gem)?;
+    let metal = Metal::Gem(gem);
+    Some(match tool {
+        "hammer" => hammer(metal),
+        "shovel" => shovel(metal),
+        "axe" => axe(metal),
+        "grapple" => grapple(metal, false),
+        "spanner" => spanner(metal),
+        "chisel" => {
+            let (tip, precise) = match gem {
+                Gem::Amethyst => (Tip::Square, true),
+                Gem::Diamond => (Tip::Bevel, false),
+                Gem::Emerald => (Tip::Bevel, true),
+                Gem::Sapphire => (Tip::Square, false),
+                Gem::Ruby => (Tip::Slope, false),
+                Gem::Topaz => (Tip::Slope, true),
+            };
+            chisel(metal, tip, precise)
+        }
+        _ => return None,
+    })
+}
+
 /// Paints the icon called `name`, or `None` if no painter knows it.
 pub fn paint_icon(name: &str) -> Option<Tex> {
     Some(match name {
@@ -1376,13 +1414,15 @@ pub fn paint_icon(name: &str) -> Option<Tex> {
         "gold_spanner" => spanner(Metal::Gold),
         "titanium_spanner" => spanner(Metal::Titanium),
         other => {
-            return crate::gathered::paint(other)
+            return gem_gear(other)
+                .or_else(|| crate::gathered::paint(other))
                 .or_else(|| crate::food::paint(other))
                 .or_else(|| crate::farming::paint_icon(other))
                 .or_else(|| crate::creatures::paint(other))
                 .or_else(|| crate::spark::paint_icon(other))
                 .or_else(|| crate::forge::paint_icon(other))
-                .or_else(|| crate::worlds::paint_icon(other));
+                .or_else(|| crate::worlds::paint_icon(other))
+                .or_else(|| crate::gems::paint_icon(other));
         }
     })
 }

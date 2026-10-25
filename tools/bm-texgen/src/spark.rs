@@ -502,7 +502,7 @@ pub fn compactor_side(_ctx: Ctx) -> Tex {
 
 /// Riveted iron plates in staggered courses, for the iron furnace's walls
 /// (rows 4..28, like `masonry`).
-fn iron_plates(salt: u32, iron: &Ramp, x: usize, y: usize) -> Rgba {
+pub(crate) fn iron_plates(salt: u32, iron: &Ramp, x: usize, y: usize) -> Rgba {
     let row = (y - 4) / 6;
     let ly = (y - 4) % 6;
     let lx = (x + if row % 2 == 1 { 8 } else { 0 }) % 16;

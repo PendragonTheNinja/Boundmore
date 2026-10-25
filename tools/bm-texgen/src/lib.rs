@@ -14,6 +14,7 @@ pub mod flora;
 pub mod food;
 pub mod forge;
 pub mod gathered;
+pub mod gems;
 pub mod icons;
 pub mod machines;
 pub mod materials;
@@ -81,10 +82,10 @@ pub fn catalogue_names() -> Vec<String> {
 }
 
 /// The catalogue's textures, then any painted ahead of the catalogue
-/// naming them (`worlds::BLOCKS`), so their files are ready when it does.
+/// naming them (`worlds::BLOCKS`, `gems::BLOCKS`), so their files are ready when it does.
 fn painted_names() -> Vec<String> {
     let mut names = catalogue_names();
-    for n in worlds::BLOCKS {
+    for n in worlds::BLOCKS.into_iter().chain(gems::BLOCKS) {
         if !names.iter().any(|m| m == n) {
             names.push(n.to_string());
         }
@@ -156,9 +157,9 @@ pub fn icon_names() -> Vec<String> {
         }
     }
     // Icons painted ahead of the catalogue naming them.
-    for n in worlds::ICONS {
-        if !names.iter().any(|m| m == n) {
-            names.push(n.to_string());
+    for n in worlds::ICONS.iter().map(|n| n.to_string()).chain(gems::icon_names()) {
+        if !names.contains(&n) {
+            names.push(n);
         }
     }
     names
