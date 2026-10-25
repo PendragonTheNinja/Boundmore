@@ -172,9 +172,17 @@ pub fn max_health(base: u32, exotic: Exotic, element: Option<Element>) -> u32 {
     if element.is_some() { h * 2 } else { h }
 }
 
-/// The chance a creature spawning on an elemental world is elemental
-/// (**guess**, milestone 18 Measure 7).
-pub const ELEMENTAL_CHANCE: f64 = 0.3;
+/// The chance a creature spawning on an elemental world of `tier` is
+/// elemental. A developer: 10% on the first elemental worlds, rising to 50%
+/// on the hardest (forum check 3). Read as a straight line from tier 5 to
+/// tier 8: 10%, 23%, 37%, 50% (the slope is an inference, Measure 7).
+/// Exotic and elemental are rolled apart, so a creature can be both.
+pub fn elemental_chance(tier: u8) -> f64 {
+    match tier {
+        0..=4 => 0.10,
+        t => (0.10 + (f64::from(t) - 5.0) * 0.4 / 3.0).min(0.50),
+    }
+}
 
 /// An exotic creature's buffs (Boundless: visible decals, 1 to 2 buffs on low
 /// worlds, 3 to 4 on high ones [tuning 3.2.2]). A bit set, sent on the wire.
@@ -247,6 +255,48 @@ pub fn roll_exotic(world_tier: u8, mut rand: impl FnMut() -> f64) -> Exotic {
         bits |= 1 << ((rand() * 4.0) as u8).min(3);
     }
     Exotic(bits)
+}
+
+/// The drop-pool entry that stands for the shard of the creature's element
+/// (Boundless: only elemental creatures drop shards, of their own element).
+/// Left out of a creature with no element.
+pub const ELEMENTAL_SHARD: &str = "elemental_shard";
+
+impl Element {
+    /// The item an elemental creature of this element drops as its shard.
+    pub fn shard(self) -> &'static str {
+        match self {
+            Element::Corrosion => "corrosion_shard",
+            Element::Burn => "burn_shard",
+            Element::Blast => "blast_shard",
+            Element::Shock => "shock_shard",
+            Element::Chill => "chill_shard",
+            Element::Toxin => "toxin_shard",
+        }
+    }
+}
+
+impl CreatureTier {
+    /// The pool a creature of this tier with `element` rolls on: shards
+    /// become its element's, or go when it has none; an elemental creature
+    /// rolls twice as often (Boundless: double drops, pfiffel's world
+    /// modifiers).
+    pub fn pool_for(&self, element: Option<Element>) -> CreatureTier {
+        let mut t = self.clone();
+        match element {
+            Some(e) => {
+                for d in &mut t.drops {
+                    if d.item == ELEMENTAL_SHARD {
+                        d.item = e.shard().into();
+                    }
+                }
+                t.drops_min = t.drops_min.saturating_mul(2);
+                t.drops_max = t.drops_max.saturating_mul(2);
+            }
+            None => t.drops.retain(|d| d.item != ELEMENTAL_SHARD),
+        }
+        t
+    }
 }
 
 /// One weighted entry in a drop pool [tuning 3.2.4]: picked with chance
@@ -463,7 +513,7 @@ impl CreatureKinds {
     pub fn check_items(&self, known: impl Fn(&str) -> bool) -> Result<(), CreatureError> {
         for d in &self.defs {
             for t in &d.tiers {
-                if let Some(x) = t.drops.iter().find(|x| !known(&x.item)) {
+                if let Some(x) = t.drops.iter().find(|x| x.item != ELEMENTAL_SHARD && !known(&x.item)) {
                     return Err(CreatureError::UnknownItem(d.name.clone(), x.item.clone()));
                 }
             }
@@ -491,6 +541,44 @@ impl CreatureKinds {
 #[cfg(test)]
 mod element_tests {
     use super::*;
+
+    #[test]
+    fn shards_come_only_from_elemental_creatures_and_drops_double() {
+        let t = CreatureTier {
+            health: 1,
+            armour: 0,
+            xp: 1,
+            damage: 0,
+            drops_min: 1,
+            drops_max: 3,
+            drops: vec![
+                Drop {
+                    item: "bone".into(),
+                    weight: 5,
+                    max: 1,
+                },
+                Drop {
+                    item: ELEMENTAL_SHARD.into(),
+                    weight: 3,
+                    max: 2,
+                },
+            ],
+        };
+        let plain = t.pool_for(None);
+        assert_eq!(plain.drops.len(), 1);
+        assert_eq!((plain.drops_min, plain.drops_max), (1, 3));
+        let burning = t.pool_for(Some(Element::Burn));
+        assert_eq!(burning.drops[1].item, "burn_shard");
+        assert_eq!((burning.drops_min, burning.drops_max), (2, 6));
+    }
+
+    #[test]
+    fn elemental_creatures_grow_commoner_on_harder_worlds() {
+        assert_eq!(elemental_chance(5), 0.10);
+        assert!((elemental_chance(6) - 0.2333).abs() < 0.001);
+        assert_eq!(elemental_chance(8), 0.50);
+        assert_eq!(elemental_chance(9), 0.50);
+    }
 
     #[test]
     fn each_element_resists_itself_and_fears_its_opposite() {

@@ -15,9 +15,22 @@ pub const GENERATOR_CAPACITY: u32 = 5_000;
 /// machine (Boundless, wiki Spark Link).
 pub const MAX_LINKS: usize = 100;
 
-/// Wear a machine holds when fully repaired (**guess**: players needed 10
-/// to 15 hits of a 10,000 gem spanner for a machine with its coils).
+/// The most wear any machine holds (the refinery's, compactor's and
+/// forge's); [`machine_wear`] gives each kind's.
 pub const MACHINE_WEAR: u32 = 10_000;
+
+/// Wear a machine of `kind` holds when fully repaired: Boundless's own
+/// durabilities, read off the game's debug view (forum check 4b): workbench
+/// and extractor 2,000, mixer 4,000, spark generator 8,000, refinery,
+/// compactor and forge 10,000.
+pub fn machine_wear(kind: Station) -> u32 {
+    match kind {
+        Station::Workbench | Station::Extractor => 2_000,
+        Station::Mixer => 4_000,
+        Station::SparkGenerator => 8_000,
+        _ => MACHINE_WEAR,
+    }
+}
 
 /// Spark one refund item holds when a generator with spark is broken
 /// (Boundless's "Unused Spark", 1,000 each since Release 242).
@@ -34,31 +47,90 @@ pub const ADVANCED_COIL_POWER: u32 = 300;
 /// The most coils that count for one machine (Boundless: 24).
 pub const MAX_COILS: usize = 24;
 
-/// Wear a coil holds when mended (**guess**, as a machine's: Boundless's is
-/// unknown, tuning 4.13.2).
-pub const COIL_WEAR: u32 = MACHINE_WEAR;
+/// Wear a coil holds when mended, basic or advanced alike (players: "all
+/// coils have the same total, around 20k"; forum check 4b, a low-medium
+/// confidence number).
+pub const COIL_WEAR: u32 = 20_000;
 
-/// The need a recipe that needs no power is read as, for the power curve
-/// (**guess**: fitted so the cut stops growing at about 16 advanced coils,
-/// as players saw; tuning 4.13.2).
-pub const UNPOWERED_NEED: u32 = 2_400;
+/// Wear each working coil loses for a craft that wears its machine of
+/// `kind` by `wear`: the same share of its own durability (Boundless's
+/// coil and machine bars fall together; forum check 4b).
+pub fn coil_wear(kind: Station, wear: u32) -> u32 {
+    ((wear as u64 * COIL_WEAR as u64).div_ceil(machine_wear(kind) as u64)) as u32
+}
 
-/// The share of a recipe's base time (and spark) a craft takes with `power`
-/// against a need of `need`, or None when the power falls short. Boundless's
-/// early-access formula (tuning 4.13.2): every full 100 power above the need
-/// counts a step; the first step cuts 50%, and each step (the first
-/// included) adds 1,250 / need percent more; never below 25% of the base.
+/// Wear a spanner hit of `amount` on a machine of `kind` mends on each of
+/// its coils: the same share (Boundless since Release 235, one bar for the
+/// machine and its coils).
+pub fn coil_mend(kind: Station, amount: u32) -> u32 {
+    ((amount as u64 * COIL_WEAR as u64) / machine_wear(kind) as u64) as u32
+}
+
+/// The cheapest a craft gets with power: 46.75% of its base time and spark
+/// (Boundless since Release 198, measured; forum check 4a).
+pub const POWER_FLOOR: f64 = 0.4675;
+
+/// Measured multipliers for a recipe that needs no power, by power: one
+/// advanced coil (300) a step, refined titanium in the refinery (Arkhainn,
+/// forum t/20845), with Simoyd's 100-power point. Past the last, the floor.
+const UNPOWERED: [(u32, f64); 18] = [
+    (0, 1.0),
+    (100, 0.82),
+    (300, 0.7662),
+    (600, 0.6969),
+    (900, 0.6405),
+    (1200, 0.5951),
+    (1500, 0.5594),
+    (1800, 0.5317),
+    (2100, 0.5108),
+    (2400, 0.4955),
+    (2700, 0.4847),
+    (3000, 0.4773),
+    (3300, 0.4726),
+    (3600, 0.4699),
+    (3900, 0.4684),
+    (4200, 0.4678),
+    (4500, 0.4676),
+    (4800, POWER_FLOOR),
+];
+
+/// Measured multipliers for a recipe that needs power, by power above the
+/// need: refined marble (need 800) at 100 and 1,000 over (forum check 4a);
+/// from 2,800 over it joins the table above.
+const POWERED: [(u32, f64); 4] = [(0, 1.0), (100, 0.956), (1000, 0.666), (2800, 0.482)];
+
+/// Reads a measured table at `x`, straight lines between its points.
+fn read_table(table: &[(u32, f64)], x: u32) -> f64 {
+    let mut last = table[0];
+    for &(at, m) in table {
+        if x <= at {
+            if at == last.0 {
+                return m;
+            }
+            let t = (x - last.0) as f64 / (at - last.0) as f64;
+            return last.1 + (m - last.1) * t;
+        }
+        last = (at, m);
+    }
+    last.1
+}
+
+/// The share of a recipe's base time and spark a craft takes with `power`
+/// against a need of `need`, or None when the power falls short. One
+/// multiplier for both, from Boundless's measured tables (forum check 4a):
+/// only power above the need counts, a powered recipe starts slower, and
+/// nothing goes below [`POWER_FLOOR`].
 pub fn power_scale(need: u32, power: u32) -> Option<f64> {
     if power < need {
         return None;
     }
-    let steps = (power - need) / 100;
-    if steps == 0 {
-        return Some(1.0);
-    }
-    let read_need = if need == 0 { UNPOWERED_NEED } else { need };
-    let cut = 50.0 + steps as f64 * 1250.0 / read_need as f64;
-    Some((1.0 - cut.min(75.0) / 100.0).max(0.25))
+    let over = power - need;
+    let m = if need == 0 || over >= 2_800 {
+        read_table(&UNPOWERED, over)
+    } else {
+        read_table(&POWERED, over)
+    };
+    Some(m.max(POWER_FLOOR))
 }
 
 #[cfg(test)]
@@ -66,24 +138,43 @@ mod power_tests {
     use super::*;
 
     #[test]
-    fn power_follows_the_guide_and_the_measured_series() {
+    fn power_follows_the_measured_tables() {
         assert_eq!(power_scale(1500, 1400), None, "short of the need");
-        assert_eq!(power_scale(1500, 1599), Some(1.0), "less than a step");
-        // The guide's worked example: need 1,500, 600 above: 55% cut.
-        let s = power_scale(1500, 2100).unwrap();
-        assert!((s - 0.45).abs() < 0.001, "{s}");
-        // The marble series (need 800, advanced coils): 51%, 36%, 26%, 25%
-        // of base measured; the curve gives within a few points.
-        for (coils, measured) in [(3, 0.51), (6, 0.36), (12, 0.26), (24, 0.25)] {
-            let s = power_scale(800, coils * ADVANCED_COIL_POWER).unwrap();
-            assert!((s - measured).abs() < 0.04, "{coils} coils: {s} vs {measured}");
+        assert_eq!(power_scale(1500, 1500), Some(1.0), "just enough");
+        // Refined titanium (no need), advanced coils.
+        for (coils, measured) in [(1, 0.7662), (2, 0.6969), (4, 0.5951), (8, 0.4955), (12, 0.4699)] {
+            let s = power_scale(0, coils * ADVANCED_COIL_POWER).unwrap();
+            assert!((s - measured).abs() < 1e-9, "{coils} coils: {s}");
         }
-        // No need: one coil halves the time; about 16 advanced coils reach
-        // the floor.
-        let one = power_scale(0, 100).unwrap();
-        assert!((one - 0.4948).abs() < 0.001, "{one}");
-        assert!(power_scale(0, 15 * ADVANCED_COIL_POWER).unwrap() > 0.25);
-        assert_eq!(power_scale(0, 17 * ADVANCED_COIL_POWER), Some(0.25));
+        assert_eq!(power_scale(0, 24 * ADVANCED_COIL_POWER), Some(POWER_FLOOR));
+        // Refined marble (need 800): 0.956, 0.666, 0.482, 0.468, 0.4676.
+        for (over, measured) in [
+            (100, 0.956),
+            (1000, 0.666),
+            (2800, 0.482),
+            (4000, 0.468),
+            (6400, 0.4676),
+        ] {
+            let s = power_scale(800, 800 + over).unwrap();
+            assert!((s - measured).abs() < 0.002, "{over} over: {s}");
+        }
+        // More power never costs more.
+        let mut last = 1.0;
+        for p in (0..8000).step_by(100) {
+            let s = power_scale(0, p).unwrap();
+            assert!(s <= last + 1e-12);
+            last = s;
+        }
+    }
+
+    #[test]
+    fn coils_wear_and_mend_with_their_machine() {
+        // A workbench (2,000) worn by 110 loses 5.5%; so does each coil.
+        assert_eq!(coil_wear(Station::Workbench, 110), 1_100);
+        assert_eq!(coil_wear(Station::Refinery, 100), 200);
+        assert_eq!(coil_mend(Station::Mixer, 2_000), 10_000);
+        assert_eq!(machine_wear(Station::Forge), 10_000);
+        assert_eq!(machine_wear(Station::Extractor), 2_000);
     }
 }
 

@@ -110,8 +110,10 @@ pub const AIR_TICKS: u16 = (TICK_HZ * 30) as u16;
 /// Air comes back this much a tick when protected: empty to full in about
 /// 8 s (**guess**, Measure 3).
 pub const AIR_REFILL: u16 = 4;
-/// Choking takes this percent of max health per point of shortfall every
-/// 5 s (**guess**, Measure 2).
+/// Choking takes this percent of max health every 5 s, however far short
+/// the protection falls (players: "you suffocate at the same rate, no
+/// matter how many points you have"; forum check 1). The rate is a
+/// **guess** (Measure 2).
 pub const CHOKE_PERCENT: u32 = 5;
 /// Fog closes to this many blocks when the air is gone (**guess**).
 pub const FOG_AT_EMPTY: f32 = 30.0;
@@ -120,7 +122,7 @@ impl PlayerState {
     /// Protection against `line` from wards and food.
     pub fn protection(&self, line: AirLine) -> u8 {
         let ward = line.index().map_or(0, |i| self.body.wards[i]);
-        ward.saturating_add(self.buff.air_points())
+        ward.saturating_add(self.buff.air_points(line))
     }
 
     /// How far protection falls short of this planet's hazard.
@@ -155,7 +157,7 @@ impl PlayerState {
         }
         self.air_used = (self.air_used + 1).min(AIR_TICKS);
         if self.air_used >= AIR_TICKS && period {
-            let d = (self.max_health() * CHOKE_PERCENT * u32::from(short) / 100).max(1);
+            let d = (self.max_health() * CHOKE_PERCENT / 100).max(1);
             self.take(d);
         }
     }
@@ -171,7 +173,7 @@ impl PlayerState {
         }
         let line = self.air.line;
         let have = self.protection(line);
-        let food = self.buff.air_points();
+        let food = self.buff.air_points(line);
         // The fewest ward ranks that cover the hazard with the food eaten.
         let need = (0..=5u8).find(|&r| ward_points(r) + food >= self.air.hazard);
         let advice = match need {
@@ -309,7 +311,7 @@ mod tests {
     }
 
     #[test]
-    fn a_bigger_shortfall_chokes_harder() {
+    fn any_shortfall_chokes_alike() {
         let mut one = body_on(Air::of(AirLine::Charged, 6));
         one.body.wards = [0, ward_points(4), 0];
         assert_eq!(one.shortfall(), 0, "four ranks (five points) meet tier 6");
@@ -319,7 +321,11 @@ mod tests {
         run(&mut one, u32::from(CHOKE_PERIOD_TICKS));
         let before = one.hurt;
         run(&mut one, u32::from(CHOKE_PERIOD_TICKS));
-        assert_eq!(one.hurt - before, one.max_health() * CHOKE_PERCENT * 2 / 100);
+        assert_eq!(
+            one.hurt - before,
+            one.max_health() * CHOKE_PERCENT / 100,
+            "two short chokes as one short"
+        );
     }
 
     #[test]
@@ -330,12 +336,12 @@ mod tests {
         run(&mut s, 600);
         assert_eq!(s.air_used, 600);
         s.buff = FoodBuff {
-            kind: Buff::Breathing,
+            kind: Buff::BurningAir,
             rank: 1,
             left: 60 * 60,
         };
         assert_eq!(s.protection(AirLine::Burning), 3);
-        assert_eq!(s.protection(AirLine::Acid), 1, "food covers every line");
+        assert_eq!(s.protection(AirLine::Acid), 0, "food covers its own line only");
         run(&mut s, 150);
         assert_eq!(s.air_used, 0, "back to full in a few seconds");
         assert_eq!(s.hurt, 0);

@@ -268,24 +268,23 @@ Boundless's live tree and tables exactly (Nathan, 2026-10-20), in Boundmore's na
 |---|---|---|
 | Hazard by tier | 0 to tier 3, then 1, 3, 5 (7, 10 for tiers 7, 8) | Boundless (boundlexx world code, R198) |
 | Ward protection | 1, 2, 3, 5, 7 for ranks 1 to 5 | Boundless's skill text |
-| Atmosphere food | +1, +2, +3 against every line, 30 min | numbers Boundless's; "every line" a **guess** (Measure 5) |
+| Atmosphere food | +1, +2, +3 against its own line only, 30 min; three dishes per line | Boundless (game data: one food per line, forum check 1a, 2026-10-25) |
 | Air | 30 s from full to empty while short | **guess** (Measure 1) |
 | Air coming back | about 8 s from empty to full once protected | **guess** (Measure 3) |
-| Choking | 5% of max health per point short, every 5 s; stops healing | **guess** (Measure 2, 4) |
+| Choking | 5% of max health every 5 s however far short; stops healing | the same rate for any shortfall is Boundless's (a player, forum check 1); 5% and 5 s a **guess** (Measure 2, 4) |
 | Fog | closes from the view distance to 30 blocks as the air runs out | **guess**; Boundless: "fog rolls in right up to you" |
 | New worlds' size | 48 chunks (1,536 blocks) across | **guess**, as Emberdune and Rimehold |
 | Gold seams | 8 to 26 above the floor, 25+ down | Boundless 10 to 20 and 25+; the band widened a little, a **guess** |
 | Titanium, medium and hard coal | 70+, 20+ and 50+ down | Boundless; richness a **guess** |
-| Spanner durability, speed, energy (silver, gold, titanium) | 1200/30/13, 1100/30/14, 1500/30/20 | **guess** on the iron spanner's pattern; repair per hit Boundless's |
-| Atmosphere food recipes | prime meat, spicy beans, rice, flour | **guess** (Boundless's need an amalgam we lack) |
+| Spanner durability, speed, energy | silver 1100/70/10, gold 1000/40/15, titanium 1500/50/30, gems 2000/50/50 | Boundless (item data, 2026-10-25) |
+| Atmosphere food recipes | prime meat, spicy beans, a paste of the line (elemental shard and fresh blood), tubers, rice or flour and purified butter | Boundless's recipe data (2026-10-25) |
 | Gem places | amethyst under 1 to 8 of water or within 4 of it, 5 to 40 down; emerald under 10+ of water, 2 to 60 down; sapphire in land 20 to 80 above sea, 10 to 75 down; topaz in land 80+ above sea, 10+ down; diamond in land 60+ above sea, 70+ down; ruby under sand or gravel, 50 to 70 down | Boundless's intent (t/14255) and depths (tuning 4.3), read against Boundmore's sea at 128; "shallow" and the shore width are **guesses** |
-| Power over the need | the first 100 above cuts 50%, each 100 adds 1,250 / need percent, floor 25%; time and spark alike | early-access guide (low-medium); spark following it a **guess** |
-| Power curve for recipes that need none | read as a need of 2,400 | **guess**, fitted to "stops at about 16 advanced coils" |
-| Coil wear | 10,000 a coil, each craft wears every coil by the recipe's wear | **guess** (players' reports disagree: 7,500 to 189,000) |
+| Power over the need | one multiplier for time and spark from measured tables: no need 0.82 at 100, 0.766 at 300, 0.595 at 1,200, 0.4955 at 2,400, floor 0.4675 from about 4,800; a recipe with a need 0.956 at 100 over, 0.666 at 1,000 over, joining the first table from 2,800 over | Boundless since Release 198, players' measured tables (forum check 4a, high); straight lines between the measured points |
+| Machine and coil wear | machines hold 2,000 (workbench, extractor), 4,000 (mixer), 8,000 (generator), 10,000 (refinery, compactor, forge); coils 20,000; a craft wears each working coil by the same share as its machine; a spanner on the machine mends its coils by the same share | machine numbers Boundless's debug view; the shared share Boundless's (forum check 4b); coils' 20,000 "around 20k" (low-medium); coils stop at 0 (Boundless lets them go into debt) |
 | Coil placement | two blocks out across air, straight or diagonal, one level up or down; the lowest-keyed machine wins a shared coil | one-metre gap Boundless's; the rest **guesses** |
 | Gem spanners | 10,000 a hit everywhere (Boundless: "most effective" on their own machine) | the per-machine bonus is not built |
-| Lava | 20% of max health a second; swimming half water's speed | burn rate a **guess** (Boundless: "about a third of max per tick", tick length unknown; Measure 6); swim speed Release 195 |
+| Lava | a third of max health at the touch, then every second while in it; swimming half water's speed | a third a tick Boundless's (players, 2017 and 2018); the 1 s tick a **guess** (Measure 6); swim speed Release 195 |
 | Lower seas | lava (water on Frostspire) in open caves at or below altitude 16 | Boundless's world configs |
-| Elemental creatures | 30% of spawns on a gem world; x2 health, x1.5 armour and damage | chance a **guess** (Measure 7); multipliers Boundless's |
+| Elemental creatures | 10% of spawns on a tier 5 world, 23% on tier 6 (50% by tier 8); x2 health, x1.5 armour and damage, twice the drops (their element's shards among them), +50% XP; may be exotic too | 10% to 50% a developer's (forum check 3); the tier slope an inference (Measure 7); the rest Boundless's data |
 | Resistance | physical 40%; the element table (0.8 itself, 0.6 and 0.3 neighbours, -0.3 opposite: double damage) | Vansten's table (tuning 3.3.3) |
 

@@ -25,10 +25,12 @@ pub const REGEN_PERIOD_TICKS: u16 = (TICK_HZ * 5) as u16;
 /// food index says 4 a step).
 pub const CALM_REGEN: u32 = 7;
 
-/// Lava takes this share of max health every second, in percent (**guess**:
-/// Boundless's "about a third of max per tick" has no tick length; tuning
-/// 3.3.4, Measure 6 of milestone 18).
-pub const LAVA_PERCENT: u32 = 20;
+/// Lava takes this percent of max health a burn: a third (players measured
+/// 30% in 2017 and a third in 2018; forum check 2). No skill lessens it.
+pub const LAVA_PERCENT: u32 = 33;
+/// Ticks between lava burns: one at the touch, then one every second
+/// (**guess**: the burns are periodic, but nobody timed them; Measure 6).
+pub const LAVA_TICKS: u16 = crate::TICK_HZ as u16;
 
 /// Mending (the health regeneration epic): +25 every 5 s, in combat too
 /// (Boundless's skill text, tuning 5.4a).
@@ -234,11 +236,15 @@ impl PlayerState {
     }
 
     /// Back on their feet with `health` (the server's respawn).
-    /// One tick in or out of lava (milestone 18 part 3): in it, every
-    /// second (`second`) takes [`LAVA_PERCENT`] of max health.
-    pub(crate) fn lava_tick(&mut self, in_lava: bool, second: bool) {
-        if in_lava && second && !self.down {
+    /// One tick in or out of lava (milestone 18 part 3): touching it burns
+    /// [`LAVA_PERCENT`] of max health at once, then again every
+    /// [`LAVA_TICKS`] while in it; stepping out and back in within that
+    /// time burns no sooner (Boundless's burns are periodic).
+    pub(crate) fn lava_tick(&mut self, in_lava: bool) {
+        self.lava_wait = self.lava_wait.saturating_sub(1);
+        if in_lava && self.lava_wait == 0 && !self.down {
             self.take((self.max_health() * LAVA_PERCENT / 100).max(1));
+            self.lava_wait = LAVA_TICKS;
         }
     }
 

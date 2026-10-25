@@ -844,7 +844,49 @@ pub fn icon_names() -> Vec<String> {
             names.push(format!("{}_{tool}", gem.name()));
         }
     }
+    for el in ELEMENTS {
+        names.push(format!("{}_shard", el.0));
+        names.push(format!("{}_paste", el.0));
+    }
     names
+}
+
+/// The six elements' colours: elemental creatures' shards and the pastes
+/// made from them.
+const ELEMENTS: [(&str, u32); 6] = [
+    ("corrosion", 0xa8d030),
+    ("toxin", 0x8a3ab8),
+    ("shock", 0xf0d030),
+    ("chill", 0x70c8f0),
+    ("blast", 0xe8e8f4),
+    ("burn", 0xe8481a),
+];
+
+/// An elemental shard: three sharp splinters of glassy crystal in the
+/// element's colour, no rock (it comes from a creature).
+fn shard(rgb: u32, name: &str) -> Tex {
+    let ramp = soft_ramp(rgb, 0.2, 1.0);
+    let salt = seed(name);
+    let mut icon = Icon::new();
+    let up = -FRAC_PI_2;
+    let tilt = (unit(salt) - 0.5) * 0.3;
+    blade(&mut icon, (12.0, 27.0), up - 0.45 + tilt, 15.0, 3.0, &ramp);
+    blade(&mut icon, (20.0, 27.0), up + 0.4 + tilt, 14.0, 2.8, &ramp);
+    blade(&mut icon, (16.0, 28.0), up + tilt, 23.0, 4.2, &ramp);
+    icon.finish()
+}
+
+/// An elemental paste: a glossy dollop in the element's colour, streaked
+/// dark red with the blood it was pressed with.
+fn paste(rgb: u32, name: &str) -> Tex {
+    let ramp = soft_ramp(rgb, 0.25, 0.98);
+    let blood = soft_ramp(0x8a1a1a, 0.2, 0.8);
+    let salt = seed(name);
+    let mut icon = Icon::new();
+    Lump::new(salt, 16.0, 19.0, 10.5, 9).draw(&mut icon, &ramp, 0.3, 0.98, true);
+    Lump::new(hash2(salt, 1), 12.0, 14.0, 5.0, 7).draw(&mut icon, &ramp, 0.4, 1.0, true);
+    Lump::new(hash2(salt, 2), 20.5, 21.5, 3.2, 6).draw(&mut icon, &blood, 0.3, 0.8, true);
+    icon.finish()
 }
 
 /// Paints the icon called `name`, or `None` if this module does not know
@@ -856,6 +898,15 @@ pub fn paint_icon(name: &str) -> Option<Tex> {
         "leather" => return Some(leather()),
         "compact_coal" | "compact_medium_coal" | "compact_hard_coal" => return Some(compact_coal(name)),
         _ => {}
+    }
+    if let Some((el, form)) = name.split_once('_')
+        && let Some((_, rgb)) = ELEMENTS.iter().find(|e| e.0 == el)
+    {
+        return match form {
+            "shard" => Some(shard(*rgb, name)),
+            "paste" => Some(paste(*rgb, name)),
+            _ => None,
+        };
     }
     let (form, gem) = name.split_once('_')?;
     let gem = Gem::from_name(gem)?;
@@ -961,7 +1012,11 @@ mod tests {
             assert!(tex.px.iter().all(|p| p.a >= 1.0), "`{n}` is not opaque");
         }
         let names = icon_names();
-        assert_eq!(names.len(), 18 + 6 + 36);
+        assert_eq!(
+            names.len(),
+            18 + 6 + 36 + 12,
+            "gems, other part 2 icons, gem gear, shards and pastes"
+        );
         let icons: Vec<Tex> = names
             .iter()
             .map(|n| crate::icons::paint_icon(n).unwrap_or_else(|| panic!("no icon for `{n}`")))

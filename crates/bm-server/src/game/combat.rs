@@ -577,7 +577,7 @@ impl Game {
         let rng = &mut self.rng;
         // An exotic gives more rolls.
         let extra = c.exotic.extra_rolls();
-        let mut table = def.tier(c.tier).clone();
+        let mut table = def.tier(c.tier).pool_for(c.element);
         table.drops_min = table.drops_min.saturating_add(extra);
         table.drops_max = table.drops_max.saturating_add(extra);
         let drops = roll_drops(&table, luck, || roll(rng));

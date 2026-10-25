@@ -5431,7 +5431,7 @@ async fn a_generator_burns_coal_into_spark_that_links_carry_to_a_mixer() {
     );
     assert_eq!(v.jobs[0].progress, 0.0);
     assert_eq!(v.spark.map(|s| s.linked), Some(false));
-    assert_eq!(v.wear, Some((spark::MACHINE_WEAR, spark::MACHINE_WEAR)));
+    assert_eq!(v.wear, Some((4_000, 4_000)), "a mixer holds 4,000");
 
     // A link on the mixer and a generator on the link.
     let link = at(1, 2);
@@ -5470,7 +5470,7 @@ async fn a_generator_burns_coal_into_spark_that_links_carry_to_a_mixer() {
     assert_eq!(running.idle, None);
     assert_eq!(
         running.wear,
-        Some((spark::MACHINE_WEAR - 12, spark::MACHINE_WEAR)),
+        Some((4_000 - 12, 4_000)),
         "silver alloy wears a mixer by 12"
     );
     let left = running.spark.unwrap().stored;
@@ -5524,7 +5524,7 @@ async fn a_worn_out_workbench_waits_for_a_spanner() {
     craft_at(&mut alice, cog, 2, Some(bench[0])).await;
     let v = alice.station(|v| !v.jobs.is_empty()).await;
     assert_eq!(v.idle.as_deref(), Some("Worn out: repair it with a spanner"));
-    assert_eq!(v.wear, Some((0, spark::MACHINE_WEAR)));
+    assert_eq!(v.wear, Some((0, 2_000)), "a workbench holds 2,000");
     assert_eq!(v.jobs[0].progress, 0.0);
 
     // A spanner at anything else is refused, and damages nothing.
@@ -5537,13 +5537,13 @@ async fn a_worn_out_workbench_waits_for_a_spanner() {
     // A copper spanner removes 400 wear a hit; the first cog starts and
     // takes its 6.
     let (key, wear, max) = spanner_hit(&mut alice, 11, bench[3], 1).await;
-    assert_eq!((key, wear, max), (bench[0], 400 - 6, spark::MACHINE_WEAR));
+    assert_eq!((key, wear, max), (bench[0], 400 - 6, 2_000));
     let running = look_at_station(&mut alice, bench[2], |v| {
         v.jobs.first().is_some_and(|j| j.progress > 0.0)
     })
     .await;
     assert_eq!(running.idle, None);
-    assert_eq!(running.wear, Some((394, spark::MACHINE_WEAR)));
+    assert_eq!(running.wear, Some((394, 2_000)));
     let durability = stack(&alice, 1).unwrap().wear;
     // Another hit, at the spanner's cadence: 400 more.
     let (_, wear, _) = spanner_hit(&mut alice, 12, bench[1], 1).await;

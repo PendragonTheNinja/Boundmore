@@ -220,7 +220,7 @@ pub const BLOCKS: [&str; 4] = ["gold_seam", "titanium_seam", "medium_coal_seam",
 /// The item icons this milestone adds (painted here, by `icons` or by
 /// `food`), painted now so the files are in place when the catalogue names
 /// them.
-pub const ICONS: [&str; 35] = [
+pub const ICONS: [&str; 43] = [
     "gold_ore",
     "gold_ingot",
     "gold_alloy",
@@ -252,10 +252,18 @@ pub const ICONS: [&str; 35] = [
     "silver_spanner",
     "gold_spanner",
     "titanium_spanner",
-    "spicy_chilli",
-    "spiced_rice",
-    "raw_hearty_pie",
-    "hearty_pie",
+    "acid_chilli",
+    "spark_chilli",
+    "fire_chilli",
+    "acid_rice",
+    "spark_rice",
+    "fire_rice",
+    "raw_acid_pie",
+    "acid_pie",
+    "spark_pie",
+    "fire_pie",
+    "purified_milk",
+    "purified_butter",
 ];
 
 /// Paints the icon called `name`, or `None` if this module does not know it.

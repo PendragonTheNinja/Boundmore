@@ -1192,7 +1192,7 @@ textures = { all = "silver_seam" }
 material = "rock"
 drops = "silver_ore"
 bonus = [{ item = "silver_ore", per_tier = [0, 0, 0, 0.5, 0.5, 0.7, 0.7, 1.05] }]
-mine_xp = 60
+mine_xp = 64
 build_xp = 0
 
 [[block]]
@@ -1209,7 +1209,7 @@ textures = { all = "relic_cache" }
 material = "rock"
 drops = "relic_component"
 bonus = [{ item = "relic_component", per_tier = [0, 0, 0.5, 0.5, 0.7, 0.7, 1.05, 1.05] }]
-mine_xp = 40
+mine_xp = 64
 build_xp = 0
 
 # Four blocks touching, like the workbench; they draw spark through links.
@@ -1936,7 +1936,7 @@ textures = { all = "medium_coal_seam" }
 material = "rock"
 drops = "medium_coal"
 bonus = [{ item = "medium_coal", per_tier = [0, 0, 0.5, 0.5, 0.7, 0.7, 1.05, 1.05] }]
-mine_xp = 36
+mine_xp = 64
 build_xp = 0
 
 [[block]]
@@ -1954,7 +1954,7 @@ textures = { all = "hard_coal_seam" }
 material = "rock"
 drops = "hard_coal"
 bonus = [{ item = "hard_coal", per_tier = [0, 0, 0, 0, 0.5, 0.8, 0.8, 1.2] }]
-mine_xp = 60
+mine_xp = 104
 build_xp = 0
 
 [[block]]
@@ -1988,7 +1988,7 @@ textures = { all = "titanium_seam" }
 material = "rock"
 drops = "titanium_ore"
 bonus = [{ item = "titanium_ore", per_tier = [0, 0, 0, 0, 0.5, 0.8, 0.8, 1.2] }]
-mine_xp = 100
+mine_xp = 136
 build_xp = 0
 
 # Milestone 18 part 2: gem seams (docs/milestones/18-higher-worlds.md rule 29).
@@ -2008,7 +2008,7 @@ textures = { all = "amethyst_seam" }
 material = "rock"
 drops = "rough_amethyst"
 bonus = [{ item = "rough_amethyst", per_tier = [0, 0, 0, 0, 0.5, 0.8, 0.8, 1.2] }]
-mine_xp = 120
+mine_xp = 176
 build_xp = 0
 
 [[block]]
@@ -2026,7 +2026,7 @@ textures = { all = "emerald_seam" }
 material = "rock"
 drops = "rough_emerald"
 bonus = [{ item = "rough_emerald", per_tier = [0, 0, 0, 0, 0.5, 0.8, 0.8, 1.2] }]
-mine_xp = 120
+mine_xp = 176
 build_xp = 0
 
 [[block]]
@@ -2044,7 +2044,7 @@ textures = { all = "sapphire_seam" }
 material = "rock"
 drops = "rough_sapphire"
 bonus = [{ item = "rough_sapphire", per_tier = [0, 0, 0, 0, 0.5, 0.8, 0.8, 1.2] }]
-mine_xp = 120
+mine_xp = 176
 build_xp = 0
 
 [[block]]
@@ -2062,7 +2062,7 @@ textures = { all = "topaz_seam" }
 material = "rock"
 drops = "rough_topaz"
 bonus = [{ item = "rough_topaz", per_tier = [0, 0, 0, 0, 0.5, 0.8, 0.8, 1.2] }]
-mine_xp = 120
+mine_xp = 176
 build_xp = 0
 
 [[block]]
@@ -2080,7 +2080,7 @@ textures = { all = "diamond_seam" }
 material = "rock"
 drops = "rough_diamond"
 bonus = [{ item = "rough_diamond", per_tier = [0, 0, 0, 0, 0.5, 0.8, 0.8, 1.2] }]
-mine_xp = 120
+mine_xp = 176
 build_xp = 0
 
 [[block]]
@@ -2098,7 +2098,7 @@ textures = { all = "ruby_seam" }
 material = "rock"
 drops = "rough_ruby"
 bonus = [{ item = "rough_ruby", per_tier = [0, 0, 0, 0, 0.5, 0.8, 0.8, 1.2] }]
-mine_xp = 120
+mine_xp = 176
 build_xp = 0
 
 # Milestone 18 part 2: power coils (rule 33 to 39). Each powers machines of
@@ -2346,7 +2346,7 @@ textures = { all = "relic_core_seam" }
 material = "rock"
 drops = "relic_core"
 bonus = [{ item = "relic_core", per_tier = [0, 0, 0, 0, 0.5, 0.8, 0.8, 1.2] }]
-mine_xp = 80
+mine_xp = 104
 build_xp = 0
 
 # Milestone 18 part 3: lava (docs/milestones/18-higher-worlds.md rules 45 to

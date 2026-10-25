@@ -2957,7 +2957,7 @@ impl Demo {
             return;
         }
         let k = self.kinds();
-        let tier = k.get(c.kind).expect("builtin kind").tier(c.tier).clone();
+        let tier = k.get(c.kind).expect("builtin kind").tier(c.tier).pool_for(None);
         let luck = self.character.effects(&self.tree).luck_multiplier();
         let fight = &mut self.fight;
         let drops = bm_core::creatures::roll_drops(&tier, luck, || fight.rand());

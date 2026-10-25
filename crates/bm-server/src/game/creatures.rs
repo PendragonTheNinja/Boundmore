@@ -374,8 +374,11 @@ impl Creature {
     }
 
     /// XP its kill gives each attacker.
+    /// An elemental one gives half as much again (Boundless, pfiffel's
+    /// world modifiers).
     pub(super) fn xp(&self, def: &CreatureDef) -> u32 {
-        self.exotic.xp(def.tier(self.tier).xp)
+        let x = self.exotic.xp(def.tier(self.tier).xp);
+        if self.element.is_some() { x + x / 2 } else { x }
     }
 
     /// Share of its health left, 0 to 1.
@@ -1761,7 +1764,7 @@ impl Game {
         c.exotic = exotic;
         // On an elemental world some creatures carry its element.
         if let Some(e) = self.planets[pi].element
-            && roll(&mut self.rng) < bm_core::creatures::ELEMENTAL_CHANCE
+            && roll(&mut self.rng) < bm_core::creatures::elemental_chance(self.planets[pi].tier)
         {
             c.element = Some(e);
         }

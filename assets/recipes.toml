@@ -1591,8 +1591,8 @@ skill = { name = "ingredient_crafting", level = 1 }
 
 # ---------------------------------------------------------------- milestone 18
 # Higher worlds (docs/milestones/18-higher-worlds.md): Boundless's times,
-# heat and spark (tuning 4.8, 4.9); XP and wear follow the silver line and
-# are guesses where the data was not to hand.
+# heat, spark, power, XP and wear (tuning 4.8, 4.9; every number checked
+# against the game's recipe data, docs/research/m18-data-check.md).
 [[recipe]]
 output = "gold_ingot"
 inputs = [["gold_ore", 1]]
@@ -1607,7 +1607,7 @@ inputs = [["titanium_ore", 1]]
 station = "furnace"
 seconds = 240.0
 heat = 600
-xp = 20
+xp = 22
 
 [[recipe]]
 output = "gold_alloy"
@@ -1615,8 +1615,8 @@ inputs = [["gold_ingot", 1], ["copper_ingot", 1]]
 station = "mixer"
 seconds = 50.0
 spark = 100
-xp = 13
-wear = 12
+xp = 12
+wear = 14
 
 [[recipe]]
 output = "titanium_alloy"
@@ -1624,8 +1624,8 @@ inputs = [["titanium_ingot", 1], ["silver_alloy", 2]]
 station = "mixer"
 seconds = 60.0
 spark = 200
-xp = 16
-wear = 14
+xp = 15
+wear = 15
 
 [[recipe]]
 output = "titanium_alloy"
@@ -1633,8 +1633,8 @@ inputs = [["titanium_ingot", 1], ["gold_alloy", 2]]
 station = "mixer"
 seconds = 60.0
 spark = 200
-xp = 16
-wear = 14
+xp = 15
+wear = 15
 
 [[recipe]]
 output = "compact_gold_alloy"
@@ -1642,8 +1642,8 @@ inputs = [["gold_alloy", 10]]
 station = "compactor"
 seconds = 110.0
 spark = 400
-xp = 22
-wear = 14
+xp = 21
+wear = 50
 
 [[recipe]]
 output = "refined_gold_alloy"
@@ -1651,8 +1651,8 @@ inputs = [["compact_gold_alloy", 1]]
 station = "refinery"
 seconds = 50.0
 spark = 400
-xp = 17
-wear = 12
+xp = 16
+wear = 35
 
 [[recipe]]
 output = "machined_gold_alloy"
@@ -1660,8 +1660,8 @@ inputs = [["refined_gold_alloy", 1]]
 station = "workbench"
 seconds = 50.0
 spark = 400
-xp = 18
-wear = 12
+xp = 17
+wear = 7
 
 [[recipe]]
 output = "compact_titanium_alloy"
@@ -1670,7 +1670,7 @@ station = "compactor"
 seconds = 120.0
 spark = 400
 xp = 22
-wear = 14
+wear = 55
 
 [[recipe]]
 output = "refined_titanium_alloy"
@@ -1678,8 +1678,8 @@ inputs = [["compact_titanium_alloy", 1]]
 station = "refinery"
 seconds = 60.0
 spark = 400
-xp = 17
-wear = 12
+xp = 20
+wear = 35
 
 [[recipe]]
 output = "machined_titanium_alloy"
@@ -1687,8 +1687,8 @@ inputs = [["refined_titanium_alloy", 1]]
 station = "workbench"
 seconds = 60.0
 spark = 400
-xp = 18
-wear = 12
+xp = 20
+wear = 7
 
 # Boundless's ancient essence is our fossil essence; its fresh vital essence our vital essence.
 [[recipe]]
@@ -1696,8 +1696,8 @@ output = "bonding_agent"
 inputs = [["glue", 2], ["fossil_essence", 2], ["vital_essence", 1], ["pulsating_orb", 1]]
 station = "mixer"
 seconds = 30.0
-xp = 8
-wear = 12
+xp = 6
+wear = 11
 
 [[recipe]]
 output = "strong_bonding_agent"
@@ -1714,8 +1714,8 @@ inputs = [["silver_alloy", 3], ["stick", 4], ["cotton_cloth", 1], ["bonding_agen
 station = "workbench"
 seconds = 240.0
 spark = 800
-xp = 24
-wear = 14
+xp = 40
+wear = 17
 skill = { name = "tool_crafting", level = 2 }
 
 [[recipe]]
@@ -1724,8 +1724,8 @@ inputs = [["silver_alloy", 3], ["stick", 4], ["cotton_cloth", 1], ["bonding_agen
 station = "workbench"
 seconds = 240.0
 spark = 800
-xp = 24
-wear = 14
+xp = 40
+wear = 17
 skill = { name = "tool_crafting", level = 2 }
 
 [[recipe]]
@@ -1734,8 +1734,8 @@ inputs = [["silver_alloy", 3], ["stick", 4], ["cotton_cloth", 1], ["bonding_agen
 station = "workbench"
 seconds = 240.0
 spark = 800
-xp = 24
-wear = 14
+xp = 40
+wear = 17
 skill = { name = "tool_crafting", level = 2 }
 
 [[recipe]]
@@ -1744,8 +1744,8 @@ inputs = [["silver_alloy", 3], ["cotton_cloth", 1], ["bonding_agent", 1], ["reli
 station = "workbench"
 seconds = 240.0
 spark = 800
-xp = 24
-wear = 14
+xp = 40
+wear = 17
 skill = { name = "tech_crafting", level = 2 }
 
 [[recipe]]
@@ -1754,8 +1754,8 @@ inputs = [["silver_alloy", 3], ["stick", 4], ["cotton_cloth", 1], ["bonding_agen
 station = "workbench"
 seconds = 240.0
 spark = 800
-xp = 24
-wear = 14
+xp = 40
+wear = 17
 skill = { name = "tech_crafting", level = 2 }
 
 [[recipe]]
@@ -1764,8 +1764,8 @@ inputs = [["gold_alloy", 3], ["stick", 4], ["cotton_cloth", 1], ["bonding_agent"
 station = "workbench"
 seconds = 480.0
 spark = 800
-xp = 28
-wear = 14
+xp = 56
+wear = 30
 skill = { name = "tool_crafting", level = 2 }
 
 [[recipe]]
@@ -1774,8 +1774,8 @@ inputs = [["gold_alloy", 3], ["stick", 4], ["cotton_cloth", 1], ["bonding_agent"
 station = "workbench"
 seconds = 480.0
 spark = 800
-xp = 28
-wear = 14
+xp = 56
+wear = 30
 skill = { name = "tool_crafting", level = 2 }
 
 [[recipe]]
@@ -1784,8 +1784,8 @@ inputs = [["gold_alloy", 3], ["stick", 4], ["cotton_cloth", 1], ["bonding_agent"
 station = "workbench"
 seconds = 480.0
 spark = 800
-xp = 28
-wear = 14
+xp = 56
+wear = 30
 skill = { name = "tool_crafting", level = 2 }
 
 [[recipe]]
@@ -1794,8 +1794,8 @@ inputs = [["gold_alloy", 3], ["cotton_cloth", 1], ["bonding_agent", 1], ["relic_
 station = "workbench"
 seconds = 480.0
 spark = 800
-xp = 28
-wear = 14
+xp = 56
+wear = 30
 skill = { name = "tech_crafting", level = 2 }
 
 [[recipe]]
@@ -1804,8 +1804,8 @@ inputs = [["gold_alloy", 3], ["stick", 4], ["cotton_cloth", 1], ["bonding_agent"
 station = "workbench"
 seconds = 480.0
 spark = 800
-xp = 28
-wear = 14
+xp = 56
+wear = 30
 skill = { name = "tech_crafting", level = 2 }
 
 [[recipe]]
@@ -1814,9 +1814,9 @@ inputs = [["titanium_alloy", 3], ["stick", 4], ["cotton_cloth", 1], ["strong_bon
 station = "workbench"
 seconds = 1200.0
 spark = 1500
-xp = 40
-wear = 22
-skill = { name = "tool_crafting", level = 3 }
+xp = 100
+wear = 70
+skill = { name = "tool_crafting", level = 2 }
 
 [[recipe]]
 output = "titanium_shovel"
@@ -1824,9 +1824,9 @@ inputs = [["titanium_alloy", 3], ["stick", 4], ["cotton_cloth", 1], ["strong_bon
 station = "workbench"
 seconds = 1200.0
 spark = 1500
-xp = 40
-wear = 22
-skill = { name = "tool_crafting", level = 3 }
+xp = 100
+wear = 70
+skill = { name = "tool_crafting", level = 2 }
 
 [[recipe]]
 output = "titanium_axe"
@@ -1834,9 +1834,9 @@ inputs = [["titanium_alloy", 3], ["stick", 4], ["cotton_cloth", 1], ["strong_bon
 station = "workbench"
 seconds = 1200.0
 spark = 1500
-xp = 40
-wear = 22
-skill = { name = "tool_crafting", level = 3 }
+xp = 100
+wear = 70
+skill = { name = "tool_crafting", level = 2 }
 
 [[recipe]]
 output = "titanium_grapple"
@@ -1844,9 +1844,9 @@ inputs = [["titanium_alloy", 3], ["cotton_cloth", 1], ["strong_bonding_agent", 1
 station = "workbench"
 seconds = 1200.0
 spark = 1500
-xp = 40
-wear = 22
-skill = { name = "tech_crafting", level = 3 }
+xp = 100
+wear = 70
+skill = { name = "tech_crafting", level = 2 }
 
 [[recipe]]
 output = "titanium_spanner"
@@ -1854,59 +1854,367 @@ inputs = [["titanium_alloy", 3], ["stick", 4], ["cotton_cloth", 1], ["strong_bon
 station = "workbench"
 seconds = 1200.0
 spark = 1500
-xp = 40
-wear = 22
-skill = { name = "tech_crafting", level = 3 }
+xp = 100
+wear = 70
+skill = { name = "tech_crafting", level = 2 }
 
-# Atmosphere food: Boundless's inputs are prime meat, spicy beans and an
-# amalgam we do not have, so these recipes are guesses (spec rule 26).
-[[recipe]]
-output = "spicy_chilli"
-inputs = [["cooked_prime_meat", 1], ["spicy_bean", 4], ["water_bucket", 1]]
-station = "furnace"
-seconds = 60.0
-heat = 100
-xp = 10
-skill = { name = "food_crafting", level = 2 }
+# Atmosphere food (Boundless's recipe data, single craft; data check
+# 2026-10-25): a paste is an elemental shard and fresh blood; each line's
+# dishes take either paste of its line (acid: corrosion or toxin; charged:
+# shock or chill; burning: blast or burn). Acid and charged dishes add rock
+# salt.
 
 [[recipe]]
-output = "spiced_rice"
-inputs = [["cooked_prime_meat", 1], ["spicy_bean", 6], ["rice_bag", 1], ["water_bucket", 1]]
-station = "furnace"
+output = "corrosion_paste"
+inputs = [["corrosion_shard", 1], ["fresh_blood", 1]]
+station = "compactor"
+seconds = 90.0
+spark = 200
+xp = 22
+wear = 45
+skill = { name = "food_crafting", level = 1 }
+
+[[recipe]]
+output = "toxin_paste"
+inputs = [["toxin_shard", 1], ["fresh_blood", 1]]
+station = "compactor"
+seconds = 90.0
+spark = 200
+xp = 22
+wear = 45
+skill = { name = "food_crafting", level = 1 }
+
+[[recipe]]
+output = "shock_paste"
+inputs = [["shock_shard", 1], ["fresh_blood", 1]]
+station = "compactor"
+seconds = 90.0
+spark = 200
+xp = 22
+wear = 45
+skill = { name = "food_crafting", level = 1 }
+
+[[recipe]]
+output = "chill_paste"
+inputs = [["chill_shard", 1], ["fresh_blood", 1]]
+station = "compactor"
+seconds = 90.0
+spark = 200
+xp = 22
+wear = 45
+skill = { name = "food_crafting", level = 1 }
+
+[[recipe]]
+output = "blast_paste"
+inputs = [["blast_shard", 1], ["fresh_blood", 1]]
+station = "compactor"
+seconds = 90.0
+spark = 200
+xp = 22
+wear = 45
+skill = { name = "food_crafting", level = 1 }
+
+[[recipe]]
+output = "burn_paste"
+inputs = [["burn_shard", 1], ["fresh_blood", 1]]
+station = "compactor"
+seconds = 90.0
+spark = 200
+xp = 22
+wear = 45
+skill = { name = "food_crafting", level = 1 }
+
+[[recipe]]
+output = "purified_milk"
+inputs = [["milk_bucket", 1], ["charcoal", 4], ["gravel", 2]]
+station = "extractor"
+seconds = 90.0
+spark = 100
+xp = 12
+wear = 9
+
+[[recipe]]
+output = "purified_butter"
+inputs = [["purified_milk", 1]]
+station = "mixer"
+seconds = 90.0
+spark = 200
+power = 1500
+xp = 14
+wear = 18
+skill = { name = "food_crafting", level = 5 }
+
+[[recipe]]
+output = "raw_acid_chilli"
+inputs = [["prime_meat", 2], ["spicy_bean", 2], ["corrosion_paste", 1], ["tuber", 2], ["rock_salt", 1]]
+station = "mixer"
 seconds = 120.0
-heat = 200
-xp = 16
+xp = 12
+wear = 21
+skill = { name = "food_crafting", level = 1 }
+
+[[recipe]]
+output = "raw_acid_rice"
+inputs = [["prime_meat", 5], ["spicy_bean", 4], ["corrosion_paste", 2], ["rice_bag", 2], ["rock_salt", 1]]
+station = "mixer"
+seconds = 160.0
+spark = 200
+xp = 18
+wear = 26
 skill = { name = "food_crafting", level = 3 }
 
 [[recipe]]
-output = "raw_hearty_pie"
-inputs = [["cooked_prime_meat", 2], ["spicy_bean", 10], ["flour", 1], ["baking_powder", 1], ["milk_bucket", 1]]
+output = "raw_acid_pie"
+inputs = [["prime_meat", 10], ["spicy_bean", 8], ["corrosion_paste", 4], ["flour", 2], ["purified_butter", 2], ["rock_salt", 1]]
 station = "mixer"
-seconds = 120.0
-spark = 200
-xp = 20
-wear = 21
-skill = { name = "food_crafting", level = 4 }
+seconds = 180.0
+spark = 400
+power = 1000
+xp = 22
+wear = 28
+skill = { name = "food_crafting", level = 5 }
 
 [[recipe]]
-output = "hearty_pie"
-inputs = [["raw_hearty_pie", 1]]
-station = "furnace"
-seconds = 480.0
-heat = 300
-xp = 32
-skill = { name = "food_crafting", level = 4 }
+output = "raw_acid_chilli"
+inputs = [["prime_meat", 2], ["spicy_bean", 2], ["toxin_paste", 1], ["tuber", 2], ["rock_salt", 1]]
+station = "mixer"
+seconds = 120.0
+xp = 12
+wear = 21
+skill = { name = "food_crafting", level = 1 }
 
-# Milestone 18 part 2: gems (Boundless's times and spark, tuning 4.8;
-# XP and wear guesses on the alloy pattern).
+[[recipe]]
+output = "raw_acid_rice"
+inputs = [["prime_meat", 5], ["spicy_bean", 4], ["toxin_paste", 2], ["rice_bag", 2], ["rock_salt", 1]]
+station = "mixer"
+seconds = 160.0
+spark = 200
+xp = 18
+wear = 26
+skill = { name = "food_crafting", level = 3 }
+
+[[recipe]]
+output = "raw_acid_pie"
+inputs = [["prime_meat", 10], ["spicy_bean", 8], ["toxin_paste", 4], ["flour", 2], ["purified_butter", 2], ["rock_salt", 1]]
+station = "mixer"
+seconds = 180.0
+spark = 400
+power = 1000
+xp = 22
+wear = 28
+skill = { name = "food_crafting", level = 5 }
+
+[[recipe]]
+output = "acid_chilli"
+inputs = [["raw_acid_chilli", 1]]
+station = "furnace"
+seconds = 240.0
+heat = 100
+xp = 18
+skill = { name = "food_crafting", level = 1 }
+
+[[recipe]]
+output = "acid_rice"
+inputs = [["raw_acid_rice", 1]]
+station = "furnace"
+seconds = 360.0
+heat = 200
+xp = 28
+skill = { name = "food_crafting", level = 3 }
+
+[[recipe]]
+output = "acid_pie"
+inputs = [["raw_acid_pie", 1]]
+station = "furnace"
+seconds = 600.0
+heat = 300
+xp = 44
+skill = { name = "food_crafting", level = 5 }
+
+[[recipe]]
+output = "raw_spark_chilli"
+inputs = [["prime_meat", 2], ["spicy_bean", 2], ["shock_paste", 1], ["tuber", 2], ["rock_salt", 1]]
+station = "mixer"
+seconds = 120.0
+xp = 12
+wear = 21
+skill = { name = "food_crafting", level = 1 }
+
+[[recipe]]
+output = "raw_spark_rice"
+inputs = [["prime_meat", 5], ["spicy_bean", 4], ["shock_paste", 2], ["rice_bag", 2], ["rock_salt", 1]]
+station = "mixer"
+seconds = 160.0
+spark = 200
+xp = 18
+wear = 26
+skill = { name = "food_crafting", level = 3 }
+
+[[recipe]]
+output = "raw_spark_pie"
+inputs = [["prime_meat", 10], ["spicy_bean", 8], ["shock_paste", 4], ["flour", 2], ["purified_butter", 2], ["rock_salt", 1]]
+station = "mixer"
+seconds = 180.0
+spark = 400
+power = 1000
+xp = 22
+wear = 28
+skill = { name = "food_crafting", level = 5 }
+
+[[recipe]]
+output = "raw_spark_chilli"
+inputs = [["prime_meat", 2], ["spicy_bean", 2], ["chill_paste", 1], ["tuber", 2], ["rock_salt", 1]]
+station = "mixer"
+seconds = 120.0
+xp = 12
+wear = 21
+skill = { name = "food_crafting", level = 1 }
+
+[[recipe]]
+output = "raw_spark_rice"
+inputs = [["prime_meat", 5], ["spicy_bean", 4], ["chill_paste", 2], ["rice_bag", 2], ["rock_salt", 1]]
+station = "mixer"
+seconds = 160.0
+spark = 200
+xp = 18
+wear = 26
+skill = { name = "food_crafting", level = 3 }
+
+[[recipe]]
+output = "raw_spark_pie"
+inputs = [["prime_meat", 10], ["spicy_bean", 8], ["chill_paste", 4], ["flour", 2], ["purified_butter", 2], ["rock_salt", 1]]
+station = "mixer"
+seconds = 180.0
+spark = 400
+power = 1000
+xp = 22
+wear = 28
+skill = { name = "food_crafting", level = 5 }
+
+[[recipe]]
+output = "spark_chilli"
+inputs = [["raw_spark_chilli", 1]]
+station = "furnace"
+seconds = 240.0
+heat = 100
+xp = 18
+skill = { name = "food_crafting", level = 1 }
+
+[[recipe]]
+output = "spark_rice"
+inputs = [["raw_spark_rice", 1]]
+station = "furnace"
+seconds = 360.0
+heat = 200
+xp = 28
+skill = { name = "food_crafting", level = 3 }
+
+[[recipe]]
+output = "spark_pie"
+inputs = [["raw_spark_pie", 1]]
+station = "furnace"
+seconds = 600.0
+heat = 300
+xp = 44
+skill = { name = "food_crafting", level = 5 }
+
+[[recipe]]
+output = "raw_fire_chilli"
+inputs = [["prime_meat", 2], ["spicy_bean", 2], ["blast_paste", 1], ["tuber", 2]]
+station = "mixer"
+seconds = 120.0
+xp = 12
+wear = 21
+skill = { name = "food_crafting", level = 1 }
+
+[[recipe]]
+output = "raw_fire_rice"
+inputs = [["prime_meat", 5], ["spicy_bean", 4], ["blast_paste", 2], ["rice_bag", 2]]
+station = "mixer"
+seconds = 160.0
+spark = 200
+xp = 16
+wear = 26
+skill = { name = "food_crafting", level = 3 }
+
+[[recipe]]
+output = "raw_fire_pie"
+inputs = [["prime_meat", 10], ["spicy_bean", 8], ["blast_paste", 4], ["flour", 2], ["purified_butter", 2]]
+station = "mixer"
+seconds = 180.0
+spark = 400
+power = 1000
+xp = 22
+wear = 28
+skill = { name = "food_crafting", level = 5 }
+
+[[recipe]]
+output = "raw_fire_chilli"
+inputs = [["prime_meat", 2], ["spicy_bean", 2], ["burn_paste", 1], ["tuber", 2]]
+station = "mixer"
+seconds = 120.0
+xp = 12
+wear = 21
+skill = { name = "food_crafting", level = 1 }
+
+[[recipe]]
+output = "raw_fire_rice"
+inputs = [["prime_meat", 5], ["spicy_bean", 4], ["burn_paste", 2], ["rice_bag", 2]]
+station = "mixer"
+seconds = 160.0
+spark = 200
+xp = 16
+wear = 26
+skill = { name = "food_crafting", level = 3 }
+
+[[recipe]]
+output = "raw_fire_pie"
+inputs = [["prime_meat", 10], ["spicy_bean", 8], ["burn_paste", 4], ["flour", 2], ["purified_butter", 2]]
+station = "mixer"
+seconds = 180.0
+spark = 400
+power = 1000
+xp = 22
+wear = 28
+skill = { name = "food_crafting", level = 5 }
+
+[[recipe]]
+output = "fire_chilli"
+inputs = [["raw_fire_chilli", 1]]
+station = "furnace"
+seconds = 240.0
+heat = 100
+xp = 18
+skill = { name = "food_crafting", level = 1 }
+
+[[recipe]]
+output = "fire_rice"
+inputs = [["raw_fire_rice", 1]]
+station = "furnace"
+seconds = 360.0
+heat = 200
+xp = 28
+skill = { name = "food_crafting", level = 3 }
+
+[[recipe]]
+output = "fire_pie"
+inputs = [["raw_fire_pie", 1]]
+station = "furnace"
+seconds = 600.0
+heat = 300
+xp = 44
+skill = { name = "food_crafting", level = 5 }
+
+# Milestone 18 part 2: gems (Boundless's recipe data: times, spark, XP and
+# wear; m18-data-check.md).
 [[recipe]]
 output = "compact_amethyst"
 inputs = [["rough_amethyst", 10]]
 station = "compactor"
 seconds = 240.0
 spark = 800
-xp = 30
-wear = 29
+xp = 38
+wear = 85
 
 [[recipe]]
 output = "refined_amethyst"
@@ -1914,8 +2222,8 @@ inputs = [["compact_amethyst", 1]]
 station = "refinery"
 seconds = 120.0
 spark = 800
-xp = 24
-wear = 29
+xp = 30
+wear = 55
 
 [[recipe]]
 output = "compact_emerald"
@@ -1923,8 +2231,8 @@ inputs = [["rough_emerald", 10]]
 station = "compactor"
 seconds = 240.0
 spark = 800
-xp = 30
-wear = 29
+xp = 38
+wear = 85
 
 [[recipe]]
 output = "refined_emerald"
@@ -1932,8 +2240,8 @@ inputs = [["compact_emerald", 1]]
 station = "refinery"
 seconds = 120.0
 spark = 800
-xp = 24
-wear = 29
+xp = 30
+wear = 55
 
 [[recipe]]
 output = "compact_sapphire"
@@ -1941,8 +2249,8 @@ inputs = [["rough_sapphire", 10]]
 station = "compactor"
 seconds = 240.0
 spark = 800
-xp = 30
-wear = 29
+xp = 38
+wear = 85
 
 [[recipe]]
 output = "refined_sapphire"
@@ -1950,8 +2258,8 @@ inputs = [["compact_sapphire", 1]]
 station = "refinery"
 seconds = 120.0
 spark = 800
-xp = 24
-wear = 29
+xp = 30
+wear = 55
 
 [[recipe]]
 output = "compact_topaz"
@@ -1959,8 +2267,8 @@ inputs = [["rough_topaz", 10]]
 station = "compactor"
 seconds = 240.0
 spark = 800
-xp = 30
-wear = 29
+xp = 38
+wear = 85
 
 [[recipe]]
 output = "refined_topaz"
@@ -1968,8 +2276,8 @@ inputs = [["compact_topaz", 1]]
 station = "refinery"
 seconds = 120.0
 spark = 800
-xp = 24
-wear = 29
+xp = 30
+wear = 55
 
 [[recipe]]
 output = "compact_diamond"
@@ -1977,8 +2285,8 @@ inputs = [["rough_diamond", 10]]
 station = "compactor"
 seconds = 240.0
 spark = 800
-xp = 30
-wear = 29
+xp = 38
+wear = 85
 
 [[recipe]]
 output = "refined_diamond"
@@ -1986,8 +2294,8 @@ inputs = [["compact_diamond", 1]]
 station = "refinery"
 seconds = 120.0
 spark = 800
-xp = 24
-wear = 29
+xp = 30
+wear = 55
 
 [[recipe]]
 output = "compact_ruby"
@@ -1995,8 +2303,8 @@ inputs = [["rough_ruby", 10]]
 station = "compactor"
 seconds = 240.0
 spark = 800
-xp = 30
-wear = 29
+xp = 38
+wear = 85
 
 [[recipe]]
 output = "refined_ruby"
@@ -2004,19 +2312,21 @@ inputs = [["compact_ruby", 1]]
 station = "refinery"
 seconds = 120.0
 spark = 800
-xp = 24
-wear = 29
+xp = 30
+wear = 55
 
 # Milestone 18 part 2: power, the titanium furnace, leather and gem gear
-# (Boundless's inputs, times, spark and power, tuning 4.6 to 4.9; XP and
-# wear guesses on the earlier pattern).
+# (Boundless's recipe data: inputs, times, spark, power, XP and wear;
+# m18-data-check.md). Each coil takes one fixed metal: copper for the
+# workbench, extractor and mixer, iron for the compactor and refinery, gold
+# for the forge; advanced coils silver, gold and titanium likewise.
 [[recipe]]
 output = "titanium_furnace"
 inputs = [["titanium_alloy", 6], ["flint", 16]]
 station = "workbench"
 seconds = 180.0
 spark = 400
-xp = 24
+xp = 26
 wear = 14
 skill = { name = "machine_crafting", level = 2 }
 
@@ -2026,7 +2336,7 @@ inputs = [["titanium_alloy", 6]]
 station = "workbench"
 seconds = 180.0
 spark = 400
-xp = 24
+xp = 26
 wear = 14
 skill = { name = "machine_crafting", level = 2 }
 
@@ -2036,51 +2346,9 @@ inputs = [["iron_furnace", 1], ["relic_component", 3], ["machined_copper", 3], [
 station = "workbench"
 seconds = 900.0
 spark = 800
-xp = 40
-wear = 29
+xp = 90
+wear = 55
 skill = { name = "machine_crafting", level = 2 }
-
-[[recipe]]
-output = "workbench_coil"
-inputs = [["iron_furnace", 1], ["relic_component", 3], ["machined_iron", 3], ["compact_diamond", 1]]
-station = "workbench"
-seconds = 900.0
-spark = 800
-xp = 40
-wear = 29
-skill = { name = "machine_crafting", level = 2 }
-
-[[recipe]]
-output = "workbench_coil"
-inputs = [["iron_furnace", 1], ["relic_component", 3], ["machined_gold_alloy", 3], ["compact_diamond", 1]]
-station = "workbench"
-seconds = 900.0
-spark = 800
-xp = 40
-wear = 29
-skill = { name = "machine_crafting", level = 2 }
-
-[[recipe]]
-output = "advanced_workbench_coil"
-inputs = [["titanium_furnace", 1], ["machined_titanium_alloy", 3], ["refined_diamond", 2], ["relic_component", 6], ["relic_core", 1]]
-station = "workbench"
-seconds = 1800.0
-spark = 2000
-power = 1500
-xp = 80
-wear = 40
-skill = { name = "machine_crafting", level = 3 }
-
-[[recipe]]
-output = "advanced_workbench_coil"
-inputs = [["titanium_furnace", 1], ["machined_gold_alloy", 3], ["refined_diamond", 2], ["relic_component", 6], ["relic_core", 1]]
-station = "workbench"
-seconds = 1800.0
-spark = 2000
-power = 1500
-xp = 80
-wear = 40
-skill = { name = "machine_crafting", level = 3 }
 
 [[recipe]]
 output = "advanced_workbench_coil"
@@ -2089,19 +2357,9 @@ station = "workbench"
 seconds = 1800.0
 spark = 2000
 power = 1500
-xp = 80
-wear = 40
+xp = 180
+wear = 100
 skill = { name = "machine_crafting", level = 3 }
-
-[[recipe]]
-output = "compactor_coil"
-inputs = [["iron_furnace", 1], ["relic_component", 3], ["machined_copper", 3], ["compact_ruby", 1]]
-station = "workbench"
-seconds = 900.0
-spark = 800
-xp = 40
-wear = 29
-skill = { name = "machine_crafting", level = 2 }
 
 [[recipe]]
 output = "compactor_coil"
@@ -2109,30 +2367,9 @@ inputs = [["iron_furnace", 1], ["relic_component", 3], ["machined_iron", 3], ["c
 station = "workbench"
 seconds = 900.0
 spark = 800
-xp = 40
-wear = 29
+xp = 90
+wear = 55
 skill = { name = "machine_crafting", level = 2 }
-
-[[recipe]]
-output = "compactor_coil"
-inputs = [["iron_furnace", 1], ["relic_component", 3], ["machined_gold_alloy", 3], ["compact_ruby", 1]]
-station = "workbench"
-seconds = 900.0
-spark = 800
-xp = 40
-wear = 29
-skill = { name = "machine_crafting", level = 2 }
-
-[[recipe]]
-output = "advanced_compactor_coil"
-inputs = [["titanium_furnace", 1], ["machined_titanium_alloy", 3], ["refined_ruby", 2], ["relic_component", 6], ["relic_core", 1]]
-station = "workbench"
-seconds = 1800.0
-spark = 2000
-power = 1500
-xp = 80
-wear = 40
-skill = { name = "machine_crafting", level = 3 }
 
 [[recipe]]
 output = "advanced_compactor_coil"
@@ -2141,19 +2378,8 @@ station = "workbench"
 seconds = 1800.0
 spark = 2000
 power = 1500
-xp = 80
-wear = 40
-skill = { name = "machine_crafting", level = 3 }
-
-[[recipe]]
-output = "advanced_compactor_coil"
-inputs = [["titanium_furnace", 1], ["machined_silver_alloy", 3], ["refined_ruby", 2], ["relic_component", 6], ["relic_core", 1]]
-station = "workbench"
-seconds = 1800.0
-spark = 2000
-power = 1500
-xp = 80
-wear = 40
+xp = 180
+wear = 100
 skill = { name = "machine_crafting", level = 3 }
 
 [[recipe]]
@@ -2162,51 +2388,9 @@ inputs = [["iron_furnace", 1], ["relic_component", 3], ["machined_copper", 3], [
 station = "workbench"
 seconds = 900.0
 spark = 800
-xp = 40
-wear = 29
+xp = 90
+wear = 55
 skill = { name = "machine_crafting", level = 2 }
-
-[[recipe]]
-output = "extractor_coil"
-inputs = [["iron_furnace", 1], ["relic_component", 3], ["machined_iron", 3], ["compact_sapphire", 1]]
-station = "workbench"
-seconds = 900.0
-spark = 800
-xp = 40
-wear = 29
-skill = { name = "machine_crafting", level = 2 }
-
-[[recipe]]
-output = "extractor_coil"
-inputs = [["iron_furnace", 1], ["relic_component", 3], ["machined_gold_alloy", 3], ["compact_sapphire", 1]]
-station = "workbench"
-seconds = 900.0
-spark = 800
-xp = 40
-wear = 29
-skill = { name = "machine_crafting", level = 2 }
-
-[[recipe]]
-output = "advanced_extractor_coil"
-inputs = [["titanium_furnace", 1], ["machined_titanium_alloy", 3], ["refined_sapphire", 2], ["relic_component", 6], ["relic_core", 1]]
-station = "workbench"
-seconds = 1800.0
-spark = 2000
-power = 1500
-xp = 80
-wear = 40
-skill = { name = "machine_crafting", level = 3 }
-
-[[recipe]]
-output = "advanced_extractor_coil"
-inputs = [["titanium_furnace", 1], ["machined_gold_alloy", 3], ["refined_sapphire", 2], ["relic_component", 6], ["relic_core", 1]]
-station = "workbench"
-seconds = 1800.0
-spark = 2000
-power = 1500
-xp = 80
-wear = 40
-skill = { name = "machine_crafting", level = 3 }
 
 [[recipe]]
 output = "advanced_extractor_coil"
@@ -2215,19 +2399,9 @@ station = "workbench"
 seconds = 1800.0
 spark = 2000
 power = 1500
-xp = 80
-wear = 40
+xp = 180
+wear = 100
 skill = { name = "machine_crafting", level = 3 }
-
-[[recipe]]
-output = "refinery_coil"
-inputs = [["iron_furnace", 1], ["relic_component", 3], ["machined_copper", 3], ["compact_topaz", 1]]
-station = "workbench"
-seconds = 900.0
-spark = 800
-xp = 40
-wear = 29
-skill = { name = "machine_crafting", level = 2 }
 
 [[recipe]]
 output = "refinery_coil"
@@ -2235,30 +2409,9 @@ inputs = [["iron_furnace", 1], ["relic_component", 3], ["machined_iron", 3], ["c
 station = "workbench"
 seconds = 900.0
 spark = 800
-xp = 40
-wear = 29
+xp = 90
+wear = 55
 skill = { name = "machine_crafting", level = 2 }
-
-[[recipe]]
-output = "refinery_coil"
-inputs = [["iron_furnace", 1], ["relic_component", 3], ["machined_gold_alloy", 3], ["compact_topaz", 1]]
-station = "workbench"
-seconds = 900.0
-spark = 800
-xp = 40
-wear = 29
-skill = { name = "machine_crafting", level = 2 }
-
-[[recipe]]
-output = "advanced_refinery_coil"
-inputs = [["titanium_furnace", 1], ["machined_titanium_alloy", 3], ["refined_topaz", 2], ["relic_component", 6], ["relic_core", 1]]
-station = "workbench"
-seconds = 1800.0
-spark = 2000
-power = 1500
-xp = 80
-wear = 40
-skill = { name = "machine_crafting", level = 3 }
 
 [[recipe]]
 output = "advanced_refinery_coil"
@@ -2267,19 +2420,8 @@ station = "workbench"
 seconds = 1800.0
 spark = 2000
 power = 1500
-xp = 80
-wear = 40
-skill = { name = "machine_crafting", level = 3 }
-
-[[recipe]]
-output = "advanced_refinery_coil"
-inputs = [["titanium_furnace", 1], ["machined_silver_alloy", 3], ["refined_topaz", 2], ["relic_component", 6], ["relic_core", 1]]
-station = "workbench"
-seconds = 1800.0
-spark = 2000
-power = 1500
-xp = 80
-wear = 40
+xp = 180
+wear = 100
 skill = { name = "machine_crafting", level = 3 }
 
 [[recipe]]
@@ -2288,51 +2430,9 @@ inputs = [["iron_furnace", 1], ["relic_component", 3], ["machined_copper", 3], [
 station = "workbench"
 seconds = 900.0
 spark = 800
-xp = 40
-wear = 29
+xp = 90
+wear = 55
 skill = { name = "machine_crafting", level = 2 }
-
-[[recipe]]
-output = "mixer_coil"
-inputs = [["iron_furnace", 1], ["relic_component", 3], ["machined_iron", 3], ["compact_emerald", 1]]
-station = "workbench"
-seconds = 900.0
-spark = 800
-xp = 40
-wear = 29
-skill = { name = "machine_crafting", level = 2 }
-
-[[recipe]]
-output = "mixer_coil"
-inputs = [["iron_furnace", 1], ["relic_component", 3], ["machined_gold_alloy", 3], ["compact_emerald", 1]]
-station = "workbench"
-seconds = 900.0
-spark = 800
-xp = 40
-wear = 29
-skill = { name = "machine_crafting", level = 2 }
-
-[[recipe]]
-output = "advanced_mixer_coil"
-inputs = [["titanium_furnace", 1], ["machined_titanium_alloy", 3], ["refined_emerald", 2], ["relic_component", 6], ["relic_core", 1]]
-station = "workbench"
-seconds = 1800.0
-spark = 2000
-power = 1500
-xp = 80
-wear = 40
-skill = { name = "machine_crafting", level = 3 }
-
-[[recipe]]
-output = "advanced_mixer_coil"
-inputs = [["titanium_furnace", 1], ["machined_gold_alloy", 3], ["refined_emerald", 2], ["relic_component", 6], ["relic_core", 1]]
-station = "workbench"
-seconds = 1800.0
-spark = 2000
-power = 1500
-xp = 80
-wear = 40
-skill = { name = "machine_crafting", level = 3 }
 
 [[recipe]]
 output = "advanced_mixer_coil"
@@ -2341,29 +2441,9 @@ station = "workbench"
 seconds = 1800.0
 spark = 2000
 power = 1500
-xp = 80
-wear = 40
+xp = 180
+wear = 100
 skill = { name = "machine_crafting", level = 3 }
-
-[[recipe]]
-output = "forge_coil"
-inputs = [["iron_furnace", 1], ["relic_component", 3], ["machined_copper", 3], ["compact_amethyst", 1]]
-station = "workbench"
-seconds = 900.0
-spark = 800
-xp = 40
-wear = 29
-skill = { name = "machine_crafting", level = 2 }
-
-[[recipe]]
-output = "forge_coil"
-inputs = [["iron_furnace", 1], ["relic_component", 3], ["machined_iron", 3], ["compact_amethyst", 1]]
-station = "workbench"
-seconds = 900.0
-spark = 800
-xp = 40
-wear = 29
-skill = { name = "machine_crafting", level = 2 }
 
 [[recipe]]
 output = "forge_coil"
@@ -2371,8 +2451,8 @@ inputs = [["iron_furnace", 1], ["relic_component", 3], ["machined_gold_alloy", 3
 station = "workbench"
 seconds = 900.0
 spark = 800
-xp = 40
-wear = 29
+xp = 90
+wear = 55
 skill = { name = "machine_crafting", level = 2 }
 
 [[recipe]]
@@ -2382,30 +2462,8 @@ station = "workbench"
 seconds = 1800.0
 spark = 2000
 power = 1500
-xp = 80
-wear = 40
-skill = { name = "machine_crafting", level = 3 }
-
-[[recipe]]
-output = "advanced_forge_coil"
-inputs = [["titanium_furnace", 1], ["machined_gold_alloy", 3], ["refined_amethyst", 2], ["relic_component", 6], ["relic_core", 1]]
-station = "workbench"
-seconds = 1800.0
-spark = 2000
-power = 1500
-xp = 80
-wear = 40
-skill = { name = "machine_crafting", level = 3 }
-
-[[recipe]]
-output = "advanced_forge_coil"
-inputs = [["titanium_furnace", 1], ["machined_silver_alloy", 3], ["refined_amethyst", 2], ["relic_component", 6], ["relic_core", 1]]
-station = "workbench"
-seconds = 1800.0
-spark = 2000
-power = 1500
-xp = 80
-wear = 40
+xp = 180
+wear = 100
 skill = { name = "machine_crafting", level = 3 }
 
 [[recipe]]
@@ -2415,8 +2473,8 @@ station = "refinery"
 seconds = 60.0
 spark = 200
 power = 500
-xp = 10
-wear = 29
+xp = 12
+wear = 35
 
 [[recipe]]
 output = "compact_coal"
@@ -2426,7 +2484,7 @@ seconds = 120.0
 spark = 200
 power = 500
 xp = 12
-wear = 29
+wear = 55
 
 [[recipe]]
 output = "compact_medium_coal"
@@ -2435,8 +2493,8 @@ station = "compactor"
 seconds = 240.0
 spark = 400
 power = 1000
-xp = 12
-wear = 29
+xp = 20
+wear = 85
 
 [[recipe]]
 output = "compact_hard_coal"
@@ -2445,8 +2503,8 @@ station = "compactor"
 seconds = 480.0
 spark = 800
 power = 2000
-xp = 12
-wear = 29
+xp = 40
+wear = 150
 
 [[recipe]]
 output = "amethyst_hammer"
@@ -2455,8 +2513,8 @@ station = "workbench"
 seconds = 1800.0
 spark = 2000
 power = 1500
-xp = 60
-wear = 40
+xp = 160
+wear = 100
 skill = { name = "tool_crafting", level = 3 }
 
 [[recipe]]
@@ -2466,8 +2524,8 @@ station = "workbench"
 seconds = 1800.0
 spark = 2000
 power = 1500
-xp = 60
-wear = 40
+xp = 160
+wear = 100
 skill = { name = "tool_crafting", level = 3 }
 
 [[recipe]]
@@ -2477,8 +2535,8 @@ station = "workbench"
 seconds = 1800.0
 spark = 2000
 power = 1500
-xp = 60
-wear = 40
+xp = 160
+wear = 100
 skill = { name = "tool_crafting", level = 3 }
 
 [[recipe]]
@@ -2488,8 +2546,8 @@ station = "workbench"
 seconds = 1800.0
 spark = 2000
 power = 1500
-xp = 60
-wear = 40
+xp = 160
+wear = 100
 skill = { name = "tech_crafting", level = 3 }
 
 [[recipe]]
@@ -2499,8 +2557,8 @@ station = "workbench"
 seconds = 1800.0
 spark = 2000
 power = 1500
-xp = 60
-wear = 40
+xp = 160
+wear = 100
 skill = { name = "tech_crafting", level = 3 }
 
 [[recipe]]
@@ -2510,8 +2568,8 @@ station = "workbench"
 seconds = 1800.0
 spark = 2000
 power = 1500
-xp = 60
-wear = 40
+xp = 160
+wear = 100
 skill = { name = "tech_crafting", level = 3 }
 
 [[recipe]]
@@ -2521,8 +2579,8 @@ station = "workbench"
 seconds = 1800.0
 spark = 2000
 power = 1500
-xp = 60
-wear = 40
+xp = 160
+wear = 100
 skill = { name = "tool_crafting", level = 3 }
 
 [[recipe]]
@@ -2532,8 +2590,8 @@ station = "workbench"
 seconds = 1800.0
 spark = 2000
 power = 1500
-xp = 60
-wear = 40
+xp = 160
+wear = 100
 skill = { name = "tool_crafting", level = 3 }
 
 [[recipe]]
@@ -2543,8 +2601,8 @@ station = "workbench"
 seconds = 1800.0
 spark = 2000
 power = 1500
-xp = 60
-wear = 40
+xp = 160
+wear = 100
 skill = { name = "tool_crafting", level = 3 }
 
 [[recipe]]
@@ -2554,8 +2612,8 @@ station = "workbench"
 seconds = 1800.0
 spark = 2000
 power = 1500
-xp = 60
-wear = 40
+xp = 160
+wear = 100
 skill = { name = "tech_crafting", level = 3 }
 
 [[recipe]]
@@ -2565,8 +2623,8 @@ station = "workbench"
 seconds = 1800.0
 spark = 2000
 power = 1500
-xp = 60
-wear = 40
+xp = 160
+wear = 100
 skill = { name = "tech_crafting", level = 3 }
 
 [[recipe]]
@@ -2576,8 +2634,8 @@ station = "workbench"
 seconds = 1800.0
 spark = 2000
 power = 1500
-xp = 60
-wear = 40
+xp = 160
+wear = 100
 skill = { name = "tech_crafting", level = 3 }
 
 [[recipe]]
@@ -2587,8 +2645,8 @@ station = "workbench"
 seconds = 1800.0
 spark = 2000
 power = 1500
-xp = 60
-wear = 40
+xp = 160
+wear = 100
 skill = { name = "tool_crafting", level = 3 }
 
 [[recipe]]
@@ -2598,8 +2656,8 @@ station = "workbench"
 seconds = 1800.0
 spark = 2000
 power = 1500
-xp = 60
-wear = 40
+xp = 160
+wear = 100
 skill = { name = "tool_crafting", level = 3 }
 
 [[recipe]]
@@ -2609,19 +2667,19 @@ station = "workbench"
 seconds = 1800.0
 spark = 2000
 power = 1500
-xp = 60
-wear = 40
+xp = 160
+wear = 100
 skill = { name = "tool_crafting", level = 3 }
 
 [[recipe]]
 output = "sapphire_grapple"
-inputs = [["refined_sapphire", 3], ["leather", 1], ["strong_bonding_agent", 1], ["relic_fragment", 1]]
+inputs = [["refined_sapphire", 3], ["leather", 1], ["strong_bonding_agent", 1], ["relic_component", 1], ["relic_fragment", 1]]
 station = "workbench"
 seconds = 1800.0
 spark = 2000
 power = 1500
-xp = 60
-wear = 40
+xp = 160
+wear = 100
 skill = { name = "tech_crafting", level = 3 }
 
 [[recipe]]
@@ -2631,8 +2689,8 @@ station = "workbench"
 seconds = 1800.0
 spark = 2000
 power = 1500
-xp = 60
-wear = 40
+xp = 160
+wear = 100
 skill = { name = "tech_crafting", level = 3 }
 
 [[recipe]]
@@ -2642,8 +2700,8 @@ station = "workbench"
 seconds = 1800.0
 spark = 2000
 power = 1500
-xp = 60
-wear = 40
+xp = 160
+wear = 100
 skill = { name = "tech_crafting", level = 3 }
 
 [[recipe]]
@@ -2653,8 +2711,8 @@ station = "workbench"
 seconds = 1800.0
 spark = 2000
 power = 1500
-xp = 60
-wear = 40
+xp = 160
+wear = 100
 skill = { name = "tool_crafting", level = 3 }
 
 [[recipe]]
@@ -2664,8 +2722,8 @@ station = "workbench"
 seconds = 1800.0
 spark = 2000
 power = 1500
-xp = 60
-wear = 40
+xp = 160
+wear = 100
 skill = { name = "tool_crafting", level = 3 }
 
 [[recipe]]
@@ -2675,19 +2733,19 @@ station = "workbench"
 seconds = 1800.0
 spark = 2000
 power = 1500
-xp = 60
-wear = 40
+xp = 160
+wear = 100
 skill = { name = "tool_crafting", level = 3 }
 
 [[recipe]]
 output = "topaz_grapple"
-inputs = [["refined_topaz", 3], ["leather", 1], ["strong_bonding_agent", 1], ["relic_fragment", 1]]
+inputs = [["refined_topaz", 3], ["leather", 1], ["strong_bonding_agent", 1], ["relic_component", 1], ["relic_fragment", 1]]
 station = "workbench"
 seconds = 1800.0
 spark = 2000
 power = 1500
-xp = 60
-wear = 40
+xp = 160
+wear = 100
 skill = { name = "tech_crafting", level = 3 }
 
 [[recipe]]
@@ -2697,8 +2755,8 @@ station = "workbench"
 seconds = 1800.0
 spark = 2000
 power = 1500
-xp = 60
-wear = 40
+xp = 160
+wear = 100
 skill = { name = "tech_crafting", level = 3 }
 
 [[recipe]]
@@ -2708,8 +2766,8 @@ station = "workbench"
 seconds = 1800.0
 spark = 2000
 power = 1500
-xp = 60
-wear = 40
+xp = 160
+wear = 100
 skill = { name = "tech_crafting", level = 3 }
 
 [[recipe]]
@@ -2719,8 +2777,8 @@ station = "workbench"
 seconds = 1800.0
 spark = 2000
 power = 1500
-xp = 60
-wear = 40
+xp = 160
+wear = 100
 skill = { name = "tool_crafting", level = 3 }
 
 [[recipe]]
@@ -2730,8 +2788,8 @@ station = "workbench"
 seconds = 1800.0
 spark = 2000
 power = 1500
-xp = 60
-wear = 40
+xp = 160
+wear = 100
 skill = { name = "tool_crafting", level = 3 }
 
 [[recipe]]
@@ -2741,8 +2799,8 @@ station = "workbench"
 seconds = 1800.0
 spark = 2000
 power = 1500
-xp = 60
-wear = 40
+xp = 160
+wear = 100
 skill = { name = "tool_crafting", level = 3 }
 
 [[recipe]]
@@ -2752,8 +2810,8 @@ station = "workbench"
 seconds = 1800.0
 spark = 2000
 power = 1500
-xp = 60
-wear = 40
+xp = 160
+wear = 100
 skill = { name = "tech_crafting", level = 3 }
 
 [[recipe]]
@@ -2763,8 +2821,8 @@ station = "workbench"
 seconds = 1800.0
 spark = 2000
 power = 1500
-xp = 60
-wear = 40
+xp = 160
+wear = 100
 skill = { name = "tech_crafting", level = 3 }
 
 [[recipe]]
@@ -2774,8 +2832,8 @@ station = "workbench"
 seconds = 1800.0
 spark = 2000
 power = 1500
-xp = 60
-wear = 40
+xp = 160
+wear = 100
 skill = { name = "tech_crafting", level = 3 }
 
 [[recipe]]
@@ -2785,8 +2843,8 @@ station = "workbench"
 seconds = 1800.0
 spark = 2000
 power = 1500
-xp = 60
-wear = 40
+xp = 160
+wear = 100
 skill = { name = "tool_crafting", level = 3 }
 
 [[recipe]]
@@ -2796,8 +2854,8 @@ station = "workbench"
 seconds = 1800.0
 spark = 2000
 power = 1500
-xp = 60
-wear = 40
+xp = 160
+wear = 100
 skill = { name = "tool_crafting", level = 3 }
 
 [[recipe]]
@@ -2807,8 +2865,8 @@ station = "workbench"
 seconds = 1800.0
 spark = 2000
 power = 1500
-xp = 60
-wear = 40
+xp = 160
+wear = 100
 skill = { name = "tool_crafting", level = 3 }
 
 [[recipe]]
@@ -2818,8 +2876,8 @@ station = "workbench"
 seconds = 1800.0
 spark = 2000
 power = 1500
-xp = 60
-wear = 40
+xp = 160
+wear = 100
 skill = { name = "tech_crafting", level = 3 }
 
 [[recipe]]
@@ -2829,8 +2887,8 @@ station = "workbench"
 seconds = 1800.0
 spark = 2000
 power = 1500
-xp = 60
-wear = 40
+xp = 160
+wear = 100
 skill = { name = "tech_crafting", level = 3 }
 
 [[recipe]]
@@ -2840,6 +2898,599 @@ station = "workbench"
 seconds = 1800.0
 spark = 2000
 power = 1500
-xp = 60
-wear = 40
+xp = 160
+wear = 100
 skill = { name = "tech_crafting", level = 3 }
+
+# Milestone 18: the forge ingredients that need power (Boundless's recipe
+# data, single craft; m18-data-check.md "Forge ingredients"). Boundless's
+# trophies are ours by creature: grazer horn, pelter scale, popper core,
+# drifter tentacle, dasher feather; its adrenal gland is the dasher's quick
+# gland.
+[[recipe]]
+output = "pure_tincture_2"
+count = 4
+inputs = [["tincture_base", 2], ["vital_essence", 2], ["pulsating_orb", 1], ["pelter_eye", 1]]
+station = "extractor"
+seconds = 60.0
+spark = 200
+power = 500
+xp = 8
+wear = 7
+skill = { name = "ingredient_crafting", level = 2 }
+
+[[recipe]]
+output = "pure_tincture_3"
+count = 4
+inputs = [["tincture_base", 4], ["vital_essence", 4], ["shimmering_orb", 1], ["pelter_eye", 1]]
+station = "extractor"
+seconds = 90.0
+spark = 400
+power = 2000
+xp = 13
+wear = 9
+skill = { name = "ingredient_crafting", level = 3 }
+
+[[recipe]]
+output = "rough_tincture_2"
+count = 4
+inputs = [["tincture_base", 2], ["vital_essence", 2], ["quick_gland", 1], ["pulsating_orb", 1]]
+station = "extractor"
+seconds = 60.0
+spark = 200
+power = 500
+xp = 8
+wear = 7
+skill = { name = "ingredient_crafting", level = 2 }
+
+[[recipe]]
+output = "rough_tincture_3"
+count = 4
+inputs = [["tincture_base", 4], ["vital_essence", 4], ["quick_gland", 2], ["shimmering_orb", 1]]
+station = "extractor"
+seconds = 90.0
+spark = 400
+power = 2000
+xp = 13
+wear = 9
+skill = { name = "ingredient_crafting", level = 3 }
+
+[[recipe]]
+output = "wild_tincture_2"
+count = 4
+inputs = [["tincture_base", 2], ["vital_essence", 2], ["grazer_eye", 1], ["pulsating_orb", 1]]
+station = "extractor"
+seconds = 60.0
+spark = 200
+power = 500
+xp = 8
+wear = 7
+skill = { name = "ingredient_crafting", level = 2 }
+
+[[recipe]]
+output = "wild_tincture_3"
+count = 4
+inputs = [["tincture_base", 4], ["vital_essence", 4], ["grazer_eye", 2], ["shimmering_orb", 1]]
+station = "extractor"
+seconds = 90.0
+spark = 400
+power = 2000
+xp = 13
+wear = 9
+skill = { name = "ingredient_crafting", level = 3 }
+
+[[recipe]]
+output = "sapping_tincture_1"
+count = 4
+inputs = [["tincture_base", 2], ["vital_essence", 2], ["grazer_eye", 1], ["pulsating_orb", 1]]
+station = "extractor"
+seconds = 60.0
+spark = 200
+power = 1000
+xp = 8
+wear = 7
+skill = { name = "ingredient_crafting", level = 2 }
+
+[[recipe]]
+output = "sapping_tincture_2"
+count = 4
+inputs = [["tincture_base", 4], ["vital_essence", 4], ["grazer_eye", 2], ["shimmering_orb", 1]]
+station = "extractor"
+seconds = 90.0
+spark = 400
+power = 2500
+xp = 13
+wear = 9
+skill = { name = "ingredient_crafting", level = 3 }
+
+[[recipe]]
+output = "tainted_tincture_1"
+count = 4
+inputs = [["tincture_base", 2], ["vital_essence", 2], ["popper_eye", 1], ["pulsating_orb", 1]]
+station = "extractor"
+seconds = 60.0
+spark = 200
+power = 1000
+xp = 8
+wear = 7
+skill = { name = "ingredient_crafting", level = 2 }
+
+[[recipe]]
+output = "tainted_tincture_2"
+count = 4
+inputs = [["tincture_base", 4], ["vital_essence", 4], ["popper_eye", 2], ["shimmering_orb", 1]]
+station = "extractor"
+seconds = 90.0
+spark = 400
+power = 2500
+xp = 13
+wear = 9
+skill = { name = "ingredient_crafting", level = 3 }
+
+[[recipe]]
+output = "mending_tincture_1"
+count = 4
+inputs = [["tincture_base", 2], ["olivine", 2], ["pulsating_orb", 1]]
+station = "extractor"
+seconds = 60.0
+spark = 100
+power = 500
+xp = 7
+wear = 7
+skill = { name = "ingredient_crafting", level = 1 }
+
+[[recipe]]
+output = "mending_tincture_2"
+count = 4
+inputs = [["tincture_base", 4], ["olivine", 4], ["shimmering_orb", 1]]
+station = "extractor"
+seconds = 90.0
+spark = 300
+power = 1500
+xp = 13
+wear = 9
+skill = { name = "ingredient_crafting", level = 2 }
+
+[[recipe]]
+output = "wild_mending_tincture_1"
+count = 4
+inputs = [["tincture_base", 2], ["olivine", 2], ["quick_gland", 1], ["pulsating_orb", 1]]
+station = "extractor"
+seconds = 60.0
+spark = 100
+power = 500
+xp = 7
+wear = 7
+skill = { name = "ingredient_crafting", level = 2 }
+
+[[recipe]]
+output = "wild_mending_tincture_2"
+count = 4
+inputs = [["tincture_base", 4], ["olivine", 4], ["quick_gland", 2], ["shimmering_orb", 1]]
+station = "extractor"
+seconds = 90.0
+spark = 300
+power = 1500
+xp = 13
+wear = 9
+skill = { name = "ingredient_crafting", level = 3 }
+
+[[recipe]]
+output = "calming_tincture_1"
+count = 4
+inputs = [["tincture_base", 2], ["olivine", 2], ["dasher_eye", 1], ["pulsating_orb", 1]]
+station = "extractor"
+seconds = 60.0
+spark = 100
+power = 500
+xp = 7
+wear = 7
+skill = { name = "ingredient_crafting", level = 2 }
+
+[[recipe]]
+output = "calming_tincture_2"
+count = 4
+inputs = [["tincture_base", 4], ["olivine", 4], ["dasher_eye", 2], ["shimmering_orb", 1]]
+station = "extractor"
+seconds = 90.0
+spark = 300
+power = 1500
+xp = 13
+wear = 9
+skill = { name = "ingredient_crafting", level = 3 }
+
+[[recipe]]
+output = "rough_calming_tincture_1"
+count = 4
+inputs = [["tincture_base", 2], ["olivine", 2], ["pelter_eye", 1], ["pulsating_orb", 1]]
+station = "extractor"
+seconds = 60.0
+spark = 100
+power = 500
+xp = 7
+wear = 7
+skill = { name = "ingredient_crafting", level = 2 }
+
+[[recipe]]
+output = "rough_calming_tincture_2"
+count = 4
+inputs = [["tincture_base", 4], ["olivine", 4], ["pelter_eye", 2], ["shimmering_orb", 1]]
+station = "extractor"
+seconds = 90.0
+spark = 300
+power = 1500
+xp = 13
+wear = 9
+skill = { name = "ingredient_crafting", level = 3 }
+
+[[recipe]]
+output = "shield_salve_1"
+count = 4
+inputs = [["salve_base", 2], ["mantle", 1], ["pulsating_orb", 1]]
+station = "extractor"
+seconds = 60.0
+spark = 200
+power = 600
+xp = 8
+wear = 7
+skill = { name = "ingredient_crafting", level = 2 }
+
+[[recipe]]
+output = "shield_salve_2"
+count = 4
+inputs = [["salve_base", 4], ["mantle", 2], ["shimmering_orb", 1]]
+station = "extractor"
+seconds = 90.0
+spark = 300
+power = 1800
+xp = 13
+wear = 9
+skill = { name = "ingredient_crafting", level = 3 }
+
+[[recipe]]
+output = "boost_salve_1"
+count = 4
+inputs = [["salve_base", 2], ["saltpetre", 2], ["pulsating_orb", 1]]
+station = "extractor"
+seconds = 60.0
+spark = 200
+power = 600
+xp = 8
+wear = 7
+skill = { name = "ingredient_crafting", level = 1 }
+
+[[recipe]]
+output = "boost_salve_2"
+count = 4
+inputs = [["salve_base", 4], ["saltpetre", 4], ["shimmering_orb", 1]]
+station = "extractor"
+seconds = 90.0
+spark = 300
+power = 1800
+xp = 13
+wear = 9
+skill = { name = "ingredient_crafting", level = 2 }
+
+[[recipe]]
+output = "flaw_guard_salve_1"
+count = 4
+inputs = [["salve_base", 2], ["hide", 2], ["pulsating_orb", 1]]
+station = "extractor"
+seconds = 60.0
+spark = 200
+power = 600
+xp = 8
+wear = 7
+skill = { name = "ingredient_crafting", level = 1 }
+
+[[recipe]]
+output = "flaw_guard_salve_2"
+count = 4
+inputs = [["salve_base", 4], ["hide", 4], ["shimmering_orb", 1]]
+station = "extractor"
+seconds = 90.0
+spark = 300
+power = 1800
+xp = 13
+wear = 9
+skill = { name = "ingredient_crafting", level = 2 }
+
+[[recipe]]
+output = "quirk_guard_salve_1"
+count = 4
+inputs = [["salve_base", 2], ["hide", 2], ["pulsating_orb", 1]]
+station = "extractor"
+seconds = 60.0
+spark = 200
+power = 600
+xp = 8
+wear = 7
+skill = { name = "ingredient_crafting", level = 1 }
+
+[[recipe]]
+output = "quirk_guard_salve_2"
+count = 4
+inputs = [["salve_base", 4], ["hide", 4], ["shimmering_orb", 1]]
+station = "extractor"
+seconds = 90.0
+spark = 300
+power = 1800
+xp = 13
+wear = 9
+skill = { name = "ingredient_crafting", level = 2 }
+
+[[recipe]]
+output = "vigour_salve_1"
+count = 4
+inputs = [["salve_base", 2], ["vital_orb", 1], ["shimmering_orb", 1]]
+station = "extractor"
+seconds = 60.0
+spark = 200
+power = 600
+xp = 8
+wear = 7
+skill = { name = "ingredient_crafting", level = 2 }
+
+[[recipe]]
+output = "vigour_salve_2"
+count = 4
+inputs = [["salve_base", 4], ["vital_orb", 2], ["shadow_orb", 1]]
+station = "extractor"
+seconds = 90.0
+spark = 400
+power = 2000
+xp = 13
+wear = 9
+skill = { name = "ingredient_crafting", level = 3 }
+
+[[recipe]]
+output = "steady_salve_1"
+count = 4
+inputs = [["salve_base", 2], ["sulphur", 2], ["shimmering_orb", 1]]
+station = "extractor"
+seconds = 60.0
+spark = 200
+power = 600
+xp = 8
+wear = 7
+skill = { name = "ingredient_crafting", level = 2 }
+
+[[recipe]]
+output = "steady_salve_2"
+count = 4
+inputs = [["salve_base", 4], ["sulphur", 4], ["shadow_orb", 1]]
+station = "extractor"
+seconds = 90.0
+spark = 400
+power = 2000
+xp = 13
+wear = 9
+skill = { name = "ingredient_crafting", level = 3 }
+
+[[recipe]]
+output = "fate_salve_1"
+count = 4
+inputs = [["salve_base", 1], ["spark_sac", 1], ["pulsating_orb", 1]]
+station = "extractor"
+seconds = 30.0
+spark = 200
+power = 600
+xp = 3
+wear = 6
+skill = { name = "ingredient_crafting", level = 2 }
+
+[[recipe]]
+output = "fate_salve_2"
+count = 4
+inputs = [["salve_base", 2], ["spark_sac", 2], ["shimmering_orb", 1]]
+station = "extractor"
+seconds = 60.0
+spark = 300
+power = 1800
+xp = 8
+wear = 7
+skill = { name = "ingredient_crafting", level = 3 }
+
+[[recipe]]
+output = "turnabout_salve"
+count = 4
+inputs = [["salve_base", 4], ["petal", 4], ["shimmering_orb", 1]]
+station = "extractor"
+seconds = 90.0
+spark = 200
+power = 1500
+xp = 12
+wear = 9
+skill = { name = "ingredient_crafting", level = 2 }
+
+[[recipe]]
+output = "gamble_salve_1"
+count = 4
+inputs = [["salve_base", 2], ["opal", 1], ["pulsating_orb", 1]]
+station = "extractor"
+seconds = 30.0
+spark = 100
+power = 1000
+xp = 3
+wear = 6
+skill = { name = "ingredient_crafting", level = 2 }
+
+[[recipe]]
+output = "gamble_salve_2"
+count = 4
+inputs = [["salve_base", 4], ["opal", 2], ["shimmering_orb", 1]]
+station = "extractor"
+seconds = 60.0
+spark = 200
+power = 2000
+xp = 8
+wear = 7
+skill = { name = "ingredient_crafting", level = 3 }
+
+[[recipe]]
+output = "flaw_turning_spur"
+count = 4
+inputs = [["spur_base", 4], ["tentacle_trophy", 1], ["shimmering_orb", 1], ["shadow_orb", 1]]
+station = "extractor"
+seconds = 90.0
+spark = 500
+power = 2500
+xp = 14
+wear = 9
+skill = { name = "ingredient_crafting", level = 3 }
+
+[[recipe]]
+output = "vigour_spur_1"
+count = 4
+inputs = [["spur_base", 4], ["core_trophy", 1], ["shimmering_orb", 1]]
+station = "extractor"
+seconds = 60.0
+spark = 200
+power = 1500
+xp = 8
+wear = 7
+skill = { name = "ingredient_crafting", level = 2 }
+
+[[recipe]]
+output = "vigour_spur_2"
+count = 4
+inputs = [["spur_base", 4], ["core_trophy", 1], ["shimmering_orb", 1], ["shadow_orb", 1]]
+station = "extractor"
+seconds = 90.0
+spark = 500
+power = 3000
+xp = 14
+wear = 9
+skill = { name = "ingredient_crafting", level = 3 }
+
+[[recipe]]
+output = "boost_spur"
+count = 4
+inputs = [["spur_base", 3], ["scale_trophy", 1], ["shimmering_orb", 1]]
+station = "extractor"
+seconds = 90.0
+spark = 500
+power = 2500
+xp = 14
+wear = 9
+skill = { name = "ingredient_crafting", level = 3 }
+
+[[recipe]]
+output = "points_spur_1"
+count = 4
+inputs = [["spur_base", 2], ["scale_trophy", 1], ["shimmering_orb", 1]]
+station = "extractor"
+seconds = 60.0
+spark = 200
+power = 1500
+xp = 8
+wear = 7
+skill = { name = "ingredient_crafting", level = 2 }
+
+[[recipe]]
+output = "points_spur_2"
+count = 4
+inputs = [["spur_base", 4], ["scale_trophy", 1], ["shimmering_orb", 1], ["shadow_orb", 1]]
+station = "extractor"
+seconds = 90.0
+spark = 500
+power = 3000
+xp = 14
+wear = 9
+skill = { name = "ingredient_crafting", level = 3 }
+
+[[recipe]]
+output = "boon_wash_2"
+count = 4
+inputs = [["wash_base", 4], ["horn_trophy", 1], ["shimmering_orb", 1], ["shadow_orb", 1]]
+station = "extractor"
+seconds = 90.0
+spark = 400
+power = 1200
+xp = 11
+wear = 9
+skill = { name = "ingredient_crafting", level = 2 }
+
+[[recipe]]
+output = "flaw_wash_1"
+count = 4
+inputs = [["wash_base", 3], ["horn_trophy", 1], ["shimmering_orb", 1]]
+station = "extractor"
+seconds = 60.0
+spark = 400
+power = 1200
+xp = 9
+wear = 7
+skill = { name = "ingredient_crafting", level = 2 }
+
+[[recipe]]
+output = "flaw_wash_2"
+count = 4
+inputs = [["wash_base", 4], ["feather_trophy", 1], ["shimmering_orb", 1], ["shadow_orb", 1]]
+station = "extractor"
+seconds = 90.0
+spark = 600
+power = 2600
+xp = 14
+wear = 9
+skill = { name = "ingredient_crafting", level = 3 }
+
+[[recipe]]
+output = "quirk_wash_1"
+count = 4
+inputs = [["wash_base", 3], ["horn_trophy", 1], ["shimmering_orb", 1]]
+station = "extractor"
+seconds = 60.0
+spark = 400
+power = 1200
+xp = 9
+wear = 7
+skill = { name = "ingredient_crafting", level = 2 }
+
+[[recipe]]
+output = "quirk_wash_2"
+count = 4
+inputs = [["wash_base", 4], ["feather_trophy", 1], ["shimmering_orb", 1], ["shadow_orb", 1]]
+station = "extractor"
+seconds = 90.0
+spark = 600
+power = 2600
+xp = 14
+wear = 9
+skill = { name = "ingredient_crafting", level = 3 }
+
+[[recipe]]
+output = "boon_shift_wash"
+count = 4
+inputs = [["wash_base", 4], ["feather_trophy", 1], ["shimmering_orb", 1], ["shadow_orb", 1]]
+station = "extractor"
+seconds = 90.0
+spark = 600
+power = 2600
+xp = 14
+wear = 9
+skill = { name = "ingredient_crafting", level = 3 }
+
+[[recipe]]
+output = "unmaking_wax_2"
+count = 4
+inputs = [["wax_base", 2], ["volatile_blood", 2], ["pulsating_orb", 1]]
+station = "extractor"
+seconds = 60.0
+spark = 300
+power = 1000
+xp = 8
+wear = 7
+skill = { name = "ingredient_crafting", level = 2 }
+
+[[recipe]]
+output = "unmaking_wax_3"
+count = 4
+inputs = [["wax_base", 4], ["volatile_blood", 4], ["shimmering_orb", 1], ["shadow_orb", 1]]
+station = "extractor"
+seconds = 90.0
+spark = 500
+power = 3000
+xp = 14
+wear = 9
+skill = { name = "ingredient_crafting", level = 3 }

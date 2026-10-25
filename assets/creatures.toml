@@ -1,7 +1,8 @@
 # Creatures (milestone 13, docs/milestones/13-creatures-and-combat.md).
 # Boundless's creatures in Boundmore's own names and models. Health, armour,
-# XP and drops per tier are Boundless's (tuning 3.2.2 and 3.2.4; elemental
-# shards are left out until elemental creatures exist). Speeds, ranges,
+# XP and drops per tier are Boundless's (tuning 3.2.2 and 3.2.4).
+# `elemental_shard` is the shard of an elemental creature's element; a
+# creature with no element never drops one (milestone 18). Speeds, ranges,
 # attack timing and damage past what players measured are GUESSES, listed in
 # docs/feel.md for Nathan to check in game.
 #
@@ -44,6 +45,7 @@ drops = [
   { item = "raw_meat", weight = 10, max = 2 },
   { item = "bone", weight = 7, max = 1 },
   { item = "tallow", weight = 8, max = 2 },
+  { item = "elemental_shard", weight = 10, max = 3 },
 ]
 
 [[creature.tiers]]
@@ -61,6 +63,7 @@ drops = [
   { item = "fresh_blood", weight = 5, max = 2 },
   { item = "milk_gland", weight = 4, max = 1 },
   { item = "grazer_eye", weight = 2, max = 1 },
+  { item = "elemental_shard", weight = 10, max = 3 },
 ]
 
 [[creature.tiers]]
@@ -78,6 +81,7 @@ drops = [
   { item = "fresh_blood", weight = 5, max = 2 },
   { item = "milk_gland", weight = 4, max = 1 },
   { item = "grazer_eye", weight = 2, max = 1 },
+  { item = "elemental_shard", weight = 8, max = 5 },
 ]
 
 [[creature.tiers]]
@@ -96,6 +100,7 @@ drops = [
   { item = "milk_gland", weight = 4, max = 1 },
   { item = "grazer_eye", weight = 3, max = 2 },
   { item = "horn_trophy", weight = 1, max = 1 },
+  { item = "elemental_shard", weight = 8, max = 5 },
 ]
 
 [[creature.tiers]]
@@ -114,6 +119,7 @@ drops = [
   { item = "milk_gland", weight = 4, max = 1 },
   { item = "grazer_eye", weight = 3, max = 2 },
   { item = "horn_trophy", weight = 1, max = 1 },
+  { item = "elemental_shard", weight = 7, max = 7 },
 ]
 
 # Boundless's spitter. Base hit 30, x3 at tier 2 (players, 2023); gives up
@@ -145,6 +151,7 @@ drops = [
   { item = "tallow", weight = 19, max = 2 },
   { item = "bone", weight = 19, max = 2 },
   { item = "thick_blood", weight = 11, max = 2 },
+  { item = "elemental_shard", weight = 23, max = 2 },
 ]
 
 [[creature.tiers]]
@@ -160,6 +167,7 @@ drops = [
   { item = "bone", weight = 19, max = 2 },
   { item = "thick_blood", weight = 11, max = 2 },
   { item = "hide", weight = 4, max = 2 },
+  { item = "elemental_shard", weight = 23, max = 2 },
 ]
 
 [[creature.tiers]]
@@ -178,6 +186,7 @@ drops = [
   { item = "mantle", weight = 8, max = 2 },
   { item = "spark_sac", weight = 5, max = 1 },
   { item = "pelter_eye", weight = 3, max = 1 },
+  { item = "elemental_shard", weight = 15, max = 5 },
 ]
 
 [[creature.tiers]]
@@ -197,6 +206,7 @@ drops = [
   { item = "spark_sac", weight = 5, max = 2 },
   { item = "pelter_eye", weight = 4, max = 2 },
   { item = "scale_trophy", weight = 2, max = 1 },
+  { item = "elemental_shard", weight = 15, max = 5 },
 ]
 
 [[creature.tiers]]
@@ -216,6 +226,7 @@ drops = [
   { item = "spark_sac", weight = 5, max = 3 },
   { item = "pelter_eye", weight = 4, max = 2 },
   { item = "scale_trophy", weight = 2, max = 1 },
+  { item = "elemental_shard", weight = 17, max = 7 },
 ]
 
 # Boundless's roadrunner: never attacks, flees, rare and alone, tiers 1 to 3.
@@ -249,6 +260,7 @@ drops = [
   { item = "quick_gland", weight = 5, max = 2 },
   { item = "fresh_blood", weight = 4, max = 1 },
   { item = "wayshard", weight = 2, max = 2 },
+  { item = "elemental_shard", weight = 11, max = 3 },
 ]
 
 [[creature.tiers]]
@@ -267,6 +279,7 @@ drops = [
   { item = "dasher_eye", weight = 7, max = 2 },
   { item = "feather_trophy", weight = 1, max = 1 },
   { item = "wayshard", weight = 2, max = 4 },
+  { item = "elemental_shard", weight = 11, max = 3 },
 ]
 
 [[creature.tiers]]
@@ -285,6 +298,7 @@ drops = [
   { item = "dasher_eye", weight = 7, max = 2 },
   { item = "feather_trophy", weight = 1, max = 1 },
   { item = "wayshard", weight = 3, max = 6 },
+  { item = "elemental_shard", weight = 15, max = 7 },
 ]
 
 # Milestone 13 part 2.
@@ -321,6 +335,7 @@ drops = [
   { item = "tallow", weight = 8, max = 2 },
   { item = "bone", weight = 7, max = 1 },
   { item = "volatile_blood", weight = 8, max = 2 },
+  { item = "elemental_shard", weight = 10, max = 3 },
 ]
 
 [[creature.tiers]]
@@ -337,6 +352,7 @@ drops = [
   { item = "volatile_blood", weight = 8, max = 2 },
   { item = "hide", weight = 4, max = 1 },
   { item = "mantle", weight = 1, max = 1 },
+  { item = "elemental_shard", weight = 10, max = 3 },
 ]
 
 [[creature.tiers]]
@@ -355,6 +371,7 @@ drops = [
   { item = "mantle", weight = 1, max = 1 },
   { item = "heat_sac", weight = 3, max = 1 },
   { item = "popper_eye", weight = 1, max = 1 },
+  { item = "elemental_shard", weight = 10, max = 3 },
 ]
 
 [[creature.tiers]]
@@ -374,6 +391,7 @@ drops = [
   { item = "heat_sac", weight = 3, max = 1 },
   { item = "popper_eye", weight = 1, max = 1 },
   { item = "core_trophy", weight = 1, max = 1 },
+  { item = "elemental_shard", weight = 10, max = 3 },
 ]
 
 [[creature.tiers]]
@@ -393,6 +411,7 @@ drops = [
   { item = "heat_sac", weight = 3, max = 2 },
   { item = "popper_eye", weight = 1, max = 1 },
   { item = "core_trophy", weight = 1, max = 1 },
+  { item = "elemental_shard", weight = 10, max = 3 },
 ]
 
 # Boundless's cuttletrunk: flies; middle and high threat worlds; high armour.
@@ -425,6 +444,7 @@ drops = [
   { item = "prime_meat", weight = 23, max = 2 },
   { item = "tallow", weight = 19, max = 2 },
   { item = "bone", weight = 19, max = 1 },
+  { item = "elemental_shard", weight = 23, max = 3 },
 ]
 
 [[creature.tiers]]
@@ -440,6 +460,7 @@ drops = [
   { item = "bone", weight = 19, max = 1 },
   { item = "hide", weight = 11, max = 2 },
   { item = "thick_blood", weight = 4, max = 2 },
+  { item = "elemental_shard", weight = 23, max = 3 },
 ]
 
 [[creature.tiers]]
@@ -457,6 +478,7 @@ drops = [
   { item = "thick_blood", weight = 4, max = 2 },
   { item = "mantle", weight = 5, max = 1 },
   { item = "float_sac", weight = 4, max = 1 },
+  { item = "elemental_shard", weight = 23, max = 3 },
 ]
 
 [[creature.tiers]]
@@ -475,6 +497,7 @@ drops = [
   { item = "mantle", weight = 5, max = 1 },
   { item = "float_sac", weight = 4, max = 1 },
   { item = "tentacle_trophy", weight = 2, max = 1 },
+  { item = "elemental_shard", weight = 23, max = 3 },
 ]
 
 [[creature.tiers]]
@@ -493,4 +516,5 @@ drops = [
   { item = "mantle", weight = 5, max = 3 },
   { item = "float_sac", weight = 4, max = 3 },
   { item = "tentacle_trophy", weight = 2, max = 1 },
+  { item = "elemental_shard", weight = 23, max = 3 },
 ]

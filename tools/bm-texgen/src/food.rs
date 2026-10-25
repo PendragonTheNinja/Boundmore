@@ -200,12 +200,68 @@ fn bowl_icon(rgb: u32, fill: Fill, bits: u32, name: &str) -> Icon {
     icon
 }
 
-/// Spicy chilli (milestone 18): a bowl of orange-red chilli thick with
-/// dark beans, a whole red chilli pepper laid across the top.
-fn chilli() -> Tex {
-    let mut icon = bowl_icon(0xc8320e, Fill::Broth, 0x4a1a0c, "spicy_chilli");
+/// An atmosphere chilli (milestone 18): a bowl of chilli tinted by its
+/// line, thick with dark beans, a whole red chilli pepper laid across the
+/// top.
+fn chilli(rgb: u32, name: &str) -> Tex {
+    let mut icon = bowl_icon(rgb, Fill::Broth, 0x4a1a0c, name);
     pepper(&mut icon);
     icon.finish()
+}
+
+/// Purified butter: a pale yellow block on a little board, its top lit and
+/// one corner sliced off.
+fn butter() -> Tex {
+    let board = plank_ramp();
+    let fat = ramp(0xf4dc78, 0.35, 1.0);
+    let mut icon = Icon::new();
+    icon.layer(false, |x, y| {
+        let p = (c(x), c(y));
+        ((3.0..29.0).contains(&p.0) && (22.0..26.0).contains(&p.1)).then(|| board.pick(0.5 - (p.1 - 22.0) * 0.05, x, y))
+    });
+    icon.layer(true, |x, y| {
+        let p = (c(x), c(y));
+        // A box seen from the front and above: the top face from y 9 to 13,
+        // the front below it to 22; the cut corner at the right.
+        if !(6.0..26.0).contains(&p.0) || !(9.0..22.0).contains(&p.1) {
+            return None;
+        }
+        if p.0 - 20.0 > p.1 - 9.0 {
+            return None;
+        }
+        let top = p.1 < 13.0;
+        Some(fat.pick(if top { 0.85 } else { 0.6 - (p.0 - 6.0) * 0.008 }, x, y))
+    });
+    icon.finish()
+}
+
+/// The colour each line's dishes are tinted: acid green, charged blue,
+/// burning orange-red.
+fn line_rgb(line: &str) -> Option<u32> {
+    Some(match line {
+        "acid" => 0x7aa82a,
+        "spark" => 0x3a7ad8,
+        "fire" => 0xd8401a,
+        _ => return None,
+    })
+}
+
+/// The atmosphere dishes, raw and cooked, of every line.
+fn line_dish(name: &str) -> Option<Tex> {
+    let (raw, rest) = match name.strip_prefix("raw_") {
+        Some(r) => (true, r),
+        None => (false, name),
+    };
+    let (line, dish) = rest.split_once('_')?;
+    let rgb = line_rgb(line)?;
+    Some(match (dish, raw) {
+        ("chilli", false) => chilli(rgb, name),
+        ("chilli", true) => bowl(rgb, Fill::Raw, 0xf0e0c0, name),
+        ("rice", false) => bowl(0xf0c058, Fill::Risotto, rgb, name),
+        ("rice", true) => bowl(0xf6f2e6, Fill::Raw, rgb, name),
+        ("pie", r) => pie(r, rgb, name),
+        _ => return None,
+    })
 }
 
 /// A red chilli pepper with a green stalk, curved across the top right.
@@ -254,13 +310,13 @@ fn pepper(icon: &mut Icon) {
 /// Hearty pie (milestone 18): a round pie in a tin dish, a crimped crust
 /// round its edge and three slits showing the meat inside; baked golden
 /// brown, or raw in pale dough.
-fn pie(raw: bool) -> Tex {
+fn pie(raw: bool, filling: u32, name: &str) -> Tex {
     let crust = if raw {
         ramp(0xf0dcb4, 0.55, 1.0)
     } else {
         ramp(0xd89a40, 0.3, 0.98)
     };
-    let filling = ramp(if raw { 0xc0606a } else { 0x8a3a24 }, 0.3, 0.9);
+    let filling = ramp(filling, if raw { 0.45 } else { 0.25 }, 0.9);
     let tin = steel_ramp();
     let (cx, cy, rx, ry, wall) = (16.0f32, 14.5f32, 13.5f32, 7.5f32, 6.5f32);
     let mut icon = Icon::new();
@@ -311,7 +367,7 @@ fn pie(raw: bool) -> Tex {
         // Raw dough is dusted with flour in soft patches.
         if raw {
             let cell = (((p.0 * 0.4) as i32) * 11 + (p.1 * 0.4) as i32) as u32;
-            if unit(hash2(seed("raw_hearty_pie"), cell)) > 0.7 {
+            if unit(hash2(seed(name), cell)) > 0.7 {
                 t += 0.18;
             }
         }
@@ -625,12 +681,10 @@ pub fn paint(name: &str) -> Option<Tex> {
         "rice_bag" => sack(0xa8b47a, 0xf6f2e6, Heap::Grains, None, name),
         "flour" => sack(0xe4dccc, 0xfaf6f0, Heap::Powder, Some(0x4a6ac0), name),
         "baking_powder" => sack(0x98aac4, 0xf2f6fc, Heap::Powder, Some(0xc84a3a), name),
-        // Milestone 18: the atmosphere dishes.
-        "spicy_chilli" => chilli(),
-        "spiced_rice" => bowl(0xf0c058, Fill::Risotto, 0xe0501c, name),
-        "raw_hearty_pie" => pie(true),
-        "hearty_pie" => pie(false),
-        _ => return farm_dish(name),
+        // Milestone 18: purified milk and butter, then the atmosphere dishes.
+        "purified_milk" => bucket(Some(0xe6f2ff)),
+        "purified_butter" => butter(),
+        _ => return line_dish(name).or_else(|| farm_dish(name)),
     })
 }
 

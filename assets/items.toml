@@ -1355,46 +1355,153 @@ rank = 80
 stack = 1
 grapple = { range = 20.0, shot_speed = 40.0, reel_in = 40.0, reel_out = 40.0, durability = 1200, energy = 120 }
 
-# Spanners: wear mended a hit is Boundless's; durability, speed and energy
-# are guesses on the copper and iron spanners' pattern.
+# Spanners: Boundless's stats (item data, m18-data-check.md section 3).
 [[item]]
 name = "silver_spanner"
 flex = 100
 rank = 50
 stack = 1
-tool = { class = "spanner", action_speed = 30.0, durability = 1200, energy = 13, repair = 1500 }
+tool = { class = "spanner", action_speed = 70.0, durability = 1100, energy = 10, repair = 1500 }
 
 [[item]]
 name = "gold_spanner"
 flex = 90
 rank = 50
 stack = 1
-tool = { class = "spanner", action_speed = 30.0, durability = 1100, energy = 14, repair = 2000 }
+tool = { class = "spanner", action_speed = 40.0, durability = 1000, energy = 15, repair = 2000 }
 
 [[item]]
 name = "titanium_spanner"
 flex = 90
 rank = 80
 stack = 1
-tool = { class = "spanner", action_speed = 30.0, durability = 1500, energy = 20, repair = 6000 }
+tool = { class = "spanner", action_speed = 50.0, durability = 1500, energy = 30, repair = 6000 }
 
-# Atmosphere food (Boundless's hunger and buffs; recipes are guesses).
+# Atmosphere food, one per line of air (Boundless: three of each dish,
+# each made with its line's paste; forum and data check 2026-10-25).
+# Hunger and buff ranks are Boundless's (tuning 3.9).
 [[item]]
-name = "spicy_chilli"
-food = { hunger = 1500, buff = "breathing", rank = 1, minutes = 30 }
-
-[[item]]
-name = "spiced_rice"
-food = { hunger = 2500, buff = "breathing", rank = 2, minutes = 30 }
+name = "corrosion_shard"
 
 [[item]]
-name = "raw_hearty_pie"
-display = "Raw Hearty Pie"
-food = { hunger = 400, sick = true }
+name = "toxin_shard"
 
 [[item]]
-name = "hearty_pie"
-food = { hunger = 5000, buff = "breathing", rank = 3, minutes = 30 }
+name = "shock_shard"
+
+[[item]]
+name = "chill_shard"
+
+[[item]]
+name = "blast_shard"
+
+[[item]]
+name = "burn_shard"
+
+[[item]]
+name = "corrosion_paste"
+
+[[item]]
+name = "toxin_paste"
+
+[[item]]
+name = "shock_paste"
+
+[[item]]
+name = "chill_paste"
+
+[[item]]
+name = "blast_paste"
+
+[[item]]
+name = "burn_paste"
+
+[[item]]
+name = "purified_milk"
+
+[[item]]
+name = "purified_butter"
+
+[[item]]
+name = "raw_acid_chilli"
+display = "Raw Acidproof Chilli"
+
+[[item]]
+name = "acid_chilli"
+display = "Acidproof Chilli"
+food = { hunger = 1500, buff = "acid_air", rank = 1, minutes = 30 }
+
+[[item]]
+name = "raw_acid_rice"
+display = "Raw Acidproof Rice"
+
+[[item]]
+name = "acid_rice"
+display = "Acidproof Rice"
+food = { hunger = 2500, buff = "acid_air", rank = 2, minutes = 30 }
+
+[[item]]
+name = "raw_acid_pie"
+display = "Raw Acidproof Pie"
+
+[[item]]
+name = "acid_pie"
+display = "Acidproof Pie"
+food = { hunger = 5000, buff = "acid_air", rank = 3, minutes = 30 }
+
+[[item]]
+name = "raw_spark_chilli"
+display = "Raw Sparkproof Chilli"
+
+[[item]]
+name = "spark_chilli"
+display = "Sparkproof Chilli"
+food = { hunger = 1500, buff = "charged_air", rank = 1, minutes = 30 }
+
+[[item]]
+name = "raw_spark_rice"
+display = "Raw Sparkproof Rice"
+
+[[item]]
+name = "spark_rice"
+display = "Sparkproof Rice"
+food = { hunger = 2500, buff = "charged_air", rank = 2, minutes = 30 }
+
+[[item]]
+name = "raw_spark_pie"
+display = "Raw Sparkproof Pie"
+
+[[item]]
+name = "spark_pie"
+display = "Sparkproof Pie"
+food = { hunger = 5000, buff = "charged_air", rank = 3, minutes = 30 }
+
+[[item]]
+name = "raw_fire_chilli"
+display = "Raw Fireproof Chilli"
+
+[[item]]
+name = "fire_chilli"
+display = "Fireproof Chilli"
+food = { hunger = 1500, buff = "burning_air", rank = 1, minutes = 30 }
+
+[[item]]
+name = "raw_fire_rice"
+display = "Raw Fireproof Rice"
+
+[[item]]
+name = "fire_rice"
+display = "Fireproof Rice"
+food = { hunger = 2500, buff = "burning_air", rank = 2, minutes = 30 }
+
+[[item]]
+name = "raw_fire_pie"
+display = "Raw Fireproof Pie"
+
+[[item]]
+name = "fire_pie"
+display = "Fireproof Pie"
+food = { hunger = 5000, buff = "burning_air", rank = 3, minutes = 30 }
 
 # Milestone 18 part 2: gems, rough, compact and refined (rule 31).
 [[item]]
@@ -1511,12 +1618,12 @@ name = "amethyst_spanner"
 flex = 70
 rank = 100
 stack = 1
-tool = { class = "spanner", action_speed = 50.0, durability = 2000, energy = 30, repair = 10000 }
+tool = { class = "spanner", action_speed = 50.0, durability = 2000, energy = 50, repair = 10000 }
 
 [[item]]
 name = "amethyst_chisel"
 display = "Amethyst Precise Square Chisel"
-flex = 70
+flex = 100
 rank = 100
 stack = 1
 chisel = { family = "square", precise = true, durability = 2000, energy = 20, advanced = true }
@@ -1557,12 +1664,12 @@ name = "emerald_spanner"
 flex = 80
 rank = 100
 stack = 1
-tool = { class = "spanner", action_speed = 50.0, durability = 2000, energy = 30, repair = 10000 }
+tool = { class = "spanner", action_speed = 50.0, durability = 2000, energy = 50, repair = 10000 }
 
 [[item]]
 name = "emerald_chisel"
 display = "Emerald Precise Bevel Chisel"
-flex = 80
+flex = 100
 rank = 100
 stack = 1
 chisel = { family = "bevel", precise = true, durability = 2000, energy = 20, advanced = true }
@@ -1603,12 +1710,12 @@ name = "sapphire_spanner"
 flex = 75
 rank = 100
 stack = 1
-tool = { class = "spanner", action_speed = 50.0, durability = 2000, energy = 30, repair = 10000 }
+tool = { class = "spanner", action_speed = 50.0, durability = 2000, energy = 50, repair = 10000 }
 
 [[item]]
 name = "sapphire_chisel"
 display = "Sapphire Square Chisel"
-flex = 75
+flex = 100
 rank = 100
 stack = 1
 chisel = { family = "square", precise = false, durability = 2000, energy = 20, advanced = true }
@@ -1649,15 +1756,15 @@ name = "topaz_spanner"
 flex = 70
 rank = 100
 stack = 1
-tool = { class = "spanner", action_speed = 50.0, durability = 2000, energy = 30, repair = 10000 }
+tool = { class = "spanner", action_speed = 50.0, durability = 2000, energy = 50, repair = 10000 }
 
 [[item]]
 name = "topaz_chisel"
-display = "Topaz Precise Slope Chisel"
-flex = 70
+display = "Topaz Slope Chisel"
+flex = 100
 rank = 100
 stack = 1
-chisel = { family = "slope", precise = true, durability = 2000, energy = 20, advanced = true }
+chisel = { family = "slope", precise = false, durability = 2000, energy = 20, advanced = true }
 
 [[item]]
 name = "diamond_hammer"
@@ -1695,12 +1802,12 @@ name = "diamond_spanner"
 flex = 80
 rank = 100
 stack = 1
-tool = { class = "spanner", action_speed = 50.0, durability = 2000, energy = 30, repair = 10000 }
+tool = { class = "spanner", action_speed = 50.0, durability = 2000, energy = 50, repair = 10000 }
 
 [[item]]
 name = "diamond_chisel"
 display = "Diamond Bevel Chisel"
-flex = 80
+flex = 100
 rank = 100
 stack = 1
 chisel = { family = "bevel", precise = false, durability = 2000, energy = 20, advanced = true }
@@ -1741,12 +1848,12 @@ name = "ruby_spanner"
 flex = 75
 rank = 100
 stack = 1
-tool = { class = "spanner", action_speed = 50.0, durability = 2000, energy = 30, repair = 10000 }
+tool = { class = "spanner", action_speed = 50.0, durability = 2000, energy = 50, repair = 10000 }
 
 [[item]]
 name = "ruby_chisel"
-display = "Ruby Slope Chisel"
-flex = 75
+display = "Ruby Precise Slope Chisel"
+flex = 100
 rank = 100
 stack = 1
-chisel = { family = "slope", precise = false, durability = 2000, energy = 20, advanced = true }
+chisel = { family = "slope", precise = true, durability = 2000, energy = 20, advanced = true }

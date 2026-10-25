@@ -111,7 +111,7 @@ const V2_STATIONS: TableDefinition<&[u8], &[u8]> = TableDefinition::new("station
 /// 11 (M17): a forge's station record saves its session and queued item
 /// ([`SavedStation::forge`]); older stations are rewritten with none (no
 /// forges existed).
-pub const SAVE_VERSION: u32 = 13;
+pub const SAVE_VERSION: u32 = 14;
 
 /// The universe file in the data directory.
 pub const UNIVERSE_FILE: &str = "universe.redb";
@@ -1214,9 +1214,11 @@ impl Store {
                         })?,
                         // 12 to 13 gave stations their coils; 11 to 12
                         // changed only players.
-                        _ => upgrade_stations(&tx, from, |b| {
+                        11 | 12 => upgrade_stations(&tx, from, |b| {
                             postcard::from_bytes::<v12::SavedStation>(b).map(Into::into)
                         })?,
+                        // 13 to 14 only rescaled wear (below).
+                        _ => upgrade_stations(&tx, from, |b| postcard::from_bytes::<SavedStation>(b))?,
                     };
                     // Version 6 to 7 only adds tables (skies, discoveries),
                     // which read as empty until written.
@@ -1242,7 +1244,12 @@ impl Store {
                     tx.open_table(META)?
                         .insert("universe", postcard::to_stdvec(&u)?.as_slice())?;
                     tx.commit()?;
-                    if from == 12 {
+                    if from == 13 {
+                        tracing::info!(
+                            "upgraded the universe from save version 13 to {SAVE_VERSION} ({stations} stations' \
+                             wear rescaled to each machine's own durability; characters as they were)"
+                        );
+                    } else if from == 12 {
                         tracing::info!(
                             "upgraded the universe from save version 12 to {SAVE_VERSION} ({stations} stations \
                              rewritten with no power coils; characters as they were)"
@@ -1778,7 +1785,8 @@ fn upgrade_stations(
     let mut n = 0;
     for (k, v) in old {
         match read(&v) {
-            Ok(new) => {
+            Ok(mut new) => {
+                rescale_wear(&mut new);
                 t.insert(k.as_slice(), postcard::to_stdvec(&new)?.as_slice())?;
                 n += 1;
             }
@@ -1786,6 +1794,18 @@ fn upgrade_stations(
         }
     }
     Ok(n)
+}
+
+/// Before save version 14 every machine held 10,000 wear and every coil as
+/// much; now each kind holds its own (`spark::machine_wear`) and coils
+/// 20,000. Keeps each one's share.
+fn rescale_wear(st: &mut SavedStation) {
+    const OLD: u64 = 10_000;
+    let max = bm_core::spark::machine_wear(st.kind) as u64;
+    st.wear = ((st.wear as u64).min(OLD) * max / OLD) as u32;
+    for (_, w) in &mut st.coils {
+        *w = ((*w as u64).min(OLD) * bm_core::spark::COIL_WEAR as u64 / OLD) as u32;
+    }
 }
 
 /// Rewrites every player row in the current layout: `read` decodes one in
@@ -2760,11 +2780,13 @@ mod tests {
         let s = Store::open(&path).unwrap();
         assert!(s.universe(&kinds()).unwrap().is_none());
         let st = s.stations(1).unwrap();
-        let want: SavedStation = old.clone().into();
+        let mut want: SavedStation = old.clone().into();
+        want.wear = 2_000;
         assert_eq!(st, vec![(spot, want.clone())]);
         assert_eq!(
             (st[0].1.wear, st[0].1.spark, st[0].1.xp, st[0].1.jobs.len()),
-            (bm_core::spark::MACHINE_WEAR, 0, 33, 1)
+            (2_000, 0, 33, 1),
+            "a workbench fully repaired holds 2,000"
         );
         drop(s);
         let s = Store::open(&path).unwrap();
@@ -2853,8 +2875,14 @@ mod tests {
             (77, old_player.inventory.clone(), SavedFood::default())
         );
         let st = s.stations(1).unwrap();
-        assert_eq!(st, vec![(spot, old_station.clone().into())]);
-        assert_eq!((st[0].1.wear, st[0].1.containers.len()), (1234, 0));
+        let mut want: SavedStation = old_station.clone().into();
+        want.wear = 246;
+        assert_eq!(st, vec![(spot, want)]);
+        assert_eq!(
+            (st[0].1.wear, st[0].1.containers.len()),
+            (246, 0),
+            "1,234 of 10,000 is 246 of a workbench's 2,000"
+        );
         drop(s);
         let s = Store::open(&path).unwrap();
         assert!(s.universe(&kinds()).unwrap().is_none(), "reopens as it is");
@@ -2913,7 +2941,73 @@ mod tests {
         assert!(s.universe(&kinds()).unwrap().is_none());
         let st = s.stations(1).unwrap();
         assert_eq!(st, vec![(spot, old.clone().into())]);
-        assert_eq!((st[0].1.wear, st[0].1.coils.len(), st[0].1.scale), (4321, 0, 1000));
+        assert_eq!(
+            (st[0].1.wear, st[0].1.coils.len(), st[0].1.scale),
+            (4321, 0, 1000),
+            "a compactor holds 10,000, as before"
+        );
+        drop(s);
+        let s = Store::open(&path).unwrap();
+        assert!(s.universe(&kinds()).unwrap().is_none(), "reopens as it is");
+        assert_eq!(s.stations(1).unwrap(), st);
+    }
+
+    /// A version 13 universe keeps each machine's and coil's share of wear on
+    /// the new scales: a half-worn workbench is half of 2,000, a full coil
+    /// is full at 20,000.
+    #[test]
+    fn a_version_13_universe_rescales_wear() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("u.redb");
+        let coil = BlockPos::new(4, 40, 5);
+        let mut old: SavedStation = V12SavedStation {
+            kind: Station::Workbench,
+            jobs: Vec::new(),
+            started: 0,
+            output: vec![None; 2],
+            fuel: None,
+            heat: 0,
+            waiting: false,
+            xp: 0,
+            wear: 5_000,
+            spark: 0,
+            burn_total: 0,
+            burn_elapsed: 0,
+            blocks: 1,
+            containers: Vec::new(),
+            forge: None,
+        }
+        .into();
+        old.coils = vec![(coil, 10_000)];
+        let spot = BlockPos::new(3, 40, 5);
+        {
+            let s = Store::open(&path).unwrap();
+            let tx = s.db.begin_write().unwrap();
+            tx.open_table(META)
+                .unwrap()
+                .insert(
+                    "universe",
+                    postcard::to_stdvec(&UniverseMeta {
+                        save_version: 13,
+                        chunk_format: CHUNK_FORMAT_VERSION,
+                    })
+                    .unwrap()
+                    .as_slice(),
+                )
+                .unwrap();
+            tx.open_table(STATIONS)
+                .unwrap()
+                .insert(
+                    block_key(1, spot).as_slice(),
+                    postcard::to_stdvec(&old).unwrap().as_slice(),
+                )
+                .unwrap();
+            tx.commit().unwrap();
+        }
+        let s = Store::open(&path).unwrap();
+        assert!(s.universe(&kinds()).unwrap().is_none());
+        let st = s.stations(1).unwrap();
+        assert_eq!((st[0].1.wear, st[0].1.coils.clone()), (1_000, vec![(coil, 20_000)]));
         drop(s);
         let s = Store::open(&path).unwrap();
         assert!(s.universe(&kinds()).unwrap().is_none(), "reopens as it is");

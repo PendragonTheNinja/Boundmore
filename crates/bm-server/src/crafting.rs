@@ -323,7 +323,11 @@ impl StationData {
             heat: 0,
             wait: None,
             xp: 0,
-            wear: if spark::wears(kind) { wear.min(MACHINE_WEAR) } else { 0 },
+            wear: if spark::wears(kind) {
+                wear.min(spark::machine_wear(kind))
+            } else {
+                0
+            },
             spark: 0,
             burn_total: 0,
             burn_elapsed: 0,
@@ -372,7 +376,7 @@ impl StationData {
             && self.heat == 0
             && self.spark == 0
             && self.burn_total == 0
-            && (!spark::wears(self.kind) || self.wear >= MACHINE_WEAR)
+            && (!spark::wears(self.kind) || self.wear >= spark::machine_wear(self.kind))
             && self.coils.values().all(|w| *w >= spark::COIL_WEAR)
     }
 
@@ -748,12 +752,13 @@ impl Stations {
         }
         st.scale = scale;
         st.wear = st.wear.saturating_sub(recipe.wear as u32);
-        // Working coils wear with the craft (milestone 18, a guess: by the
-        // recipe's wear).
+        // Working coils wear with the craft, by the same share of their
+        // durability as the machine (forum check 4b).
+        let coil_wear = spark::coil_wear(st.kind, recipe.wear as u32);
         if let Some(heard) = &st.heard_coils.0 {
             for c in heard {
                 if let Some(w) = st.coils.get_mut(&c.pos).filter(|w| **w > 0) {
-                    *w = w.saturating_sub(recipe.wear as u32);
+                    *w = w.saturating_sub(coil_wear);
                 }
             }
         }
@@ -944,7 +949,17 @@ impl Stations {
     ) -> u32 {
         let fresh = self.fresh(kind);
         let st = self.map.entry(pos).or_insert(fresh);
-        st.wear = st.wear.saturating_add(amount).min(MACHINE_WEAR);
+        st.wear = st.wear.saturating_add(amount).min(spark::machine_wear(kind));
+        // Its coils mend by the same share (Boundless since Release 235).
+        let mend = spark::coil_mend(kind, amount);
+        let mut coil_mended = false;
+        for w in st.coils.values_mut() {
+            coil_mended |= *w == 0 && mend > 0;
+            *w = w.saturating_add(mend).min(spark::COIL_WEAR);
+        }
+        if coil_mended && matches!(st.wait, Some(Wait::Power(_))) {
+            self.retry.insert(pos);
+        }
         let wear = st.wear;
         let worn = st.wait == Some(Wait::Worn);
         let empty = st.is_empty();
@@ -1418,7 +1433,8 @@ impl Stations {
         tick: u64,
         recipes: &RecipeBook,
     ) -> StationView {
-        let wear = spark::wears(kind).then(|| (self.wear(pos), MACHINE_WEAR));
+        let wear =
+            spark::wears(kind).then(|| (self.wear(pos).min(spark::machine_wear(kind)), spark::machine_wear(kind)));
         let Some(st) = self.map.get(&pos) else {
             return StationView {
                 pos,
@@ -2255,8 +2271,8 @@ mod tests {
         assert_eq!(s.get(a).unwrap().spark, 30, "nothing taken from a grid that cannot pay");
         assert_eq!(
             v.wear,
-            Some((MACHINE_WEAR - 12, MACHINE_WEAR)),
-            "one craft's wear (silver alloy: 12)"
+            Some((4_000 - 12, 4_000)),
+            "one craft's wear (silver alloy: 12) of a mixer's 4,000"
         );
     }
 
@@ -2292,7 +2308,7 @@ mod tests {
         let v = s.view(bench, Station::Workbench, None, 2 * ticks, &recipes);
         assert_eq!(v.idle.as_deref(), Some(WORN_OUT));
         assert_eq!((v.jobs[0].remaining, v.output[0].count), (1, 2));
-        assert_eq!(v.wear, Some((0, MACHINE_WEAR)));
+        assert_eq!(v.wear, Some((0, 2_000)), "a workbench holds 2,000");
         assert_eq!(s.running().count(), 0);
         // A copper spanner's hit: 400, and the last craft starts.
         let t = 5000;
@@ -2316,13 +2332,32 @@ mod tests {
                 &recipes,
                 &Nowhere
             ),
-            MACHINE_WEAR
+            2_000
         );
         assert!(!s.exists(bench));
         // A crafting table and furnaces do not wear.
         let stones = recipe_for(&items, &recipes, "stones");
         assert_eq!(recipes.get(stones).unwrap().wear, 0);
         assert_eq!(s.view(bench, Station::CraftingTable, None, 0, &recipes).wear, None);
+    }
+
+    /// A spanner hit on a machine mends its coils by the same share of
+    /// their durability (Boundless since Release 235).
+    #[test]
+    fn a_spanner_on_the_machine_mends_its_coils_alike() {
+        let (items, recipes) = setup();
+        let bench = BlockPos::new(0, 30, 0);
+        let coil = BlockPos::new(1, 30, 0);
+        let mut s = Stations::new();
+        let mut st = StationData::new(Station::Workbench, 1_000);
+        st.coils.insert(coil, 5_000);
+        s.map.insert(bench, st);
+        // 400 is a fifth of a workbench's 2,000: a fifth of 20,000 to each coil.
+        assert_eq!(
+            s.repair(bench, Station::Workbench, 400, 0, &items, &recipes, &Nowhere),
+            1_400
+        );
+        assert_eq!(s.get(bench).unwrap().coils[&coil], 9_000);
     }
 
     #[test]

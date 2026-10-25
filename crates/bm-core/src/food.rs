@@ -85,13 +85,18 @@ pub enum Buff {
     Springy,
     /// More XP (Fast Learner).
     Studious,
-    /// Protection against every kind of hazardous air (milestone 18;
-    /// Boundless's atmosphere protection).
-    Breathing,
+    /// Protection against acid air (milestone 18; Boundless's atmosphere
+    /// protection, one food per line). Saved as the old all-lines buff's
+    /// place, so a version 13 save's buff becomes this one.
+    AcidAir,
+    /// Protection against charged air.
+    ChargedAir,
+    /// Protection against burning air.
+    BurningAir,
 }
 
 impl Buff {
-    pub const ALL: [Buff; 10] = [
+    pub const ALL: [Buff; 12] = [
         Buff::Sated,
         Buff::Refreshed,
         Buff::Lively,
@@ -101,7 +106,9 @@ impl Buff {
         Buff::Hearty,
         Buff::Springy,
         Buff::Studious,
-        Buff::Breathing,
+        Buff::AcidAir,
+        Buff::ChargedAir,
+        Buff::BurningAir,
     ];
 
     /// What players see.
@@ -117,7 +124,9 @@ impl Buff {
             Buff::Hearty => "Hearty",
             Buff::Springy => "Springy",
             Buff::Studious => "Studious",
-            Buff::Breathing => "Breathing",
+            Buff::AcidAir => "Acidproof",
+            Buff::ChargedAir => "Sparkproof",
+            Buff::BurningAir => "Fireproof",
         }
     }
 
@@ -126,7 +135,7 @@ impl Buff {
         match self {
             Buff::None => 0,
             Buff::Studious => 4,
-            Buff::Breathing => 3,
+            Buff::AcidAir | Buff::ChargedAir | Buff::BurningAir => 3,
             _ => 5,
         }
     }
@@ -145,7 +154,9 @@ impl Buff {
             Buff::Hearty => format!("+{}% max health", PERCENT_UP[r]),
             Buff::Springy => format!("+{} m jump, +{} falling armour", SPRING_JUMP[r], SPRING_FALL[r]),
             Buff::Studious => format!("+{}% XP", STUDY[r.min(3)]),
-            Buff::Breathing => format!("+{} protection against hazardous air", r.min(2) + 1),
+            Buff::AcidAir => format!("+{} protection against acid air", r.min(2) + 1),
+            Buff::ChargedAir => format!("+{} protection against charged air", r.min(2) + 1),
+            Buff::BurningAir => format!("+{} protection against burning air", r.min(2) + 1),
         }
     }
 }
@@ -174,9 +185,17 @@ pub struct FoodBuff {
 }
 
 impl FoodBuff {
-    /// Protection against hazardous air (Breathing: +1, +2, +3).
-    pub fn air_points(&self) -> u8 {
-        self.rank_of(Buff::Breathing).map_or(0, |r| r.min(2) as u8 + 1)
+    /// Protection against `line`'s air (+1, +2, +3 by rank), from that
+    /// line's food only (Boundless had one food per line; forum check 1a).
+    pub fn air_points(&self, line: crate::atmosphere::AirLine) -> u8 {
+        use crate::atmosphere::AirLine;
+        let kind = match line {
+            AirLine::None => return 0,
+            AirLine::Acid => Buff::AcidAir,
+            AirLine::Charged => Buff::ChargedAir,
+            AirLine::Burning => Buff::BurningAir,
+        };
+        self.rank_of(kind).map_or(0, |r| r.min(2) as u8 + 1)
     }
 
     /// The rank if `kind` is the active buff.

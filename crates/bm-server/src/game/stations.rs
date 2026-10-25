@@ -477,7 +477,7 @@ impl Game {
     /// machine that wears, removes `amount` of its wear; returns the
     /// machine's key and the wear it has now, or None if it is no such
     /// machine.
-    pub(super) fn repair_machine(&mut self, pi: usize, canon: BlockPos, amount: u32) -> Option<(BlockPos, u32)> {
+    pub(super) fn repair_machine(&mut self, pi: usize, canon: BlockPos, amount: u32) -> Option<(BlockPos, u32, u32)> {
         let m = self
             .machine(pi, canon)
             .filter(|m| spark::wears(m.kind) && m.idle.is_none())?;
@@ -488,19 +488,19 @@ impl Game {
             .stations
             .repair(key, m.kind, amount, self.tick, &self.items, &self.recipes, &env);
         self.push_station(pi, key);
-        Some((key, wear))
+        Some((key, wear, spark::machine_wear(m.kind)))
     }
 
     /// A spanner hit on a power coil at `canon` (milestone 18): mends it in
     /// the record of the machine it serves; returns the coil and its wear
     /// now, or None if it serves no machine.
-    pub(super) fn repair_coil(&mut self, pi: usize, canon: BlockPos, amount: u32) -> Option<(BlockPos, u32)> {
+    pub(super) fn repair_coil(&mut self, pi: usize, canon: BlockPos, amount: u32) -> Option<(BlockPos, u32, u32)> {
         let w = &self.planets[pi].world;
         let m = machines::coil_machine(&w.registry, w.shape, |p| w.block(p), canon)??;
         let key = self.machine_record(pi, &m);
         let wear = self.planets[pi].stations.repair_coil(key, m.kind, canon, amount);
         self.push_station(pi, key);
-        Some((canon, wear))
+        Some((canon, wear, spark::COIL_WEAR))
     }
 
     /// Sends a station's state to everyone on its planet watching it.

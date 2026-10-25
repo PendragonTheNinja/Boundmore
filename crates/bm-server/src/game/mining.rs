@@ -343,10 +343,8 @@ impl Game {
         let amount = bm_core::spark::repair_per_hit(tool.repair, effects.spanner_mastery);
         let mended = if is_coil {
             self.repair_coil(pi, canon, amount)
-                .map(|(pos, wear)| (pos, wear, bm_core::spark::COIL_WEAR))
         } else {
             self.repair_machine(pi, canon, amount)
-                .map(|(pos, wear)| (pos, wear, bm_core::spark::MACHINE_WEAR))
         };
         if let Some((pos, wear, max)) = mended
             && let Some(p) = self.players.get(&id)

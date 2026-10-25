@@ -202,7 +202,14 @@ mod tests {
         // Creature drops (milestone 13): bone for glue, tallow for torches.
         for (_, c) in crate::creatures::CreatureKinds::builtin().iter() {
             for t in &c.tiers {
-                have.extend(t.drops.iter().map(|d| items.id(&d.item).unwrap()));
+                for d in &t.drops {
+                    if d.item == crate::creatures::ELEMENTAL_SHARD {
+                        // Elemental creatures drop their element's shard.
+                        have.extend(crate::creatures::Element::ALL.map(|e| items.id(e.shard()).unwrap()));
+                    } else {
+                        have.insert(items.id(&d.item).unwrap());
+                    }
+                }
             }
         }
         loop {

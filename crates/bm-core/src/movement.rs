@@ -255,6 +255,9 @@ pub struct PlayerState {
     pub air: crate::atmosphere::Air,
     /// Ticks of air used, out of `atmosphere::AIR_TICKS` (0: full). Saved.
     pub air_used: u16,
+    /// Ticks until lava can burn again (`combat::LAVA_TICKS` after each
+    /// burn). Never saved.
+    pub lava_wait: u16,
 }
 
 /// What skills change about moving and energy (`skills::Effects::body`).
@@ -473,10 +476,11 @@ pub fn step(
     s.quirk_tick(s.beat == 0);
     let hooked = s.anchor().is_some();
     let in_water = world.liquid(BlockPos::containing(s.pos.x, s.pos.y + cfg.height * 0.4, s.pos.z));
-    // Lava (milestone 18 part 3): feet or chest in it burns, every second.
+    // Lava (milestone 18 part 3): feet or chest in it burns, at once and
+    // then every `LAVA_TICKS`.
     let in_lava = world.burning(BlockPos::containing(s.pos.x, s.pos.y + 0.1, s.pos.z))
         || world.burning(BlockPos::containing(s.pos.x, s.pos.y + cfg.height * 0.4, s.pos.z));
-    s.lava_tick(in_lava, s.beat % crate::TICK_HZ as u16 == 0);
+    s.lava_tick(in_lava);
     // Swimming in lava is half as fast as in water (Release 195).
     let swim = if in_lava { cfg.swim_speed * 0.5 } else { cfg.swim_speed };
 
@@ -1440,7 +1444,7 @@ mod tests {
     fn lava_burns_every_second_and_slows_a_swimmer() {
         let mut w = world();
         w.water_below = 13;
-        let swim = |w: &Flat| {
+        let swim = |w: &Flat, ticks: u32| {
             let mut s = PlayerState {
                 pos: DVec3::new(5.5, 10.0, 5.5),
                 on_ground: true,
@@ -1452,20 +1456,26 @@ mod tests {
                     forward: 1,
                     ..Default::default()
                 },
-                120,
+                ticks,
                 w,
             );
             s
         };
-        let water = swim(&w);
+        let water = swim(&w, 120);
         assert_eq!(water.hurt, 0, "water does not burn");
         w.lava = true;
-        let lava = swim(&w);
-        let max = lava.max_health();
+        let touch = swim(&w, 1);
+        let max = touch.max_health();
+        assert_eq!(
+            touch.hurt,
+            max * crate::combat::LAVA_PERCENT / 100,
+            "a burn at the touch"
+        );
+        let lava = swim(&w, 120);
         assert_eq!(
             lava.hurt,
             2 * max * crate::combat::LAVA_PERCENT / 100,
-            "a burn a second"
+            "then a burn a second"
         );
         let (dw, dl) = (
             (water.pos - DVec3::new(5.5, 10.0, 5.5)).length(),

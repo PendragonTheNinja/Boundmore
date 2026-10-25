@@ -23,7 +23,7 @@ Boundmore's worlds stop at tier 3. Boundless's best materials (gold, titanium, g
 
 1. **Nine new planets join the default universe**, after the four that exist (the server's planet list only ever grows): one tier 4 world of each atmosphere line, and one tier 5 or 6 world of each gem type, as Release 207 gave every region. Names and looks are Boundmore's. Nathan can change the list before it is merged; once players save on a planet it stays.
 2. **Atmosphere numbers are guesses** where Boundless's are unpublished (the air bar's length, the damage once it is empty): see rule 5.
-3. **Atmosphere food protects against all three lines** (Boundless's recipe data names one line of foods per rank and none per atmosphere: **guess** that it covers every line).
+3. **Atmosphere food protects against its own line only**: three dishes per rank, one per line (Boundless's recipe data, read again 2026-10-25; the first reading, one food for every line, was wrong).
 4. **Lava waits for part 3.** The Metal-like and Burn-like worlds get dry basins (water held low) instead of lava seas until lava exists.
 5. **Chisels stay Boundmore's** (families made from iron, M7). Silver, gold and titanium give no new chisels; gem chisels arrive in part 2 as the **advanced** chisels that can cut gem blocks and hard coal.
 
@@ -52,10 +52,10 @@ Boundmore's worlds stop at tier 3. Boundless's best materials (gold, titanium, g
 ### Atmosphere
 
 1. **A planet kind has an air line** (`air = "acid" | "charged" | "burning"`, none by default) and its **hazard** comes from its tier: 0 up to tier 3, then 1, 3, 5, 7, 10 for tiers 4 to 8 (`bm-core/src/atmosphere.rs`). The client learns each planet's line and hazard in the handshake with the planet list.
-2. **Protection** against a line = the ward skill of that line (ranks give +1, +1, +1, +2, +2, so 1, 2, 3, 5, 7) + the atmosphere food buff (+1, +2, +3, against every line). The **shortfall** is hazard − protection, at least 0.
+2. **Protection** against a line = the ward skill of that line (ranks give +1, +1, +1, +2, +2, so 1, 2, 3, 5, 7) + that line's atmosphere food buff (+1, +2, +3). The **shortfall** is hazard − protection, at least 0.
 3. **The body carries it**: `PlayerState` gains `air` (the planet's line and hazard, set by the server on arrival) and `air_used` (ticks of air used, 0 full); `Body` gains `wards` (protection points per line, from the skills, set at an agreed input as every skill is). The shortfall is worked out inside `movement::step` from those and the food buff, so server and client agree and prediction stays exact.
 4. **Air**: full is **30 s** (**guess**). Each tick with a shortfall, air falls by 1; with none, it refills at 4 a tick (**guess**: about 8 s from empty). A player who is down keeps their air as it is. Arriving on a planet (warp, portal, revive) keeps the current air, so hopping between hazardous worlds does not reset it; reviving after defeat fills it.
-5. **Choking**: with air at 0 and a shortfall, every 5 s (the existing regen beat) the player takes **5% of max health per point of shortfall** (**guess**: one short dies in about 100 s after the air runs out; five short in 20 s), at least 1. Choking and an empty air bar stop out-of-combat healing (**guess**, as sickness does).
+5. **Choking**: with air at 0 and a shortfall, every 5 s (the existing regen beat) the player takes **5% of max health** (**guess**: about 100 s to defeat after the air runs out), at least 1, however far short (a player: "you suffocate at the same rate, no matter how many points"; changed 2026-10-25 from 5% per point short). Choking and an empty air bar stop out-of-combat healing (**guess**, as sickness does).
 6. **Everywhere on the planet**: underground, indoors, in water (Boundless: "even indoors"). Water's own breath is not modelled yet.
 7. **What players see**: an **air bar** above the energy bar while air is below full or there is a shortfall; on arrival a notice in plain words ("The air here is acid. You need Acid Ward 3 to breathe it; you have 1.") and the shortfall as a status icon with its number; fog drawing in toward the player as air runs out (the sky's fog distance scales from normal at full air down to 30 blocks at empty, **guess**). The planet list (travel window) shows each world's tier and air.
 8. **Defeat** by choking is ordinary defeat (M13: XP debt, revive on safe ground). Safe ground on a hazardous world is still hazardous; the revived player has full air (about 30 s) to reach a shrine or portal.
@@ -111,7 +111,7 @@ Boundmore's worlds stop at tier 3. Boundless's best materials (gold, titanium, g
 
 ## Acceptance, part 1
 
-- On a tier 4 acid world with no Acid Ward, air drains in 30 s and then health falls every 5 s until defeat; with Acid Ward 1, nothing happens; eating spicy chilli covers the gap for 30 minutes. Server and client agree (no prediction corrections while choking).
+- On a tier 4 acid world with no Acid Ward, air drains in 30 s and then health falls every 5 s until defeat; with Acid Ward 1, nothing happens; eating acidproof chilli covers the gap for 30 minutes. Server and client agree (no prediction corrections while choking).
 - On a tier 6 world, Ward 3 (protection 3) still chokes, at 2 shortfall; Ward 4 (protection 5) is safe.
 - Air comes back when protected and survives a warp unchanged; defeat refills it.
 - The nine worlds exist in a new universe, each reachable by warp, each with its air shown in the travel window; existing universes gain them on opening (upgrade check).
@@ -175,13 +175,13 @@ Boundmore's worlds stop at tier 3. Boundless's best materials (gold, titanium, g
 ### Lava
 
 45. **A lava block**: a liquid like water (`PhysicsWorld::liquid` answers it on both sides, invariant 3), not solid, glowing at full light, not placeable by hand (no bucket of lava yet). Swimming in it is half as fast as in water (Release 195).
-46. **Lava burns**: a body in lava (feet or head in a lava block) takes **20% of max health a second** (**guess**: Boundless's "about a third of max per tick", tuning 3.3.4, with no tick length; Measure 6), in steps on the regen beat's second, inside `movement::step` so prediction stays exact (`PhysicsWorld::burning`, client and server alike). Fire Ward does not help (Boundless's protection is atmospheric only). Defeat in lava is ordinary defeat; the revive spot is never lava.
+46. **Lava burns**: a body in lava (feet or head in a lava block) takes **a third of max health at the touch and then every second while in it** (Boundless's "a third of max per tick", forum check 2; the 1 s tick a **guess**, Measure 6; superseded 2026-10-25 from 20% a second), inside `movement::step` so prediction stays exact (`PhysicsWorld::burning`, client and server alike). Fire Ward does not help (Boundless's protection is atmospheric only). Defeat in lava is ordinary defeat; the revive spot is never lava.
 47. **Where**: Boundless's world configs (tuning 4.13.4). A **lower sea** of lava fills open caves below **altitude 16** on Cinderland, Violetmoor, Mirefen, Stormcrown, Sunscar and the lava worlds; Frostspire's lower sea is water. Ironmarch (Metal) and Ashfall (Burn) have **lava seas** at the surface in place of part 1's dry basins (`water = "lava"` with their sea level back to normal). Older kinds and every planet already saved keep their terrain (new settings default off).
 48. Generation knobs: `lower_sea = { level, block }` (open cave cells at or below `level` fill with `block`); a kind's `water` may be `lava`.
 
 ### Elements
 
-49. **Gem worlds have an element** (Boundless, from tier 5): Violetmoor corrosion, Mirefen toxin, Frostspire chill, Stormcrown shock, Sunscar blast, Ashfall burn. A creature that spawns there is **elemental** with a chance (**guess** 30%, Measure 7): +100% health, +50% damage and armour (tuning 3.2.2), shown by its name ("Burning Grim Pelter") and a tint.
+49. **Gem worlds have an element** (Boundless, from tier 5): Violetmoor corrosion, Mirefen toxin, Frostspire chill, Stormcrown shock, Sunscar blast, Ashfall burn. A creature that spawns there is **elemental** with a chance (10% on tier 5, about 23% on tier 6, from a developer's "10% rising to 50%"; superseded 2026-10-25 from a guessed 30%; Measure 7): +100% health, +50% damage and armour (tuning 3.2.2), shown by its name ("Burning Grim Pelter") and a tint.
 50. **Resistance** (tuning 3.3.3, Vansten's table): an elemental creature resists physical damage 40% of the time (a resisted hit does nothing), and each gem element by the table (0.8 itself, 0.6 and 0.3 its neighbours, double damage at -0.3 from its opposite). Gem tools struck as weapons deal their gem's element (amethyst corrosion, ruby burn, diamond blast, topaz shock, sapphire chill, emerald toxin); everything else is physical.
 51. Elemental status effects (burn, chill, toxin, corrosion, blast) wait for brews and armour.
 
@@ -198,12 +198,12 @@ Boundmore's worlds stop at tier 3. Boundless's best materials (gold, titanium, g
 ## Measure in game (for Nathan, on a Boundless tier 4 world with no protection)
 
 1. Seconds from arriving to the choking countdown (our air: 30 s).
-2. The countdown's length, and health lost per tick after it, at 1 short and at 3 short (ours: 5% of max health per point every 5 s).
+2. The countdown's length, and health lost per tick after it (ours: 5% of max health every 5 s; a player wrote the rate is the same however far short, so check 1 short against 3 short).
 3. Whether air refills at once or over time when protected again (ours: about 8 s).
 4. Whether choking stops health regeneration.
-5. Whether atmosphere food (chilli) protects on every atmosphere line or only one.
-6. Lava: how much health a second in lava takes, at full health with no armour (ours: 20% of max).
-7. On a tier 5 or 6 gem world, roughly how many creatures are elemental (ours: 3 in 10).
+5. ~~Whether atmosphere food protects every line~~: answered by the game data (one food per line, 2026-10-25).
+6. Lava: how often it burns while you stay in it (ours: a third of max health at the touch, then every second; players measured the third but not the tick).
+7. On a tier 5 and a tier 6 gem world, roughly how many creatures are elemental (ours: 1 in 10 and about 1 in 4, from a developer's "10% rising to 50%").
 
 ## Status
 
@@ -243,3 +243,18 @@ Open: every guess in part 2 (coil wear capacity and wear per craft, the curve fo
 - [x] Art: a lava texture (bm-texgen `materials::lava`)
 
 Open: elemental status effects, gem slings and bombs, a bucket of lava; the lava seas and caves want a look in the client (the shrines stand on land, so arrival screenshots do not show them).
+
+### Research corrections
+
+*Built 2026-10-25, after the fan sites, forum and wiki were opened to the sandbox (`docs/research/m18-data-check.md`, `docs/research/m18-forum-check.md`).* Protocol 30, `SAVE_VERSION` 14.
+
+- [x] Power: `spark::power_scale` is the measured post-launch curve (one multiplier for time and spark, floor 0.4675, a recipe with a need starting slower), replacing the early-access guess (`power_follows_the_measured_tables`)
+- [x] Wear: each machine kind holds Boundless's durability (`spark::machine_wear`: 2,000 to 10,000); coils 20,000, worn by the same share as their machine each craft and mended by the same share when a spanner hits the machine (`a_spanner_on_the_machine_mends_its_coils_alike`); saves from version 13 and older keep each machine's and coil's share (`a_version_13_universe_rescales_wear`)
+- [x] Lava burns a third of max health at the touch, then every second (the tick a guess); choking takes the same 5% however far short
+- [x] Atmosphere food is per line: Acidproof, Sparkproof and Fireproof chilli, rice and pie (rank 1 to 3), each from a paste of its line (an elemental shard and fresh blood, compactor); purified milk and butter for the pies; Boundless's recipe data throughout. The old Breathing buff's place is the acid one (a version 13 save's buff stays)
+- [x] Elemental creatures: 10% on tier 5, about 23% on tier 6 (`elemental_chance`); they drop twice as much, shards of their element among it (`elemental_shard` in the creature data, left out of plain creatures), and give half as much XP again
+- [x] Data: every M18 recipe's XP and wear from the game data; one fixed metal per coil; topaz and sapphire grapples take a relic component; titanium gear at crafting level 2; spanner stats; every chisel Flex 100, ruby's cut precise and topaz's plain; mining XP (gems 176, titanium 136, hard coal 104, medium coal and silver 64, relic core 104, relic cache 64); the 49 forge ingredients that needed power (tinctures 2 and 3, salves, spurs, washes, unmaking wax 2 and 3)
+- [x] Art: six shards, six pastes, purified milk and butter, nine dishes and their raw forms
+
+Not done (follow-ups): large fossils and their 10-essence recipe (a new seam: with the worldgen pass); bark from nuts (no nut crop yet); coils going into wear debt (ours stop at 0); the forge's power share still M17's linear guess (players' points suggest only power above a per-item amount counts, and the game's `momentumPowerCapCurvePower` is 2); gem spanners' own-machine bonus (not in the data).
+
