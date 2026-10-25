@@ -25,7 +25,8 @@ What a Boundless player expects to find, and where each stands. "Ours" is the Bo
 | Guilds | Shared plots, permissions, guild buffs | M8 |
 | Sovereign worlds | Players rent whole planets | M10 |
 | Character progression | Levels, skills, attributes | **Built** in M12: Boundless's live tree exactly, in Boundmore's names |
-| Forging | Traits on gear from a risky session of ingredients | M17: Boundless's rules exactly; coils and powered ingredients with gems |
+| Forging | Traits on gear from a risky session of ingredients | M17: Boundless's rules exactly; coils give the forge power from M18 |
+| Higher worlds | Tier 4 to 8 worlds guarded by atmosphere; gems; machine power | **Built** to tier 6 in M18: atmospheres, gems, coils, lava, elements. Exoworlds and tiers 7 and 8 later |
 
 ## Milestones
 
@@ -62,6 +63,8 @@ What a Boundless player expects to find, and where each stands. "Ours" is the Bo
 **M16: Food** (part 1 built 2026-10-22, `milestones/16-food.md`; Nathan picked it 2026-10-22). Hunger that eats into the energy bar, eating, cooked dishes with Boundless's food buffs, sickness, starving, being full as the way to heal, buckets; part 2 is farming (crops, seeds, tilling, growth), which brings grains and the rank 3 to 5 dishes.
 
 **M17: Forging** (spec 2026-10-22, `milestones/17-forging.md`; Nathan picked it 2026-10-22). The forge, Boundless's session rules exactly (pools, rolls, every ingredient), boons, quirks and flaws on tools, slings, bombs, grapples, spanners and chisels, fossils for the sealing wax. Power coils wait for gems: the ingredients that need power have their rules but no recipe yet.
+
+**M18: Higher worlds** (built 2026-10-25, `milestones/18-higher-worlds.md`). Atmospheres and wards, nine tier 4 to 6 worlds, gold, titanium and coal grades; gems placed by Boundless's intent, power coils and machine power, gem gear, the titanium furnace; lava and elemental creatures.
 
 *After that, still Boundless first (Nathan, 2026-10-19 and 2026-10-20): creatures and combat (bone, tallow and hide, then glue's real recipe), food and hunger, forging. Each gets its own spec and number when it starts.*
 
