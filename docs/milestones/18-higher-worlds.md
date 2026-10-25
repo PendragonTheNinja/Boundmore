@@ -231,3 +231,15 @@ Open: the guesses (Measure list); load test with 50 bots on the new worlds; whet
 - [x] Art (bm-texgen `gems.rs`): six gem seams, the relic core seam, the titanium furnace, twelve coils, 60 icons; `docs/media/m18-part2-icons.png`. To look at in game: a wall of basic coils is very orange; the titanium crucible's side is mostly blue stripes
 
 Open: every guess in part 2 (coil wear capacity and wear per craft, the curve for unpowered recipes, gem placement widths, mining XP); gem spanners are not yet "most effective" on their own machine (a flat 10,000 everywhere); the gem worlds' looks.
+
+### Part 3
+
+*Built 2026-10-25; awaiting Nathan's play-test.* Protocol 29 (no save change: lava is terrain, elements are not saved, creatures are not saved).
+
+- [x] Liquids are data (`liquid`, `burns` on blocks; client and server answer `PhysicsWorld::liquid` and `burning` from the same flags, invariant 3); lava: glowing, burns 20% of max health a second (`combat::LAVA_PERCENT`, a guess, Measure 6) inside `movement::step`, swum at half water's speed (`lava_burns_every_second_and_slows_a_swimmer`); blocks may be placed into it as into water; creatures never stand or spawn on it
+- [x] Generation: `lower_sea` (open caves at or below a level fill with a block); lava below altitude 16 on Cinderland, Violetmoor, Mirefen, Stormcrown, Sunscar, Ironmarch and Ashfall, water on Frostspire; Ironmarch and Ashfall have lava seas (`lava_fills_low_caves_and_the_lava_worlds_seas`; old kinds unchanged)
+- [x] Elements: gem worlds carry theirs; 30% of creatures spawning there are elemental (a guess, Measure 7): double health, half again armour and damage, the name says so ("Burning Grim Pelter"); hits are resisted or doubled by Vansten's table; gem tools strike with their gem's element (`each_element_resists_itself_and_fears_its_opposite`, `resisted_hits_do_nothing_and_weak_spots_double`)
+- [x] Fixed on the way: a creature's name plate measured its health bar against its tier's health even when an exotic buff tripled it (both sides now use `creatures::max_health`)
+- [x] Art: a lava texture (bm-texgen `materials::lava`)
+
+Open: elemental status effects, gem slings and bombs, a bucket of lava; the lava seas and caves want a look in the client (the shrines stand on land, so arrival screenshots do not show them).

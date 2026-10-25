@@ -284,3 +284,8 @@ Boundless's live tree and tables exactly (Nathan, 2026-10-20), in Boundmore's na
 | Coil wear | 10,000 a coil, each craft wears every coil by the recipe's wear | **guess** (players' reports disagree: 7,500 to 189,000) |
 | Coil placement | two blocks out across air, straight or diagonal, one level up or down; the lowest-keyed machine wins a shared coil | one-metre gap Boundless's; the rest **guesses** |
 | Gem spanners | 10,000 a hit everywhere (Boundless: "most effective" on their own machine) | the per-machine bonus is not built |
+| Lava | 20% of max health a second; swimming half water's speed | burn rate a **guess** (Boundless: "about a third of max per tick", tick length unknown; Measure 6); swim speed Release 195 |
+| Lower seas | lava (water on Frostspire) in open caves at or below altitude 16 | Boundless's world configs |
+| Elemental creatures | 30% of spawns on a gem world; x2 health, x1.5 armour and damage | chance a **guess** (Measure 7); multipliers Boundless's |
+| Resistance | physical 40%; the element table (0.8 itself, 0.6 and 0.3 neighbours, -0.3 opposite: double damage) | Vansten's table (tuning 3.3.3) |
+
