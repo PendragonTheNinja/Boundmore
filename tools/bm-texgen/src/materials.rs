@@ -22,7 +22,7 @@ fn bedrock_ramp() -> Ramp {
     Ramp::from_hex(&[0x0c0a12, 0x15111f, 0x1f192d, 0x2a223c, 0x372c4e, 0x463963, 0x5c4a80])
 }
 
-fn soil_ramp() -> Ramp {
+pub(crate) fn soil_ramp() -> Ramp {
     Ramp::from_hex(&[0x2e1a1e, 0x47271f, 0x643826, 0x7f4c2f, 0x99623a, 0xb07a4a, 0xc8965f])
 }
 
@@ -30,7 +30,7 @@ fn grass_ramp() -> Ramp {
     Ramp::from_hex(&[0x1b4a3a, 0x22633c, 0x2f7f3c, 0x43993a, 0x62b23a, 0x86c940, 0xb4de58])
 }
 
-fn sand_ramp() -> Ramp {
+pub(crate) fn sand_ramp() -> Ramp {
     Ramp::from_hex(&[0x8a5a3c, 0xb07a46, 0xcd9a56, 0xe2b866, 0xefcf80, 0xf7e2a0, 0xfff2c8])
 }
 
@@ -56,11 +56,11 @@ pub(crate) fn plank_ramp() -> Ramp {
     Ramp::from_hex(&[0x4a2a1e, 0x6e4026, 0x8f5a30, 0xac743c, 0xc48d4a, 0xd8a85c, 0xecc477])
 }
 
-fn brick_ramp() -> Ramp {
+pub(crate) fn brick_ramp() -> Ramp {
     Ramp::from_hex(&[0x4a1a24, 0x6e2428, 0x8f332c, 0xad4632, 0xc45c3a, 0xd87a48, 0xe99c62])
 }
 
-fn mortar_ramp() -> Ramp {
+pub(crate) fn mortar_ramp() -> Ramp {
     Ramp::from_hex(&[0x5a5064, 0x7e7584, 0xa29aa2, 0xc4bab6, 0xe0d6cc])
 }
 
@@ -70,7 +70,7 @@ fn foliage_ramp() -> Ramp {
     ])
 }
 
-fn crystal_ramp() -> Ramp {
+pub(crate) fn crystal_ramp() -> Ramp {
     Ramp::from_hex(&[
         0x14526a, 0x1d7690, 0x2b9db0, 0x46c2cc, 0x74dce0, 0xa6eef0, 0xd4fbfa, 0xffffff,
     ])
@@ -126,7 +126,7 @@ pub(crate) fn coal_ramp() -> Ramp {
 }
 
 /// Pebble kinds for gravel: blue-grey, warm grey, tan, slate.
-fn pebble_ramps() -> [Ramp; 4] {
+pub(crate) fn pebble_ramps() -> [Ramp; 4] {
     [
         Ramp::from_hex(&[0x3c4258, 0x59627c, 0x7c879e, 0xa3adbf, 0xccd2dc]),
         Ramp::from_hex(&[0x4a3c3c, 0x6b5a54, 0x8e7c70, 0xb19f8e, 0xd4c4ae]),
@@ -202,7 +202,7 @@ pub(crate) fn rock(ctx: Ctx, s: &RockStyle) -> Field {
     })
 }
 
-fn stone_style() -> RockStyle {
+pub(crate) fn stone_style() -> RockStyle {
     RockStyle {
         salt: seed("stone"),
         spacing: 9.0,
@@ -1019,8 +1019,11 @@ pub(crate) fn trunk_top_with(salt: u32, wood: &Ramp, bark: &Ramp, ring: f32, war
 /// Timber: four planks with long grain, staggered butt joints, lit top
 /// edges, dark gaps and a pair of nail heads at each joint.
 pub fn timber(_ctx: Ctx) -> Tex {
-    let salt = seed("timber");
-    let ramp = plank_ramp();
+    timber_with(seed("timber"), &plank_ramp())
+}
+
+/// Planks through `ramp` (timber and the other trunks' timbers).
+pub(crate) fn timber_with(salt: u32, ramp: &Ramp) -> Tex {
     let plank_h = 8;
     let joints = [5usize, 21, 12, 28];
     Tex::from_fn(|x, y| {
@@ -2114,7 +2117,7 @@ pub fn paint_named(name: &str, variant: u32) -> Option<Tex> {
         "medium_coal_seam" => medium_coal_seam,
         "hard_coal_seam" => hard_coal_seam,
         other => {
-            if let Some(t) = crate::farming::paint_crop(other) {
+            if let Some(t) = crate::farming::paint_crop(other).or_else(|| crate::building::paint(other)) {
                 return Some(t);
             }
             crate::spark::painter(other)

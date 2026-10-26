@@ -51,27 +51,27 @@ pub fn painter(name: &str) -> Option<fn(Ctx) -> Tex> {
 
 // --------------------------------------------------------------- palettes
 
-fn basalt_ramp() -> Ramp {
+pub(crate) fn basalt_ramp() -> Ramp {
     Ramp::from_hex(&[
         0x0c0d18, 0x151826, 0x1f2333, 0x2a3042, 0x363e52, 0x465066, 0x5a667c, 0x76849a,
     ])
 }
 
-fn limestone_ramp() -> Ramp {
+pub(crate) fn limestone_ramp() -> Ramp {
     Ramp::from_hex(&[
         0x6a5244, 0x8a705a, 0xa68e74, 0xbea88a, 0xd2bf9e, 0xe2d3b4, 0xefe4cc, 0xfaf4e4,
     ])
 }
 
-fn clay_ramp() -> Ramp {
+pub(crate) fn clay_ramp() -> Ramp {
     Ramp::from_hex(&[0x4a1c1e, 0x6a2a24, 0x8a3c2a, 0xa64e30, 0xbe643a, 0xd27e48, 0xe29c62])
 }
 
-fn peat_ramp() -> Ramp {
+pub(crate) fn peat_ramp() -> Ramp {
     Ramp::from_hex(&[0x0e080c, 0x180e12, 0x241614, 0x321e18, 0x42281e, 0x543424, 0x68422c])
 }
 
-fn mud_ramp() -> Ramp {
+pub(crate) fn mud_ramp() -> Ramp {
     Ramp::from_hex(&[0x1e1a1e, 0x2c2628, 0x3c3430, 0x4c4238, 0x5c5044, 0x6e6252, 0x847664])
 }
 
@@ -85,21 +85,21 @@ fn moss_ramp() -> Ramp {
     ])
 }
 
-fn pale_bark_ramp() -> Ramp {
+pub(crate) fn pale_bark_ramp() -> Ramp {
     Ramp::from_hex(&[0x6e6460, 0x8e847c, 0xaca296, 0xc6bcac, 0xdad2c0, 0xeae4d4, 0xf8f4e8])
 }
 
-fn pale_wood_ramp() -> Ramp {
+pub(crate) fn pale_wood_ramp() -> Ramp {
     Ramp::from_hex(&[0x8a7456, 0xa48c68, 0xbca47a, 0xd0ba8e, 0xe0cea4, 0xeee0bc, 0xf8f0d6])
 }
 
-fn gnarled_bark_ramp() -> Ramp {
+pub(crate) fn gnarled_bark_ramp() -> Ramp {
     Ramp::from_hex(&[
         0x120a0e, 0x22141a, 0x32201e, 0x442c24, 0x583a2a, 0x6e4c34, 0x866240, 0x9e7a52,
     ])
 }
 
-fn gnarled_wood_ramp() -> Ramp {
+pub(crate) fn gnarled_wood_ramp() -> Ramp {
     Ramp::from_hex(&[0x3a2018, 0x52301e, 0x6a4026, 0x825230, 0x98663c, 0xae7c4c, 0xc49460])
 }
 
