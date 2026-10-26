@@ -2292,11 +2292,9 @@ fn worlds_tab(ui: &mut Ui, v: &TravelView, actions: &mut Vec<UiAction>) {
     let mut list: Vec<&PlanetSummary> = v.planets.iter().collect();
     list.sort_by_key(|p| (p.id != v.here, p.host.is_some(), p.tier, p.id));
     ui.label(
-        egui::RichText::new(
-            "The shrine opens a way to any world it knows. A wandering world is reached from its host's shrine.",
-        )
-        .color(MUTED)
-        .small(),
+        egui::RichText::new("The shrine opens a way to any world it knows, wandering worlds too.")
+            .color(MUTED)
+            .small(),
     );
     ui.add_space(4.0);
     egui::ScrollArea::vertical().max_height(420.0).show(ui, |ui| {
@@ -2337,14 +2335,9 @@ fn worlds_tab(ui: &mut Ui, v: &TravelView, actions: &mut Vec<UiAction>) {
                                 );
                             }
                         });
-                        let from_elsewhere = p.host.is_some_and(|h| h != v.here);
                         ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                             if here {
                                 ui.label(egui::RichText::new("You are here").color(GOLD));
-                            } else if from_elsewhere {
-                                let host = host_name(v.planets, p.host.unwrap_or_default());
-                                ui.label(egui::RichText::new(format!("From {host}")).color(MUTED))
-                                    .on_hover_text(format!("Reach it from {host}'s warp shrine"));
                             } else if ui
                                 .add_sized(
                                     [86.0, 32.0],

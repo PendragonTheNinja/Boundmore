@@ -6544,7 +6544,7 @@ async fn warp_to(c: &mut TestClient, planet: u16) -> Box<bm_protocol::Travel> {
 }
 
 /// Milestone 21: a wandering world arrives at once in a new universe, is
-/// reached only from its host's shrine, refuses claims, thickens its air as it
+/// reached from any shrine, refuses claims, thickens its air as it
 /// leaves, carries its players to the host when it goes, is deleted from the
 /// save, and is followed by a new one with a new id; a player who logged out
 /// on it comes back on the host.
@@ -6583,18 +6583,7 @@ async fn wandering_worlds_come_are_reached_from_their_host_and_leave() {
     assert!(host < 2);
     assert!(exo.leaves.is_some());
 
-    // Only its host's shrine reaches it.
-    if host != 0 {
-        let shrine = alice.shrine();
-        alice.wait_for_chunk(shrine.chunk()).await;
-        alice.send(ClientMsg::Warp { shrine, planet: exo.id }).await;
-        let host_name = &alice.welcome.universe[host as usize].name.clone();
-        alice
-            .notice(&format!("{} is reached only from {host_name}'s warp shrine", exo.name))
-            .await;
-        warp_to(&mut alice, host).await;
-        warp_to(&mut bob, host).await;
-    }
+    // Any shrine reaches it (Nathan, 2026-10-26), its host's or not.
     let travel = warp_to(&mut alice, exo.id).await;
     assert_eq!(travel.planet.tier, exo.tier);
     assert_eq!(travel.planet.air, exo.air);

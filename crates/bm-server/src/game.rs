@@ -2347,9 +2347,6 @@ impl Game {
             let text = format!("You are already on {}", from.name);
             return self.notice(id, &text);
         }
-        if !self.exo_reachable(id, to) {
-            return;
-        }
         self.travel(id, to, None);
     }
 

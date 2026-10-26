@@ -4,7 +4,7 @@
 
 ## Goal
 
-Every couple of days a new world drifts into the sky beside one of the permanent planets: fresh untouched ground in colours found nowhere else, at tiers 4 to 7, reached from its host's warp shrine. It stays about five days, and in its last half hour its air thickens until nobody can breathe there. Then it leaves, taking everything left on it. Some are tier 7 worlds of a new kind, the only home of three new ores and of the strongest creatures and gear in the game.
+Every couple of days a new world drifts into the sky beside one of the permanent planets: fresh untouched ground in colours found nowhere else, at tiers 4 to 7, reached from any warp shrine. It stays about five days, and in its last half hour its air thickens until nobody can breathe there. Then it leaves, taking everything left on it. Some are tier 7 worlds of a new kind, the only home of three new ores and of the strongest creatures and gear in the game.
 
 ## Decided in this spec
 
@@ -12,7 +12,7 @@ Boundless's way unless said. Every number here is a tunable in `ServerConfig` or
 
 1. **A steady stream, as the live game settled on.** A new wandering world about every 48 hours (Boundless: 281 of 418 gaps exactly two days); each stays **113 to 128 hours**, drawn per world (Boundless's measured range). So about two or three are up at once. Three **slots** run the stream, each arriving every 6 days, staggered 2 days apart; the first arrives when a universe is made, so a new universe has one at once. Time is the universe clock (server ticks, as crops; ADR-0010), so a world does not leave while the server is off.
 2. **Tiers and kinds, by Boundless's live mix**: tier 4 10%, tier 5 31%, tier 6 29%, tier 7 30%. A tier 4 wanderer is one of the tier 1 to 3 kinds raised to tier 4 (temperate and lush with acid air, arid with burning, frozen with charged: Boundless raised lush, coal and metal worlds, one per air line); a tier 5 wanderer is one of the tier 4 and 5 kinds at tier 5, a tier 6 one any tier 4 to 6 kind at tier 6 (Boundless's tier 5 and 6 exos were the gem types and the coal and metal types about evenly); tier 7 is one of the three new kinds (part 2). Until part 2 lands, tier 7 draws a tier 6 kind raised to 7.
-3. **A host, by tier**: tier 4 wanderers orbit a tier 1 or 2 planet, tier 5 a tier 3, tier 6 and 7 a tier 4 or 5 (the archive's hosts). Picked at random among the permanent planets of those tiers (nearest lower tiers if none). **It is reached only from its host's warp shrine** (the travel window lists it everywhere, greyed with "Reach it from Host's shrine"); from the wanderer, its shrine reaches any world. Warps stay free (Boundless charged coin by distance; Boundmore has no coin).
+3. **A host, by tier**: tier 4 wanderers orbit a tier 1 or 2 planet, tier 5 a tier 3, tier 6 and 7 a tier 4 or 5 (the archive's hosts). Picked at random among the permanent planets of those tiers (nearest lower tiers if none). ~~It is reached only from its host's warp shrine~~ **Every warp shrine reaches it** (Nathan, 2026-10-26: "Any"); the host is where it hangs in the sky and where its players are carried when it leaves. Warps stay free (Boundless charged coin by distance; Boundmore has no coin).
 4. **Nothing can be claimed** on a wandering world, so nothing is protected and no portal can be built there (portals stand on claims, ADR-0009). Everything else works: building, mining, machines, storage, crops, meteors, regions with discovery XP.
 5. **Its own colours.** Each wanderer gets a palette drawn from the whole 255-colour palette by a recipe (a base hue, its neighbours and complement, for rock, wood, foliage, soil and sand), not from its kind's lists, so it brings colours the permanent planets lack (Boundless: "unique colours to snag"). Its look (sky and how it is seen from afar) is tinted toward the base hue.
 6. **Its last half hour**: from 30 minutes before it leaves, its air hazard climbs from its own to 10 (above any protection: ward 5 and the best food give 10 at most, so 10 is reached in the last minutes) in steady steps. Every player there is told at 24 hours, 1 hour, 30 minutes and 5 minutes before. A tier 4 to 6 wanderer has its line's air from the start; the climb uses the same line.
@@ -37,7 +37,7 @@ Boundless's way unless said. Every number here is a tunable in `ServerConfig` or
 4. `Game`: planet ids map to list indices through one helper (no more `id as usize`); a hidden (not yet arrived) wanderer is not in the universe list, refuses warps and loads nothing. Each minute the game checks the slots: arrivals, warnings, the air's climb (`ServerMsg::Air { at, air }`, set at an agreed input like a skill change so prediction stays exact), departures.
 5. Claims are refused on wanderers ("Nothing can be claimed on a wandering world").
 6. Protocol: `PlanetSummary` gains `host: Option<u16>` and `leaves: Option<u64>` (tick); `ServerMsg::Air`. `PROTOCOL_VERSION` 34.
-7. Client: the travel window lists wanderers with their host and time left and only lets you travel from the host's shrine; the sky draws a halo round wanderers; the HUD's air line follows `Air`.
+7. Client: the travel window lists wanderers with their host and time left (any shrine reaches them); the sky draws a halo round wanderers; the HUD's air line follows `Air`.
 
 ## Acceptance (part 1)
 
@@ -59,9 +59,9 @@ Boundless's way unless said. Every number here is a tunable in `ServerConfig` or
 ## Measure in game (for Nathan)
 
 1. Does the rhythm feel like Boundless's (one every two days, five days each)? Too many, too few?
-2. Is carrying players home at the end right, or should the air finish them as in Boundless?
+2. ~~Carry players home, or let the air finish them?~~ Answered (Nathan, 2026-10-26): carrying them home is right.
 3. Do the wanderers' colours feel rare and worth collecting?
-4. Reached only from the host: right, or should every shrine reach them?
+4. ~~Reached only from the host?~~ Answered (Nathan, 2026-10-26): any shrine reaches them.
 5. Tier 7: are astral creatures as dangerous as Boundless's lucent ones felt? Do astral tools feel worth the chain?
 6. How many astral seams does a tier 7 world hold against Boundless's (pyrelith rarest, gloamite commonest)?
 

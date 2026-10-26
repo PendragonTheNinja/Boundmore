@@ -52,22 +52,6 @@ impl Game {
         ))
     }
 
-    /// Whether this player may warp to planet index `to` from where they
-    /// stand: a wanderer only from its host. Says why not.
-    pub(super) fn exo_reachable(&self, id: u32, to: usize) -> bool {
-        let Some(e) = &self.planets[to].exo else { return true };
-        let Some(p) = self.players.get(&id) else { return false };
-        if self.planets[p.planet].id == e.host {
-            return true;
-        }
-        let host = self
-            .index_of(e.host)
-            .map_or("its host", |h| self.planets[h].name.as_str());
-        let text = format!("{} is reached only from {host}'s warp shrine", e.name);
-        self.notice(id, &text);
-        false
-    }
-
     /// Looks over the wanderers (every [`EXO_EVERY`] ticks).
     pub(super) fn step_exos(&mut self) {
         if self.tick % EXO_EVERY != 0 {
@@ -113,7 +97,7 @@ impl Game {
         let Some(rec) = &p.exo else { return };
         let host = self.host_name(rec);
         let text = format!(
-            "A wandering world, {}, has come into {host}'s sky: {}, tier {}. Reach it from {host}'s warp shrine.",
+            "A wandering world, {}, has come into {host}'s sky: {}, tier {}. Any warp shrine reaches it.",
             rec.name, p.kind_display, rec.tier
         );
         tracing::info!("wandering world {} ({}) arrived by {host}", rec.name, rec.id);
