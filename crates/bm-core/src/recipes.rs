@@ -5,6 +5,7 @@
 //! group's order. A recipe's inputs never share an item, so taking each
 //! input greedily, member by member, always succeeds when the totals do.
 
+use crate::Colour;
 use crate::block::Station;
 use crate::inventory::Inventory;
 use crate::items::{ItemError, ItemId, ItemRegistry};
@@ -83,6 +84,14 @@ impl Input {
     pub fn have(&self, inv: &Inventory) -> u32 {
         self.items.iter().map(|i| inv.count(*i)).sum()
     }
+
+    /// How many of `item` serve it: all of them, or only `colour`'s.
+    fn count_of(inv: &Inventory, item: ItemId, colour: Option<Colour>) -> u32 {
+        match colour {
+            Some(c) => inv.count_coloured(item, c),
+            None => inv.count(item),
+        }
+    }
 }
 
 /// The items one craft took, in input order.
@@ -97,22 +106,72 @@ impl Recipe {
     /// How many crafts `inv` holds the inputs for (inputs never share an
     /// item, so each input's members are simply added up).
     pub fn max_crafts(&self, inv: &Inventory) -> u32 {
+        self.max_crafts_in(inv, None)
+    }
+
+    /// The colour that restricts input `k` when crafting in `colour`: the
+    /// tinted input's, for a tinted recipe (milestone 22).
+    fn restrict(&self, k: usize, colour: Option<Colour>) -> Option<Colour> {
+        colour.filter(|_| self.tint == Some(k as u8))
+    }
+
+    /// [`Self::max_crafts`], the tinted input counting only `colour`.
+    pub fn max_crafts_in(&self, inv: &Inventory, colour: Option<Colour>) -> u32 {
         self.inputs
             .iter()
-            .map(|i| i.have(inv) / i.count.max(1) as u32)
+            .enumerate()
+            .map(|(k, i)| {
+                let c = self.restrict(k, colour);
+                i.items.iter().map(|it| Input::count_of(inv, *it, c)).sum::<u32>() / i.count.max(1) as u32
+            })
             .min()
             .unwrap_or(u32::MAX)
+    }
+
+    /// The colours a tinted recipe can be crafted in from `inv`, with how
+    /// many crafts each allows, most first; empty for an untinted one.
+    pub fn colour_choices(&self, inv: &Inventory) -> Vec<(Colour, u32)> {
+        let Some(t) = self.tint else { return Vec::new() };
+        let Some(input) = self.inputs.get(t as usize) else {
+            return Vec::new();
+        };
+        let mut colours: Vec<Colour> = Vec::new();
+        for item in &input.items {
+            for (c, _) in inv.colours_of(*item) {
+                if !colours.contains(&c) {
+                    colours.push(c);
+                }
+            }
+        }
+        let mut out: Vec<(Colour, u32)> = colours
+            .into_iter()
+            .map(|c| (c, self.max_crafts_in(inv, Some(c))))
+            .filter(|(_, n)| *n > 0)
+            .collect();
+        out.sort_by(|a, b| b.1.cmp(&a.1).then(a.0.cmp(&b.0)));
+        out
+    }
+
+    /// The input `item` serves, if any.
+    pub fn input_of(&self, item: ItemId) -> Option<usize> {
+        self.inputs.iter().position(|i| i.accepts(item))
     }
 
     /// The items `times` crafts would take from `inv`, craft by craft: each
     /// input from its members in order, as many of the first as there are,
     /// then the next. None when short.
     pub fn plan(&self, inv: &Inventory, times: u16) -> Option<Vec<Craft>> {
+        self.plan_in(inv, times, None)
+    }
+
+    /// [`Self::plan`], the tinted input taken only in `colour`.
+    pub fn plan_in(&self, inv: &Inventory, times: u16, colour: Option<Colour>) -> Option<Vec<Craft>> {
         let mut left: Vec<(ItemId, u32)> = Vec::new();
         let mut crafts = Vec::with_capacity(times as usize);
         for _ in 0..times {
             let mut craft = Craft::new();
-            for input in &self.inputs {
+            for (ki, input) in self.inputs.iter().enumerate() {
+                let c = self.restrict(ki, colour);
                 let mut need = input.count;
                 for &item in &input.items {
                     if need == 0 {
@@ -121,7 +180,7 @@ impl Recipe {
                     let k = match left.iter().position(|(i, _)| *i == item) {
                         Some(k) => k,
                         None => {
-                            left.push((item, inv.count(item)));
+                            left.push((item, Input::count_of(inv, item, c)));
                             left.len() - 1
                         }
                     };

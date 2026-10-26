@@ -135,7 +135,14 @@ impl Game {
             .map(|_| station_name(m.kind))
     }
 
-    pub(super) fn craft(&mut self, id: u32, index: u16, count: u16, station: Option<BlockPos>) {
+    pub(super) fn craft(
+        &mut self,
+        id: u32,
+        index: u16,
+        count: u16,
+        station: Option<BlockPos>,
+        colour: Option<bm_core::Colour>,
+    ) {
         let Some(recipe) = self.recipes.get(index).cloned() else {
             return self.tell(id, "no such recipe".into());
         };
@@ -149,7 +156,9 @@ impl Game {
         // In the hands, or at any station: instant into the pack, and its
         // craft XP at once.
         if recipe.station == Station::Hand {
-            match self.change_inventory(id, |inv, items| crafting::craft_by_hand(inv, items, &recipe, count)) {
+            match self.change_inventory(id, |inv, items| {
+                crafting::craft_by_hand_in(inv, items, &recipe, count, colour)
+            }) {
                 Some(Err(e)) => self.notice(id, &e.to_string()),
                 Some(Ok(())) => self.add_xp(id, recipe.xp as u64 * count as u64),
                 None => {}
@@ -175,7 +184,7 @@ impl Game {
             return self.notice(id, &CraftError::QueueFull.to_string());
         }
         let taken = match self.change_inventory(id, |inv, items| {
-            crafting::take_inputs_keeping(inv, items, &recipe, count)
+            crafting::take_inputs_keeping_in(inv, items, &recipe, count, colour)
         }) {
             Some(Some(t)) => t,
             Some(None) => return self.notice(id, &CraftError::Materials.to_string()),

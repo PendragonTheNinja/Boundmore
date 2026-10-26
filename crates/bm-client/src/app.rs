@@ -177,6 +177,8 @@ struct Session {
     planet: PlanetInfo,
     /// Every planet on the server, for the travel menu and the sky.
     universe: Vec<PlanetSummary>,
+    /// The colour chosen for each tinted recipe (milestone 22).
+    craft_colours: HashMap<u16, bm_core::Colour>,
     account: String,
     /// Ours, from the welcome: critical hits and random areas hash it.
     player_id: u32,
@@ -360,6 +362,7 @@ impl Session {
             reclaim: Vec::new(),
             planet: w.planet,
             universe: w.universe,
+            craft_colours: HashMap::new(),
         })
     }
 
@@ -1319,6 +1322,11 @@ impl App {
                 UiAction::LogIn { register } => self.start_login(register),
                 UiAction::CancelLogin => self.cancel_login(),
                 UiAction::CloseMenu => self.close_menu(true),
+                UiAction::CraftColour { recipe, colour } => {
+                    if let Some(s) = &mut self.session {
+                        s.craft_colours.insert(recipe, colour);
+                    }
+                }
                 UiAction::Skill(action) => {
                     let (now, local) = (self.now(), self.local_ticks());
                     let Some(s) = &mut self.session else { continue };
@@ -2394,6 +2402,7 @@ impl App {
                             live,
                             now,
                             progress: &s.progress,
+                            craft_colours: &s.craft_colours,
                         },
                         &mut actions,
                     );

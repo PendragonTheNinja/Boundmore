@@ -38,7 +38,7 @@ use crate::store::{SavedJob, SavedStack, SavedStation, load_slots, save_slots};
 use bm_core::forge::QueueBand;
 use bm_core::recipes::Craft;
 use bm_core::spark::{self, MACHINE_WEAR};
-use bm_core::{BlockPos, Inventory, ItemId, ItemRegistry, ItemStack, Recipe, RecipeBook, Station, TICK_HZ};
+use bm_core::{BlockPos, Colour, Inventory, ItemId, ItemRegistry, ItemStack, Recipe, RecipeBook, Station, TICK_HZ};
 use bm_protocol::{JobView, StationView};
 use std::collections::BTreeMap;
 use std::collections::{BTreeSet, HashMap, VecDeque};
@@ -140,6 +140,9 @@ pub fn scaled_ticks(recipe: &Recipe, scale: u16) -> u64 {
 pub struct Taken {
     pub crafts: Vec<Craft>,
     pub containers: Vec<ItemStack>,
+    /// The colour the output takes (milestone 22): a tinted recipe's chosen
+    /// colour, natural otherwise.
+    pub colour: Colour,
 }
 
 impl Taken {
@@ -150,6 +153,7 @@ impl Taken {
         Self {
             crafts: vec![craft; times as usize],
             containers: Vec::new(),
+            colour: Colour::NATURAL,
         }
     }
 }
@@ -163,7 +167,42 @@ fn is_container(items: &ItemRegistry, item: ItemId) -> bool {
 /// its items in order (`Recipe::plan`), each item from the slots
 /// `Inventory::remove` takes first.
 pub fn take_inputs_keeping(inv: &mut Inventory, items: &ItemRegistry, recipe: &Recipe, times: u16) -> Option<Taken> {
-    let crafts = recipe.plan(inv, times)?;
+    take_inputs_keeping_in(inv, items, recipe, times, None)
+}
+
+/// The colour a craft of `recipe` from `inv` makes (milestone 22): for a
+/// tinted recipe the one asked for, or by default the colour most crafts
+/// can be made in; natural for an untinted one.
+pub fn craft_colour(inv: &Inventory, recipe: &Recipe, asked: Option<Colour>) -> Option<Colour> {
+    recipe.tint?;
+    Some(
+        asked
+            .or_else(|| recipe.colour_choices(inv).first().map(|c| c.0))
+            .unwrap_or(Colour::NATURAL),
+    )
+}
+
+/// Removes one craft's `n` of `item` from `c`: a tinted input only in
+/// `colour`, any other in whatever colour comes first.
+fn remove_input(c: &mut Inventory, recipe: &Recipe, item: ItemId, n: u16, colour: Option<Colour>) -> Option<()> {
+    match colour {
+        Some(col) if recipe.tint.is_some() && recipe.input_of(item).map(|k| k as u8) == recipe.tint => {
+            c.remove_coloured(item, col, n).map(|_| ())
+        }
+        _ => c.remove(item, n).map(|_| ()),
+    }
+}
+
+/// [`take_inputs_keeping`] in `colour` (`craft_colour`).
+pub fn take_inputs_keeping_in(
+    inv: &mut Inventory,
+    items: &ItemRegistry,
+    recipe: &Recipe,
+    times: u16,
+    colour: Option<Colour>,
+) -> Option<Taken> {
+    let colour = craft_colour(inv, recipe, colour);
+    let crafts = recipe.plan_in(inv, times, colour)?;
     let mut c = inv.clone();
     let mut containers = Vec::new();
     for craft in &crafts {
@@ -174,12 +213,16 @@ pub fn take_inputs_keeping(inv: &mut Inventory, items: &ItemRegistry, recipe: &R
                     containers.push(c.take_one(slot)?);
                 }
             } else {
-                c.remove(item, n)?;
+                remove_input(&mut c, recipe, item, n, colour)?;
             }
         }
     }
     *inv = c;
-    Some(Taken { crafts, containers })
+    Some(Taken {
+        crafts,
+        containers,
+        colour: colour.unwrap_or(Colour::NATURAL),
+    })
 }
 
 /// The empty containers one craft that took `craft` gives back from the
@@ -220,17 +263,19 @@ fn returned(items: &ItemRegistry, craft: &[(ItemId, u16)], containers: &mut Vec<
 
 /// Takes `times` crafts' inputs from `inv`, all or nothing.
 pub fn take_inputs(inv: &mut Inventory, recipe: &Recipe, times: u16) -> bool {
-    let Some(crafts) = recipe.plan(inv, times) else {
-        return false;
-    };
+    take_inputs_in(inv, recipe, times, None).is_some()
+}
+
+/// [`take_inputs`] in `colour` (`craft_colour`); the colour made, if taken.
+pub fn take_inputs_in(inv: &mut Inventory, recipe: &Recipe, times: u16, colour: Option<Colour>) -> Option<Colour> {
+    let colour = craft_colour(inv, recipe, colour);
+    let crafts = recipe.plan_in(inv, times, colour)?;
     let mut c = inv.clone();
     for &(item, n) in crafts.iter().flatten() {
-        if c.remove(item, n).is_none() {
-            return false;
-        }
+        remove_input(&mut c, recipe, item, n, colour)?;
     }
     *inv = c;
-    true
+    Some(colour.unwrap_or(Colour::NATURAL))
 }
 
 /// Why a craft was refused, worded for the player.
@@ -256,15 +301,27 @@ impl std::fmt::Display for CraftError {
 /// A hand recipe, `times` over, into `inv`: inputs out, outputs in, all or
 /// nothing (the outputs may use the slots the inputs free).
 pub fn craft_by_hand(inv: &mut Inventory, items: &ItemRegistry, recipe: &Recipe, times: u16) -> Result<(), CraftError> {
+    craft_by_hand_in(inv, items, recipe, times, None)
+}
+
+/// [`craft_by_hand`] in `colour` (`craft_colour`).
+pub fn craft_by_hand_in(
+    inv: &mut Inventory,
+    items: &ItemRegistry,
+    recipe: &Recipe,
+    times: u16,
+    colour: Option<Colour>,
+) -> Result<(), CraftError> {
     if times == 0 || times > MAX_CRAFT_COUNT {
         return Err(CraftError::TooMany);
     }
     let out = u16::try_from(recipe.output_count as u32 * times as u32).map_err(|_| CraftError::TooMany)?;
     let mut c = inv.clone();
-    if !take_inputs(&mut c, recipe, times) {
+    let Some(made) = take_inputs_in(&mut c, recipe, times, colour) else {
         return Err(CraftError::Materials);
-    }
-    c.add_all(items, recipe.output, out).ok_or(CraftError::NoRoom)?;
+    };
+    c.add_all_coloured(items, recipe.output, made, out)
+        .ok_or(CraftError::NoRoom)?;
     *inv = c;
     Ok(())
 }
@@ -280,6 +337,8 @@ pub struct Job {
     /// for the crafts still to finish, one item each, in order: each craft
     /// gives its own back empty, one fill more worn.
     pub containers: Vec<ItemStack>,
+    /// The output's colour (milestone 22).
+    pub colour: Colour,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -594,13 +653,12 @@ impl Stations {
                     Some((recipe, craft)) if job.remaining > 0 => {
                         let crafts = vec![craft; job.remaining as usize];
                         let held = load_containers(items, &crafts, containers.get(j));
+                        let colour = saved.job_colours.get(j).copied().unwrap_or_default();
                         // One request whose crafts took different items was
                         // saved as several jobs: they join again.
-                        match st
-                            .jobs
-                            .back_mut()
-                            .filter(|b| b.recipe == recipe && b.remaining < u16::MAX - job.remaining)
-                        {
+                        match st.jobs.back_mut().filter(|b| {
+                            b.recipe == recipe && b.colour == colour && b.remaining < u16::MAX - job.remaining
+                        }) {
                             Some(back) => {
                                 back.remaining += job.remaining;
                                 back.taken.extend(crafts);
@@ -611,6 +669,7 @@ impl Stations {
                                 remaining: job.remaining,
                                 taken: crafts.into(),
                                 containers: held,
+                                colour,
                             }),
                         }
                     }
@@ -719,6 +778,7 @@ impl Stations {
             remaining,
             taken: taken.crafts.into(),
             containers: taken.containers,
+            colour: taken.colour,
         });
         if st.jobs.len() == 1 {
             self.try_start(pos, tick, items, recipes, env);
@@ -1194,7 +1254,9 @@ impl Stations {
             let craft = job.taken.front().cloned().unwrap_or_default();
             let back = returned(items, &craft, &mut containers);
             let mut output = st.output.clone();
-            if output.add_all(items, recipe.output, recipe.output_count).is_none()
+            if output
+                .add_all_coloured(items, recipe.output, job.colour, recipe.output_count)
+                .is_none()
                 || back.iter().any(|b| add_stack(&mut output, items, *b) > 0)
             {
                 // Full: wait, finished, until someone collects.
@@ -1434,7 +1496,7 @@ impl Stations {
     /// Removes a station's data, returning everything in it: its output, its
     /// fuel, and the inputs of every craft not yet finished (the one under
     /// way too). Banked heat and spark are lost. Used when its claim lapses.
-    pub fn take(&mut self, pos: BlockPos, items: &ItemRegistry) -> Vec<ItemStack> {
+    pub fn take(&mut self, pos: BlockPos, items: &ItemRegistry, recipes: &RecipeBook) -> Vec<ItemStack> {
         let Some(st) = self.map.remove(&pos) else {
             return Vec::new();
         };
@@ -1459,10 +1521,16 @@ impl Stations {
                     None => totals.push((item, n as u32)),
                 }
             }
+            // The tinted input comes back in the job's colour (milestone 22).
+            let tinted = recipes.get(job.recipe).and_then(|r| r.tint.map(|t| (r, t)));
             for (item, mut total) in totals {
+                let colour = match tinted {
+                    Some((r, t)) if r.input_of(item) == Some(t as usize) => job.colour,
+                    _ => Colour::NATURAL,
+                };
                 while total > 0 {
                     let c = total.min(u16::MAX as u32) as u16;
-                    out.push(ItemStack::new(item, c));
+                    out.push(ItemStack::coloured(item, colour, c));
                     total -= c as u32;
                 }
             }
@@ -1624,9 +1692,11 @@ fn save_station(st: &StationData, items: &ItemRegistry, recipes: &RecipeBook) ->
     let name = |id| items.get(id).map(|d| d.name.clone()).unwrap_or_default();
     let mut jobs = Vec::new();
     let mut containers = Vec::new();
+    let mut job_colours = Vec::new();
     for j in &st.jobs {
         let Some(r) = recipes.get(j.recipe) else { continue };
         for (remaining, craft, held) in job_runs(items, j) {
+            job_colours.push(j.colour);
             jobs.push(SavedJob {
                 output: name(r.output),
                 output_count: r.output_count,
@@ -1654,6 +1724,7 @@ fn save_station(st: &StationData, items: &ItemRegistry, recipes: &RecipeBook) ->
         forge: st.forge.as_ref().map(|f| forging::save_forge(f, items)),
         coils: st.coils.iter().map(|(p, w)| (*p, *w)).collect(),
         scale: st.scale,
+        job_colours,
     }
 }
 
@@ -1844,7 +1915,7 @@ mod tests {
         let mut loaded = Stations::load(saved, &items, &recipes);
         assert_eq!(loaded.get(pos).unwrap().jobs[0].containers, containers);
         // A station taken gives back what went in.
-        let back = loaded.take(pos, &items);
+        let back = loaded.take(pos, &items, &recipes);
         assert!(back.contains(&ItemStack {
             wear: 3,
             ..ItemStack::new(water, 1)
@@ -1872,30 +1943,33 @@ mod tests {
     /// station taken gives back exactly the items its unfinished crafts took.
     #[test]
     fn group_inputs_take_mixed_items_and_refund_exactly_those() {
+        // (Milestone 22 split stones by rock, so the group is Any Stones in
+        // the stone hammer.)
         let (items, recipes) = setup();
         let id = |n: &str| items.id(n).unwrap();
-        let (stone, basalt, limestone) = (id("stone"), id("basalt"), id("limestone"));
+        let (stones, basalt, limestone) = (id("stones"), id("basalt_stones"), id("limestone_stones"));
+        let (stick, leaves) = (id("stick"), id("foliage"));
         let index = recipes
             .at(Station::CraftingTable)
-            .find(|(_, r)| r.output == id("stones") && r.inputs[0].accepts(basalt))
+            .find(|(_, r)| r.output == id("stone_hammer"))
             .unwrap()
             .0;
         let r = recipes.get(index).unwrap().clone();
         let mut inv = Inventory::default();
-        inv.add(&items, limestone, 5);
+        inv.add(&items, limestone, 6);
         inv.add(&items, basalt, 2);
-        inv.add(&items, stone, 1);
-        let taken = take_inputs_keeping(&mut inv, &items, &r, 4).unwrap();
+        inv.add(&items, stones, 1);
+        inv.add(&items, stick, 8);
+        inv.add(&items, leaves, 8);
+        let taken = take_inputs_keeping(&mut inv, &items, &r, 2).unwrap();
         assert_eq!(
             taken.crafts,
             vec![
-                vec![(stone, 1)],
-                vec![(basalt, 1)],
-                vec![(basalt, 1)],
-                vec![(limestone, 1)]
+                vec![(stones, 1), (basalt, 2), (limestone, 1), (stick, 4), (leaves, 4)],
+                vec![(limestone, 4), (stick, 4), (leaves, 4)],
             ]
         );
-        assert_eq!((inv.count(stone), inv.count(basalt), inv.count(limestone)), (0, 0, 4));
+        assert_eq!((inv.count(stones), inv.count(basalt), inv.count(limestone)), (0, 0, 1));
 
         let pos = BlockPos::new(4, 30, 4);
         let mut s = Stations::new();
@@ -1908,30 +1982,91 @@ mod tests {
             .filter_map(|(p, st)| Some((p, st?)))
             .collect();
         let jobs = &saved[0].1.jobs;
-        assert_eq!(
-            jobs.iter().map(|j| (j.inputs.clone(), j.remaining)).collect::<Vec<_>>(),
-            vec![
-                (vec![("stone".to_string(), 1)], 1),
-                (vec![("basalt".to_string(), 1)], 2),
-                (vec![("limestone".to_string(), 1)], 1)
-            ]
-        );
+        assert_eq!(jobs.iter().map(|j| j.remaining).collect::<Vec<_>>(), vec![1, 1]);
+        assert_eq!(jobs[1].inputs[0], ("limestone_stones".to_string(), 4));
         let mut loaded = Stations::load(saved, &items, &recipes);
         assert_eq!(loaded.get(pos), s.get(pos));
         assert_eq!(loaded.get(pos).unwrap().jobs.len(), 1);
 
-        // The first craft (the stone) done: the rest come back as taken.
+        // The first craft done: the second's items come back as taken.
         run(&mut loaded, 0, craft_ticks(&r), &items, &recipes, &Nowhere);
-        assert_eq!(loaded.get(pos).unwrap().jobs[0].remaining, 3);
-        let mut back = loaded.take(pos, &items);
+        assert_eq!(loaded.get(pos).unwrap().jobs[0].remaining, 1);
+        let mut back = loaded.take(pos, &items, &recipes);
         back.sort_by_key(|b| b.item);
         let mut want = vec![
-            ItemStack::new(id("stones"), 2),
-            ItemStack::new(basalt, 2),
-            ItemStack::new(limestone, 1),
+            ItemStack::new(id("stone_hammer"), 1),
+            ItemStack::new(limestone, 4),
+            ItemStack::new(stick, 4),
+            ItemStack::new(leaves, 4),
         ];
         want.sort_by_key(|b| b.item);
         assert_eq!(back, want);
+    }
+
+    /// Milestone 22: a tinted recipe takes its input in the chosen colour
+    /// and makes its output in it, by hand and at a station, through a save
+    /// and a reload; a station taken gives the input back in that colour.
+    #[test]
+    fn tinted_recipes_pass_the_chosen_colour_on() {
+        let (items, recipes) = setup();
+        let id = |n: &str| items.id(n).unwrap();
+        let (red, blue) = (Colour(5), Colour(180));
+        // By hand: timber from a red trunk, never from the blue one.
+        let timber = recipes.recipes.iter().position(|r| r.output == id("timber")).unwrap() as u16;
+        let r = recipes.get(timber).unwrap().clone();
+        let mut inv = Inventory::default();
+        inv.add_coloured(&items, id("trunk"), red, 1);
+        inv.add_coloured(&items, id("trunk"), blue, 3);
+        assert_eq!(r.colour_choices(&inv), vec![(blue, 3), (red, 1)]);
+        assert_eq!(
+            craft_by_hand_in(&mut inv, &items, &r, 2, Some(red)),
+            Err(CraftError::Materials),
+            "only one red trunk"
+        );
+        craft_by_hand_in(&mut inv, &items, &r, 1, Some(red)).unwrap();
+        assert_eq!(inv.count_coloured(id("timber"), red), 2);
+        assert_eq!(inv.count_coloured(id("trunk"), blue), 3, "blue untouched");
+        // With no colour asked, the most plentiful.
+        craft_by_hand(&mut inv, &items, &r, 1).unwrap();
+        assert_eq!(inv.count_coloured(id("timber"), blue), 2);
+
+        // At a crafting table: red stones from red stone.
+        let index = recipes
+            .at(Station::CraftingTable)
+            .find(|(_, r)| r.output == id("stones") && r.inputs[0].accepts(id("stone")))
+            .unwrap()
+            .0;
+        let r = recipes.get(index).unwrap().clone();
+        let mut inv = Inventory::default();
+        inv.add_coloured(&items, id("stone"), red, 3);
+        inv.add_coloured(&items, id("stone"), blue, 3);
+        let taken = take_inputs_keeping_in(&mut inv, &items, &r, 3, Some(red)).unwrap();
+        assert_eq!(taken.colour, red);
+        assert_eq!(
+            (
+                inv.count_coloured(id("stone"), red),
+                inv.count_coloured(id("stone"), blue)
+            ),
+            (0, 3)
+        );
+        let pos = BlockPos::new(4, 30, 4);
+        let mut s = Stations::new();
+        s.queue(pos, Station::CraftingTable, index, taken, 0, &items, &recipes, &Nowhere)
+            .unwrap();
+        let saved: Vec<_> = s
+            .take_dirty(&items, &recipes)
+            .into_iter()
+            .filter_map(|(p, st)| Some((p, st?)))
+            .collect();
+        assert_eq!(saved[0].1.job_colours, vec![red]);
+        let mut loaded = Stations::load(saved, &items, &recipes);
+        assert_eq!(loaded.get(pos), s.get(pos));
+        run(&mut loaded, 0, craft_ticks(&r), &items, &recipes, &Nowhere);
+        let out = loaded.get(pos).unwrap().output.clone();
+        assert_eq!(out.count_coloured(id("stones"), red), 2, "made red");
+        // The two crafts left come back red.
+        let back = loaded.take(pos, &items, &recipes);
+        assert!(back.contains(&ItemStack::coloured(id("stone"), red, 2)), "{back:?}");
     }
 
     /// Each craft draws its heat as it starts, burning fuel as needed; with
@@ -2100,7 +2235,7 @@ mod tests {
         .unwrap();
         s.step(ticks, &items, &recipes, &Nowhere);
         s.take_dirty(&items, &recipes);
-        let mut got = s.take(pos, &items);
+        let mut got = s.take(pos, &items, &recipes);
         got.sort_by_key(|st| st.item);
         let mut want = vec![ItemStack::new(r.output, r.output_count), coal(&items, 2)];
         want.extend(r.inputs.iter().map(|i| ItemStack::new(i.items[0], i.count * 2)));
@@ -2108,7 +2243,7 @@ mod tests {
         assert_eq!(got, want, "one ingot made, two coal burnt, two crafts' inputs back");
         assert!(!s.has_contents(pos) && s.running().count() == 0);
         assert_eq!(s.take_dirty(&items, &recipes), vec![(pos, None)]);
-        assert!(s.take(pos, &items).is_empty());
+        assert!(s.take(pos, &items, &recipes).is_empty());
     }
 
     #[test]
@@ -2721,6 +2856,6 @@ mod tests {
         assert_eq!(q.progress(610), (600.0 / 7200.0, 110));
         // Lapsing gives the item back.
         let mut t = t;
-        assert_eq!(t.take(forge, &items), vec![hammer]);
+        assert_eq!(t.take(forge, &items, &recipes), vec![hammer]);
     }
 }

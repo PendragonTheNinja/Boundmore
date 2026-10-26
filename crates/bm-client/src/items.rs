@@ -851,35 +851,35 @@ mod tests {
 
     #[test]
     fn a_group_input_shows_its_name_and_the_members_together() {
+        // (Milestone 22: the stone hammer takes Any Stones.)
         let mut i = items();
         let id = |n: &str| i.registry.id(n).unwrap();
-        let (stones, basalt, limestone) = (id("stones"), id("basalt"), id("limestone"));
+        let (basalt, limestone) = (id("basalt_stones"), id("limestone_stones"));
         let r = i
             .recipes
             .recipes
             .iter()
-            .find(|r| r.output == stones && r.inputs[0].accepts(basalt))
+            .find(|r| r.output == id("stone_hammer"))
             .unwrap()
             .clone();
         let v = i.input_view(&r.inputs[0]);
-        assert_eq!((v.label.as_str(), v.have, v.icon), ("Any Rock 0/1", 0, id("stone")));
-        assert_eq!(v.hover.as_deref(), Some("Any Rock: Stone, Basalt, Limestone"));
+        assert_eq!((v.label.as_str(), v.have, v.icon), ("Any Stones 0/4", 0, id("stones")));
+        assert_eq!(
+            v.hover.as_deref(),
+            Some("Any Stones: Stones, Basalt Stones, Limestone Stones")
+        );
         i.inventory.add(&i.registry, limestone, 2);
-        i.inventory.add(&i.registry, basalt, 1);
+        i.inventory.add(&i.registry, basalt, 3);
         let v = i.input_view(&r.inputs[0]);
-        assert_eq!((v.label.as_str(), v.have, v.icon), ("Any Rock 3/1", 3, basalt));
-        assert_eq!(i.craft_max(&r), 3);
+        assert_eq!((v.label.as_str(), v.have, v.icon), ("Any Stones 5/4", 5, basalt));
         assert!(!v.label.contains('\u{2014}'));
         // A plain item reads as its count only, beside its icon.
-        let hammer = i
-            .recipes
-            .recipes
-            .iter()
-            .find(|r| r.output == id("stone_hammer"))
-            .unwrap();
-        let v = i.input_view(&hammer.inputs[0]);
+        let v = i.input_view(&r.inputs[1]);
         assert_eq!((v.label.as_str(), v.hover.clone()), ("0/4", None));
-        assert_eq!(hammer.inputs[2].group.as_deref(), Some("Any Leaves"));
+        assert_eq!(r.inputs[2].group.as_deref(), Some("Any Leaves"));
+        i.inventory.add(&i.registry, id("stick"), 4);
+        i.inventory.add(&i.registry, id("foliage"), 4);
+        assert_eq!(i.craft_max(&r), 1);
     }
 
     #[test]

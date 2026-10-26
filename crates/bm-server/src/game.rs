@@ -1068,7 +1068,12 @@ impl Game {
                 ClientMsg::Discard { slot } => {
                     self.change_inventory(id, |inv, _| inv.clear(slot as usize));
                 }
-                ClientMsg::Craft { recipe, count, station } => self.craft(id, recipe, count, station),
+                ClientMsg::Craft {
+                    recipe,
+                    count,
+                    station,
+                    colour,
+                } => self.craft(id, recipe, count, station, colour),
                 ClientMsg::WatchStation { pos } => self.watch(id, pos),
                 ClientMsg::CollectStation { pos } => self.collect(id, pos),
                 ClientMsg::ClaimPlot { claim, plot } => self.claim_plot(id, claim, plot),
@@ -2933,7 +2938,7 @@ impl Game {
                             emptied.push(p);
                         }
                         if planet.stations.has_contents(p) {
-                            items.extend(planet.stations.take(p, &self.items));
+                            items.extend(planet.stations.take(p, &self.items, &self.recipes));
                         }
                         let Some(current) = planet.world.state(p) else { continue };
                         let generated = reference.state(p.local());
