@@ -1351,6 +1351,11 @@ fn gem_gear(name: &str) -> Option<Tex> {
                 Gem::Sapphire => (Tip::Square, false),
                 Gem::Ruby => (Tip::Slope, false),
                 Gem::Topaz => (Tip::Slope, true),
+                // Milestone 21: Boundless's lucent chisels cut finest; drawn
+                // as precise.
+                Gem::Aurorite => (Tip::Bevel, true),
+                Gem::Pyrelith => (Tip::Slope, true),
+                Gem::Gloamite => (Tip::Square, true),
             };
             chisel(metal, tip, precise)
         }

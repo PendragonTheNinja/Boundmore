@@ -877,7 +877,7 @@ impl Session {
                 continue;
             };
             let t = k.tier(c.tier);
-            let element = bm_core::creatures::Element::from_code(c.element);
+            let element = bm_core::creatures::Essence::from_code(c.element);
             let max = bm_core::creatures::max_health(t.health, bm_core::creatures::Exotic(c.exotic), element);
             out.push(crate::fight_hud::Plate {
                 at,
@@ -4113,7 +4113,7 @@ mod tests {
 }
 
 /// A creature's name plate: "Exotic Burning Grim Pelter".
-fn plate_title(title: &str, exotic: bool, element: Option<bm_core::creatures::Element>) -> String {
+fn plate_title(title: &str, exotic: bool, element: Option<bm_core::creatures::Essence>) -> String {
     let mut t = match element {
         Some(e) => format!("{} {title}", e.word()),
         None => title.to_string(),
@@ -4127,15 +4127,22 @@ fn plate_title(title: &str, exotic: bool, element: Option<bm_core::creatures::El
 #[cfg(test)]
 mod plate_tests {
     use super::plate_title;
-    use bm_core::creatures::Element;
+    use bm_core::creatures::{Astral, Element, Essence};
 
     #[test]
     fn plates_name_the_element() {
         assert_eq!(plate_title("Grim Pelter", false, None), "Grim Pelter");
         assert_eq!(
-            plate_title("Grim Pelter", true, Some(Element::Burn)),
+            plate_title("Grim Pelter", true, Some(Essence::Element(Element::Burn))),
             "Exotic Burning Grim Pelter"
         );
-        assert_eq!(plate_title("Grazer", false, Some(Element::Chill)), "Chilling Grazer");
+        assert_eq!(
+            plate_title("Grazer", false, Some(Essence::Element(Element::Chill))),
+            "Chilling Grazer"
+        );
+        assert_eq!(
+            plate_title("Grazer", false, Some(Essence::Astral(Astral::Aurorite))),
+            "Auroral Grazer"
+        );
     }
 }

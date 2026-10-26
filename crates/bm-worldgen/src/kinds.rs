@@ -26,6 +26,9 @@ pub struct PlanetKind {
     pub air: AirLine,
     /// Its element (milestone 18 part 3): some creatures there carry it.
     pub element: Option<bm_core::creatures::Element>,
+    /// Its astral ore (milestone 21: the tier 7 kinds): some creatures there
+    /// are made of it, carrying both its elements.
+    pub astral: Option<bm_core::creatures::Astral>,
     pub look: PlanetLook,
     /// Block name to the palette colour names a planet of this kind may give
     /// it (`[kind.colours]`).
@@ -98,6 +101,8 @@ struct KindEntry {
     #[serde(default)]
     element: Option<bm_core::creatures::Element>,
     #[serde(default)]
+    astral: Option<bm_core::creatures::Astral>,
+    #[serde(default)]
     look: PlanetLook,
     #[serde(default)]
     colours: BTreeMap<String, Vec<String>>,
@@ -151,6 +156,7 @@ impl PlanetKinds {
                 tier: e.tier.max(1),
                 air: e.air,
                 element: e.element,
+                astral: e.astral,
                 look: e.look,
                 colours: e.colours,
                 generation: e.generation,

@@ -2860,7 +2860,7 @@ mod tests {
     // Re-pinned for M19 part 2's trees and outcrops and part 3's lifted land
     // and caves (2026-10-25) without a bump:
     // generator 4 had not left the branch, so no planet held the old pins.
-    const PINNED_V4: [(&str, u64); 13] = [
+    const PINNED_V4: [(&str, u64); 16] = [
         ("temperate", 0x1c45_7b1d_cfba_bc48),
         ("arid", 0xf87d_9467_37d9_33a9),
         ("frozen", 0xc9ee_c353_8b86_8989),
@@ -2874,6 +2874,10 @@ mod tests {
         ("stormy", 0x04cd_101d_e331_2a41),
         ("scorched", 0x1b0d_ef2b_2a2e_6956),
         ("ember", 0x5ae9_9f35_c4a7_7236),
+        // Milestone 21's tier 7 kinds (new kinds: nothing older changed).
+        ("auroral", 0x03f5_05a4_2c79_0069),
+        ("pyric", 0xda05_d528_4a70_1bbc),
+        ("gloaming", 0x2419_609f_400c_f58e),
     ];
     // The version 3 pins: every kind's settings without biomes (what planets
     // saved before generator 4 hold) still make them.
@@ -2899,7 +2903,7 @@ mod tests {
     // their gems and lava
     // without a version bump: planets saved before keep their terrain
     // (`PINNED_M17`, checked in `appending_m18_only_turns_rock_into_coal`).
-    const PINNED: [(&str, u64); 14] = [
+    const PINNED: [(&str, u64); 17] = [
         ("default", 0x6bc9_e59d_8877_7736),
         ("temperate", 0xaae5_c5bd_f326_8a63),
         ("arid", 0x1e58_8500_d8a3_d120),
@@ -2914,6 +2918,10 @@ mod tests {
         ("stormy", 0xda7e_6340_af03_6d5d),
         ("scorched", 0x021e_f8ca_e477_3cac),
         ("ember", 0x93c2_6bbb_86b5_8913),
+        // Milestone 21's tier 7 kinds (new kinds: nothing older changed).
+        ("auroral", 0x78e0_7c40_3eea_6038),
+        ("pyric", 0xc394_31eb_c46c_e425),
+        ("gloaming", 0x8c15_15de_cbb3_69db),
     ];
     const PINNED_M17: [(&str, u64); 4] = [
         ("temperate", 0xa10a_36aa_5d69_57f1),
@@ -3324,6 +3332,51 @@ mod tests {
 
     /// Milestone 18 part 2: each gem grows on its own world only, and only
     /// where its rule allows (depth, water over it, height of the land).
+    /// Milestone 21: each astral ore grows only on its own tier 7 kind,
+    /// deep, and the tier 7 kinds hold no gem seams.
+    #[test]
+    fn astral_ores_grow_only_on_their_own_worlds() {
+        let ores = [
+            ("auroral", "aurorite_seam"),
+            ("pyric", "pyrelith_seam"),
+            ("gloaming", "gloamite_seam"),
+        ];
+        let ids = ores.map(|(_, o)| id(o));
+        let gems = ["amethyst", "emerald", "sapphire", "topaz", "diamond", "ruby"].map(|g| id(&format!("{g}_seam")));
+        let blocks = BlockRegistry::builtin();
+        let kinds = PlanetKinds::builtin(&blocks);
+        for kind in &kinds.kinds {
+            let own = ores.iter().position(|(k, _)| *k == kind.name);
+            if kind.tier < 5 && own.is_none() {
+                continue;
+            }
+            let g = Generator::new(PlanetShape::new(64, 12), kind.generation(42), &blocks).unwrap();
+            let mut found = 0;
+            for cz in 0..6 {
+                for cx in 0..6 {
+                    for cy in 0..4 {
+                        let p = ChunkPos::new(cx * 10, cy, cz * 10 + cx);
+                        let c = g.generate(p);
+                        for b in c.to_dense() {
+                            if let Some(which) = ids.iter().position(|i| *i == b) {
+                                assert_eq!(Some(which), own, "{}: {} out of place", kind.name, ores[which].1);
+                                found += 1;
+                            }
+                            if own.is_some() {
+                                assert!(!gems.contains(&b), "{}: a gem seam on a tier 7 world", kind.name);
+                            }
+                        }
+                    }
+                }
+            }
+            if let Some(own) = own {
+                assert!(found > 0, "{}: no {} found", kind.name, ores[own].1);
+                assert_eq!(kind.tier, 7);
+                assert!(kind.astral.is_some());
+            }
+        }
+    }
+
     #[test]
     fn gems_grow_on_their_own_worlds_by_their_rules() {
         let gems = [

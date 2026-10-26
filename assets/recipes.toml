@@ -3382,3 +3382,284 @@ power = 3000
 xp = 14
 wear = 9
 skill = { name = "ingredient_crafting", level = 3 }
+
+# Milestone 21 part 2: the astral chain (Boundless's lucent recipes, tuning
+# 4.10 and 4.12). Boundless gated the gear at crafting level 4; Boundmore's
+# tree stops at 3 (rank 2 and the epic), so level 3 it is. Compact and
+# refined XP and wear are guesses.
+
+[[recipe]]
+output = "hard_leather"
+inputs = [["leather", 2], ["water_bucket", 2]]
+station = "furnace"
+seconds = 120.0
+heat = 400
+xp = 20
+
+[[recipe]]
+output = "supreme_bonding_agent"
+inputs = [["glue", 8], ["fossil_essence", 60], ["vital_essence", 30], ["shadow_orb", 1]]
+station = "mixer"
+seconds = 90.0
+spark = 400
+power = 1500
+xp = 30
+wear = 25
+
+[[recipe]]
+output = "compact_aurorite"
+inputs = [["rough_aurorite", 10]]
+station = "compactor"
+seconds = 480.0
+spark = 2000
+power = 3000
+xp = 60
+wear = 85
+
+[[recipe]]
+output = "refined_aurorite"
+inputs = [["compact_aurorite", 1]]
+station = "refinery"
+seconds = 240.0
+spark = 2000
+power = 3000
+xp = 45
+wear = 55
+
+[[recipe]]
+output = "aurorite_hammer"
+inputs = [["refined_aurorite", 3], ["stick", 4], ["hard_leather", 1], ["supreme_bonding_agent", 1]]
+station = "workbench"
+seconds = 3600.0
+spark = 4000
+power = 3000
+xp = 320
+wear = 100
+skill = { name = "tool_crafting", level = 3 }
+
+[[recipe]]
+output = "aurorite_shovel"
+inputs = [["refined_aurorite", 3], ["stick", 4], ["hard_leather", 1], ["supreme_bonding_agent", 1]]
+station = "workbench"
+seconds = 3600.0
+spark = 4000
+power = 3000
+xp = 320
+wear = 100
+skill = { name = "tool_crafting", level = 3 }
+
+[[recipe]]
+output = "aurorite_axe"
+inputs = [["refined_aurorite", 3], ["stick", 4], ["hard_leather", 1], ["supreme_bonding_agent", 1]]
+station = "workbench"
+seconds = 3600.0
+spark = 4000
+power = 3000
+xp = 320
+wear = 100
+skill = { name = "tool_crafting", level = 3 }
+
+[[recipe]]
+output = "aurorite_grapple"
+inputs = [["refined_aurorite", 3], ["hard_leather", 1], ["supreme_bonding_agent", 1], ["relic_core", 1], ["relic_component", 3], ["relic_fragment", 10]]
+station = "workbench"
+seconds = 3600.0
+spark = 4000
+power = 3000
+xp = 320
+wear = 100
+skill = { name = "tech_crafting", level = 3 }
+
+[[recipe]]
+output = "aurorite_spanner"
+inputs = [["refined_aurorite", 3], ["stick", 4], ["hard_leather", 1], ["supreme_bonding_agent", 1], ["cog", 6]]
+station = "workbench"
+seconds = 3600.0
+spark = 4000
+power = 3000
+xp = 320
+wear = 100
+skill = { name = "tech_crafting", level = 3 }
+
+[[recipe]]
+output = "aurorite_chisel"
+inputs = [["refined_aurorite", 3], ["stick", 4], ["hard_leather", 1], ["supreme_bonding_agent", 1]]
+station = "workbench"
+seconds = 3600.0
+spark = 4000
+power = 3000
+xp = 320
+wear = 100
+skill = { name = "tech_crafting", level = 3 }
+
+[[recipe]]
+output = "compact_pyrelith"
+inputs = [["rough_pyrelith", 10]]
+station = "compactor"
+seconds = 480.0
+spark = 2000
+power = 3000
+xp = 60
+wear = 85
+
+[[recipe]]
+output = "refined_pyrelith"
+inputs = [["compact_pyrelith", 1]]
+station = "refinery"
+seconds = 240.0
+spark = 2000
+power = 3000
+xp = 45
+wear = 55
+
+[[recipe]]
+output = "pyrelith_hammer"
+inputs = [["refined_pyrelith", 3], ["stick", 4], ["hard_leather", 1], ["supreme_bonding_agent", 1]]
+station = "workbench"
+seconds = 3600.0
+spark = 4000
+power = 3000
+xp = 150
+wear = 100
+skill = { name = "tool_crafting", level = 3 }
+
+[[recipe]]
+output = "pyrelith_shovel"
+inputs = [["refined_pyrelith", 3], ["stick", 4], ["hard_leather", 1], ["supreme_bonding_agent", 1]]
+station = "workbench"
+seconds = 3600.0
+spark = 4000
+power = 3000
+xp = 150
+wear = 100
+skill = { name = "tool_crafting", level = 3 }
+
+[[recipe]]
+output = "pyrelith_axe"
+inputs = [["refined_pyrelith", 3], ["stick", 4], ["hard_leather", 1], ["supreme_bonding_agent", 1]]
+station = "workbench"
+seconds = 3600.0
+spark = 4000
+power = 3000
+xp = 150
+wear = 100
+skill = { name = "tool_crafting", level = 3 }
+
+[[recipe]]
+output = "pyrelith_grapple"
+inputs = [["refined_pyrelith", 3], ["hard_leather", 1], ["supreme_bonding_agent", 1], ["relic_core", 1], ["relic_component", 3], ["relic_fragment", 10]]
+station = "workbench"
+seconds = 3600.0
+spark = 4000
+power = 3000
+xp = 150
+wear = 100
+skill = { name = "tech_crafting", level = 3 }
+
+[[recipe]]
+output = "pyrelith_spanner"
+inputs = [["refined_pyrelith", 3], ["stick", 4], ["hard_leather", 1], ["supreme_bonding_agent", 1], ["cog", 6]]
+station = "workbench"
+seconds = 3600.0
+spark = 4000
+power = 3000
+xp = 150
+wear = 100
+skill = { name = "tech_crafting", level = 3 }
+
+[[recipe]]
+output = "pyrelith_chisel"
+inputs = [["refined_pyrelith", 3], ["stick", 4], ["hard_leather", 1], ["supreme_bonding_agent", 1]]
+station = "workbench"
+seconds = 3600.0
+spark = 4000
+power = 3000
+xp = 150
+wear = 100
+skill = { name = "tech_crafting", level = 3 }
+
+[[recipe]]
+output = "compact_gloamite"
+inputs = [["rough_gloamite", 10]]
+station = "compactor"
+seconds = 480.0
+spark = 2000
+power = 3000
+xp = 60
+wear = 85
+
+[[recipe]]
+output = "refined_gloamite"
+inputs = [["compact_gloamite", 1]]
+station = "refinery"
+seconds = 240.0
+spark = 2000
+power = 3000
+xp = 45
+wear = 55
+
+[[recipe]]
+output = "gloamite_hammer"
+inputs = [["refined_gloamite", 3], ["stick", 4], ["hard_leather", 1], ["supreme_bonding_agent", 1]]
+station = "workbench"
+seconds = 3600.0
+spark = 4000
+power = 3000
+xp = 320
+wear = 100
+skill = { name = "tool_crafting", level = 3 }
+
+[[recipe]]
+output = "gloamite_shovel"
+inputs = [["refined_gloamite", 3], ["stick", 4], ["hard_leather", 1], ["supreme_bonding_agent", 1]]
+station = "workbench"
+seconds = 3600.0
+spark = 4000
+power = 3000
+xp = 320
+wear = 100
+skill = { name = "tool_crafting", level = 3 }
+
+[[recipe]]
+output = "gloamite_axe"
+inputs = [["refined_gloamite", 3], ["stick", 4], ["hard_leather", 1], ["supreme_bonding_agent", 1]]
+station = "workbench"
+seconds = 3600.0
+spark = 4000
+power = 3000
+xp = 320
+wear = 100
+skill = { name = "tool_crafting", level = 3 }
+
+[[recipe]]
+output = "gloamite_grapple"
+inputs = [["refined_gloamite", 3], ["hard_leather", 1], ["supreme_bonding_agent", 1], ["relic_core", 1], ["relic_component", 3], ["relic_fragment", 10]]
+station = "workbench"
+seconds = 3600.0
+spark = 4000
+power = 3000
+xp = 320
+wear = 100
+skill = { name = "tech_crafting", level = 3 }
+
+[[recipe]]
+output = "gloamite_spanner"
+inputs = [["refined_gloamite", 3], ["stick", 4], ["hard_leather", 1], ["supreme_bonding_agent", 1], ["cog", 6]]
+station = "workbench"
+seconds = 3600.0
+spark = 4000
+power = 3000
+xp = 320
+wear = 100
+skill = { name = "tech_crafting", level = 3 }
+
+[[recipe]]
+output = "gloamite_chisel"
+inputs = [["refined_gloamite", 3], ["stick", 4], ["hard_leather", 1], ["supreme_bonding_agent", 1]]
+station = "workbench"
+seconds = 3600.0
+spark = 4000
+power = 3000
+xp = 320
+wear = 100
+skill = { name = "tech_crafting", level = 3 }

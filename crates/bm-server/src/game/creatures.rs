@@ -286,9 +286,11 @@ pub(super) struct Creature {
     pub attack_until: u64,
     /// Its exotic buffs (milestone 13 part 2), rolled at spawn.
     pub exotic: Exotic,
-    /// Its element (milestone 18 part 3): double health, half again its
-    /// armour and damage, and the element's resistances.
-    pub element: Option<bm_core::creatures::Element>,
+    /// Its element (milestone 18 part 3: double health, half again its
+    /// armour and damage, the element's resistances) or astral ore
+    /// (milestone 21: triple health, double armour and damage, the better of
+    /// its pair's resistances).
+    pub essence: Option<bm_core::creatures::Essence>,
     /// A popper: whether it has had its one chance to curl, and until when
     /// it is curled (cannot be hurt) or stunned (by a hammer).
     pub curl_tried: bool,
@@ -338,7 +340,7 @@ impl Creature {
             next_attack: 0,
             attack_until: 0,
             exotic: Exotic::default(),
-            element: None,
+            essence: None,
             curl_tried: false,
             curled_until: 0,
             stunned_until: 0,
@@ -358,19 +360,19 @@ impl Creature {
 
     /// Its health at full: its tier's, tripled by the exotic health buff.
     pub(super) fn max_health(&self, def: &CreatureDef) -> u32 {
-        // Elemental: +100% health (Boundless, tuning 3.2.2).
-        bm_core::creatures::max_health(def.tier(self.tier).health, self.exotic, self.element)
+        // Elemental: +100% health; astral +200% (Boundless, tuning 3.2.2).
+        bm_core::creatures::max_health(def.tier(self.tier).health, self.exotic, self.essence)
     }
 
     pub(super) fn armour(&self, def: &CreatureDef) -> u32 {
         let a = self.exotic.armour(def.tier(self.tier).armour);
-        if self.element.is_some() { a + a / 2 } else { a }
+        self.essence.map_or(a, |e| a * e.strength_halves() / 2)
     }
 
     /// Damage one of its hits deals before the player's armour.
     pub(super) fn hit_damage(&self, def: &CreatureDef) -> u32 {
         let d = self.exotic.damage(def.tier(self.tier).damage);
-        if self.element.is_some() { d + d / 2 } else { d }
+        self.essence.map_or(d, |e| d * e.strength_halves() / 2)
     }
 
     /// XP its kill gives each attacker.
@@ -378,7 +380,7 @@ impl Creature {
     /// world modifiers).
     pub(super) fn xp(&self, def: &CreatureDef) -> u32 {
         let x = self.exotic.xp(def.tier(self.tier).xp);
-        if self.element.is_some() { x + x / 2 } else { x }
+        self.essence.map_or(x, |e| (u64::from(x) * e.xp_quarters() / 4) as u32)
     }
 
     /// Share of its health left, 0 to 1.
@@ -501,7 +503,7 @@ impl Creature {
             dead: !self.alive(),
             looted: self.looted.iter().any(|a| a == account),
             exotic: self.exotic.0,
-            element: self.element.map_or(0, |e| e.code()),
+            element: self.essence.map_or(0, |e| e.code()),
         }
     }
 
@@ -1762,11 +1764,12 @@ impl Game {
         let feet = self.planets[pi].world.shape.wrap_point(feet);
         let mut c = Creature::new(id, kind, tier, feet, self.tick);
         c.exotic = exotic;
-        // On an elemental world some creatures carry its element.
-        if let Some(e) = self.planets[pi].element
+        // On an elemental or astral world some creatures carry its
+        // element or ore.
+        if let Some(e) = self.planets[pi].essence
             && roll(&mut self.rng) < bm_core::creatures::elemental_chance(self.planets[pi].tier)
         {
-            c.element = Some(e);
+            c.essence = Some(e);
         }
         self.herds[pi].list.push(c);
         id

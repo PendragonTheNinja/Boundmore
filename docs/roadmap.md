@@ -21,12 +21,12 @@ What a Boundless player expects to find, and where each stands. "Ours" is the Bo
 | Portals and travel | Player-built portals link planets; warps; grapples | Warp shrines at each spawn (M4, free for now). Player-built portals need fuel, less punishing than Boundless (Nathan, 2026-10-19). Agreed (Nathan, 2026-10-19): a portal never disappears (dormant when empty, reopens when refuelled), uses no fuel while idle, and charges each player at most once per portal per cooldown (a tunable; a day is one option, shorter is fine), so back-and-forth trips cannot drain it. Decided (Nathan, 2026-10-19): the fuel is a new mined crystal (wayshards), the portal's own tank pays per trip, portals link with tokens as in Boundless, see-through windows come in a later milestone. Built as M8 (`docs/milestones/08-portals.md`, ADR-0009). Grapples: M7 part 2 (built 2026-10-19), one hook at a time; dual grapples later |
 | Player economy | Shop stands and request baskets; almost nothing sold by NPCs | M8 |
 | Hunting and creatures | Creatures per planet with drops; world bosses | M13 (spec written): Boundless's five creatures; meteorites and bosses later |
-| Meteors and events | Meteor strikes with special drops; temporary worlds that appear for a while | M9 |
+| Meteors and events | Meteor strikes with special drops; temporary worlds that appear for a while | **Built**: meteors in M14, temporary (wandering) worlds in M21 |
 | Guilds | Shared plots, permissions, guild buffs | M8 |
 | Sovereign worlds | Players rent whole planets | M10 |
 | Character progression | Levels, skills, attributes | **Built** in M12: Boundless's live tree exactly, in Boundmore's names |
 | Forging | Traits on gear from a risky session of ingredients | M17: Boundless's rules exactly; coils give the forge power from M18 |
-| Higher worlds | Tier 4 to 8 worlds guarded by atmosphere; gems; machine power | **Built** to tier 6 in M18: atmospheres, gems, coils, lava, elements. Exoworlds and tiers 7 and 8 later |
+| Higher worlds | Tier 4 to 8 worlds guarded by atmosphere; gems; machine power | **Built** to tier 6 in M18: atmospheres, gems, coils, lava, elements. Wandering worlds (exoworlds) and tier 7 in M21. Tier 8 never went live in Boundless |
 
 ## Milestones
 
@@ -69,6 +69,8 @@ What a Boundless player expects to find, and where each stands. "Ours" is the Bo
 **M19: Living worlds** (built 2026-10-25, `milestones/19-living-worlds.md`). Biomes, three rocks and soils, rivers, trees, lifted land, caves by tier.
 
 **M20: Far views** (built 2026-10-26, `milestones/20-far-views.md`). The planet drawn to 1024 blocks in coarser voxel copies, as Boundless's LODs did.
+
+**M21: Wandering worlds** (built 2026-10-26, `milestones/21-wandering-worlds.md`, ADR-0011). Boundless's exoworlds: temporary planets every two days for about five days, reached from a host's shrine, unclaimable, leaving with everything on them; tier 7 worlds with three astral ores, their creatures and gear.
 
 *After that, still Boundless first (Nathan, 2026-10-19 and 2026-10-20): creatures and combat (bone, tallow and hide, then glue's real recipe), food and hunger, forging. Each gets its own spec and number when it starts.*
 

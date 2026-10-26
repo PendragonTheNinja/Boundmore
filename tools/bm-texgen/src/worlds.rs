@@ -137,18 +137,33 @@ fn hard_coal() -> Tex {
 /// amber glue swirled with orange; the strong one is a glowing teal paste
 /// flecked with sparkles, a copper wire twisted round its neck.
 fn bonding_agent(strong: bool) -> Tex {
+    if strong {
+        bonding_agent_in(
+            ramp(0x30b0b8, 0.3, 0.98),
+            ramp(0xa0f0f0, 0.5, 1.0),
+            "strong_bonding_agent",
+        )
+    } else {
+        bonding_agent_in(ramp(0xe0a030, 0.35, 0.96), ramp(0xf07020, 0.35, 0.95), "bonding_agent")
+    }
+}
+
+/// The supreme bonding agent (milestone 21): a deep violet paste swirled
+/// with the shadow orb's light.
+pub fn supreme_bonding_agent() -> Tex {
+    bonding_agent_in(
+        ramp(0x5a2a9a, 0.25, 0.95),
+        ramp(0xd8b0ff, 0.5, 1.0),
+        "supreme_bonding_agent",
+    )
+}
+
+fn bonding_agent_in(paste: Ramp, swirl: Ramp, name: &str) -> Tex {
     let glass = Ramp::from_hex(&[0x3a4a64, 0x5a7090, 0x8aa6c0, 0xb8d0e0, 0xe0eef6, 0xffffff]);
     let cork = end_grain_ramp();
-    let (paste, swirl) = if strong {
-        (ramp(0x30b0b8, 0.3, 0.98), ramp(0xa0f0f0, 0.5, 1.0))
-    } else {
-        (ramp(0xe0a030, 0.35, 0.96), ramp(0xf07020, 0.35, 0.95))
-    };
-    let salt = seed(if strong {
-        "strong_bonding_agent"
-    } else {
-        "bonding_agent"
-    });
+    let salt = seed(name);
+    // The stronger agents fleck and wire their jars.
+    let strong = name != "bonding_agent";
     let (x0, x1, y0, y1, round) = (7.5f32, 24.5f32, 11.0f32, 28.5f32, 4.0f32);
     let mut icon = Icon::new();
     // The jar's body and neck.

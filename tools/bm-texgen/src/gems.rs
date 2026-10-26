@@ -32,9 +32,18 @@ pub enum Gem {
     Topaz,
     Diamond,
     Ruby,
+    /// The astral ores of the tier 7 worlds (milestone 21), drawn as gems
+    /// that glow: aurorite cool and bright, pyrelith warm and bright,
+    /// gloamite dark and red.
+    Aurorite,
+    Pyrelith,
+    Gloamite,
 }
 
 impl Gem {
+    /// The astral ores (not in `ALL`: they power no coils).
+    pub const ASTRAL: [Gem; 3] = [Gem::Aurorite, Gem::Pyrelith, Gem::Gloamite];
+
     pub const ALL: [Gem; 6] = [
         Gem::Amethyst,
         Gem::Emerald,
@@ -52,11 +61,14 @@ impl Gem {
             Gem::Topaz => "topaz",
             Gem::Diamond => "diamond",
             Gem::Ruby => "ruby",
+            Gem::Aurorite => "aurorite",
+            Gem::Pyrelith => "pyrelith",
+            Gem::Gloamite => "gloamite",
         }
     }
 
     pub fn from_name(name: &str) -> Option<Gem> {
-        Gem::ALL.into_iter().find(|g| g.name() == name)
+        Gem::ALL.into_iter().chain(Gem::ASTRAL).find(|g| g.name() == name)
     }
 
     /// The gem's colour, deep shade to white glint.
@@ -80,12 +92,25 @@ impl Gem {
             Gem::Ruby => &[
                 0x2a0410, 0x50081c, 0x800e28, 0xae1634, 0xd62844, 0xf05c68, 0xffa4a8, 0xfff0f0,
             ],
+            // Lit from within: even the shade is coloured, never near black.
+            Gem::Aurorite => &[
+                0x0c3a4a, 0x14607a, 0x1c8aa4, 0x2cb6c8, 0x52dcdc, 0x96f6e6, 0xd6fff4, 0xffffff,
+            ],
+            Gem::Pyrelith => &[
+                0x5a1e04, 0x8a3606, 0xbc560a, 0xe47e14, 0xfaa62c, 0xffcc5e, 0xffeaa4, 0xfffbea,
+            ],
+            // Plum, not ruby's red: dark, with a crimson heart.
+            Gem::Gloamite => &[
+                0x1c0418, 0x320832, 0x4e104c, 0x6e1a64, 0x922a7c, 0xbc4a96, 0xe68cc0, 0xffe0f0,
+            ],
         })
     }
 
     /// The machine this gem's coils power.
     fn machine(self) -> &'static str {
         match self {
+            // No coils of their own.
+            Gem::Aurorite | Gem::Pyrelith | Gem::Gloamite => "workbench",
             Gem::Diamond => "workbench",
             Gem::Ruby => "compactor",
             Gem::Sapphire => "extractor",
@@ -292,6 +317,15 @@ pub fn diamond_seam(ctx: Ctx) -> Tex {
 }
 pub fn ruby_seam(ctx: Ctx) -> Tex {
     gem_seam(ctx, Gem::Ruby)
+}
+pub fn aurorite_seam(ctx: Ctx) -> Tex {
+    gem_seam(ctx, Gem::Aurorite)
+}
+pub fn pyrelith_seam(ctx: Ctx) -> Tex {
+    gem_seam(ctx, Gem::Pyrelith)
+}
+pub fn gloamite_seam(ctx: Ctx) -> Tex {
+    gem_seam(ctx, Gem::Gloamite)
 }
 
 /// Relic core seam: broken relic plates in stone like the relic seam's,
@@ -726,7 +760,16 @@ fn bark() -> Tex {
 /// Leather: a tanned sheet, rolled up at one end and tied, stitched along
 /// its edge.
 fn leather() -> Tex {
-    let hide = soft_ramp(0xa4643a, 0.32, 0.9);
+    leather_in(0xa4643a, 0.32, 0.9, "leather")
+}
+
+/// Hard leather (milestone 21): leather boiled dark and stiff.
+fn hard_leather() -> Tex {
+    leather_in(0x5c3a26, 0.16, 0.62, "hard_leather")
+}
+
+fn leather_in(rgb: u32, lo: f32, hi: f32, name: &str) -> Tex {
+    let hide = soft_ramp(rgb, lo, hi);
     let stitch = soft_ramp(0xf0dcb0, 0.5, 1.0);
     let cord = leather_ramp();
     let sheet: [P; 4] = [(4.0, 6.0), (20.0, 5.0), (21.0, 27.0), (5.0, 27.5)];
@@ -743,7 +786,7 @@ fn leather() -> Tex {
         if (1.4..2.2).contains(&edge) && (x + y) % 3 != 0 {
             return Some(stitch.pick(0.6, x, y));
         }
-        let grain = unit(hash2(seed("leather"), ((x / 2) + (y / 2) * 16) as u32));
+        let grain = unit(hash2(seed(name), ((x / 2) + (y / 2) * 16) as u32));
         let mut t = 0.56 - (p.0 + p.1 - 30.0) / 40.0 * 0.2 + (grain - 0.5) * 0.08;
         if seg_dist(sheet[0], sheet[1], p) < 1.0 || seg_dist(sheet[3], sheet[0], p) < 1.0 {
             t += 0.14;
@@ -794,7 +837,7 @@ fn compact_coal(which: &str) -> Tex {
 // ---------------------------------------------------------------- lookups
 
 /// The block textures this part adds.
-pub const BLOCKS: [&str; 23] = [
+pub const BLOCKS: [&str; 26] = [
     "amethyst_seam",
     "emerald_seam",
     "sapphire_seam",
@@ -818,6 +861,9 @@ pub const BLOCKS: [&str; 23] = [
     "advanced_refinery_coil",
     "advanced_mixer_coil",
     "advanced_forge_coil",
+    "aurorite_seam",
+    "pyrelith_seam",
+    "gloamite_seam",
 ];
 
 /// The item icons this part adds: the gem chain, the relic core, bark,
@@ -848,6 +894,18 @@ pub fn icon_names() -> Vec<String> {
         names.push(format!("{}_shard", el.0));
         names.push(format!("{}_paste", el.0));
     }
+    // Milestone 21: the astral chain and gear, hard leather and the
+    // supreme bonding agent.
+    for gem in Gem::ASTRAL {
+        for form in ["rough", "compact", "refined"] {
+            names.push(format!("{form}_{}", gem.name()));
+        }
+        for tool in ["hammer", "shovel", "axe", "grapple", "spanner", "chisel"] {
+            names.push(format!("{}_{tool}", gem.name()));
+        }
+    }
+    names.push("hard_leather".into());
+    names.push("supreme_bonding_agent".into());
     names
 }
 
@@ -896,6 +954,8 @@ pub fn paint_icon(name: &str) -> Option<Tex> {
         "relic_core" => return Some(relic_core()),
         "bark" => return Some(bark()),
         "leather" => return Some(leather()),
+        "hard_leather" => return Some(hard_leather()),
+        "supreme_bonding_agent" => return Some(crate::worlds::supreme_bonding_agent()),
         "compact_coal" | "compact_medium_coal" | "compact_hard_coal" => return Some(compact_coal(name)),
         _ => {}
     }
@@ -927,6 +987,9 @@ pub fn painter(name: &str) -> Option<fn(Ctx) -> Tex> {
         "topaz_seam" => topaz_seam,
         "diamond_seam" => diamond_seam,
         "ruby_seam" => ruby_seam,
+        "aurorite_seam" => aurorite_seam,
+        "pyrelith_seam" => pyrelith_seam,
+        "gloamite_seam" => gloamite_seam,
         "relic_core_seam" => relic_core_seam,
         "titanium_furnace_top" => titanium_furnace_top,
         "titanium_furnace_side" => titanium_furnace_side,
@@ -1014,8 +1077,8 @@ mod tests {
         let names = icon_names();
         assert_eq!(
             names.len(),
-            18 + 6 + 36 + 12,
-            "gems, other part 2 icons, gem gear, shards and pastes"
+            18 + 6 + 36 + 12 + 27 + 2,
+            "gems, other part 2 icons, gem gear, shards and pastes, the astral chain and gear (M21), hard leather and the supreme agent"
         );
         let icons: Vec<Tex> = names
             .iter()

@@ -165,11 +165,155 @@ pub fn resistance(creature: Element, attack: Option<Element>) -> f32 {
 }
 
 /// A creature's health at full: its tier's, tripled by the exotic health
-/// buff, doubled again if elemental (milestone 18 part 3). Client and server
-/// both use it.
-pub fn max_health(base: u32, exotic: Exotic, element: Option<Element>) -> u32 {
+/// buff, doubled again if elemental (milestone 18 part 3), tripled if astral
+/// (milestone 21). Client and server both use it.
+pub fn max_health(base: u32, exotic: Exotic, essence: Option<Essence>) -> u32 {
     let h = exotic.health(base);
-    if element.is_some() { h * 2 } else { h }
+    match essence {
+        None => h,
+        Some(e) => h * e.health_times(),
+    }
+}
+
+/// The three astral ores of the tier 7 worlds (milestone 21; Boundless's
+/// rift, blink and umbris, in Boundmore's own names). Each channels a pair of
+/// elements: aurorite shock and chill, pyrelith blast and burn, gloamite
+/// corrosion and toxin.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Astral {
+    Aurorite,
+    Pyrelith,
+    Gloamite,
+}
+
+impl Astral {
+    pub const ALL: [Astral; 3] = [Astral::Aurorite, Astral::Pyrelith, Astral::Gloamite];
+
+    /// Its pair of elements.
+    pub fn elements(self) -> [Element; 2] {
+        match self {
+            Astral::Aurorite => [Element::Shock, Element::Chill],
+            Astral::Pyrelith => [Element::Blast, Element::Burn],
+            Astral::Gloamite => [Element::Corrosion, Element::Toxin],
+        }
+    }
+
+    /// The ore's name ("aurorite").
+    pub fn name(self) -> &'static str {
+        match self {
+            Astral::Aurorite => "aurorite",
+            Astral::Pyrelith => "pyrelith",
+            Astral::Gloamite => "gloamite",
+        }
+    }
+
+    /// The word before an astral creature's name ("Auroral Grim Pelter").
+    pub fn word(self) -> &'static str {
+        match self {
+            Astral::Aurorite => "Auroral",
+            Astral::Pyrelith => "Pyric",
+            Astral::Gloamite => "Gloaming",
+        }
+    }
+}
+
+/// What a creature or a strike carries beyond plain force: one element
+/// (milestone 18 part 3) or an astral ore's pair (milestone 21).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub enum Essence {
+    Element(Element),
+    Astral(Astral),
+}
+
+impl Essence {
+    /// On the wire: elements 1 to 6, astral ores 7 to 9 (0 is none).
+    pub fn code(self) -> u8 {
+        match self {
+            Essence::Element(e) => e.code(),
+            Essence::Astral(a) => 7 + Astral::ALL.iter().position(|x| *x == a).expect("listed") as u8,
+        }
+    }
+
+    pub fn from_code(c: u8) -> Option<Essence> {
+        match c {
+            7..=9 => Some(Essence::Astral(Astral::ALL[(c - 7) as usize])),
+            c => Element::from_code(c).map(Essence::Element),
+        }
+    }
+
+    /// Its elements: one, or the astral pair.
+    pub fn elements(self) -> Vec<Element> {
+        match self {
+            Essence::Element(e) => vec![e],
+            Essence::Astral(a) => a.elements().to_vec(),
+        }
+    }
+
+    /// The word before a creature's name.
+    pub fn word(self) -> &'static str {
+        match self {
+            Essence::Element(e) => e.word(),
+            Essence::Astral(a) => a.word(),
+        }
+    }
+
+    /// The chance a creature of this essence shrugs off a hit of `attack`.
+    /// An astral creature resists as the better of its two elements (a
+    /// **guess**: Boundless's defence for its lucent creatures is unpublished).
+    pub fn resistance(self, attack: Option<Element>) -> f32 {
+        self.elements()
+            .into_iter()
+            .map(|e| resistance(e, attack))
+            .fold(f32::MIN, f32::max)
+    }
+
+    /// Health multiple: elemental x2, astral x3 (Boundless's +100% and
+    /// +200%, `m18-data-check.md` 17).
+    pub fn health_times(self) -> u32 {
+        match self {
+            Essence::Element(_) => 2,
+            Essence::Astral(_) => 3,
+        }
+    }
+
+    /// Armour and damage in halves: elemental 3 (x1.5), astral 4 (x2).
+    pub fn strength_halves(self) -> u32 {
+        match self {
+            Essence::Element(_) => 3,
+            Essence::Astral(_) => 4,
+        }
+    }
+
+    /// Drop count multiple: elemental x2, astral x3.
+    pub fn drops_times(self) -> u8 {
+        match self {
+            Essence::Element(_) => 2,
+            Essence::Astral(_) => 3,
+        }
+    }
+
+    /// XP in quarters: elemental 6 (x1.5), astral 7 (x1.75).
+    pub fn xp_quarters(self) -> u64 {
+        match self {
+            Essence::Element(_) => 6,
+            Essence::Astral(_) => 7,
+        }
+    }
+}
+
+/// The element a strike carrying `attack` lands with on a creature of
+/// `target`: an astral strike uses whichever of its pair the target resists
+/// least (Boundless: "it uses the element type that does the most damage").
+pub fn strike_element(attack: Option<Essence>, target: Option<Essence>) -> Option<Element> {
+    let attack = attack?;
+    let pair = attack.elements();
+    match target {
+        None => pair.first().copied(),
+        Some(t) => pair
+            .into_iter()
+            .min_by(|a, b| t.resistance(Some(*a)).total_cmp(&t.resistance(Some(*b)))),
+    }
 }
 
 /// The chance a creature spawning on an elemental world of `tier` is
@@ -281,17 +425,32 @@ impl CreatureTier {
     /// become its element's, or go when it has none; an elemental creature
     /// rolls twice as often (Boundless: double drops, pfiffel's world
     /// modifiers).
-    pub fn pool_for(&self, element: Option<Element>) -> CreatureTier {
+    pub fn pool_for(&self, essence: Option<Essence>) -> CreatureTier {
         let mut t = self.clone();
-        match element {
-            Some(e) => {
+        match essence {
+            Some(ess) => {
+                // An astral creature drops both its elements' shards, the
+                // shard's weight split between them (which of Boundless's
+                // lucent materials it dropped is unpublished: a **guess**).
+                let mut extra = Vec::new();
                 for d in &mut t.drops {
                     if d.item == ELEMENTAL_SHARD {
-                        d.item = e.shard().into();
+                        let pair = ess.elements();
+                        d.item = pair[0].shard().into();
+                        if let Some(second) = pair.get(1) {
+                            let half = (d.weight / 2).max(1);
+                            d.weight = d.weight.saturating_sub(half).max(1);
+                            extra.push(Drop {
+                                item: second.shard().into(),
+                                weight: half,
+                                max: d.max,
+                            });
+                        }
                     }
                 }
-                t.drops_min = t.drops_min.saturating_mul(2);
-                t.drops_max = t.drops_max.saturating_mul(2);
+                t.drops.extend(extra);
+                t.drops_min = t.drops_min.saturating_mul(ess.drops_times());
+                t.drops_max = t.drops_max.saturating_mul(ess.drops_times());
             }
             None => t.drops.retain(|d| d.item != ELEMENTAL_SHARD),
         }
@@ -567,9 +726,56 @@ mod element_tests {
         let plain = t.pool_for(None);
         assert_eq!(plain.drops.len(), 1);
         assert_eq!((plain.drops_min, plain.drops_max), (1, 3));
-        let burning = t.pool_for(Some(Element::Burn));
+        let burning = t.pool_for(Some(Essence::Element(Element::Burn)));
         assert_eq!(burning.drops[1].item, "burn_shard");
         assert_eq!((burning.drops_min, burning.drops_max), (2, 6));
+        // An astral one drops both its elements' shards, three times over.
+        let pyric = t.pool_for(Some(Essence::Astral(Astral::Pyrelith)));
+        let shards: Vec<&str> = pyric.drops.iter().skip(1).map(|d| d.item.as_str()).collect();
+        assert_eq!(shards, ["blast_shard", "burn_shard"]);
+        assert_eq!(pyric.drops[1].weight + pyric.drops[2].weight, 3);
+        assert_eq!((pyric.drops_min, pyric.drops_max), (3, 9));
+    }
+
+    #[test]
+    fn astral_ores_carry_a_pair_and_strike_with_the_better() {
+        for a in Astral::ALL {
+            let e = Essence::Astral(a);
+            assert_eq!(Essence::from_code(e.code()), Some(e));
+            let [x, y] = a.elements();
+            assert_ne!(x, y);
+            // It resists as the better of its pair.
+            for atk in Element::ALL {
+                let r = e.resistance(Some(atk));
+                assert_eq!(r, resistance(x, Some(atk)).max(resistance(y, Some(atk))));
+            }
+        }
+        for el in Element::ALL {
+            let e = Essence::Element(el);
+            assert_eq!(Essence::from_code(e.code()), Some(e));
+        }
+        assert_eq!(Essence::from_code(0), None);
+        assert_eq!(Essence::from_code(10), None);
+        // A pyrelith strike on a chill creature lands as burn (its opposite).
+        let pyric = Some(Essence::Astral(Astral::Pyrelith));
+        assert_eq!(
+            strike_element(pyric, Some(Essence::Element(Element::Chill))),
+            Some(Element::Burn)
+        );
+        // On a blast creature, burn (resisted 0.6) beats blast (0.8).
+        assert_eq!(
+            strike_element(pyric, Some(Essence::Element(Element::Blast))),
+            Some(Element::Burn)
+        );
+        assert_eq!(strike_element(None, Some(Essence::Element(Element::Blast))), None);
+        let ruby = Some(Essence::Element(Element::Burn));
+        assert_eq!(strike_element(ruby, None), Some(Element::Burn));
+        // Astral creatures are Boundless's "special": x3 health, x2 armour
+        // and damage, x3 drops, +75% XP.
+        let a = Essence::Astral(Astral::Gloamite);
+        assert_eq!(max_health(100, Exotic(0), Some(a)), 300);
+        assert_eq!((a.strength_halves(), a.drops_times(), a.xp_quarters()), (4, 3, 7));
+        assert_eq!(max_health(100, Exotic(0), Some(Essence::Element(Element::Toxin))), 200);
     }
 
     #[test]

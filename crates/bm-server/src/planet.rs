@@ -42,8 +42,9 @@ pub struct Planet {
     pub tier: u8,
     /// Its air (milestone 18), from its kind and tier.
     pub air: Air,
-    /// Its element (milestone 18 part 3), from its kind.
-    pub element: Option<bm_core::creatures::Element>,
+    /// Its element (milestone 18 part 3) or astral ore (milestone 21),
+    /// from its kind: some creatures there carry it.
+    pub essence: Option<bm_core::creatures::Essence>,
     pub look: PlanetLook,
     pub tints: Vec<[u8; 3]>,
     pub day: DayCycle,
@@ -371,7 +372,11 @@ pub fn open(
         kind_display: kind.map_or_else(|| bm_core::items::title_case(&saved.kind), |k| k.display.clone()),
         tier: kind.map_or(1, |k| k.tier),
         air: kind.map_or_else(Air::default, |k| Air::of(k.air, k.tier)),
-        element: kind.and_then(|k| k.element),
+        essence: kind.and_then(|k| {
+            k.astral
+                .map(bm_core::creatures::Essence::Astral)
+                .or(k.element.map(bm_core::creatures::Essence::Element))
+        }),
         name: saved.name,
         kind: saved.kind,
         look,

@@ -319,3 +319,8 @@ Boundless's live tree and tables exactly (Nathan, 2026-10-20), in Boundmore's na
 | Size | 48 chunks (1,536 blocks) | half Boundless's 3,072 m, as Boundmore's planets are throughout |
 | Colours | a recipe around a random base hue: rock in its muted shades, growth 4 to 8 hues round, wood and soil beside, sand warm, frost pale | Boundless's exoworld colour recipes (a player's write-up, medium); the offsets **guesses** (Measure 3) |
 | Time | the universe clock (stops while the server is off) | **guess**: Boundless ran on real time |
+| Astral creatures | x3 health, x2 armour and damage, x3 drops, +75% XP; as common as elemental ones on a tier 7 world (37%) | Boundless's "special" world modifiers; the share follows `elemental_chance(7)`, a **guess** |
+| Astral defence and drops | resists as the better of its pair; drops both its elements' shards | **guesses** (Boundless's lucent defence and drops are unpublished) |
+| Astral tools | aurorite 3400 damage at speed 5, pyrelith 1350 at 45, gloamite 2000 at 30 with 10% crits; durability 3000, 3800, 3200 | Boundless's rift, blink and umbris tools |
+| Astral grapples | aurorite range 40, shot 40, reels 45/45; pyrelith 20, 70, 70/40; gloamite 30, 50, 55/55; energy 250 | Boundless's lucent grapples |
+| Astral seams | gloamite commonest, aurorite, pyrelith rarest; 20+ down | Boundless's order (players' counts); richness a **guess** (Measure 6) |

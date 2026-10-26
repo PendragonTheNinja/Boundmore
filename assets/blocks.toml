@@ -2551,3 +2551,61 @@ material = "plant"
 bonus = [{ item = "dewberry", per_tier = [0.1, 0.1, 0.1, 0, 0, 0, 0, 0] }]
 mine_xp = 2
 build_xp = 4
+
+# Milestone 21 part 2: the astral ores of the tier 7 worlds (Boundless's
+# rift, blink and umbris, in Boundmore's own names). Mining XP 216 and the
+# gem seams' tier bonus (Boundless's data).
+
+[[block]]
+name = "aurorite_seam"
+hard = true
+colourable = false
+color = [90, 220, 230]
+solid = true
+opaque = true
+translucent = false
+breakable = true
+placeable = false
+health = "seam"
+textures = { all = "aurorite_seam" }
+material = "rock"
+drops = "rough_aurorite"
+bonus = [{ item = "rough_aurorite", per_tier = [0, 0, 0, 0, 0.5, 0.8, 0.8, 1.2] }]
+mine_xp = 216
+build_xp = 0
+
+[[block]]
+name = "pyrelith_seam"
+hard = true
+colourable = false
+color = [250, 150, 50]
+solid = true
+opaque = true
+translucent = false
+breakable = true
+placeable = false
+health = "seam"
+textures = { all = "pyrelith_seam" }
+material = "rock"
+drops = "rough_pyrelith"
+bonus = [{ item = "rough_pyrelith", per_tier = [0, 0, 0, 0, 0.5, 0.8, 0.8, 1.2] }]
+mine_xp = 216
+build_xp = 0
+
+[[block]]
+name = "gloamite_seam"
+hard = true
+colourable = false
+color = [150, 30, 60]
+solid = true
+opaque = true
+translucent = false
+breakable = true
+placeable = false
+health = "seam"
+textures = { all = "gloamite_seam" }
+material = "rock"
+drops = "rough_gloamite"
+bonus = [{ item = "rough_gloamite", per_tier = [0, 0, 0, 0, 0.5, 0.8, 0.8, 1.2] }]
+mine_xp = 216
+build_xp = 0

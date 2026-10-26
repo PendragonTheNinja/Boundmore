@@ -435,12 +435,13 @@ impl Game {
             return tracing::debug!("#{id} struck with no tool in slot {slot}");
         };
         let effects = p.effects;
-        // A gem tool strikes with its gem's element (milestone 18 part 3).
+        // A gem tool strikes with its gem's element (milestone 18 part 3),
+        // an astral one with its ore's pair (milestone 21).
         let element = p
             .inventory
             .get(slot as usize)
             .and_then(|s| self.items.get(s.item))
-            .and_then(|d| d.element);
+            .and_then(|d| d.essence());
         let tool = skilled_tool_keen(&tool, &effects, p.state.crit_multiplier());
         let p = self.players.get_mut(&id).expect("present");
         p.last_swing = Some((at, swing_ticks(tool.action_speed)));
@@ -478,7 +479,7 @@ impl Game {
         damage: u32,
         crit: bool,
         crit_effect: f32,
-        element: Option<bm_core::creatures::Element>,
+        strike: Option<bm_core::creatures::Essence>,
     ) {
         let tick = self.tick;
         let curl = roll(&mut self.rng);
@@ -489,8 +490,11 @@ impl Game {
         let def = self.creature_kinds.get(c.kind).expect("present");
         // An elemental creature shrugs some hits off and takes double from
         // its opposite (milestone 18 part 3, tuning 3.3.3).
-        let scale = match c.element {
-            Some(e) => elemental_scale(bm_core::creatures::resistance(e, element), resist_roll),
+        let scale = match c.essence {
+            Some(e) => {
+                let element = bm_core::creatures::strike_element(strike, Some(e));
+                elemental_scale(e.resistance(element), resist_roll)
+            }
             None => 1,
         };
         let amount = c.struck(def, tick, curl, dealt(damage, crit, crit_effect, c.armour(def)) * scale);
@@ -577,7 +581,7 @@ impl Game {
         let rng = &mut self.rng;
         // An exotic gives more rolls.
         let extra = c.exotic.extra_rolls();
-        let mut table = def.tier(c.tier).pool_for(c.element);
+        let mut table = def.tier(c.tier).pool_for(c.essence);
         table.drops_min = table.drops_min.saturating_add(extra);
         table.drops_max = table.drops_max.saturating_add(extra);
         let drops = roll_drops(&table, luck, || roll(rng));

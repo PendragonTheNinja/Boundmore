@@ -270,9 +270,19 @@ pub struct ItemDef {
     /// None is physical.
     #[serde(default)]
     pub element: Option<crate::creatures::Element>,
+    /// The astral ore its strikes carry, with both its elements (milestone
+    /// 21: astral tools); it wins over `element`.
+    #[serde(default)]
+    pub astral: Option<crate::creatures::Astral>,
 }
 
 impl ItemDef {
+    /// What its strikes carry: an astral ore's pair, an element, or nothing.
+    pub fn essence(&self) -> Option<crate::creatures::Essence> {
+        use crate::creatures::Essence;
+        self.astral.map(Essence::Astral).or(self.element.map(Essence::Element))
+    }
+
     pub fn food(&self) -> Option<crate::food::FoodStats> {
         match self.kind {
             ItemKind::Food(f) => Some(f),
@@ -502,6 +512,8 @@ struct ItemEntry {
     rank: u16,
     #[serde(default)]
     element: Option<crate::creatures::Element>,
+    #[serde(default)]
+    astral: Option<crate::creatures::Astral>,
     /// A forging ingredient's name in `forge::INGREDIENTS`.
     #[serde(default)]
     ingredient: Option<String>,
@@ -675,6 +687,7 @@ impl ItemRegistry {
                     flex: 0,
                     rank: 0,
                     element: None,
+                    astral: None,
                 });
             }
         }
@@ -752,6 +765,7 @@ impl ItemRegistry {
                 flex: e.flex,
                 rank: e.rank,
                 element: e.element,
+                astral: e.astral,
             });
         }
         let reg = Self::from_defs(defs, blocks)?;

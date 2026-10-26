@@ -1857,3 +1857,178 @@ flex = 100
 rank = 100
 stack = 1
 chisel = { family = "slope", precise = true, durability = 2000, energy = 20, advanced = true }
+
+# Milestone 21 part 2: the astral chain and gear (Boundless's lucent
+# numbers, tuning 2.1, 1.1 and m18-data-check; strikes carry both of the
+# ore's elements). Flexibility 10, rank 180.
+
+[[item]]
+name = "hard_leather"
+
+[[item]]
+name = "supreme_bonding_agent"
+
+[[item]]
+name = "rough_aurorite"
+
+[[item]]
+name = "compact_aurorite"
+
+[[item]]
+name = "refined_aurorite"
+
+[[item]]
+name = "aurorite_hammer"
+astral = "aurorite"
+flex = 10
+rank = 180
+stack = 1
+tool = { class = "hammer", damage = 3400, action_speed = 5.0, durability = 3000 }
+
+[[item]]
+name = "aurorite_shovel"
+astral = "aurorite"
+flex = 10
+rank = 180
+stack = 1
+tool = { class = "shovel", damage = 3400, action_speed = 5.0, durability = 3000 }
+
+[[item]]
+name = "aurorite_axe"
+astral = "aurorite"
+flex = 10
+rank = 180
+stack = 1
+tool = { class = "axe", damage = 3400, action_speed = 5.0, durability = 3000 }
+
+[[item]]
+name = "aurorite_grapple"
+flex = 10
+rank = 180
+stack = 1
+grapple = { range = 40.0, shot_speed = 40.0, reel_in = 45.0, reel_out = 45.0, durability = 2000, energy = 250 }
+
+[[item]]
+name = "aurorite_spanner"
+flex = 10
+rank = 180
+stack = 1
+tool = { class = "spanner", action_speed = 50.0, durability = 2000, energy = 50, repair = 10000 }
+
+[[item]]
+name = "aurorite_chisel"
+display = "Aurorite Precise Bevel Chisel"
+flex = 100
+rank = 180
+stack = 1
+chisel = { family = "bevel", precise = true, durability = 2000, energy = 20, advanced = true }
+
+[[item]]
+name = "rough_pyrelith"
+
+[[item]]
+name = "compact_pyrelith"
+
+[[item]]
+name = "refined_pyrelith"
+
+[[item]]
+name = "pyrelith_hammer"
+astral = "pyrelith"
+flex = 10
+rank = 180
+stack = 1
+tool = { class = "hammer", damage = 1350, action_speed = 45.0, durability = 3800 }
+
+[[item]]
+name = "pyrelith_shovel"
+astral = "pyrelith"
+flex = 10
+rank = 180
+stack = 1
+tool = { class = "shovel", damage = 1350, action_speed = 45.0, durability = 3800 }
+
+[[item]]
+name = "pyrelith_axe"
+astral = "pyrelith"
+flex = 10
+rank = 180
+stack = 1
+tool = { class = "axe", damage = 1350, action_speed = 45.0, durability = 3800 }
+
+[[item]]
+name = "pyrelith_grapple"
+flex = 10
+rank = 180
+stack = 1
+grapple = { range = 20.0, shot_speed = 70.0, reel_in = 70.0, reel_out = 40.0, durability = 2000, energy = 250 }
+
+[[item]]
+name = "pyrelith_spanner"
+flex = 10
+rank = 180
+stack = 1
+tool = { class = "spanner", action_speed = 50.0, durability = 2000, energy = 50, repair = 10000 }
+
+[[item]]
+name = "pyrelith_chisel"
+display = "Pyrelith Precise Slope Chisel"
+flex = 100
+rank = 180
+stack = 1
+chisel = { family = "slope", precise = true, durability = 2000, energy = 20, advanced = true }
+
+[[item]]
+name = "rough_gloamite"
+
+[[item]]
+name = "compact_gloamite"
+
+[[item]]
+name = "refined_gloamite"
+
+[[item]]
+name = "gloamite_hammer"
+astral = "gloamite"
+flex = 10
+rank = 180
+stack = 1
+tool = { class = "hammer", damage = 2000, action_speed = 30.0, crit_chance = 0.1, durability = 3200 }
+
+[[item]]
+name = "gloamite_shovel"
+astral = "gloamite"
+flex = 10
+rank = 180
+stack = 1
+tool = { class = "shovel", damage = 2000, action_speed = 30.0, crit_chance = 0.1, durability = 3200 }
+
+[[item]]
+name = "gloamite_axe"
+astral = "gloamite"
+flex = 10
+rank = 180
+stack = 1
+tool = { class = "axe", damage = 2000, action_speed = 30.0, crit_chance = 0.1, durability = 3200 }
+
+[[item]]
+name = "gloamite_grapple"
+flex = 10
+rank = 180
+stack = 1
+grapple = { range = 30.0, shot_speed = 50.0, reel_in = 55.0, reel_out = 55.0, durability = 2000, energy = 250 }
+
+[[item]]
+name = "gloamite_spanner"
+flex = 10
+rank = 180
+stack = 1
+tool = { class = "spanner", action_speed = 50.0, durability = 2000, energy = 50, repair = 10000 }
+
+[[item]]
+name = "gloamite_chisel"
+display = "Gloamite Precise Square Chisel"
+flex = 100
+rank = 180
+stack = 1
+chisel = { family = "square", precise = true, durability = 2000, energy = 20, advanced = true }
