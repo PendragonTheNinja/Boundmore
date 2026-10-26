@@ -42,7 +42,7 @@ What a Boundless player expects to find, and where each stands. "Ours" is the Bo
 
 **M6: Colour and ash.** Block states with colour (ADR-0007), a 255-colour palette, planet colours, coloured ash when a claim lapses, reclaim. See `milestones/06-colour-and-ash.md`.
 
-**M7: Movement and shape.** Chisels and shaped blocks (slopes in terrain too), grapples, swimming improvements, far views (level-of-detail terrain).
+**M7: Movement and shape.** Chisels and shaped blocks (slopes in terrain too), grapples, swimming improvements, far views (level-of-detail terrain; built as M20).
 
 **M8: Portals (built 2026-10-20).** Player-built portals linked by tokens, fuelled per trip (ADR-0009). See `milestones/08-portals.md`.
 
@@ -65,6 +65,10 @@ What a Boundless player expects to find, and where each stands. "Ours" is the Bo
 **M17: Forging** (spec 2026-10-22, `milestones/17-forging.md`; Nathan picked it 2026-10-22). The forge, Boundless's session rules exactly (pools, rolls, every ingredient), boons, quirks and flaws on tools, slings, bombs, grapples, spanners and chisels, fossils for the sealing wax. Power coils wait for gems: the ingredients that need power have their rules but no recipe yet.
 
 **M18: Higher worlds** (built 2026-10-25, `milestones/18-higher-worlds.md`). Atmospheres and wards, nine tier 4 to 6 worlds, gold, titanium and coal grades; gems placed by Boundless's intent, power coils and machine power, gem gear, the titanium furnace; lava and elemental creatures.
+
+**M19: Living worlds** (built 2026-10-25, `milestones/19-living-worlds.md`). Biomes, three rocks and soils, rivers, trees, lifted land, caves by tier.
+
+**M20: Far views** (built 2026-10-26, `milestones/20-far-views.md`). The planet drawn to 1024 blocks in coarser voxel copies, as Boundless's LODs did.
 
 *After that, still Boundless first (Nathan, 2026-10-19 and 2026-10-20): creatures and combat (bone, tallow and hide, then glue's real recipe), food and hunger, forging. Each gets its own spec and number when it starts.*
 
