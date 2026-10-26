@@ -48,6 +48,8 @@ pub struct Planet {
     pub tints: Vec<[u8; 3]>,
     pub day: DayCycle,
     pub world: World,
+    /// Far copies of its chunks (milestone 20).
+    pub far: crate::far::FarStore,
     pub stations: Stations,
     /// Storage blocks with something in them.
     pub storage: Storages,
@@ -364,6 +366,7 @@ pub fn open(
         look,
         tints,
         day: saved.day,
+        far: crate::far::FarStore::new(id, cat.registry.flags(), generator.clone(), store.clone()),
         world: World::new(id, saved.shape, cat.registry.clone(), generator, store.clone()),
         stations,
         storage,

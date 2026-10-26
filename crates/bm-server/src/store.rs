@@ -69,6 +69,10 @@ const SKIES: TableDefinition<u16, &[u8]> = TableDefinition::new("planet_skies");
 const CROPS: TableDefinition<&[u8], &[u8]> = TableDefinition::new("planet_crops");
 /// Regions each account has discovered (save version 7).
 const DISCOVERIES: TableDefinition<&str, &[u8]> = TableDefinition::new("discoveries");
+/// Far copies of chunks (milestone 20), keyed like `CHUNKS`: a cache made
+/// from the chunks, each in `FarChunk`'s encoding with its format version.
+/// Saving a chunk deletes its copy in the same write.
+const FAR: TableDefinition<&[u8], &[u8]> = TableDefinition::new("planet_far");
 
 /// Save version 1 and 2 tables, read only to upgrade, then deleted.
 const V1_PLAYERS: TableDefinition<&str, &[u8]> = TableDefinition::new("players");
@@ -1148,6 +1152,7 @@ impl Store {
         tx.open_table(STORAGE)?;
         tx.open_table(RECLAIM)?;
         tx.open_table(PORTALS)?;
+        tx.open_table(FAR)?;
         tx.commit()?;
         Ok(Self { db: Arc::new(db) })
     }
@@ -1418,6 +1423,26 @@ impl Store {
         Ok(t.get(chunk_key(planet, p).as_slice())?.map(|v| v.value().to_vec()))
     }
 
+    /// A chunk's saved far copy (milestone 20).
+    pub fn far(&self, planet: u16, p: ChunkPos) -> Result<Option<Vec<u8>>> {
+        let tx = self.db.begin_read()?;
+        let t = tx.open_table(FAR)?;
+        Ok(t.get(chunk_key(planet, p).as_slice())?.map(|v| v.value().to_vec()))
+    }
+
+    /// Far copies saved for a planet.
+    pub fn stored_far(&self, planet: u16) -> Result<u64> {
+        let tx = self.db.begin_read()?;
+        let t = tx.open_table(FAR)?;
+        let (lo, hi) = planet_range(planet);
+        let mut n = 0;
+        for row in t.range(lo.as_slice()..hi.as_slice())? {
+            row?;
+            n += 1;
+        }
+        Ok(n)
+    }
+
     /// The account with this (lowercased) key.
     pub fn account(&self, key: &str) -> Result<Option<AccountRecord>> {
         let tx = self.db.begin_read()?;
@@ -1621,9 +1646,17 @@ impl Store {
                     .insert("clock", postcard::to_stdvec(&clock)?.as_slice())?;
             }
             let mut chunks = tx.open_table(CHUNKS)?;
+            let mut far = tx.open_table(FAR)?;
             for (planet, p, bytes) in &batch.chunks {
-                chunks.insert(chunk_key(*planet, *p).as_slice(), bytes.as_slice())?;
+                let key = chunk_key(*planet, *p);
+                chunks.insert(key.as_slice(), bytes.as_slice())?;
+                // Its far copy is older than this: made again from it.
+                far.remove(key.as_slice())?;
             }
+            for (planet, p, bytes) in &batch.far {
+                far.insert(chunk_key(*planet, *p).as_slice(), bytes.as_slice())?;
+            }
+            drop(far);
             let mut players = tx.open_table(PLAYER_DATA)?;
             for (key, data) in &batch.players {
                 players.insert(key.as_str(), postcard::to_stdvec(data)?.as_slice())?;
@@ -2013,6 +2046,8 @@ fn upgrade_2_to_3(tx: &WriteTransaction, meta: &v2::PlanetMeta, kinds: &PlanetKi
 pub struct WriteBatch {
     /// By planet id.
     pub chunks: Vec<(u16, ChunkPos, Vec<u8>)>,
+    /// Far copies by planet id (milestone 20), written after `chunks`.
+    pub far: Vec<(u16, ChunkPos, Vec<u8>)>,
     /// By lowercased account name.
     pub players: Vec<(String, PlayerData)>,
     /// By planet id; None deletes (the station was emptied).
@@ -2044,6 +2079,7 @@ pub struct WriteBatch {
 impl WriteBatch {
     pub fn is_empty(&self) -> bool {
         self.chunks.is_empty()
+            && self.far.is_empty()
             && self.players.is_empty()
             && self.stations.is_empty()
             && self.claims.is_empty()
@@ -2280,6 +2316,7 @@ mod tests {
                     (2, ChunkPos::new(-1, 2, 3), vec![9, 9]),
                     (3, ChunkPos::new(-1, 2, 3), vec![8]),
                 ],
+                far: Vec::new(),
                 players: vec![(
                     "pendragon".into(),
                     PlayerData {
@@ -3401,5 +3438,35 @@ mod tests {
             wear: 0,
         })];
         assert_eq!(load_slots(&items, &gone, "test"), vec![None]);
+    }
+
+    #[test]
+    fn saving_a_chunk_deletes_its_far_copy() {
+        let dir = tempfile::tempdir().unwrap();
+        let s = Store::open(&dir.path().join("u.redb")).unwrap();
+        let (a, b) = (ChunkPos::new(1, 2, 3), ChunkPos::new(-4, 0, 9));
+        s.write(&WriteBatch {
+            far: vec![(5, a, vec![1, 2, 3]), (5, b, vec![4])],
+            ..Default::default()
+        })
+        .unwrap();
+        assert_eq!(s.far(5, a).unwrap(), Some(vec![1, 2, 3]));
+        assert_eq!(s.far(6, a).unwrap(), None, "keyed by planet");
+        assert_eq!(s.stored_far(5).unwrap(), 2);
+        // The chunk is saved: its copy is older than it and goes.
+        s.write(&WriteBatch {
+            chunks: vec![(5, a, vec![7])],
+            ..Default::default()
+        })
+        .unwrap();
+        assert_eq!(s.far(5, a).unwrap(), None);
+        assert_eq!(s.far(5, b).unwrap(), Some(vec![4]));
+        // A copy made from it, in a later batch, stays.
+        s.write(&WriteBatch {
+            far: vec![(5, a, vec![8])],
+            ..Default::default()
+        })
+        .unwrap();
+        assert_eq!(s.far(5, a).unwrap(), Some(vec![8]));
     }
 }

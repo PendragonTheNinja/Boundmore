@@ -7,6 +7,7 @@ pub mod claims;
 pub mod config;
 pub mod crafting;
 pub mod damage;
+pub mod far;
 pub mod farm;
 pub mod forging;
 pub mod game;

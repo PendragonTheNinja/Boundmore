@@ -268,6 +268,11 @@ pub struct Renderer {
     quad_indices: wgpu::Buffer,
     quad_capacity: u32,
     chunks: HashMap<ChunkPos, GpuChunk>,
+    /// Chunks with a near mesh uploaded, empty ones too: their far mesh is
+    /// not drawn.
+    near_meshed: std::collections::HashSet<ChunkPos>,
+    /// Far meshes (milestone 20), drawn where a chunk has no near mesh.
+    far_chunks: HashMap<ChunkPos, GpuChunk>,
     /// Held lights in canonical world positions, with their levels.
     point_lights: Vec<(DVec3, u8)>,
     instances: wgpu::Buffer,
@@ -690,6 +695,8 @@ impl Renderer {
             tints: Vec::new(),
             sampler,
             chunks: HashMap::new(),
+            near_meshed: Default::default(),
+            far_chunks: HashMap::new(),
             point_lights: Vec::new(),
             stats: FrameStats::default(),
         };
@@ -781,9 +788,32 @@ impl Renderer {
     }
 
     pub fn upload_chunk(&mut self, pos: ChunkPos, mesh: &ChunkMesh) {
+        self.near_meshed.insert(pos);
+        match self.gpu_chunk(mesh) {
+            Some(gpu) => self.chunks.insert(pos, gpu),
+            None => self.chunks.remove(&pos),
+        };
+    }
+
+    /// A chunk's far mesh (milestone 20).
+    pub fn upload_far(&mut self, pos: ChunkPos, mesh: &ChunkMesh) {
+        match self.gpu_chunk(mesh) {
+            Some(gpu) => self.far_chunks.insert(pos, gpu),
+            None => self.far_chunks.remove(&pos),
+        };
+    }
+
+    pub fn remove_far(&mut self, pos: ChunkPos) {
+        self.far_chunks.remove(&pos);
+    }
+
+    pub fn far_meshes(&self) -> usize {
+        self.far_chunks.len()
+    }
+
+    fn gpu_chunk(&mut self, mesh: &ChunkMesh) -> Option<GpuChunk> {
         if mesh.is_empty() {
-            self.chunks.remove(&pos);
-            return;
+            return None;
         }
         let quads = (mesh.opaque.len().max(mesh.translucent.len()) / 4) as u32;
         if quads > self.quad_capacity {
@@ -802,22 +832,25 @@ impl Renderer {
         };
         let quads = |v: &[Vertex], label: &str| make(bytemuck::cast_slice(v), v.len() / 4, label);
         let tris = |v: &[ShapedVertex], label: &str| make(bytemuck::cast_slice(v), v.len(), label);
-        let gpu = GpuChunk {
+        Some(GpuChunk {
             opaque: quads(&mesh.opaque, "chunk opaque"),
             translucent: quads(&mesh.translucent, "chunk translucent"),
             shaped_opaque: tris(&mesh.shaped_opaque, "chunk shaped opaque"),
             shaped_translucent: tris(&mesh.shaped_translucent, "chunk shaped translucent"),
-        };
-        self.chunks.insert(pos, gpu);
+        })
     }
 
     pub fn remove_chunk(&mut self, pos: ChunkPos) {
         self.chunks.remove(&pos);
+        self.near_meshed.remove(&pos);
     }
 
-    /// Drops every chunk mesh (leaving one session for another).
+    /// Drops every chunk mesh, near and far (leaving one session or planet
+    /// for another).
     pub fn clear_chunks(&mut self) {
         self.chunks.clear();
+        self.near_meshed.clear();
+        self.far_chunks.clear();
     }
 
     pub fn chunk_meshes(&self) -> usize {
@@ -878,8 +911,10 @@ impl Renderer {
         let planes = frustum_planes(view_proj);
         let size = CHUNK_SIZE as f64;
         let cull_dist = scene.fog_end as f64 + size * 1.8;
-        let mut visible: Vec<(f64, ChunkPos, ChunkInstance)> = Vec::new();
-        for pos in self.chunks.keys() {
+        let mut visible: Vec<(f64, &GpuChunk, ChunkInstance)> = Vec::new();
+        let near = self.chunks.iter();
+        let far = self.far_chunks.iter().filter(|(p, _)| !self.near_meshed.contains(p));
+        for (pos, gpu) in near.chain(far) {
             let o = pos.origin();
             let origin = DVec3::new(o.x as f64, o.y as f64, o.z as f64);
             let centre = scene.shape.nearest_lap(cam.eye, origin + DVec3::splat(size / 2.0));
@@ -894,7 +929,7 @@ impl Renderer {
             }
             visible.push((
                 dist,
-                *pos,
+                gpu,
                 ChunkInstance {
                     offset: rel_min.to_array(),
                     origin: [o.x as i32, o.y as i32, o.z as i32],
@@ -1013,8 +1048,8 @@ impl Renderer {
             pass.set_vertex_buffer(1, self.instances.slice(..));
 
             pass.set_pipeline(&self.terrain_opaque);
-            for (i, (_, pos, _)) in visible.iter().enumerate() {
-                if let Some((buf, quads)) = &self.chunks[pos].opaque {
+            for (i, (_, gpu, _)) in visible.iter().enumerate() {
+                if let Some((buf, quads)) = &gpu.opaque {
                     pass.set_vertex_buffer(0, buf.slice(..));
                     pass.draw_indexed(0..quads * 6, 0, i as u32..i as u32 + 1);
                     stats.chunks_drawn += 1;
@@ -1022,8 +1057,8 @@ impl Renderer {
                 }
             }
             pass.set_pipeline(&self.shaped_opaque);
-            for (i, (_, pos, _)) in visible.iter().enumerate() {
-                if let Some((buf, verts)) = &self.chunks[pos].shaped_opaque {
+            for (i, (_, gpu, _)) in visible.iter().enumerate() {
+                if let Some((buf, verts)) = &gpu.shaped_opaque {
                     pass.set_vertex_buffer(0, buf.slice(..));
                     pass.draw(0..*verts, i as u32..i as u32 + 1);
                     stats.quads_drawn += *verts as u64 / 6;
@@ -1044,8 +1079,7 @@ impl Renderer {
             pass.draw(0..3, 0..1);
 
             // Translucent last, far to near, without writing depth.
-            for (i, (_, pos, _)) in visible.iter().enumerate().rev() {
-                let chunk = &self.chunks[pos];
+            for (i, (_, chunk, _)) in visible.iter().enumerate().rev() {
                 if let Some((buf, quads)) = &chunk.translucent {
                     pass.set_pipeline(&self.terrain_translucent);
                     pass.set_vertex_buffer(0, buf.slice(..));

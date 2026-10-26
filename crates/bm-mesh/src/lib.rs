@@ -14,7 +14,7 @@
 //! the GPU. Quads are the unit tests compare: greedy output must cover exactly
 //! the faces the naive mesher emits, with the same block, occlusion and light.
 
-use bm_core::{BlockFlags, BlockId, CHUNK_SIZE, Chunk, ChunkLight, Colour, Light, LocalPos, Shape};
+use bm_core::{BlockFlags, BlockId, BlockState, CHUNK_SIZE, Chunk, ChunkLight, Colour, Light, LocalPos, Shape};
 
 pub mod props;
 pub mod shaped;
@@ -854,6 +854,44 @@ fn mesh_with(
     mesh
 }
 
+/// Meshes a far copy (milestone 20) without building chunks: `state(x, y,
+/// z)` is the block at chunk-local `x, y, z` in `-1..=32` (the chunk and a
+/// one-block border, all full cubes), `light` its light. The same greedy
+/// quads, textures and occlusion as near terrain.
+pub fn mesh_far(
+    state: impl Fn(i32, i32, i32) -> BlockState,
+    light: impl Fn(i32, i32, i32) -> Light,
+    flags: &BlockFlags,
+) -> ChunkMesh {
+    let n = N as i32;
+    let mut blocks = vec![BlockId::AIR; P * P * P].into_boxed_slice();
+    let mut cells = vec![Light::DARK; P * P * P].into_boxed_slice();
+    let mut colours = vec![0u8; N * N * N].into_boxed_slice();
+    for y in -1..=n {
+        for z in -1..=n {
+            for x in -1..=n {
+                let s = state(x, y, z);
+                let i = Padded::idx(x, y, z);
+                blocks[i] = s.id;
+                cells[i] = light(x, y, z);
+                if (0..n).contains(&x) && (0..n).contains(&y) && (0..n).contains(&z) {
+                    colours[LocalPos::new(x as u8, y as u8, z as u8).index()] = s.colour.0;
+                }
+            }
+        }
+    }
+    let padded = Padded {
+        blocks,
+        colours,
+        shapes: None,
+    };
+    let quads = mesh_quads(&padded, &PaddedLight { cells }, flags);
+    let mut mesh = ChunkMesh::default();
+    quads_to_vertices(&quads.opaque, &mut mesh.opaque);
+    quads_to_vertices(&quads.translucent, &mut mesh.translucent);
+    mesh
+}
+
 /// An all-missing neighbourhood.
 pub const NO_NEIGHBORS: [Option<&Chunk>; 27] = [None; 27];
 
@@ -921,6 +959,39 @@ mod tests {
             let p = LocalPos::from_index(i);
             cells[(p.x as usize / 4) | (p.z as usize / 4) << 3 | (p.y as usize / 4) << 6]
         })
+    }
+
+    #[test]
+    fn far_meshes_match_the_same_blocks_meshed_as_a_chunk() {
+        let r = reg();
+        let flags = r.flags();
+        let stone = r.id("stone").unwrap();
+        let mut c = Chunk::empty();
+        for y in 0..10u8 {
+            for z in 0..32u8 {
+                for x in 0..32u8 {
+                    if y < 6 || (x / 4 + z / 4) % 3 == 0 {
+                        c.set(LocalPos::new(x, y, z), stone);
+                    }
+                }
+            }
+        }
+        let near = mesh_chunk(&c, &NO_NEIGHBORS, BlockId::AIR, &flags);
+        let inside = |v: i32| (0..32).contains(&v);
+        let far = mesh_far(
+            |x, y, z| {
+                if inside(x) && inside(y) && inside(z) {
+                    c.state(LocalPos::new(x as u8, y as u8, z as u8))
+                } else {
+                    BlockState::AIR
+                }
+            },
+            |_, _, _| Light::OPEN_SKY,
+            &flags,
+        );
+        assert!(!far.opaque.is_empty());
+        assert_eq!(far.opaque, near.opaque);
+        assert_eq!(far.translucent, near.translucent);
     }
 
     #[test]

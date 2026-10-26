@@ -189,6 +189,9 @@ struct Session {
     /// (`Session::reach`).
     base_reach: f64,
     view_radius: u8,
+    /// Far views (milestone 20): chunks out to here are drawn coarser.
+    far_radius: u8,
+    far: crate::far::FarWorld,
     /// Level, XP, marks and skill pages: the server's word and our
     /// prediction (milestone 12).
     progress: Progress,
@@ -324,6 +327,8 @@ impl Session {
             movement: w.movement,
             base_reach: w.reach,
             view_radius: w.view_radius,
+            far_radius: w.far_radius,
+            far: crate::far::FarWorld::new(shape, registry.flags()),
             progress: Progress::new(tree, w.character),
             claims: Claims::new(shape, w.claims),
             world: ClientWorld::new(shape, registry),
@@ -365,6 +370,7 @@ impl Session {
     fn arrive(&mut self, t: Travel, now: f64, local_ticks: f64) {
         let shape = t.planet.shape;
         let registry = self.world.registry.clone();
+        self.far = crate::far::FarWorld::new(shape, registry.flags());
         self.world = ClientWorld::new(shape, registry);
         self.claims = Claims::new(shape, t.claims);
         self.remotes = Remotes::default();
@@ -1556,6 +1562,16 @@ impl App {
                     r.remove_chunk(s.world.shape.wrap_chunk(pos));
                 }
             }
+            ServerMsg::Far { pos, data } => match bm_core::FarChunk::decode(&data) {
+                Ok(c) => s.far.insert(pos, c),
+                Err(e) => tracing::warn!("bad far copy {pos:?} from server: {e}"),
+            },
+            ServerMsg::ForgetFar { pos } => {
+                s.far.forget(pos);
+                if let Some(r) = &mut self.renderer {
+                    r.remove_far(s.world.shape.wrap_chunk(pos));
+                }
+            }
             ServerMsg::BlockChanged { pos, block } => s.block_changed(pos, block),
             ServerMsg::Character { character, at } => s.character(character, at),
             ServerMsg::BlockHealth { pos, damage } => s.block_health(pos, damage),
@@ -2193,9 +2209,17 @@ impl App {
         let center = BlockPos::containing(eye.x, eye.y, eye.z).chunk();
         s.world
             .schedule_meshing(s.world.shape.wrap_chunk(center), rayon::current_num_threads() * 2);
+        // Far meshes after near ones: a few threads, so near terrain is
+        // never waiting behind the horizon.
+        let center = s.world.shape.wrap_chunk(center);
+        s.far
+            .schedule_meshing(center, (rayon::current_num_threads() / 2).max(1));
         if let Some(r) = &mut self.renderer {
             for m in s.world.take_meshes() {
                 r.upload_chunk(m.pos, &m.mesh);
+            }
+            for m in s.far.take_meshes() {
+                r.upload_far(m.pos, &m.mesh);
             }
         }
     }
@@ -2705,7 +2729,8 @@ impl App {
                 }
             }
         }
-        let view_radius = s.view_radius;
+        // Far views (milestone 20) push the fog out to the far radius.
+        let view_radius = s.view_radius.max(s.far_radius);
         // Short of air, the fog closes in (milestone 18).
         let fog_end = bm_core::atmosphere::fog_end((view_radius as f32 - 1.0) * 32.0, &s.me.state);
         // Cracks on the aimed block once it has taken damage.
@@ -2749,13 +2774,20 @@ impl App {
                     .and_then(|h| s.items.def(&h))
                     .map(|d| d.display.clone())
                     .unwrap_or_else(|| "empty hand".into());
-                let (chunks, meshes, quads) = self
+                let (chunks, meshes, quads, far) = self
                     .renderer
                     .as_ref()
-                    .map(|r| (r.stats.chunks_drawn, r.chunk_meshes(), r.stats.quads_drawn))
+                    .map(|r| {
+                        (
+                            r.stats.chunks_drawn,
+                            r.chunk_meshes(),
+                            r.stats.quads_drawn,
+                            r.far_meshes(),
+                        )
+                    })
                     .unwrap_or_default();
                 format!(
-                    "Boundmore | {} | {:.0} fps | {:.0} ms | {:.0} {:.0} {:.0} | {} chunks, {} drawn, {}k quads, {} to mesh | {} corrections | [{}] {}",
+                    "Boundmore | {} | {:.0} fps | {:.0} ms | {:.0} {:.0} {:.0} | {} chunks, {} far ({} held), {} drawn, {}k quads, {} to mesh | {} corrections | [{}] {}",
                     s.planet.name,
                     self.fps,
                     self.link.as_ref().map(|n| n.rtt_ms()).unwrap_or(0.0),
@@ -2763,6 +2795,8 @@ impl App {
                     p.y,
                     p.z,
                     meshes,
+                    far,
+                    s.far.len(),
                     chunks,
                     quads / 1000,
                     s.world.dirty_count(),

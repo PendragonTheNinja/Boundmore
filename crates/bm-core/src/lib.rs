@@ -12,6 +12,7 @@ pub mod coords;
 pub mod creatures;
 pub mod crops;
 pub mod energy;
+pub mod far;
 pub mod food;
 pub mod forge;
 pub mod inventory;
@@ -39,6 +40,7 @@ pub use block::{
 pub use chunk::{CHUNK_FORMAT_VERSION, Chunk, ChunkDecodeError};
 pub use colours::{ColourDef, ColourError, ColourPalette};
 pub use coords::{BlockPos, CHUNK_SIZE, CHUNK_VOLUME, ChunkPos, LocalPos};
+pub use far::{FAR_FORMAT_VERSION, FarChunk, FarDecodeError};
 pub use inventory::{HOTBAR_SLOTS, INVENTORY_SLOTS, Inventory};
 pub use items::{
     Aoe, BombStats, ItemDef, ItemError, ItemId, ItemKind, ItemRegistry, ItemStack, SlingStats, ToolClass, ToolStats,

@@ -96,6 +96,11 @@ pub struct ServerConfig {
     pub height_chunks: u32,
     /// Horizontal chunk radius streamed around each player.
     pub view_radius: u8,
+    /// Horizontal chunk radius of far copies (milestone 20): the planet is
+    /// drawn coarser out to here. Boundless's largest draw distance was 1024
+    /// blocks, 32 chunks. 0 turns far views off. A planet narrower than
+    /// twice this sends every chunk once.
+    pub far_radius: u8,
     pub max_players: usize,
     /// Furthest a player may edit from their eye, in blocks.
     pub reach: f64,
@@ -183,6 +188,7 @@ impl Default for ServerConfig {
             start_planet: 0,
             height_chunks: 12,
             view_radius: 10,
+            far_radius: 32,
             max_players: 200,
             // An untrained Boundless character's reach, 4 m (Control adds 1
             // a point once skills exist; Nathan, 2026-10-20).
@@ -240,6 +246,7 @@ impl ServerConfig {
                     }
                 }
                 "--view" => cfg.view_radius = val()?.parse()?,
+                "--far" => cfg.far_radius = val()?.parse()?,
                 "--width" => {
                     let w = val()?.parse()?;
                     for p in &mut cfg.planets {
@@ -253,7 +260,7 @@ impl ServerConfig {
                 }
                 "--help" | "-h" => {
                     println!(
-                        "bm-server [--bind ADDR] [--data DIR] [--seed N] [--view CHUNKS] [--width CHUNKS] [--planets N] [--creative]"
+                        "bm-server [--bind ADDR] [--data DIR] [--seed N] [--view CHUNKS] [--far CHUNKS] [--width CHUNKS] [--planets N] [--creative]"
                     );
                     std::process::exit(0);
                 }
@@ -318,6 +325,9 @@ impl ServerConfig {
         }
         if !(1..=32).contains(&self.view_radius) {
             bail!("view_radius must be 1..=32");
+        }
+        if self.far_radius > 64 {
+            bail!("far_radius must be 0..=64");
         }
         for p in &self.planets {
             if p.width_chunks < 8 {

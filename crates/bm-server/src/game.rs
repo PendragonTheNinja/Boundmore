@@ -80,6 +80,15 @@ const MAX_BACKLOG: usize = 768 << 10;
 const STREAM_SCAN: usize = 512;
 /// Concurrent chunk loads across the whole server.
 const MAX_PENDING_LOADS: usize = 512;
+/// Far copies (milestone 20) sent per player per tick, after the near
+/// chunks: about 1 MB a second.
+const FAR_BYTES_PER_TICK: usize = 16 << 10;
+const FAR_SCAN: usize = 256;
+/// Far jobs in flight across the server while chunk loads wait (they come
+/// first); with none waiting, one per loader thread.
+const FAR_JOBS_WHILE_LOADING: usize = 1;
+/// A planet with nobody on it drops its far copies from memory after this.
+const FAR_IDLE_TICKS: u64 = 60 * 300;
 /// Edits per second, and the burst allowed.
 const EDIT_RATE: f64 = 12.0;
 const EDIT_BURST: f64 = 24.0;
@@ -195,6 +204,15 @@ struct Player {
     sent: HashSet<ChunkPos>,
     wanted: Vec<ChunkPos>,
     center: Option<ChunkPos>,
+    /// Far copies sent (milestone 20), with their level.
+    far_sent: HashMap<ChunkPos, u8>,
+    /// Chunks within the far radius with the level each wants, nearest first.
+    far_wanted: Vec<(ChunkPos, u8)>,
+    far_center: Option<ChunkPos>,
+    /// Every near chunk wanted has been sent (`stream`).
+    near_complete: bool,
+    /// Every entry of `far_wanted` before this one has been sent.
+    far_cursor: usize,
     edit_tokens: f64,
     /// The last accepted swing: the input it followed and the ticks its
     /// tool needs before the next (`mining::swing_ticks`).
@@ -809,6 +827,7 @@ impl Game {
         for p in &mut self.planets {
             p.world.receive_loaded(self.tick, p.players > 0);
         }
+        self.receive_far();
         self.catch_up_crops();
         // Before streaming: a chunk is never sent with a portal's old look.
         self.sync_portals();
@@ -846,6 +865,7 @@ impl Game {
         let ids: Vec<u32> = self.players.keys().copied().collect();
         for id in &ids {
             self.stream(*id);
+            self.stream_far(*id);
         }
         if self.tick % SNAPSHOT_EVERY == 0 {
             self.snapshots();
@@ -856,6 +876,9 @@ impl Game {
         if self.tick % EVICT_EVERY == 0 {
             let before = self.tick.saturating_sub(EVICT_EVERY);
             self.evict(None, before);
+            for p in &mut self.planets {
+                p.far.tend(self.tick, p.players, FAR_IDLE_TICKS);
+            }
         }
         if self.tick % 60 == 0 {
             self.publish_load();
@@ -873,12 +896,11 @@ impl Game {
         for (i, p) in self.planets.iter_mut().enumerate() {
             if planet.is_none_or(|only| only == i) {
                 let id = p.id;
-                chunks.extend(
-                    p.world
-                        .evict_unwanted(before, &rx)
-                        .into_iter()
-                        .map(|(c, bytes)| (id, c, bytes)),
-                );
+                let evicted = p.world.evict_unwanted(before, &rx);
+                for (c, bytes) in &evicted {
+                    p.far.rebuild(*c, bytes.clone());
+                }
+                chunks.extend(evicted.into_iter().map(|(c, bytes)| (id, c, bytes)));
             }
         }
         if !chunks.is_empty() {
@@ -1121,6 +1143,7 @@ impl Game {
             spawn: state,
             tick: self.tick,
             view_radius: self.cfg.view_radius,
+            far_radius: self.cfg.far_radius,
             reach: self.cfg.reach,
             claims: pl.claims.views(),
             // Plots bought with marks included (the client adds nothing).
@@ -1177,6 +1200,11 @@ impl Game {
                 sent: HashSet::new(),
                 wanted: Vec::new(),
                 center: None,
+                far_sent: HashMap::new(),
+                far_wanted: Vec::new(),
+                far_center: None,
+                near_complete: false,
+                far_cursor: 0,
                 edit_tokens: EDIT_BURST,
                 last_swing: None,
                 edits: VecDeque::new(),
@@ -1546,6 +1574,133 @@ impl Game {
                     }
                 }
             }
+        }
+        // Nothing left unsent: far copies may go (`stream_far`).
+        p.near_complete = scanned == 0;
+    }
+
+    /// Takes finished far copies in; players holding a copy that changed are
+    /// sent the new one.
+    fn receive_far(&mut self) {
+        for (pi, planet) in self.planets.iter_mut().enumerate() {
+            planet.far.receive();
+            let changed = planet.far.take_changed();
+            if changed.is_empty() {
+                continue;
+            }
+            for p in self.players.values_mut().filter(|p| p.planet == pi) {
+                for c in &changed {
+                    if p.far_sent.remove(c).is_some() {
+                        p.far_cursor = 0;
+                    }
+                }
+            }
+        }
+    }
+
+    /// Far copies (milestone 20): every chunk within the far radius at its
+    /// ring's level, nearest first, after the near chunks.
+    fn stream_far(&mut self, id: u32) {
+        let far = self.cfg.far_radius as i32;
+        if far == 0 {
+            return;
+        }
+        let Some(p) = self.players.get(&id) else { return };
+        let pi = p.planet;
+        let shape = self.planets[pi].world.shape;
+        let at = shape.wrap_chunk(BlockPos::containing(p.state.pos.x, p.state.pos.y, p.state.pos.z).chunk());
+        let here = ChunkPos::new(at.x, 0, at.z);
+        if p.far_center != Some(here) {
+            // Half the planet each way at most, so no chunk is listed twice.
+            let r = far.min(shape.width_chunks as i32 / 2);
+            let mid = 2 * self.cfg.view_radius as i32;
+            let mut list = Vec::new();
+            let mut seen = HashSet::new();
+            for dz in -r..=r {
+                for dx in -r..=r {
+                    let d2 = dx * dx + dz * dz;
+                    if d2 > r * r {
+                        continue;
+                    }
+                    let column = shape.wrap_chunk(ChunkPos::new(here.x + dx, 0, here.z + dz));
+                    if !seen.insert(column) {
+                        continue;
+                    }
+                    let level = if d2 <= mid * mid { 1 } else { 2 };
+                    for y in 0..shape.height_chunks as i32 {
+                        list.push((d2 * 16 + (y - at.y).abs(), ChunkPos::new(column.x, y, column.z), level));
+                    }
+                }
+            }
+            list.sort_by_key(|e| e.0);
+            let keep = (r + 2) * (r + 2);
+            let p = self.players.get_mut(&id).expect("present");
+            let forget: Vec<ChunkPos> = p
+                .far_sent
+                .keys()
+                .copied()
+                .filter(|c| {
+                    let (dx, _, dz) = shape.chunk_delta(here, *c);
+                    dx * dx + dz * dz > keep
+                })
+                .collect();
+            for c in forget {
+                p.far_sent.remove(&c);
+                p.out.send(&ServerMsg::ForgetFar { pos: c });
+            }
+            p.far_wanted = list.into_iter().map(|(_, c, l)| (c, l)).collect();
+            p.far_center = Some(here);
+            p.far_cursor = 0;
+        }
+        let loading: usize = self.planets.iter().map(|p| p.world.pending_loads()).sum();
+        let jobs = if loading > 0 {
+            FAR_JOBS_WHILE_LOADING
+        } else {
+            rayon::current_num_threads()
+        };
+        let mut running: usize = self.planets.iter().map(|p| p.far.running()).sum();
+        let p = self.players.get_mut(&id).expect("present");
+        // Near chunks first: far copies wait while any are unsent.
+        if p.out.backlog() > MAX_BACKLOG / 2 || !p.near_complete {
+            return;
+        }
+        let planet = &mut self.planets[pi];
+        let mut budget = FAR_BYTES_PER_TICK;
+        let mut i = p.far_cursor;
+        let mut scanned = 0;
+        let mut blocked = false;
+        while i < p.far_wanted.len() && scanned < FAR_SCAN && budget > 0 {
+            let (c, level) = p.far_wanted[i];
+            scanned += 1;
+            if p.far_sent.get(&c) == Some(&level) {
+                if !blocked {
+                    p.far_cursor = i + 1;
+                }
+                i += 1;
+                continue;
+            }
+            match planet.far.get(c) {
+                Some(copy) => {
+                    let frame = copy.frame(level).clone();
+                    budget = budget.saturating_sub(frame.len());
+                    self.stats.bytes_sent += frame.len() as u64;
+                    p.out.send_shared(frame);
+                    p.far_sent.insert(c, level);
+                    if !blocked {
+                        p.far_cursor = i + 1;
+                    }
+                }
+                None => {
+                    blocked = true;
+                    if running < jobs && !planet.far.is_building(c) {
+                        // From memory when the chunk is resident and saved.
+                        let resident = planet.world.get(c).filter(|s| !s.dirty).map(|s| s.chunk.clone());
+                        planet.far.request(c, resident);
+                        running += 1;
+                    }
+                }
+            }
+            i += 1;
         }
     }
 
@@ -2115,6 +2270,12 @@ impl Game {
         p.sent.clear();
         p.wanted.clear();
         p.center = None;
+        // The client drops the old planet's far copies on `Travel`.
+        p.far_sent.clear();
+        p.far_wanted.clear();
+        p.far_center = None;
+        p.near_complete = false;
+        p.far_cursor = 0;
         // The client drops the old planet's creatures on `Travel`.
         p.known.clear();
         p.in_view.clear();
@@ -2801,6 +2962,7 @@ impl Game {
         let (tx, saved) = crossbeam_channel::bounded(1);
         done.push(tx);
         let mut chunks = Vec::new();
+        let mut far = Vec::new();
         let mut stations = Vec::new();
         let mut claims = Vec::new();
         let mut storage = Vec::new();
@@ -2808,7 +2970,12 @@ impl Game {
         for p in &mut self.planets {
             p.world.forget_saved();
             let id = p.id;
-            chunks.extend(p.world.take_dirty(&saved).into_iter().map(|(c, b)| (id, c, b)));
+            let dirty = p.world.take_dirty(&saved);
+            for (c, bytes) in &dirty {
+                p.far.rebuild(*c, bytes.clone());
+            }
+            chunks.extend(dirty.into_iter().map(|(c, b)| (id, c, b)));
+            far.extend(p.far.take_unsaved().into_iter().map(|(c, b)| (id, c, b)));
             stations.extend(
                 p.stations
                     .take_dirty(&self.items, &self.recipes)
@@ -2842,6 +3009,7 @@ impl Game {
             .collect();
         let batch = WriteBatch {
             chunks,
+            far,
             players,
             stations,
             claims,

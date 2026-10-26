@@ -25,7 +25,7 @@ use glam::DVec3;
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
 
 /// Bump on any change to a message below. Client and server must match.
-pub const PROTOCOL_VERSION: u32 = 32;
+pub const PROTOCOL_VERSION: u32 = 33;
 
 /// QUIC application protocol name; also refuses non-Boundmore peers early.
 pub const ALPN: &[u8] = b"boundmore/1";
@@ -310,6 +310,8 @@ pub struct Welcome {
     pub tick: u64,
     /// Horizontal chunk radius the server streams around the player.
     pub view_radius: u8,
+    /// Horizontal chunk radius of far copies (milestone 20; 0: none).
+    pub far_radius: u8,
     /// Furthest a player may edit from their eye, in blocks.
     pub reach: f64,
     /// Every claim on the planet (later: only those near the player).
@@ -441,6 +443,16 @@ pub enum ServerMsg {
     },
     /// The server stops sending changes for this chunk; drop it.
     Forget {
+        pos: ChunkPos,
+    },
+    /// A chunk's far copy (milestone 20), encoded with `FarChunk::encode`
+    /// at the level of its ring; it replaces any copy held before.
+    Far {
+        pos: ChunkPos,
+        data: Vec<u8>,
+    },
+    /// Drop this chunk's far copy (out of the far radius).
+    ForgetFar {
         pos: ChunkPos,
     },
     BlockChanged {
@@ -1157,6 +1169,7 @@ mod tests {
             spawn: PlayerState::default(),
             tick: 0,
             view_radius: 10,
+            far_radius: 32,
             reach: 4.0,
             claims: vec![ClaimView {
                 id: 1,

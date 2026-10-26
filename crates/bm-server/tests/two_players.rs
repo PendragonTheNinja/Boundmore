@@ -557,6 +557,8 @@ fn config(dir: &Path) -> ServerConfig {
         planets: vec![PlanetSpec::new("Testworld", "temperate", 7, 16)],
         height_chunks: 12,
         view_radius: 3,
+        // Far views have their own test; the rest need not build them.
+        far_radius: 0,
         shrine_guard: 0,
         // The game's reach is Boundless's untrained 4 (Nathan, 2026-10-20);
         // these layouts were built for 7 and the reach rule has its own
@@ -6451,4 +6453,76 @@ async fn creative_mode_flies_breaks_and_gives_only_where_allowed() {
         after.pos.y
     );
     server.stop();
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn far_copies_reach_the_horizon_and_follow_edits() {
+    let dir = tempfile::tempdir().unwrap();
+    let server = bm_server::start(ServerConfig {
+        creative: true,
+        view_radius: 2,
+        far_radius: 6,
+        ..config(dir.path())
+    })
+    .unwrap();
+    let mut alice = TestClient::register(&server, "Alice").await;
+    assert_eq!(alice.welcome.far_radius, 6);
+    let shape = alice.shape();
+    let feet = alice.feet();
+    let here = shape.wrap_chunk(feet.chunk());
+    // Every column within 6 chunks: 113 of them, 12 chunks each; within 4
+    // (twice the view radius) at level 1, beyond at level 2.
+    let blocks = BlockRegistry::from_defs(alice.welcome.blocks.clone()).unwrap();
+    let mut far: HashMap<ChunkPos, bm_core::FarChunk> = HashMap::new();
+    let want = 113 * 12;
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(120);
+    while far.len() < want {
+        let m = tokio::time::timeout_at(deadline, alice.msgs.recv())
+            .await
+            .expect("far copies arrive")
+            .expect("connected");
+        alice.apply(&m);
+        if let ServerMsg::Far { pos, data } = m {
+            let copy = bm_core::FarChunk::decode(&data).unwrap();
+            let (dx, _, dz) = shape.chunk_delta(here, pos);
+            let d2 = dx * dx + dz * dz;
+            assert!(d2 <= 36, "{pos:?} is beyond the far radius");
+            assert_eq!(copy.level(), if d2 <= 16 { 1 } else { 2 }, "{pos:?} at d² {d2}");
+            far.insert(pos, copy);
+        }
+    }
+    // The copies are the terrain's: the column under the player has ground
+    // where the player stands.
+    let column: Vec<&bm_core::FarChunk> = (0..12).map(|y| &far[&ChunkPos::new(here.x, y, here.z)]).collect();
+    let solid = |y: i64| {
+        let c = column[(y >> 5) as usize];
+        let l = c.level();
+        let local = |v: i64| ((v & 31) >> l) as usize;
+        blocks.flags().solid(c.cell(local(feet.x), local(y), local(feet.z)).id)
+    };
+    assert!(solid(feet.y - 3), "ground under the feet");
+    assert!(!solid(feet.y + 4), "air over the head");
+
+    // An edit: once its chunk is saved, its copy is made again and resent.
+    let at = alice.seq;
+    alice.send(ClientMsg::Creative { at, on: true }).await;
+    alice.until(|m| matches!(m, ServerMsg::Creative { on: true, .. })).await;
+    let below = shape.wrap_block(feet.offset(0, -2, 0));
+    let swung = alice.swing(1, below, 5).await;
+    assert!(matches!(swung, Swung::Broke), "{swung:?}");
+    let chunk = shape.wrap_chunk(below.chunk());
+    let m = tokio::time::timeout(
+        Duration::from_secs(30),
+        alice.until(|m| matches!(m, ServerMsg::Far { pos, .. } if *pos == chunk)),
+    )
+    .await
+    .expect("the edited chunk's far copy is resent");
+    assert!(matches!(m, ServerMsg::Far { .. }));
+    drop(alice);
+    server.stop();
+
+    // The copies were saved: a restarted server reads them back.
+    let store = Store::open(&dir.path().join(UNIVERSE_FILE)).unwrap();
+    assert!(store.stored_far(0).unwrap() >= want as u64);
+    assert!(store.far(0, chunk).unwrap().is_some(), "the edited chunk's new copy");
 }

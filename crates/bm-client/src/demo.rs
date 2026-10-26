@@ -517,6 +517,7 @@ impl Demo {
             },
             tick: 0,
             view_radius: 4,
+            far_radius: 0,
             reach: 4.0,
             claims: self.claims.clone(),
             plot_allowance: 64,

@@ -11,6 +11,7 @@ mod combat;
 mod creatures;
 mod demo;
 mod effects;
+mod far;
 mod fight_hud;
 mod forge_screen;
 mod icons;
