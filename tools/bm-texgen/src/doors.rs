@@ -177,25 +177,25 @@ fn ornament(m: Mat, h: f32) -> Px {
 }
 
 /// How far a point lies inside the rectangle (negative outside).
-fn inside(p: (f32, f32), x0: f32, y0: f32, x1: f32, y1: f32) -> f32 {
+pub(crate) fn inside(p: (f32, f32), x0: f32, y0: f32, x1: f32, y1: f32) -> f32 {
     (p.0 - x0).min(x1 - p.0).min(p.1 - y0).min(y1 - p.1)
 }
 
 /// A round stud's height above its plate (none outside it).
-fn stud(fx: f32, fy: f32, cx: f32, cy: f32, r: f32) -> Option<f32> {
+pub(crate) fn stud(fx: f32, fy: f32, cx: f32, cy: f32, r: f32) -> Option<f32> {
     let d = (fx - cx).hypot(fy - cy) / r;
     (d < 1.0).then(|| (1.0 - d * d).sqrt())
 }
 
 /// A ring's height (none off it): `r` its radius, `w` half its thickness.
-fn ring(fx: f32, fy: f32, cx: f32, cy: f32, r: f32, w: f32) -> Option<f32> {
+pub(crate) fn ring(fx: f32, fy: f32, cx: f32, cy: f32, r: f32, w: f32) -> Option<f32> {
     let d = ((fx - cx).hypot(fy - cy) - r).abs() / w;
     (d < 1.0).then(|| (1.0 - d * d).sqrt())
 }
 
 /// Splits `v` in `lo..hi` into `n` boards on whole pixels: which board,
 /// how far in from its start, and how far from its end.
-fn board(v: f32, lo: f32, hi: f32, n: u32) -> (u32, f32, f32) {
+pub(crate) fn board(v: f32, lo: f32, hi: f32, n: u32) -> (u32, f32, f32) {
     let w = (hi - lo) / n as f32;
     let edge = |k: u32| (lo + k as f32 * w).round();
     let k = (1..n).filter(|&k| v >= edge(k)).count() as u32;

@@ -2120,6 +2120,7 @@ pub fn paint_named(name: &str, variant: u32) -> Option<Tex> {
             if let Some(t) = crate::farming::paint_crop(other)
                 .or_else(|| crate::building::paint(other))
                 .or_else(|| crate::doors::paint(other))
+                .or_else(|| crate::furnishings::paint(other))
             {
                 return Some(t);
             }

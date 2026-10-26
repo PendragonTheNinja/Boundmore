@@ -15,6 +15,7 @@ pub mod farming;
 pub mod flora;
 pub mod food;
 pub mod forge;
+pub mod furnishings;
 pub mod gathered;
 pub mod gems;
 pub mod icons;
