@@ -144,6 +144,11 @@ pub struct ServerConfig {
     /// Discovering a region gives XP (milestone 14; off in tests that count
     /// XP exactly).
     pub discovery_xp: bool,
+    /// Players may switch creative mode on (F8 or `/creative`) and use the
+    /// testing commands (`/give`, `/xp`). A testing aid: off unless the
+    /// server is started with `--creative` or `server.toml` says
+    /// `creative = true`.
+    pub creative: bool,
     /// New planets get their kind's biomes (milestone 19). Off in tests
     /// whose layouts beside the arrival point were built on the single
     /// landscape.
@@ -198,6 +203,7 @@ impl Default for ServerConfig {
             creatures_per_planet: 600,
             placed_creatures: Vec::new(),
             discovery_xp: true,
+            creative: false,
             biomes: true,
             placed_meteor: None,
             machine_wear_start: None,
@@ -218,6 +224,10 @@ impl ServerConfig {
         cfg.apply_legacy();
         let mut args = args.peekable();
         while let Some(a) = args.next() {
+            if a == "--creative" {
+                cfg.creative = true;
+                continue;
+            }
             let mut val = || args.next().with_context(|| format!("{a} needs a value"));
             match a.as_str() {
                 "--bind" => cfg.bind = val()?.parse()?,
@@ -243,7 +253,7 @@ impl ServerConfig {
                 }
                 "--help" | "-h" => {
                     println!(
-                        "bm-server [--bind ADDR] [--data DIR] [--seed N] [--view CHUNKS] [--width CHUNKS] [--planets N]"
+                        "bm-server [--bind ADDR] [--data DIR] [--seed N] [--view CHUNKS] [--width CHUNKS] [--planets N] [--creative]"
                     );
                     std::process::exit(0);
                 }

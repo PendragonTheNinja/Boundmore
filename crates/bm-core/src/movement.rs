@@ -285,7 +285,15 @@ pub struct Body {
     /// Protection points against each air line (acid, charged, burning)
     /// from the ward skills (milestone 18).
     pub wards: [u8; 3],
+    /// Creative mode (a testing aid, allowed only on servers started with
+    /// `--creative`): flies where the player looks, takes no harm, never
+    /// tires, hungers or runs out of air.
+    pub creative: bool,
 }
+
+/// Creative flight, blocks a second (sprint for the fast one).
+pub const CREATIVE_FLY: f64 = 12.0;
+pub const CREATIVE_FLY_FAST: f64 = 36.0;
 
 /// Extra height the high-jump epic adds, in blocks (Boundless's skill text:
 /// "Extends your Jump height by 2m", tuning 5.4a).
@@ -611,9 +619,23 @@ pub fn step(
             }
         }
     }
+    // Creative flight: straight where the player looks (Space rises),
+    // no gravity and no drift.
+    let flying = s.body.creative && !s.down && s.hook.is_none();
+    if flying {
+        let look = look_dir(input.yaw, input.pitch);
+        let mut dir = look * f + right * r;
+        if input.jump {
+            dir.y += 1.0;
+        }
+        let l = dir.length();
+        let fast = if input.sprint { CREATIVE_FLY_FAST } else { CREATIVE_FLY };
+        s.vel = if l > 0.0 { dir / l * fast } else { DVec3::ZERO };
+    }
     let speed = s.vel.length();
-    if speed > cfg.max_speed {
-        s.vel *= cfg.max_speed / speed;
+    let cap = if flying { CREATIVE_FLY_FAST } else { cfg.max_speed };
+    if speed > cap {
+        s.vel *= cap / speed;
     }
 
     // Stepping up (ADR-0008): only a walker on the ground who is not rising
@@ -664,7 +686,7 @@ pub fn step(
         s.on_ground = intersects(&probe, cfg, world);
     }
     s.pos = planet.wrap_point(s.pos);
-    if s.on_ground && !was_on_ground && !in_water && impact > 0.0 {
+    if s.on_ground && !was_on_ground && !in_water && impact > 0.0 && !s.body.creative {
         let below = BlockPos::containing(s.pos.x, s.pos.y - 0.5, s.pos.z);
         s.land(impact, world.soft(below));
         // Bouncing: a hard landing springs back up at half the speed
@@ -680,7 +702,24 @@ pub fn step(
         s.air_jumped = false;
     }
     s.clock = s.clock.wrapping_add(1);
+    if s.body.creative {
+        s.creative_tick();
+    }
     events
+}
+
+impl PlayerState {
+    /// Creative mode keeps the body whole: full health, energy and air, no
+    /// hunger or sickness, and back on its feet if something defeated it.
+    fn creative_tick(&mut self) {
+        self.hurt = 0;
+        self.down = false;
+        self.spent = 0;
+        self.rest = 0;
+        self.hunger = 0;
+        self.sick = 0;
+        self.air_used = 0;
+    }
 }
 
 /// One tick of the hook: flight until it strikes a block or flies its range,
@@ -1438,6 +1477,60 @@ mod tests {
             &w,
         );
         assert!(s.pos.x > 8.3 && s.pos.y >= 21.0, "still in the water at {:?}", s.pos);
+    }
+
+    /// Creative mode: flies up on Space and stays put without it, takes no
+    /// fall or lava harm, and never tires or hungers.
+    #[test]
+    fn creative_flies_and_takes_no_harm() {
+        let mut w = world();
+        let mut s = PlayerState {
+            pos: DVec3::new(5.5, 40.0, 5.5),
+            ..Default::default()
+        };
+        s.body.creative = true;
+        run(
+            &mut s,
+            PlayerInput {
+                jump: true,
+                ..Default::default()
+            },
+            60,
+            &w,
+        );
+        assert!(
+            (s.pos.y - (40.0 + CREATIVE_FLY)).abs() < 0.3,
+            "rose a second's flight: {}",
+            s.pos.y
+        );
+        let high = s.pos.y;
+        run(&mut s, PlayerInput::default(), 60, &w);
+        assert_eq!(s.pos.y, high, "hovers without input");
+        // Looking down and forward: down at full speed, landing unhurt.
+        let (yaw, pitch) = PlayerInput::from_angles(0.0, -1.5);
+        run(
+            &mut s,
+            PlayerInput {
+                forward: 1,
+                yaw,
+                pitch,
+                ..Default::default()
+            },
+            600,
+            &w,
+        );
+        assert!(s.on_ground);
+        assert_eq!((s.hurt, s.down, s.spent, s.hunger), (0, false, 0, 0));
+        w.lava = true;
+        run(&mut s, PlayerInput::default(), 120, &w);
+        assert_eq!(s.hurt, 0, "lava does not burn");
+        // Out of creative, gravity is back.
+        s.body.creative = false;
+        w.lava = false;
+        s.pos.y += 10.0;
+        s.on_ground = false;
+        run(&mut s, PlayerInput::default(), 120, &w);
+        assert!(s.hurt > 0 || s.pos.y < high, "falls again");
     }
 
     #[test]

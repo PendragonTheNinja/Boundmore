@@ -26,6 +26,7 @@ use crate::store::{PlayerData, SavedFood, Store, WriteBatch, load_slots, save_sl
 
 mod blasts;
 mod combat;
+mod creative;
 mod creatures;
 mod farm;
 mod food;
@@ -103,6 +104,10 @@ const LAPSE_PLOT_EVERY: u64 = 15;
 /// What waits in a player's queue for the input it follows.
 #[derive(Clone, Debug)]
 enum Queued {
+    Creative {
+        at: u32,
+        on: bool,
+    },
     Edit {
         seq: u32,
         pos: BlockPos,
@@ -156,6 +161,7 @@ impl Queued {
         match *self {
             Queued::Edit { seq, pos, .. } | Queued::Swing { seq, pos, .. } => Some((seq, pos)),
             Queued::Skill { .. }
+            | Queued::Creative { .. }
             | Queued::Shoot { .. }
             | Queued::Strike { .. }
             | Queued::Throw { .. }
@@ -926,6 +932,8 @@ impl Game {
             }
             Event::Msg { id, msg } => match msg {
                 ClientMsg::Skill { at, action } => self.queue(id, at, Queued::Skill { at, action }),
+                ClientMsg::Creative { at, on } => self.queue(id, at, Queued::Creative { at, on }),
+                ClientMsg::Command { text } => self.command(id, &text),
                 ClientMsg::Eat { at, slot } => self.queue(id, at, Queued::Eat { at, slot }),
                 ClientMsg::FillBucket { slot, pos } => self.fill_bucket(id, slot, pos),
                 ClientMsg::LookCrop { pos } => self.look_crop(id, pos),
@@ -1415,6 +1423,7 @@ impl Game {
             Queued::Edit { seq, pos, action } => self.edit(id, seq, pos, action),
             Queued::Swing { seq, at, pos, slot } => self.swing(id, seq, at, pos, slot),
             Queued::Skill { at, action } => self.skill(id, at, action),
+            Queued::Creative { at, on } => self.set_creative(id, at, on),
             Queued::Shoot {
                 at,
                 slot,

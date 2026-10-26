@@ -28,7 +28,8 @@ const UNIVERSE: Color32 = GOLD;
 const WHISPER: Color32 = Color32::from_rgb(198, 150, 255);
 const SERVER: Color32 = Color32::from_rgb(160, 156, 150);
 
-pub const HELP: &str = "Commands: /l local, /p planet, /u universe, /w name text to whisper, /r text to reply.";
+pub const HELP: &str = "Commands: /l local, /p planet, /u universe, /w name text to whisper, /r text to reply. \
+                        Testing (servers started with --creative): /creative or F8, /give item count, /xp amount.";
 
 /// What a line typed into the box asks for.
 #[derive(Clone, Debug, PartialEq)]
@@ -43,6 +44,10 @@ pub enum Typed {
     Switch(Channel),
     /// A line only this player sees (help, a mistake in a command).
     Local(String),
+    /// Switch creative mode (a testing aid).
+    Creative,
+    /// A testing command for the server (`/give`, `/xp`), as typed.
+    Command(String),
 }
 
 /// Reads one typed line. Plain text goes to `default`. `/l`, `/p` and `/u`
@@ -71,6 +76,8 @@ pub fn parse(input: &str, default: &Channel, last_whisperer: Option<&str>) -> Ty
             };
             return send(Channel::Whisper(name), text);
         }
+        "creative" | "c" => return Typed::Creative,
+        "give" | "xp" => return Typed::Command(input.to_string()),
         "r" | "reply" => {
             let Some(name) = last_whisperer else {
                 return Typed::Local("Nobody has whispered to you yet.".into());
@@ -144,6 +151,8 @@ pub struct ChatBox {
     /// Set when opened by a key, so that key's own press and character are
     /// kept out of the input on the first frame.
     pub swallow: bool,
+    /// `/creative` was typed: the app switches creative mode.
+    creative_asked: bool,
 }
 
 impl Default for ChatBox {
@@ -156,6 +165,7 @@ impl Default for ChatBox {
             last_whisperer: None,
             open: false,
             swallow: false,
+            creative_asked: false,
         }
     }
 }
@@ -165,6 +175,8 @@ impl Default for ChatBox {
 pub enum ChatAction {
     Send(ClientMsg),
     Close,
+    /// `/creative`: switch creative mode (the game predicts it).
+    Creative,
 }
 
 impl ChatBox {
@@ -225,6 +237,11 @@ impl ChatBox {
                 self.local(text, now);
                 None
             }
+            Typed::Creative => {
+                self.creative_asked = true;
+                None
+            }
+            Typed::Command(text) => Some(ClientMsg::Command { text }),
         }
     }
 
@@ -311,6 +328,9 @@ impl ChatBox {
         } else if enter {
             if let Some(msg) = self.submit(now) {
                 actions.push(ChatAction::Send(msg));
+            }
+            if std::mem::take(&mut self.creative_asked) {
+                actions.push(ChatAction::Creative);
             }
             actions.push(ChatAction::Close);
         }
@@ -452,6 +472,11 @@ mod tests {
     fn unknown_commands_show_the_help() {
         assert_eq!(parse("/dance", &Channel::Local, None), Typed::Local(HELP.into()));
         assert_eq!(parse("/help", &Channel::Local, None), Typed::Local(HELP.into()));
+        assert_eq!(parse("/creative", &Channel::Local, None), Typed::Creative);
+        assert_eq!(
+            parse("/give iron_ingot 20", &Channel::Local, None),
+            Typed::Command("/give iron_ingot 20".into())
+        );
         assert!(!HELP.contains('\u{2014}'), "no em dashes in player text");
     }
 

@@ -25,7 +25,7 @@ use glam::DVec3;
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
 
 /// Bump on any change to a message below. Client and server must match.
-pub const PROTOCOL_VERSION: u32 = 31;
+pub const PROTOCOL_VERSION: u32 = 32;
 
 /// QUIC application protocol name; also refuses non-Boundmore peers early.
 pub const ALPN: &[u8] = b"boundmore/1";
@@ -202,6 +202,13 @@ pub enum ClientMsg {
     /// saw it; a mismatch (a double click) is ignored. Answered with
     /// `Station`, and `Forged` if the session ended.
     ForgeUse { pos: BlockPos, slot: u8, round: u32 },
+    /// Creative mode on or off, right after input `at` (a testing aid; the
+    /// server allows it only when started with `--creative`). Predicted at
+    /// once; answered with `Creative`, which says what holds.
+    Creative { at: u32, on: bool },
+    /// A typed command for the server (`/give item count`, `/heal`): only
+    /// on a server that allows creative mode. Answered with a `Notice`.
+    Command { text: String },
 }
 
 /// What the portal window's buttons do.
@@ -613,6 +620,12 @@ pub enum ServerMsg {
         pos: BlockPos,
         outcome: ForgeOutcome,
     },
+    /// Whether creative mode holds from right after input `at` (the
+    /// answer to `ClientMsg::Creative`, or the server's word at login).
+    Creative {
+        at: u32,
+        on: bool,
+    },
 }
 
 /// How a forging session ended.
@@ -1006,6 +1019,7 @@ mod tests {
                     falling_armour: u16::MAX,
                     mending: true,
                     wards: [u8::MAX; 3],
+                    creative: true,
                 },
                 jump_held: true,
                 air_jumped: true,

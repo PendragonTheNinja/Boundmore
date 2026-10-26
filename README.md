@@ -41,6 +41,8 @@ Controls:
 - **Enter** or **T** opens chat. `/l`, `/p` and `/u` switch between local (nearby), planet and universe; `/w name text` whispers and `/r text` replies. Enter sends, Esc closes.
 - F11 for fullscreen.
 
+**Creative mode (for testing).** Start the server with `cargo run --release -p bm-server -- --creative` (or put `creative = true` in `server.toml`). In game, **F8** (or `/creative` in chat) switches it on and off: you fly where you look (Space rises, Shift flies fast), any block breaks with one swing of anything, and health, energy, hunger and air stay full. `/give item count` puts items in your pack (`/give iron_ingot 50`, `/give basalt 200`; names as in `assets/items.toml` and `assets/blocks.toml`, or as shown in game), `/xp amount` adds XP. On a server started without `--creative` all of this is refused.
+
 Getting started: break tree trunks by hand, craft timber, then a workbench; break stone for a furnace and stone tools; coal and copper from the rocks make copper tools. Iron is only found on the tier 2 and 3 planets (Emberdune, Rimehold, Wildmere), deeper than copper; iron tools are the fastest yet.
 
 The server hosts thirteen planets by default: Verdance (temperate, tier 1, where everyone starts), Emberdune (arid), Rimehold (frozen) and Wildmere (lush), then nine tier 4 to 6 worlds whose air needs protection (milestone 18). `server.example.toml` shows how to change the list. An older save (`data/verdance.redb`) is upgraded into `data/universe.redb` on first start, keeping everything; the old file is left as a backup. If you log in far from the warp shrine, a notice tells you which way it is.

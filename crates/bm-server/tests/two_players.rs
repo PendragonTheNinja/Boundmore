@@ -6376,3 +6376,79 @@ async fn a_biome_planet_keeps_its_biomes_and_welcomes_players() {
     let store = Store::open(&dir.path().join(UNIVERSE_FILE)).unwrap();
     assert_eq!(store.planet(0).unwrap().unwrap().generation, saved.generation);
 }
+
+/// Creative mode (a testing aid): refused on an ordinary server; on one
+/// started with `--creative`, it flies (the server's snapshot rises under
+/// Space with no fall back), breaks stone in one bare-handed swing, and
+/// `/give` fills the pack.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn creative_mode_flies_breaks_and_gives_only_where_allowed() {
+    // An ordinary server says no.
+    let dir = tempfile::tempdir().unwrap();
+    let server = bm_server::start(config(dir.path())).unwrap();
+    let mut bob = TestClient::register(&server, "Bob").await;
+    let at = bob.seq;
+    bob.send(ClientMsg::Creative { at, on: true }).await;
+    let m = bob.until(|m| matches!(m, ServerMsg::Creative { .. })).await;
+    assert!(matches!(m, ServerMsg::Creative { on: false, .. }), "{m:?}");
+    bob.send(ClientMsg::Command {
+        text: "/give iron_ingot 5".into(),
+    })
+    .await;
+    bob.notice("Creative mode is off on this server: start it with --creative")
+        .await;
+    assert_eq!(bob.count("iron_ingot"), 0);
+    drop(bob);
+    server.stop();
+
+    let dir = tempfile::tempdir().unwrap();
+    let server = bm_server::start(ServerConfig {
+        creative: true,
+        ..config(dir.path())
+    })
+    .unwrap();
+    let mut alice = TestClient::register(&server, "Alice").await;
+    let feet = alice.feet();
+    alice.wait_for_chunk(feet.chunk()).await;
+    let at = alice.seq;
+    alice.send(ClientMsg::Creative { at, on: true }).await;
+    let m = alice.until(|m| matches!(m, ServerMsg::Creative { .. })).await;
+    assert!(matches!(m, ServerMsg::Creative { on: true, .. }), "{m:?}");
+
+    // /give: by name, or by the name players see.
+    alice
+        .send(ClientMsg::Command {
+            text: "/give iron_ingot 7".into(),
+        })
+        .await;
+    alice.notice("Given 7 Iron Ingot").await;
+    alice.settle().await;
+    assert_eq!(alice.count("iron_ingot"), 7);
+
+    // One bare-handed swing breaks the stone under the arrival point.
+    let below = alice.shape().wrap_block(feet.offset(0, -2, 0));
+    alice.wait_for_chunk(below.chunk()).await;
+    let swung = alice.swing(1, below, 5).await;
+    assert!(matches!(swung, Swung::Broke), "{swung:?}");
+
+    // Flying: a second of Space lifts about a second's flight and it stays.
+    let (_, _, before, _) = alice.latest_snapshot().await;
+    alice.send_inputs(
+        60,
+        PlayerInput {
+            jump: true,
+            ..Default::default()
+        },
+    );
+    alice.send_inputs(60, PlayerInput::default());
+    tokio::time::sleep(Duration::from_millis(2500)).await;
+    let (_, _, after, _) = alice.latest_snapshot().await;
+    assert!(after.body.creative);
+    assert!(
+        after.pos.y > before.pos.y + 8.0,
+        "flew from {:.1} to {:.1}",
+        before.pos.y,
+        after.pos.y
+    );
+    server.stop();
+}

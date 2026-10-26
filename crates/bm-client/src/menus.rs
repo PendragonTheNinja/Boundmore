@@ -549,11 +549,17 @@ const AIR_WARN: Color32 = Color32::from_rgb(255, 190, 120);
 const FOOD_BUFF: Color32 = Color32::from_rgb(150, 220, 140);
 const FOOD_FULL: Color32 = Color32::from_rgb(196, 230, 150);
 const FOOD_BAD: Color32 = Color32::from_rgb(230, 120, 96);
+const CREATIVE_TAG: Color32 = Color32::from_rgb(140, 200, 255);
 
 /// What food is doing, for the HUD (milestone 16): the buff ("Sated I
 /// 9:41"), then Full, Sick or Starving.
 pub fn food_tags(s: &bm_core::PlayerState) -> Vec<(String, Color32)> {
     let mut tags = Vec::new();
+    // Creative mode (a testing aid) says so first.
+    if s.body.creative {
+        tags.push(("Creative (F8)".into(), CREATIVE_TAG));
+        return tags;
+    }
     if s.buff.left > 0 && s.buff.kind != bm_core::food::Buff::None {
         let secs = s.buff.left / bm_core::TICK_HZ;
         tags.push((

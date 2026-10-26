@@ -829,6 +829,9 @@ impl Effects {
             falling_armour: self.defence().falling_armour as u16,
             mending: self.health_regen_epic,
             wards: self.wards.map(crate::atmosphere::ward_points),
+            // Creative mode is the server's switch, not a skill: whoever
+            // sets the body from the skills keeps the player's own.
+            creative: false,
         }
     }
 

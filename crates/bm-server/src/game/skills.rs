@@ -152,7 +152,11 @@ impl Game {
         match result {
             Ok(()) => {
                 p.effects = c.effects(tree);
-                p.state.body = p.effects.body();
+                // Creative mode is the player's switch, not a skill's.
+                p.state.body = bm_core::movement::Body {
+                    creative: p.state.body.creative,
+                    ..p.effects.body()
+                };
                 // Less max health (a page without Toughness): never below 1.
                 if !p.state.down {
                     p.state.hurt = p.state.hurt.min(p.state.max_health() - 1);

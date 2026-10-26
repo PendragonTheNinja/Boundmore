@@ -215,6 +215,18 @@ impl Game {
         if let Err(r) = self.may_damage(id, pi, canon) {
             return self.swing_refused(id, seq, pos, r);
         }
+        // Creative mode (a testing aid): anything breakable breaks in one
+        // swing of anything, at no cost to tool or energy.
+        if p.state.body.creative {
+            let Some(state) = self.planets[pi].world.state(canon) else {
+                return self.swing_refused(id, seq, pos, "chunk not resident".into());
+            };
+            if !self.break_block(id, pi, seq, pos, canon, state) {
+                self.edit_refused(id, seq, pos, "inventory full");
+                self.notice(id, "Your inventory is full");
+            }
+            return;
+        }
         let Some(tool) = swing_tool_of(&self.items, stack, &held) else {
             return self.swing_refused(id, seq, pos, Refusal::Told(NEED_A_TOOL.into()));
         };

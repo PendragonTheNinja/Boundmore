@@ -92,6 +92,8 @@ impl CropView {
     }
 }
 
+/// Creative mode swings this often while the button is held (ticks).
+const CREATIVE_SWING_TICKS: u32 = 8;
 const NEED_A_TOOL: &str = "You need a tool to break blocks. A hand stone needs nothing to craft";
 
 /// Said when attacking a creature with nothing to fight with.
@@ -473,7 +475,9 @@ impl Session {
     /// Sets the bodies a skill change implies (`Progress::server`, `act`,
     /// `expire`) in prediction, where they differ from what we predicted.
     fn set_bodies(&mut self, bodies: Vec<(u32, bm_core::movement::Body)>) {
-        for (at, body) in bodies {
+        for (at, mut body) in bodies {
+            // Creative mode is the player's switch, not a skill's.
+            body.creative = self.me.body_at(at).map_or(self.me.state.body.creative, |b| b.creative);
             if self.me.body_at(at) != Some(body) {
                 self.me
                     .set_body(at, body, &self.movement, self.world.shape, &self.world);
@@ -507,6 +511,31 @@ impl Session {
         self.set_bodies(bodies);
     }
 
+    /// Creative mode on or off right after our latest input: predicted, and
+    /// the message that asks the server.
+    fn toggle_creative(&mut self) -> ClientMsg {
+        let at = self.me.seq;
+        let on = !self.me.state.body.creative;
+        let body = bm_core::movement::Body {
+            creative: on,
+            ..self.me.body_at(at).unwrap_or(self.me.state.body)
+        };
+        self.me
+            .set_body(at, body, &self.movement, self.world.shape, &self.world);
+        ClientMsg::Creative { at, on }
+    }
+
+    /// `ServerMsg::Creative`: whether creative mode holds from right after
+    /// input `at`; where we predicted otherwise, prediction follows.
+    fn creative(&mut self, at: u32, on: bool) {
+        let body = self.me.body_at(at).unwrap_or(self.me.state.body);
+        if body.creative != on {
+            let body = bm_core::movement::Body { creative: on, ..body };
+            self.me
+                .set_body(at, body, &self.movement, self.world.shape, &self.world);
+        }
+    }
+
     /// What a right click holding `item` would place against the target: its
     /// block and, for a prop, the mount from the face aimed at (on top, or
     /// hanging on a side of a solid block; never underneath). None when it
@@ -534,6 +563,26 @@ impl Session {
         let block = self.world.block(pos)?;
         if block.is_air() || !self.world.registry.get(block).breakable {
             return None;
+        }
+        // Creative mode: one swing of anything breaks it, as the server rules.
+        if self.me.state.body.creative {
+            self.swinger.swung(at, CREATIVE_SWING_TICKS);
+            self.edit_seq += 1;
+            let seq = self.edit_seq;
+            let fits = self
+                .items
+                .registry
+                .drop_of(block)
+                .is_none_or(|d| self.items.inventory.can_fit(&self.items.registry, d, 1));
+            if fits {
+                self.world.predict_edit(seq, pos, BlockState::AIR);
+            }
+            return Some(ClientMsg::Swing {
+                seq,
+                at,
+                pos: self.world.shape.wrap_block(pos),
+                slot: slot as u8,
+            });
         }
         // A bare hand breaks nothing (Nathan, 2026-10-20: as in Boundless).
         // The tool through its traits (milestone 17), as the server reads it.
@@ -1034,6 +1083,14 @@ impl App {
         }
     }
 
+    /// F8 or `/creative`: creative mode on or off, predicted at once (the
+    /// server answers whether it holds).
+    fn toggle_creative(&mut self) {
+        if let Some(msg) = self.session.as_mut().map(|s| s.toggle_creative()) {
+            self.send(msg);
+        }
+    }
+
     // ---- logging in ----
 
     fn start_login(&mut self, register: bool) {
@@ -1473,6 +1530,7 @@ impl App {
         let Some(s) = &mut self.session else { return };
         match m {
             // Milestone 17: a session of ours ended.
+            ServerMsg::Creative { at, on } => s.creative(at, on),
             ServerMsg::Forged { outcome, .. } => {
                 let text = crate::forge_screen::outcome_text(&s.items, &outcome);
                 self.notices.push(text, now);
@@ -2077,7 +2135,7 @@ impl App {
         // hand, or a non-tool, breaks nothing: say so once per press). The server rules each swing on the same input
         // timeline (ADR-0004); `Session::swing` predicts what it will do.
         s.damage.heal(s.me.seq);
-        let has_tool = tool.is_some();
+        let has_tool = tool.is_some() || s.me.state.body.creative;
         if !mouse[0] {
             s.told_no_tool = false;
         } else if !has_tool && s.target.is_some() && !s.told_no_tool {
@@ -2401,6 +2459,7 @@ impl App {
             match a {
                 ChatAction::Send(m) => self.send(m),
                 ChatAction::Close => self.close_chat(),
+                ChatAction::Creative => self.toggle_creative(),
             }
         }
         Some((prims, out.textures_delta, ppp))
@@ -3323,6 +3382,10 @@ impl ApplicationHandler for App {
                 // Everything typed into the chat line is the line's: no game
                 // key, menu key or hotbar digit acts while it is open.
                 if !in_game || self.chat.open || egui_typing || event.repeat {
+                    return;
+                }
+                if code == KeyCode::F8 {
+                    self.toggle_creative();
                     return;
                 }
                 // Down: the defeat screen is all there is (Enter returns; T
