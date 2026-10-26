@@ -126,6 +126,7 @@ Boundless's live tree and tables exactly (Nathan, 2026-10-20), in Boundmore's na
 | Planet width | 2 048 blocks around | How long to walk all the way round a small world? |
 | Planet height | 384 blocks, sea level 128 | Deepest caves, tallest mountains |
 | View radius | 10 chunks (320 blocks) | How far can you see terrain detail? |
+| Far views (M20) | full detail to 320 blocks, 2-block cells to 640, 4-block cells to 1024 (`far_radius` 32) | Boundless's largest draw distance, 1024 (players, forum t/12681); ring edges and the 3-of-8 solid rule are **guesses** (M20 Measure 1 and 2) |
 | Edit rate | 12 per second, burst 24 | Fast building feel |
 
 ## Planets (`bm-server/src/config.rs`, `assets/planets.toml`)

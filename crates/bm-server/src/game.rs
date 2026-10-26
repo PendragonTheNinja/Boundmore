@@ -78,11 +78,18 @@ const MAX_PENDING_INPUTS: usize = 120;
 const CHUNK_BYTES_PER_TICK: usize = 192 << 10;
 const MAX_BACKLOG: usize = 768 << 10;
 const STREAM_SCAN: usize = 512;
+/// A far column's offset from the player's (dx, dz), its squared
+/// distance, and its level.
+type FarOffset = (i32, i32, i32, u8);
+
 /// Concurrent chunk loads across the whole server.
 const MAX_PENDING_LOADS: usize = 512;
 /// Far copies (milestone 20) sent per player per tick, after the near
 /// chunks: about 1 MB a second.
 const FAR_BYTES_PER_TICK: usize = 16 << 10;
+/// Each player's far columns are looked over every this many ticks
+/// (staggered), with that many ticks' budget.
+const FAR_EVERY: u64 = 3;
 const FAR_SCAN: usize = 256;
 /// Far jobs in flight across the server while chunk loads wait (they come
 /// first); with none waiting, one per loader thread.
@@ -204,14 +211,13 @@ struct Player {
     sent: HashSet<ChunkPos>,
     wanted: Vec<ChunkPos>,
     center: Option<ChunkPos>,
-    /// Far copies sent (milestone 20), with their level.
-    far_sent: HashMap<ChunkPos, u8>,
-    /// Chunks within the far radius with the level each wants, nearest first.
-    far_wanted: Vec<(ChunkPos, u8)>,
+    /// Far copies sent (milestone 20) by column, each chunk's level from
+    /// the bottom up (0: not sent).
+    far_sent: HashMap<(i32, i32), Box<[u8]>>,
     far_center: Option<ChunkPos>,
     /// Every near chunk wanted has been sent (`stream`).
     near_complete: bool,
-    /// Every entry of `far_wanted` before this one has been sent.
+    /// Every column of the far offsets before this one has been sent.
     far_cursor: usize,
     edit_tokens: f64,
     /// The last accepted swing: the input it followed and the ticks its
@@ -340,6 +346,9 @@ pub struct Game {
     stats: Stats,
     /// Player counts changed since the planet list last went out.
     universe_dirty: bool,
+    /// Far columns around a player (milestone 20) as offsets with their
+    /// level, nearest first, by planet width in chunks; built once.
+    far_offsets: HashMap<u32, Arc<Vec<FarOffset>>>,
     universe_sent: u64,
     load: Arc<Mutex<Vec<PlanetLoad>>>,
     /// The last `chat::HISTORY` universe lines, oldest first (memory only).
@@ -427,6 +436,12 @@ struct Stats {
     edits: u64,
     refused_edits: u64,
     slow_ticks: u64,
+    /// Whole ticks since the last report: time, the longest, and the count.
+    tick_time: Duration,
+    tick_worst: Duration,
+    ticks: u64,
+    /// Game-thread time on far views (milestone 20) since the last report.
+    far_time: Duration,
     /// Time spent on creatures and shots (stepping, AI, views) since the
     /// last report, the longest tick of it, and the ticks counted.
     creature_time: Duration,
@@ -670,6 +685,7 @@ impl Game {
             movement: MoveConfig::default(),
             stats: Stats::default(),
             universe_dirty: false,
+            far_offsets: HashMap::new(),
             universe_sent: 0,
             load: Arc::new(Mutex::new(Vec::new())),
             history: VecDeque::new(),
@@ -726,6 +742,9 @@ impl Game {
             if took > dt {
                 self.stats.slow_ticks += 1;
             }
+            self.stats.tick_time += took;
+            self.stats.tick_worst = self.stats.tick_worst.max(took);
+            self.stats.ticks += 1;
             next += dt;
             let now = Instant::now();
             if next > now {
@@ -750,10 +769,15 @@ impl Game {
             .map(|p| {
                 let held = p.world.held_for_saving();
                 format!(
-                    "{} {}p {}c{}{}",
+                    "{} {}p {}c{}{}{}",
                     p.name,
                     p.players,
                     p.world.resident(),
+                    if p.far.held() > 0 {
+                        format!(" {}f", p.far.held())
+                    } else {
+                        String::new()
+                    },
                     if p.world.pending_loads() > 0 {
                         format!("+{}l", p.world.pending_loads())
                     } else {
@@ -775,9 +799,12 @@ impl Game {
             .map(|(id, d)| format!("{} {}", kinds[id as usize], d.name))
             .collect();
         tracing::info!(
-            "tick {} | {} players | {} | sent {} chunks ({} KiB) | edits {} ok {} refused | {} slow ticks | \
-             {} creatures ({}), {} shots: {:.0} us a tick ({:.0} us views), worst {:.1} ms",
+            "tick {} ({:.2} ms a tick, worst {:.1} ms, far {:.0} us) | {} players | {} | sent {} chunks ({} KiB) | edits {} ok {} \
+             refused | {} slow ticks | {} creatures ({}), {} shots: {:.0} us a tick ({:.0} us views), worst {:.1} ms",
             self.tick,
+            s.tick_time.as_secs_f64() * 1e3 / s.ticks.max(1) as f64,
+            s.tick_worst.as_secs_f64() * 1e3,
+            s.far_time.as_secs_f64() * 1e6 / s.ticks.max(1) as f64,
             self.players.len(),
             planets.join(", "),
             s.chunks_sent,
@@ -792,6 +819,10 @@ impl Game {
             s.view_time.as_secs_f64() * 1e6 / s.creature_ticks.max(1) as f64,
             s.creature_worst.as_secs_f64() * 1e3,
         );
+        self.stats.tick_time = Duration::ZERO;
+        self.stats.tick_worst = Duration::ZERO;
+        self.stats.ticks = 0;
+        self.stats.far_time = Duration::ZERO;
         self.stats.creature_time = Duration::ZERO;
         self.stats.creature_worst = Duration::ZERO;
         self.stats.creature_ticks = 0;
@@ -827,7 +858,9 @@ impl Game {
         for p in &mut self.planets {
             p.world.receive_loaded(self.tick, p.players > 0);
         }
+        let far = Instant::now();
         self.receive_far();
+        self.stats.far_time += far.elapsed();
         self.catch_up_crops();
         // Before streaming: a chunk is never sent with a portal's old look.
         self.sync_portals();
@@ -865,7 +898,9 @@ impl Game {
         let ids: Vec<u32> = self.players.keys().copied().collect();
         for id in &ids {
             self.stream(*id);
+            let far = Instant::now();
             self.stream_far(*id);
+            self.stats.far_time += far.elapsed();
         }
         if self.tick % SNAPSHOT_EVERY == 0 {
             self.snapshots();
@@ -1201,7 +1236,6 @@ impl Game {
                 wanted: Vec::new(),
                 center: None,
                 far_sent: HashMap::new(),
-                far_wanted: Vec::new(),
                 far_center: None,
                 near_complete: false,
                 far_cursor: 0,
@@ -1590,7 +1624,13 @@ impl Game {
             }
             for p in self.players.values_mut().filter(|p| p.planet == pi) {
                 for c in &changed {
-                    if p.far_sent.remove(c).is_some() {
+                    if let Some(level) = p
+                        .far_sent
+                        .get_mut(&(c.x, c.z))
+                        .and_then(|col| col.get_mut(c.y as usize))
+                        .filter(|l| **l > 0)
+                    {
+                        *level = 0;
                         p.far_cursor = 0;
                     }
                 }
@@ -1598,60 +1638,53 @@ impl Game {
         }
     }
 
+    /// The far columns of a planet `width` chunks wide, as offsets from the
+    /// player's column with their level, nearest first: within twice the
+    /// view radius level 1, beyond it level 2, out to the far radius or half
+    /// the planet (so no column is listed twice).
+    fn far_offsets(&mut self, width: u32) -> Arc<Vec<FarOffset>> {
+        let (far, mid) = (self.cfg.far_radius as i32, 2 * self.cfg.view_radius as i32);
+        self.far_offsets
+            .entry(width)
+            .or_insert_with(|| {
+                let r = far.min(width as i32 / 2);
+                let mut list = Vec::new();
+                let mut seen = HashSet::new();
+                for dz in -r..=r {
+                    for dx in -r..=r {
+                        let d2 = dx * dx + dz * dz;
+                        // Wrapped, -r and r are one column when r is half.
+                        if d2 <= r * r && seen.insert((dx.rem_euclid(width as i32), dz.rem_euclid(width as i32))) {
+                            list.push((d2, dx, dz));
+                        }
+                    }
+                }
+                list.sort_unstable();
+                Arc::new(
+                    list.into_iter()
+                        .map(|(d2, dx, dz)| (dx, dz, d2, if d2 <= mid * mid { 1 } else { 2 }))
+                        .collect(),
+                )
+            })
+            .clone()
+    }
+
     /// Far copies (milestone 20): every chunk within the far radius at its
-    /// ring's level, nearest first, after the near chunks.
+    /// ring's level, nearest column first, once the near chunks are all sent.
     fn stream_far(&mut self, id: u32) {
-        let far = self.cfg.far_radius as i32;
-        if far == 0 {
+        if self.cfg.far_radius == 0 || (self.tick + id as u64) % FAR_EVERY != 0 {
             return;
         }
         let Some(p) = self.players.get(&id) else { return };
+        // Near chunks first: nothing far is done while any are unsent.
+        if p.out.backlog() > MAX_BACKLOG / 2 || !p.near_complete {
+            return;
+        }
         let pi = p.planet;
         let shape = self.planets[pi].world.shape;
         let at = shape.wrap_chunk(BlockPos::containing(p.state.pos.x, p.state.pos.y, p.state.pos.z).chunk());
         let here = ChunkPos::new(at.x, 0, at.z);
-        if p.far_center != Some(here) {
-            // Half the planet each way at most, so no chunk is listed twice.
-            let r = far.min(shape.width_chunks as i32 / 2);
-            let mid = 2 * self.cfg.view_radius as i32;
-            let mut list = Vec::new();
-            let mut seen = HashSet::new();
-            for dz in -r..=r {
-                for dx in -r..=r {
-                    let d2 = dx * dx + dz * dz;
-                    if d2 > r * r {
-                        continue;
-                    }
-                    let column = shape.wrap_chunk(ChunkPos::new(here.x + dx, 0, here.z + dz));
-                    if !seen.insert(column) {
-                        continue;
-                    }
-                    let level = if d2 <= mid * mid { 1 } else { 2 };
-                    for y in 0..shape.height_chunks as i32 {
-                        list.push((d2 * 16 + (y - at.y).abs(), ChunkPos::new(column.x, y, column.z), level));
-                    }
-                }
-            }
-            list.sort_by_key(|e| e.0);
-            let keep = (r + 2) * (r + 2);
-            let p = self.players.get_mut(&id).expect("present");
-            let forget: Vec<ChunkPos> = p
-                .far_sent
-                .keys()
-                .copied()
-                .filter(|c| {
-                    let (dx, _, dz) = shape.chunk_delta(here, *c);
-                    dx * dx + dz * dz > keep
-                })
-                .collect();
-            for c in forget {
-                p.far_sent.remove(&c);
-                p.out.send(&ServerMsg::ForgetFar { pos: c });
-            }
-            p.far_wanted = list.into_iter().map(|(_, c, l)| (c, l)).collect();
-            p.far_center = Some(here);
-            p.far_cursor = 0;
-        }
+        let offsets = self.far_offsets(shape.width_chunks);
         let loading: usize = self.planets.iter().map(|p| p.world.pending_loads()).sum();
         let jobs = if loading > 0 {
             FAR_JOBS_WHILE_LOADING
@@ -1660,45 +1693,100 @@ impl Game {
         };
         let mut running: usize = self.planets.iter().map(|p| p.far.running()).sum();
         let p = self.players.get_mut(&id).expect("present");
-        // Near chunks first: far copies wait while any are unsent.
-        if p.out.backlog() > MAX_BACKLOG / 2 || !p.near_complete {
+        let h = shape.height_chunks as usize;
+        if p.far_center != Some(here) {
+            // A step to the next column: what was sent within the old
+            // cursor's reach, less the step, is still sent at its level
+            // (inside the level ring), so the look-over resumes there.
+            let stepped = p.far_center.is_some_and(|old| {
+                let (dx, _, dz) = shape.chunk_delta(old, here);
+                dx.abs() <= 1 && dz.abs() <= 1
+            });
+            let resume = if stepped && p.far_cursor > 0 {
+                let mid = 2.0 * self.cfg.view_radius as f64;
+                let done = (offsets[p.far_cursor - 1].2 as f64).sqrt();
+                let safe = done.min(mid) - 2.0;
+                offsets.partition_point(|o| (o.2 as f64).sqrt() <= safe)
+            } else {
+                0
+            };
+            let r = offsets.iter().map(|o| o.0.abs().max(o.1.abs())).max().unwrap_or(0) + 2;
+            let gone: Vec<(i32, i32)> = p
+                .far_sent
+                .keys()
+                .copied()
+                .filter(|&(x, z)| {
+                    let (dx, _, dz) = shape.chunk_delta(here, ChunkPos::new(x, 0, z));
+                    dx * dx + dz * dz > r * r
+                })
+                .collect();
+            for col in gone {
+                let levels = p.far_sent.remove(&col).expect("listed");
+                for (y, l) in levels.iter().enumerate() {
+                    if *l > 0 {
+                        p.out.send(&ServerMsg::ForgetFar {
+                            pos: ChunkPos::new(col.0, y as i32, col.1),
+                        });
+                    }
+                }
+            }
+            p.far_center = Some(here);
+            p.far_cursor = resume;
+        }
+        if p.far_cursor >= offsets.len() {
             return;
         }
         let planet = &mut self.planets[pi];
-        let mut budget = FAR_BYTES_PER_TICK;
+        let mut budget = FAR_BYTES_PER_TICK * FAR_EVERY as usize;
+        let mut blocked = false;
         let mut i = p.far_cursor;
         let mut scanned = 0;
-        let mut blocked = false;
-        while i < p.far_wanted.len() && scanned < FAR_SCAN && budget > 0 {
-            let (c, level) = p.far_wanted[i];
+        while i < offsets.len() && scanned < FAR_SCAN && budget > 0 {
+            let (dx, dz, _, level) = offsets[i];
             scanned += 1;
-            if p.far_sent.get(&c) == Some(&level) {
-                if !blocked {
-                    p.far_cursor = i + 1;
+            let col = shape.wrap_chunk(ChunkPos::new(here.x + dx, 0, here.z + dz));
+            let sent = p
+                .far_sent
+                .entry((col.x, col.z))
+                .or_insert_with(|| vec![0u8; h].into_boxed_slice());
+            let mut whole = true;
+            for y in 0..h {
+                if sent[y] == level {
+                    continue;
                 }
-                i += 1;
-                continue;
+                let c = ChunkPos::new(col.x, y as i32, col.z);
+                if budget == 0 {
+                    whole = false;
+                    break;
+                }
+                match planet.far.get(c) {
+                    Some(copy) => {
+                        let frame = copy.frame(level).clone();
+                        budget = budget.saturating_sub(frame.len());
+                        self.stats.bytes_sent += frame.len() as u64;
+                        p.out.send_shared(frame);
+                        sent[y] = level;
+                    }
+                    None => {
+                        whole = false;
+                        if running < jobs && !planet.far.is_building(c) {
+                            // From memory when the chunk is resident and saved.
+                            let resident = planet.world.get(c).filter(|s| !s.dirty).map(|s| s.chunk.clone());
+                            planet.far.request(c, resident);
+                            running += 1;
+                        }
+                    }
+                }
             }
-            match planet.far.get(c) {
-                Some(copy) => {
-                    let frame = copy.frame(level).clone();
-                    budget = budget.saturating_sub(frame.len());
-                    self.stats.bytes_sent += frame.len() as u64;
-                    p.out.send_shared(frame);
-                    p.far_sent.insert(c, level);
-                    if !blocked {
-                        p.far_cursor = i + 1;
-                    }
+            if !whole {
+                blocked = true;
+                // Every job slot busy: what lies further waits too.
+                if running >= jobs {
+                    break;
                 }
-                None => {
-                    blocked = true;
-                    if running < jobs && !planet.far.is_building(c) {
-                        // From memory when the chunk is resident and saved.
-                        let resident = planet.world.get(c).filter(|s| !s.dirty).map(|s| s.chunk.clone());
-                        planet.far.request(c, resident);
-                        running += 1;
-                    }
-                }
+            }
+            if !blocked {
+                p.far_cursor = i + 1;
             }
             i += 1;
         }
@@ -2272,7 +2360,6 @@ impl Game {
         p.center = None;
         // The client drops the old planet's far copies on `Travel`.
         p.far_sent.clear();
-        p.far_wanted.clear();
         p.far_center = None;
         p.near_complete = false;
         p.far_cursor = 0;
