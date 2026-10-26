@@ -268,7 +268,11 @@ fn drawn_base(kind: FormKind, style: Style, wall: bool) -> Vec<B> {
             bx(7, 0, 0, 9, 16, 3),
         ],
         (FormKind::Plinth, s) => {
-            let mut v = vec![bx(2, 0, 2, 14, 3, 14), bx(4, 3, 4, 12, 13, 12), bx(2, 13, 2, 14, 16, 14)];
+            let mut v = vec![
+                bx(2, 0, 2, 14, 3, 14),
+                bx(4, 3, 4, 12, 13, 12),
+                bx(2, 13, 2, 14, 16, 14),
+            ];
             if s != Plain {
                 v.push(bx(3, 3, 3, 13, 4, 13));
                 v.push(bx(3, 12, 3, 13, 13, 13));
@@ -358,6 +362,10 @@ mod tests {
         assert_eq!((back(1).0[0], back(1).1[0]), (2.0 / 16.0, 4.0 / 16.0));
         let pane = |t| Form::new(FormKind::Pane, Style::Plain, t).unwrap().solid()[0];
         assert_eq!(pane(0).1[2], 2.0 / 16.0, "against the north side");
-        assert_eq!((pane(1).0[0], pane(1).0[2], pane(1).1[2]), (14.0 / 16.0, 0.0, 1.0), "east side, along z");
+        assert_eq!(
+            (pane(1).0[0], pane(1).0[2], pane(1).1[2]),
+            (14.0 / 16.0, 0.0, 1.0),
+            "east side, along z"
+        );
     }
 }

@@ -6,10 +6,10 @@
 // Four entries per block: side, top and bottom colour (linear rgb, with
 // that face's average luma in w, of its texture where it has one), then
 // parameters (x: opacity, y: fringe). Written by `Renderer::upload_palette`.
-@group(0) @binding(1) var<uniform> palette: array<vec4<f32>, 1024>;
+@group(0) @binding(1) var<uniform> palette: array<vec4<f32>, 4096>;
 // Per block: top, side, bottom texture as `first_layer | variants << 16`, or
 // 0xffff for "use the palette colour". Written by `Renderer::set_textures`.
-@group(0) @binding(2) var<uniform> faces: array<vec4<u32>, 256>;
+@group(0) @binding(2) var<uniform> faces: array<vec4<u32>, 1024>;
 @group(0) @binding(3) var block_tex: texture_2d_array<f32>;
 @group(0) @binding(4) var block_samp: sampler;
 // The colour palette (ADR-0007): linear rgb by colour id, luma in w; 0 is

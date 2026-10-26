@@ -63,10 +63,7 @@ pub fn template(shape: Shape) -> &'static [ShapeTri] {
         static FORMS: OnceLock<Vec<Vec<ShapeTri>>> = OnceLock::new();
         let table = FORMS.get_or_init(|| {
             (0u16..1 << 9)
-                .map(|b| {
-                    bm_core::forms::Form::of(Shape(bm_core::forms::FORM_BIT | b))
-                        .map_or_else(Vec::new, form_tris)
-                })
+                .map(|b| bm_core::forms::Form::of(Shape(bm_core::forms::FORM_BIT | b)).map_or_else(Vec::new, form_tris))
                 .collect()
         });
         return &table[(form.shape().0 & 0x1ff) as usize];

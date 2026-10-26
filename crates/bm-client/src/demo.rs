@@ -710,17 +710,29 @@ impl Demo {
             ));
         };
         let mats = ["wood", "stone", "metal", "crystal"];
-        let styles = [("plain", Style::Plain), ("stylish", Style::Stylish), ("ornate", Style::Ornate)];
+        let styles = [
+            ("plain", Style::Plain),
+            ("stylish", Style::Stylish),
+            ("ornate", Style::Ornate),
+        ];
         // Nearest: doors shut and open, trapdoors shut and open.
         for (k, (s, _)) in styles.iter().enumerate() {
             for (m, mat) in mats.iter().enumerate() {
                 let x = 116 + (k * 8 + m * 2) as i64;
                 let open = (k + m) % 2 == 1;
                 let name = format!("{s}_{mat}_door{}", if open { "_open" } else { "" });
-                let shape = if open { open_door(Side::South) } else { shut_door(Side::South) };
+                let shape = if open {
+                    open_door(Side::South)
+                } else {
+                    shut_door(Side::South)
+                };
                 at(x, 127, &name, shape, None);
                 let name = format!("{s}_{mat}_trapdoor{}", if open { "_open" } else { "" });
-                let shape = if open { open_trapdoor(Side::South) } else { shut_trapdoor() };
+                let shape = if open {
+                    open_trapdoor(Side::South)
+                } else {
+                    shut_trapdoor()
+                };
                 at(x + 1, 127, &name, shape, None);
             }
         }
@@ -763,6 +775,8 @@ impl Demo {
         planet.flat = true;
         planet.edits.clear();
         planet.edits.extend(put);
+        let chunks = self.chunks_around_spawn();
+        self.events.extend(chunks.into_iter().map(NetEvent::Msg));
     }
 
     /// Turns the first planet into a showroom for chisel cuts (ADR-0008):

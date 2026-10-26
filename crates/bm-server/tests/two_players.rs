@@ -6873,10 +6873,17 @@ async fn furnishings_turn_as_they_are_placed() {
     let reg = bm_core::BlockRegistry::builtin();
     let slots = |n: &str| reg.get(reg.id(n).unwrap()).storage;
     assert_eq!(
-        [slots("plain_wood_storage"), slots("stylish_stone_storage"), slots("ornate_wicker_storage")],
+        [
+            slots("plain_wood_storage"),
+            slots("stylish_stone_storage"),
+            slots("ornate_wicker_storage")
+        ],
         [16, 24, 32]
     );
-    assert_eq!([slots("plain_metal_storage"), slots("ornate_crystal_storage")], [24, 40]);
+    assert_eq!(
+        [slots("plain_metal_storage"), slots("ornate_crystal_storage")],
+        [24, 40]
+    );
     drop(alice);
     server.stop();
 }

@@ -22,8 +22,10 @@ use winit::window::Window;
 
 const DEPTH_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Depth32Float;
 const NEAR: f32 = 0.05;
-/// Blocks with colours in the palette uniform (4 × 16 bytes each, 16 KiB).
-const PALETTE_BLOCKS: usize = 256;
+/// Blocks with colours and textures in the palette and face uniforms (4 ×
+/// 16 bytes each in the palette: 64 KiB, the most a uniform binding is
+/// guaranteed). Must match the array sizes in `terrain.wgsl`.
+pub(crate) const PALETTE_BLOCKS: usize = 1024;
 
 /// Must match `Globals` in shaders/common.wgsl.
 #[repr(C)]
@@ -312,7 +314,13 @@ impl Renderer {
         let (device, queue) = adapter
             .request_device(&wgpu::DeviceDescriptor {
                 label: Some("device"),
-                required_limits: wgpu::Limits::default().using_resolution(adapter.limits()),
+                // Every block texture is a layer of one array; the default
+                // limit (256) is fewer than the catalogue has, so ask for what
+                // the GPU holds (2048 on desktop GPUs).
+                required_limits: wgpu::Limits {
+                    max_texture_array_layers: adapter.limits().max_texture_array_layers,
+                    ..wgpu::Limits::default().using_resolution(adapter.limits())
+                },
                 memory_hints: wgpu::MemoryHints::Performance,
                 ..Default::default()
             })
@@ -737,8 +745,17 @@ impl Renderer {
         self.queue.write_buffer(&self.colours, 0, bytemuck::cast_slice(&data));
     }
 
-    /// Uploads the block textures and the per-block face table.
+    /// Uploads the block textures and the per-block face table. A GPU that
+    /// cannot hold every layer keeps drawing blocks in their colours.
     pub fn set_textures(&mut self, set: &TextureSet) {
+        let most = self.device.limits().max_texture_array_layers as usize;
+        if set.layers.len() > most {
+            tracing::error!(
+                "{} block texture layers, but this GPU holds {most}: drawing blocks in their colours",
+                set.layers.len()
+            );
+            return;
+        }
         let mut table = vec![[textures::NO_TEXTURE, textures::NO_TEXTURE, textures::NO_TEXTURE, 0u32]; PALETTE_BLOCKS];
         for (i, f) in set.faces.iter().take(PALETTE_BLOCKS).enumerate() {
             table[i] = *f;
@@ -1470,6 +1487,18 @@ fn aabb_in_frustum(planes: &[Vec4; 5], min: Vec3, max: Vec3) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn every_block_fits_the_palette_and_the_shader_agrees() {
+        // The catalogue outgrew 256 blocks in milestone 22 and everything
+        // past it lost its texture and colour.
+        let blocks = BlockRegistry::builtin().len();
+        assert!(blocks <= PALETTE_BLOCKS, "{blocks} blocks, room for {PALETTE_BLOCKS}");
+        const { assert!(PALETTE_BLOCKS * 4 * 16 <= 65536, "a uniform binding holds 64 KiB") };
+        let wgsl = include_str!("shaders/terrain.wgsl");
+        assert!(wgsl.contains(&format!("palette: array<vec4<f32>, {}>", PALETTE_BLOCKS * 4)));
+        assert!(wgsl.contains(&format!("faces: array<vec4<u32>, {PALETTE_BLOCKS}>")));
+    }
 
     #[test]
     fn frustum_keeps_what_is_ahead_and_drops_what_is_behind() {

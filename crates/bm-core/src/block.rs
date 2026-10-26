@@ -668,7 +668,11 @@ mod tests {
         // Every door was once neither opaque nor translucent, and the shaped
         // mesher skipped them all: invisible in game.
         let r = BlockRegistry::builtin();
-        let shaped: Vec<_> = r.defs().iter().filter(|d| d.swing.is_some() || d.form.is_some()).collect();
+        let shaped: Vec<_> = r
+            .defs()
+            .iter()
+            .filter(|d| d.swing.is_some() || d.form.is_some())
+            .collect();
         assert!(shaped.len() >= 48);
         assert!(shaped.iter().all(|d| d.opaque || d.translucent));
         let air = r.defs()[0].clone();
