@@ -49,7 +49,7 @@ Today the world ends at the view radius (10 chunks, 320 blocks) in fog. A Boundl
 
 ## Status
 
-- *Spec written 2026-10-26.* **Built the same day**, awaiting Nathan's play-test (Measure 1 to 3).
+- *Spec written 2026-10-26.* **Built the same day** and merged to `main` (Nathan asked), awaiting his play-test (Measure 1 to 3).
 - `bm-core/src/far.rs` (the halving rule, encoding), `bm-mesh::mesh_far`, `bm-server/src/far.rs` (the far store, its jobs, the `planet_far` table), `Game::stream_far` (a column table shared by every player, looked over every 3 ticks), `bm-client/src/far.rs` (holding, light, meshing), `Renderer::upload_far`. Protocol 33. No save version change: the far table is a cache, created empty in old universes.
 - **Tests:** halving keeps the ground, drops thin pillars and models, never shows buried ore, water against air; copies round-trip and bad bytes are refused; a far mesh equals the near mesher's for the same blocks; client meshing waits for complete columns, buried chunks show nothing; saving a chunk deletes its far copy in the same write; end to end (`far_copies_reach_the_horizon_and_follow_edits`): every column within the far radius arrives at its ring's level, the copies match the ground under the player, an edit's chunk is sent again once saved, and the copies are on disk afterwards.
 - **Seen in game** (software rendering, 2026-10-26): Verdance's hills, rivers and forests to the horizon; `docs/media/m20-*.jpg`. A whole 64-chunk planet (38,000 far copies) was built in about four minutes on the sandbox's 3 loader threads and is 26 MB on disk; the client holds all of it. The sandbox draws at 2 to 6 frames a second, which says nothing about Nathan's machine (Measure 3).
