@@ -25,7 +25,7 @@ use glam::DVec3;
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
 
 /// Bump on any change to a message below. Client and server must match.
-pub const PROTOCOL_VERSION: u32 = 34;
+pub const PROTOCOL_VERSION: u32 = 35;
 
 /// QUIC application protocol name; also refuses non-Boundmore peers early.
 pub const ALPN: &[u8] = b"boundmore/1";
@@ -93,6 +93,10 @@ pub enum ClientMsg {
         recipe: u16,
         count: u16,
         station: Option<BlockPos>,
+        /// For a recipe that passes a colour on (`Recipe::tint`, milestone
+        /// 22), the colour to make; None lets the server pick the colour
+        /// most crafts can be made in. Ignored for other recipes.
+        colour: Option<bm_core::Colour>,
     },
     /// Start (or with `None`, stop) receiving `Station` updates for one
     /// station, e.g. while its screen is open.

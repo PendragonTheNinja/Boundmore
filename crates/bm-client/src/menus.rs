@@ -43,6 +43,11 @@ pub enum UiAction {
     /// A change to the character's skills (milestone 12): predicted, then
     /// sent following the latest input.
     Skill(bm_protocol::SkillAction),
+    /// The colour chosen for a recipe that passes one on (milestone 22).
+    CraftColour {
+        recipe: u16,
+        colour: Colour,
+    },
 }
 
 /// Which screen holds the mouse, if any.
@@ -1387,6 +1392,20 @@ pub struct CraftingView<'a> {
     /// The character's skills: recipes with a crafting gate need them
     /// (milestone 12).
     pub progress: &'a crate::skills::Progress,
+    /// The colour chosen for each tinted recipe (milestone 22).
+    pub craft_colours: &'a HashMap<u16, Colour>,
+}
+
+/// The colour a tinted recipe will be made in: the one chosen while it can
+/// still be made, else the colour most crafts can be made in. None for an
+/// untinted recipe (or nothing of the input carried).
+pub fn chosen_colour(v: &CraftingView, index: u16, recipe: &bm_core::Recipe) -> Option<Colour> {
+    recipe.tint?;
+    let choices = recipe.colour_choices(&v.items.inventory);
+    match v.craft_colours.get(&index) {
+        Some(c) if choices.iter().any(|(x, _)| x == c) => Some(*c),
+        _ => choices.first().map(|(c, _)| *c),
+    }
 }
 
 pub fn station_name(blocks: &BlockRegistry, station: Station) -> String {
@@ -1488,7 +1507,13 @@ fn recipe_row(
     idle: bool,
     actions: &mut Vec<UiAction>,
 ) {
-    let max = v.items.craft_max(recipe);
+    // A tinted recipe is made in one colour (milestone 22): the counts are
+    // that colour's.
+    let colour = chosen_colour(v, index, recipe);
+    let max = match colour {
+        Some(c) => recipe.max_crafts_in(&v.items.inventory, Some(c)).min(u16::MAX as u32) as u16,
+        None => v.items.craft_max(recipe),
+    };
     // Hand recipes are made in the hands, at a table too; the rest queue at
     // the machine, which must be working.
     let in_hand = recipe.station == Station::Hand;
@@ -1502,7 +1527,7 @@ fn recipe_row(
         .show(ui, |ui| {
             ui.set_width(ui.available_width());
             ui.horizontal(|ui| {
-                let out = ItemStack::new(recipe.output, recipe.output_count);
+                let out = ItemStack::coloured(recipe.output, colour.unwrap_or(Colour::NATURAL), recipe.output_count);
                 let (rect, resp) = ui.allocate_exact_size(Vec2::splat(46.0), Sense::hover());
                 paint_slot_back(ui.painter(), rect, Stroke::new(1.0, SLOT_RIM));
                 paint_stack(
@@ -1569,6 +1594,9 @@ fn recipe_row(
                             }
                         }
                     });
+                    if recipe.tint.is_some() {
+                        colour_swatches(ui, v, index, recipe, colour, actions);
+                    }
                 });
                 ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                     let station = if in_hand { None } else { v.station.as_ref().map(|s| s.0) };
@@ -1579,6 +1607,7 @@ fn recipe_row(
                                 recipe: index,
                                 count,
                                 station,
+                                colour,
                             }));
                         }
                     };
@@ -1588,6 +1617,60 @@ fn recipe_row(
                 });
             });
         });
+}
+
+/// The colours a tinted recipe can be made in, as swatches to pick from
+/// (most crafts first), the chosen one ringed.
+fn colour_swatches(
+    ui: &mut Ui,
+    v: &CraftingView,
+    index: u16,
+    recipe: &bm_core::Recipe,
+    chosen: Option<Colour>,
+    actions: &mut Vec<UiAction>,
+) {
+    let choices = recipe.colour_choices(&v.items.inventory);
+    ui.horizontal_wrapped(|ui| {
+        ui.spacing_mut().item_spacing = vec2(4.0, 4.0);
+        if choices.is_empty() {
+            ui.label(
+                egui::RichText::new("Made in the colour of what goes in")
+                    .color(MUTED)
+                    .small(),
+            );
+            return;
+        }
+        ui.label(egui::RichText::new("Colour:").color(MUTED).small());
+        for (c, n) in choices {
+            let (rect, resp) = ui.allocate_exact_size(Vec2::splat(18.0), Sense::click());
+            let p = ui.painter();
+            match v.items.colours.get(c) {
+                Some(def) => {
+                    let [r, g, b] = def.rgb;
+                    p.rect_filled(rect, CornerRadius::same(4), Color32::from_rgb(r, g, b));
+                }
+                None => {
+                    // Natural: half light, half dark.
+                    p.rect_filled(rect, CornerRadius::same(4), Color32::from_gray(200));
+                    let half = Rect::from_min_max(rect.center_top(), rect.max);
+                    p.rect_filled(half, CornerRadius::same(2), Color32::from_gray(90));
+                }
+            }
+            let ring = if Some(c) == chosen {
+                Stroke::new(2.0, GOLD)
+            } else {
+                Stroke::new(1.0, SLOT_RIM)
+            };
+            p.rect_stroke(rect, CornerRadius::same(4), ring, StrokeKind::Outside);
+            let name = v.items.colours.get(c).map_or("Natural", |d| d.name.as_str());
+            if resp.on_hover_text(format!("{name}: enough for {n}")).clicked() {
+                actions.push(UiAction::CraftColour {
+                    recipe: index,
+                    colour: c,
+                });
+            }
+        }
+    });
 }
 
 fn station_panel(ui: &mut Ui, v: &CraftingView, kind: Station, opened: BlockPos, actions: &mut Vec<UiAction>) {

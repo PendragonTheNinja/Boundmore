@@ -144,6 +144,55 @@ impl Inventory {
         Some(changed)
     }
 
+    /// How many of `item` in `colour` (milestone 22: a tinted recipe's
+    /// input counts only its chosen colour).
+    pub fn count_coloured(&self, item: ItemId, colour: Colour) -> u32 {
+        self.slots
+            .iter()
+            .flatten()
+            .filter(|s| s.item == item && s.colour == colour)
+            .map(|s| s.count as u32)
+            .sum()
+    }
+
+    /// The colours `item` is carried in, with how many of each.
+    pub fn colours_of(&self, item: ItemId) -> Vec<(Colour, u32)> {
+        let mut out: Vec<(Colour, u32)> = Vec::new();
+        for s in self.slots.iter().flatten().filter(|s| s.item == item) {
+            match out.iter_mut().find(|(c, _)| *c == s.colour) {
+                Some((_, n)) => *n += s.count as u32,
+                None => out.push((s.colour, s.count as u32)),
+            }
+        }
+        out
+    }
+
+    /// Removes `count` of `item` in `colour` only, as [`Self::remove`] does.
+    pub fn remove_coloured(&mut self, item: ItemId, colour: Colour, count: u16) -> Option<Vec<usize>> {
+        if self.count_coloured(item, colour) < count as u32 {
+            return None;
+        }
+        let before = self.clone();
+        let mut left = count;
+        for slot in self.slots.iter_mut().rev() {
+            if left == 0 {
+                break;
+            }
+            if let Some(s) = slot
+                && s.item == item
+                && s.colour == colour
+            {
+                let n = left.min(s.count);
+                s.count -= n;
+                left -= n;
+                if s.count == 0 {
+                    *slot = None;
+                }
+            }
+        }
+        Some(Self::changed(&before, self))
+    }
+
     /// Removes `count` of `item` from wherever it is (fullest stacks last, so
     /// the hotbar empties last). All or nothing.
     pub fn remove(&mut self, item: ItemId, count: u16) -> Option<Vec<usize>> {

@@ -122,7 +122,10 @@ const V2_STATIONS: TableDefinition<&[u8], &[u8]> = TableDefinition::new("station
 /// 11 (M17): a forge's station record saves its session and queued item
 /// ([`SavedStation::forge`]); older stations are rewritten with none (no
 /// forges existed).
-pub const SAVE_VERSION: u32 = 14;
+///
+/// 15 (M22): a station saves each job's output colour
+/// ([`SavedStation::job_colours`]); older jobs finish natural.
+pub const SAVE_VERSION: u32 = 15;
 
 /// The universe file in the data directory.
 pub const UNIVERSE_FILE: &str = "universe.redb";
@@ -539,7 +542,65 @@ pub struct SavedStation {
     /// The current craft's pace in thousandths of the recipe's time (save
     /// version 13; 1,000 with no power).
     pub scale: u16,
+    /// Each saved job's output colour, in `jobs`' order (save version 15,
+    /// milestone 22); missing ones are natural.
+    pub job_colours: Vec<bm_core::Colour>,
 }
+
+/// The station layout save versions 13 and 14 wrote, kept only to read them
+/// for the upgrade.
+mod v14 {
+    use super::*;
+
+    #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+    pub struct SavedStation {
+        pub kind: Station,
+        pub jobs: Vec<SavedJob>,
+        pub started: u64,
+        pub output: Vec<Option<SavedStack>>,
+        pub fuel: Option<SavedStack>,
+        pub heat: u32,
+        pub waiting: bool,
+        pub xp: u32,
+        pub wear: u32,
+        pub spark: u32,
+        pub burn_total: u32,
+        pub burn_elapsed: u32,
+        pub blocks: u32,
+        pub containers: Vec<Vec<SavedStack>>,
+        pub forge: Option<crate::forging::SavedForge>,
+        pub coils: Vec<(BlockPos, u32)>,
+        pub scale: u16,
+    }
+
+    impl From<SavedStation> for super::SavedStation {
+        fn from(s: SavedStation) -> Self {
+            Self {
+                kind: s.kind,
+                jobs: s.jobs,
+                started: s.started,
+                output: s.output,
+                fuel: s.fuel,
+                heat: s.heat,
+                waiting: s.waiting,
+                xp: s.xp,
+                wear: s.wear,
+                spark: s.spark,
+                burn_total: s.burn_total,
+                burn_elapsed: s.burn_elapsed,
+                blocks: s.blocks,
+                containers: s.containers,
+                forge: s.forge,
+                coils: s.coils,
+                scale: s.scale,
+                // Jobs queued before colours passed through crafting.
+                job_colours: Vec::new(),
+            }
+        }
+    }
+}
+
+pub use v14::SavedStation as V14SavedStation;
 
 /// The station layout save versions 9 and 10 wrote, kept only to read them
 /// for the upgrade.
@@ -585,6 +646,7 @@ mod v10 {
                 forge: None,
                 coils: Vec::new(),
                 scale: 1000,
+                job_colours: Vec::new(),
             }
         }
     }
@@ -637,6 +699,7 @@ mod v12 {
                 // No coils existed.
                 coils: Vec::new(),
                 scale: 1000,
+                job_colours: Vec::new(),
             }
         }
     }
@@ -721,6 +784,7 @@ mod v8 {
                 forge: None,
                 coils: Vec::new(),
                 scale: 1000,
+                job_colours: Vec::new(),
             }
         }
     }
@@ -792,6 +856,7 @@ mod v7 {
                 forge: None,
                 coils: Vec::new(),
                 scale: 1000,
+                job_colours: Vec::new(),
             }
         }
     }
@@ -831,6 +896,7 @@ mod v3 {
                 forge: None,
                 coils: Vec::new(),
                 scale: 1000,
+                job_colours: Vec::new(),
             }
         }
     }
@@ -874,6 +940,7 @@ mod v4 {
                 forge: None,
                 coils: Vec::new(),
                 scale: 1000,
+                job_colours: Vec::new(),
             }
         }
     }
@@ -1252,8 +1319,11 @@ impl Store {
                         11 | 12 => upgrade_stations(&tx, from, |b| {
                             postcard::from_bytes::<v12::SavedStation>(b).map(Into::into)
                         })?,
-                        // 13 to 14 only rescaled wear (below).
-                        _ => upgrade_stations(&tx, from, |b| postcard::from_bytes::<SavedStation>(b))?,
+                        // 13 to 14 only rescaled wear (below); 15 adds job
+                        // colours.
+                        _ => upgrade_stations(&tx, from, |b| {
+                            postcard::from_bytes::<v14::SavedStation>(b).map(Into::into)
+                        })?,
                     };
                     // Version 6 to 7 only adds tables (skies, discoveries),
                     // which read as empty until written.
@@ -1279,7 +1349,12 @@ impl Store {
                     tx.open_table(META)?
                         .insert("universe", postcard::to_stdvec(&u)?.as_slice())?;
                     tx.commit()?;
-                    if from == 13 {
+                    if from == 14 {
+                        tracing::info!(
+                            "upgraded the universe from save version 14 to {SAVE_VERSION} ({stations} stations' \
+                             queued jobs keep natural colour)"
+                        );
+                    } else if from == 13 {
                         tracing::info!(
                             "upgraded the universe from save version 13 to {SAVE_VERSION} ({stations} stations' \
                              wear rescaled to each machine's own durability; characters as they were)"
@@ -2512,6 +2587,7 @@ mod tests {
             forge: None,
             coils: Vec::new(),
             scale: 1000,
+            job_colours: Vec::new(),
         };
         let claim = SavedClaim {
             planet: 2,
@@ -2715,6 +2791,7 @@ mod tests {
             forge: None,
             coils: Vec::new(),
             scale: 1000,
+            job_colours: Vec::new(),
         };
         s.write(&WriteBatch {
             stations: vec![(u16::MAX, BlockPos::new(1, 1, 1), Some(st.clone()))],
@@ -3292,6 +3369,74 @@ mod tests {
         assert_eq!(s.stations(1).unwrap(), st);
     }
 
+    /// A version 14 universe (M21) opens: stations keep their queued jobs,
+    /// which finish natural (milestone 22 gave jobs colours); it is marked
+    /// version 15 and reopens as it is.
+    #[test]
+    fn a_version_14_universe_keeps_its_jobs_natural() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("u.redb");
+        let job = SavedJob {
+            output: "stones".into(),
+            output_count: 2,
+            inputs: vec![("stone".into(), 1)],
+            remaining: 3,
+        };
+        let old = V14SavedStation {
+            kind: Station::CraftingTable,
+            jobs: vec![job.clone()],
+            started: 7,
+            output: vec![None; 2],
+            fuel: None,
+            heat: 0,
+            waiting: false,
+            xp: 0,
+            wear: 0,
+            spark: 0,
+            burn_total: 0,
+            burn_elapsed: 0,
+            blocks: 1,
+            containers: vec![Vec::new()],
+            forge: None,
+            coils: Vec::new(),
+            scale: 1000,
+        };
+        let spot = BlockPos::new(3, 40, 5);
+        {
+            let s = Store::open(&path).unwrap();
+            let tx = s.db.begin_write().unwrap();
+            tx.open_table(META)
+                .unwrap()
+                .insert(
+                    "universe",
+                    postcard::to_stdvec(&UniverseMeta {
+                        save_version: 14,
+                        chunk_format: CHUNK_FORMAT_VERSION,
+                    })
+                    .unwrap()
+                    .as_slice(),
+                )
+                .unwrap();
+            tx.open_table(STATIONS)
+                .unwrap()
+                .insert(
+                    block_key(1, spot).as_slice(),
+                    postcard::to_stdvec(&old).unwrap().as_slice(),
+                )
+                .unwrap();
+            tx.commit().unwrap();
+        }
+        let s = Store::open(&path).unwrap();
+        assert!(s.universe(&kinds()).unwrap().is_none());
+        let st = s.stations(1).unwrap();
+        assert_eq!(st[0].1.jobs, vec![job]);
+        assert!(st[0].1.job_colours.is_empty());
+        assert_eq!(st[0].1.started, 7);
+        drop(s);
+        let s = Store::open(&path).unwrap();
+        assert_eq!(s.stations(1).unwrap(), st, "reopens as it is");
+    }
+
     /// A version 11 universe (M17) opens: every character keeps everything
     /// and has full air; it is marked version 12 and reopens as it is.
     #[test]
@@ -3399,6 +3544,7 @@ mod tests {
             forge: None,
             coils: Vec::new(),
             scale: 1000,
+            job_colours: Vec::new(),
         };
         let spot = BlockPos::new(3, -4, 5);
         {

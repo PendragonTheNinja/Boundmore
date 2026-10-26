@@ -978,7 +978,13 @@ async fn look_at_station(c: &mut TestClient, pos: BlockPos, pred: impl FnMut(&St
 }
 
 async fn craft_at(c: &mut TestClient, recipe: u16, count: u16, station: Option<BlockPos>) {
-    c.send(ClientMsg::Craft { recipe, count, station }).await;
+    c.send(ClientMsg::Craft {
+        recipe,
+        count,
+        station,
+        colour: None,
+    })
+    .await;
 }
 
 async fn fuel(c: &mut TestClient, pos: BlockPos, slot: u8, count: u16, into: bool) {
@@ -1340,6 +1346,7 @@ async fn a_workbench_saved_at_one_block_joins_its_machine() {
                         forge: None,
                         coils: Vec::new(),
                         scale: 1000,
+                        job_colours: Vec::new(),
                     }),
                 )],
                 ..Default::default()
@@ -6681,5 +6688,57 @@ async fn wandering_worlds_come_are_reached_from_their_host_and_leave() {
         "the next one is still up after a restart"
     );
     drop(bob);
+    server.stop();
+}
+
+/// Milestone 22: a recipe that passes a colour on is crafted in the colour
+/// asked for, taking only that colour of its input; a colour not carried in
+/// enough is refused; with none asked, the most plentiful.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn crafting_passes_the_chosen_colour_on() {
+    let dir = tempfile::tempdir().unwrap();
+    seed(dir.path(), "Alice", &[(5, "trunk#40", 1, 0), (6, "trunk#90", 3, 0)]);
+    let server = bm_server::start(config(dir.path())).unwrap();
+    let mut alice = TestClient::login(&server, "Alice").await;
+    let timber = alice.recipe("timber");
+    let colour_count = |c: &TestClient, name: &str, colour: u8| -> u32 {
+        let id = c.item(name);
+        c.inv
+            .slots
+            .iter()
+            .flatten()
+            .filter(|s| s.item == id && s.colour == bm_core::Colour(colour))
+            .map(|s| s.count as u32)
+            .sum()
+    };
+    // Two of the one red trunk: refused, nothing taken.
+    alice
+        .send(ClientMsg::Craft {
+            recipe: timber,
+            count: 2,
+            station: None,
+            colour: Some(bm_core::Colour(40)),
+        })
+        .await;
+    alice.notice("You do not have the materials").await;
+    // One red: red timber, the others untouched.
+    alice
+        .send(ClientMsg::Craft {
+            recipe: timber,
+            count: 1,
+            station: None,
+            colour: Some(bm_core::Colour(40)),
+        })
+        .await;
+    alice.settle().await;
+    assert_eq!(colour_count(&alice, "timber", 40), 2);
+    assert_eq!(colour_count(&alice, "trunk", 90), 3);
+    assert_eq!(colour_count(&alice, "trunk", 40), 0);
+    // None asked: the colour most can be made in.
+    craft_at(&mut alice, timber, 2, None).await;
+    alice.settle().await;
+    assert_eq!(colour_count(&alice, "timber", 90), 4);
+    assert_eq!(colour_count(&alice, "trunk", 90), 1);
+    drop(alice);
     server.stop();
 }

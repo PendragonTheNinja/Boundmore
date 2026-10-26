@@ -1396,7 +1396,12 @@ impl Demo {
             ClientMsg::Discard { slot } => {
                 self.inv.clear(slot as usize);
             }
-            ClientMsg::Craft { recipe, count, station } => self.craft(recipe, count, station),
+            ClientMsg::Craft {
+                recipe,
+                count,
+                station,
+                colour,
+            } => self.craft(recipe, count, station, colour),
             ClientMsg::WatchStation { pos } => {
                 self.watched = pos.map(|p| self.machine(p));
                 self.push_station();
@@ -1628,7 +1633,7 @@ impl Demo {
         }));
     }
 
-    fn craft(&mut self, recipe: u16, count: u16, station: Option<BlockPos>) {
+    fn craft(&mut self, recipe: u16, count: u16, station: Option<BlockPos>, colour: Option<bm_core::Colour>) {
         let Some(r) = self.book.get(recipe).cloned() else {
             return;
         };
@@ -1650,11 +1655,25 @@ impl Demo {
         let mut made = 0;
         for _ in 0..count {
             let mut trial = self.inv.clone();
-            let Some(plan) = r.plan(&trial, 1) else { break };
-            if plan.iter().flatten().any(|(i, n)| trial.remove(*i, *n).is_none()) {
+            // A tinted recipe takes its input in the chosen colour and makes
+            // its output in it (milestone 22).
+            let colour = colour.filter(|_| r.tint.is_some());
+            let Some(plan) = r.plan_in(&trial, 1, colour) else {
+                break;
+            };
+            let tinted = |i: bm_core::ItemId| r.input_of(i).map(|k| k as u8) == r.tint;
+            if plan.iter().flatten().any(|(i, n)| match colour {
+                Some(c) if tinted(*i) => trial.remove_coloured(*i, c, *n).is_none(),
+                _ => trial.remove(*i, *n).is_none(),
+            }) {
                 break;
             }
-            if r.station == Station::Hand && trial.add_all(&self.items, r.output, r.output_count).is_none() {
+            let made_in = colour.unwrap_or(bm_core::Colour::NATURAL);
+            if r.station == Station::Hand
+                && trial
+                    .add_all_coloured(&self.items, r.output, made_in, r.output_count)
+                    .is_none()
+            {
                 self.notice("Your inventory is full");
                 break;
             }
@@ -3324,6 +3343,7 @@ mod tests {
             recipe: sackcloth,
             count: 1,
             station: Some(bp(EXTRACTOR[1])),
+            colour: None,
         });
         assert_eq!(d.inv, before);
     }
