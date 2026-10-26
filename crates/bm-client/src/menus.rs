@@ -1311,7 +1311,8 @@ pub fn storage(ctx: &egui::Context, v: &StorageWindow, drag: &mut Option<Drag>, 
     let mut targets: Vec<(Rect, Target)> = Vec::new();
     let mut shifted = None;
     let mut open = true;
-    let cols = if chest.len() <= 20 { 5 } else { 10 };
+    // Boundless's sizes (16 to 40) fill rows of 8; the old chest's 20, rows of 5.
+    let cols = if chest.len() % 8 == 0 { 8 } else if chest.len() <= 20 { 5 } else { 10 };
     let chest_width = cols as f32 * SLOT + (cols - 1) as f32 * GAP;
     window(&v.title).open(&mut open).show(ctx, |ui| {
         ui.horizontal_top(|ui| {

@@ -53,6 +53,9 @@ pub fn apply(
     if !fits {
         return Err(Refused::Quiet("not a cut this chisel makes"));
     }
+    if state.shape.is_form() {
+        return Err(Refused::Told(format!("{} cannot be chiselled", title_case(&def.name))));
+    }
     let cut = if state.shape.is_valid() {
         state.shape
     } else {

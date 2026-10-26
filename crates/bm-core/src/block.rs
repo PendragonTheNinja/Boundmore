@@ -183,6 +183,13 @@ pub struct BlockDef {
     /// The block a door becomes when swung (its open or shut self).
     #[serde(default)]
     pub toggle: Option<String>,
+    /// A furnishing's form (milestone 22 part 3): placed, the block takes
+    /// this model, turned to how it was placed (`crate::forms`).
+    #[serde(default)]
+    pub form: Option<crate::forms::FormKind>,
+    /// How fine its form is drawn.
+    #[serde(default)]
+    pub style: crate::forms::Style,
 }
 
 /// A block's health category [tuning 2.2]: soft 800 (soil, sand, foliage),
@@ -415,6 +422,8 @@ pub enum RegistryError {
     BadProp(String),
     #[error("door `{0}` must toggle to a door of the same swing that toggles back")]
     BadDoor(String),
+    #[error("door or furnishing `{0}` is drawn by its shape, so it must be opaque or translucent")]
+    Undrawn(String),
     #[error("block `{0}` has a bonus with a negative or non-finite count")]
     BadBonus(String),
 }
@@ -460,6 +469,10 @@ impl BlockRegistry {
             }
             if d.is_prop() && (d.solid || d.opaque || !matches!(d.health, Health::Prop | Health::Plant)) {
                 return Err(RegistryError::BadProp(d.name.clone()));
+            }
+            // The shaped mesher draws only opaque and translucent blocks.
+            if (d.swing.is_some() || d.form.is_some()) && !(d.opaque || d.translucent) {
+                return Err(RegistryError::Undrawn(d.name.clone()));
             }
             if d.bonus
                 .iter()
@@ -647,6 +660,25 @@ mod tests {
         assert!(matches!(
             BlockRegistry::from_defs(vec![air, stone]),
             Err(RegistryError::MissingTextures(_))
+        ));
+    }
+
+    #[test]
+    fn doors_and_furnishings_must_be_drawn() {
+        // Every door was once neither opaque nor translucent, and the shaped
+        // mesher skipped them all: invisible in game.
+        let r = BlockRegistry::builtin();
+        let shaped: Vec<_> = r.defs().iter().filter(|d| d.swing.is_some() || d.form.is_some()).collect();
+        assert!(shaped.len() >= 48);
+        assert!(shaped.iter().all(|d| d.opaque || d.translucent));
+        let air = r.defs()[0].clone();
+        let mut door = r.get(r.id("plain_wood_door").unwrap()).clone();
+        let mut open = r.get(r.id("plain_wood_door_open").unwrap()).clone();
+        door.opaque = false;
+        open.opaque = false;
+        assert!(matches!(
+            BlockRegistry::from_defs(vec![air, door, open]),
+            Err(RegistryError::Undrawn(_))
         ));
     }
 

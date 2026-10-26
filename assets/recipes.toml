@@ -3732,7 +3732,7 @@ inputs = [["waxy_tuber", 1]]
 station = "extractor"
 seconds = 60.0
 xp = 1
-wear = 6
+wear = 7
 
 [[recipe]]
 output = "stone_brick_mix"
@@ -3741,7 +3741,7 @@ station = "mixer"
 seconds = 30.0
 spark = 200
 xp = 10
-wear = 10
+wear = 11
 tint = 0
 
 [[recipe]]
@@ -3760,7 +3760,7 @@ inputs = [["stones", 8]]
 station = "refinery"
 seconds = 30.0
 xp = 4
-wear = 5
+wear = 28
 tint = 0
 
 [[recipe]]
@@ -3770,7 +3770,7 @@ station = "workbench"
 seconds = 30.0
 spark = 200
 xp = 9
-wear = 5
+wear = 6
 tint = 0
 
 [[recipe]]
@@ -3780,7 +3780,7 @@ station = "workbench"
 seconds = 30.0
 spark = 200
 xp = 9
-wear = 5
+wear = 6
 tint = 0
 
 [[recipe]]
@@ -3790,7 +3790,7 @@ station = "mixer"
 seconds = 30.0
 spark = 200
 xp = 10
-wear = 10
+wear = 11
 tint = 0
 
 [[recipe]]
@@ -3809,7 +3809,7 @@ inputs = [["basalt_stones", 8]]
 station = "refinery"
 seconds = 30.0
 xp = 4
-wear = 5
+wear = 28
 tint = 0
 
 [[recipe]]
@@ -3819,7 +3819,7 @@ station = "workbench"
 seconds = 30.0
 spark = 200
 xp = 9
-wear = 5
+wear = 6
 tint = 0
 
 [[recipe]]
@@ -3829,7 +3829,7 @@ station = "workbench"
 seconds = 30.0
 spark = 200
 xp = 9
-wear = 5
+wear = 6
 tint = 0
 
 [[recipe]]
@@ -3839,7 +3839,7 @@ station = "mixer"
 seconds = 30.0
 spark = 200
 xp = 10
-wear = 10
+wear = 11
 tint = 0
 
 [[recipe]]
@@ -3858,7 +3858,7 @@ inputs = [["limestone_stones", 8]]
 station = "refinery"
 seconds = 30.0
 xp = 4
-wear = 5
+wear = 28
 tint = 0
 
 [[recipe]]
@@ -3868,7 +3868,7 @@ station = "workbench"
 seconds = 30.0
 spark = 200
 xp = 9
-wear = 5
+wear = 6
 tint = 0
 
 [[recipe]]
@@ -3878,7 +3878,7 @@ station = "workbench"
 seconds = 30.0
 spark = 200
 xp = 9
-wear = 5
+wear = 6
 tint = 0
 
 [[recipe]]
@@ -3890,7 +3890,7 @@ seconds = 180.0
 spark = 400
 power = 800
 xp = 18
-wear = 15
+wear = 70
 tint = 0
 
 [[recipe]]
@@ -3902,7 +3902,7 @@ seconds = 180.0
 spark = 400
 power = 1000
 xp = 20
-wear = 15
+wear = 70
 tint = 0
 
 [[recipe]]
@@ -3914,7 +3914,7 @@ seconds = 180.0
 spark = 400
 power = 1200
 xp = 22
-wear = 15
+wear = 70
 tint = 0
 
 [[recipe]]
@@ -3923,7 +3923,7 @@ inputs = [["timber", 8]]
 station = "refinery"
 seconds = 30.0
 xp = 4
-wear = 5
+wear = 28
 tint = 0
 
 [[recipe]]
@@ -3933,7 +3933,7 @@ station = "workbench"
 seconds = 30.0
 spark = 200
 xp = 9
-wear = 5
+wear = 6
 tint = 0
 
 [[recipe]]
@@ -3942,7 +3942,7 @@ inputs = [["pale_timber", 8]]
 station = "refinery"
 seconds = 30.0
 xp = 4
-wear = 5
+wear = 28
 tint = 0
 
 [[recipe]]
@@ -3952,7 +3952,7 @@ station = "workbench"
 seconds = 30.0
 spark = 200
 xp = 9
-wear = 5
+wear = 6
 tint = 0
 
 [[recipe]]
@@ -3961,7 +3961,7 @@ inputs = [["gnarled_timber", 8]]
 station = "refinery"
 seconds = 30.0
 xp = 4
-wear = 5
+wear = 28
 tint = 0
 
 [[recipe]]
@@ -3971,7 +3971,7 @@ station = "workbench"
 seconds = 30.0
 spark = 200
 xp = 9
-wear = 5
+wear = 6
 tint = 0
 
 [[recipe]]
@@ -3981,7 +3981,7 @@ station = "compactor"
 seconds = 60.0
 spark = 100
 xp = 7
-wear = 5
+wear = 35
 tint = 0
 
 [[recipe]]
@@ -3991,7 +3991,7 @@ station = "compactor"
 seconds = 60.0
 spark = 100
 xp = 7
-wear = 5
+wear = 35
 tint = 0
 
 [[recipe]]
@@ -4001,7 +4001,7 @@ station = "compactor"
 seconds = 60.0
 spark = 100
 xp = 7
-wear = 5
+wear = 35
 tint = 0
 
 [[recipe]]
@@ -4013,7 +4013,7 @@ seconds = 180.0
 spark = 400
 power = 1200
 xp = 22
-wear = 15
+wear = 70
 tint = 0
 
 [[recipe]]
@@ -4022,7 +4022,7 @@ inputs = [["glow_crystal", 1]]
 station = "refinery"
 seconds = 30.0
 xp = 6
-wear = 5
+wear = 28
 
 [[recipe]]
 output = "faceted_glow_crystal"
@@ -4032,7 +4032,7 @@ seconds = 30.0
 spark = 800
 power = 1000
 xp = 20
-wear = 10
+wear = 28
 
 [[recipe]]
 output = "clear_glass"
@@ -4041,7 +4041,7 @@ station = "refinery"
 seconds = 60.0
 spark = 400
 xp = 12
-wear = 10
+wear = 35
 
 [[recipe]]
 output = "framed_glass"
@@ -4051,7 +4051,7 @@ seconds = 120.0
 spark = 800
 power = 1000
 xp = 24
-wear = 15
+wear = 55
 
 [[recipe]]
 output = "ornate_glass"
@@ -4061,7 +4061,7 @@ seconds = 180.0
 spark = 2000
 power = 2000
 xp = 50
-wear = 25
+wear = 70
 
 [[recipe]]
 output = "circuit_copper"
@@ -4071,7 +4071,7 @@ seconds = 20.0
 spark = 200
 power = 400
 xp = 15
-wear = 10
+wear = 26
 
 [[recipe]]
 output = "filigree_copper"
@@ -4081,7 +4081,7 @@ seconds = 20.0
 spark = 200
 power = 400
 xp = 15
-wear = 10
+wear = 26
 
 [[recipe]]
 output = "grid_copper"
@@ -4091,7 +4091,7 @@ seconds = 20.0
 spark = 200
 power = 400
 xp = 15
-wear = 10
+wear = 26
 
 [[recipe]]
 output = "circuit_iron"
@@ -4101,7 +4101,7 @@ seconds = 30.0
 spark = 200
 power = 400
 xp = 17
-wear = 10
+wear = 28
 
 [[recipe]]
 output = "filigree_iron"
@@ -4111,7 +4111,7 @@ seconds = 30.0
 spark = 200
 power = 400
 xp = 17
-wear = 10
+wear = 28
 
 [[recipe]]
 output = "grid_iron"
@@ -4121,7 +4121,7 @@ seconds = 30.0
 spark = 200
 power = 400
 xp = 17
-wear = 10
+wear = 28
 
 [[recipe]]
 output = "circuit_silver_alloy"
@@ -4131,7 +4131,7 @@ seconds = 40.0
 spark = 400
 power = 800
 xp = 20
-wear = 10
+wear = 30
 
 [[recipe]]
 output = "filigree_silver_alloy"
@@ -4141,7 +4141,7 @@ seconds = 40.0
 spark = 400
 power = 800
 xp = 20
-wear = 10
+wear = 30
 
 [[recipe]]
 output = "grid_silver_alloy"
@@ -4151,7 +4151,7 @@ seconds = 40.0
 spark = 400
 power = 800
 xp = 20
-wear = 10
+wear = 30
 
 [[recipe]]
 output = "circuit_gold_alloy"
@@ -4161,7 +4161,7 @@ seconds = 50.0
 spark = 400
 power = 800
 xp = 22
-wear = 10
+wear = 35
 
 [[recipe]]
 output = "filigree_gold_alloy"
@@ -4171,7 +4171,7 @@ seconds = 50.0
 spark = 400
 power = 800
 xp = 22
-wear = 10
+wear = 35
 
 [[recipe]]
 output = "grid_gold_alloy"
@@ -4181,7 +4181,7 @@ seconds = 50.0
 spark = 400
 power = 800
 xp = 22
-wear = 10
+wear = 35
 
 [[recipe]]
 output = "circuit_titanium_alloy"
@@ -4191,7 +4191,7 @@ seconds = 60.0
 spark = 600
 power = 1200
 xp = 25
-wear = 10
+wear = 35
 
 [[recipe]]
 output = "filigree_titanium_alloy"
@@ -4201,7 +4201,7 @@ seconds = 60.0
 spark = 600
 power = 1200
 xp = 25
-wear = 10
+wear = 35
 
 [[recipe]]
 output = "grid_titanium_alloy"
@@ -4211,7 +4211,7 @@ seconds = 60.0
 spark = 600
 power = 1200
 xp = 25
-wear = 10
+wear = 35
 
 [[recipe]]
 output = "polished_amethyst"
@@ -4221,7 +4221,7 @@ seconds = 120.0
 spark = 800
 power = 1000
 xp = 30
-wear = 20
+wear = 11
 
 [[recipe]]
 output = "polished_emerald"
@@ -4231,7 +4231,7 @@ seconds = 120.0
 spark = 800
 power = 1000
 xp = 30
-wear = 20
+wear = 11
 
 [[recipe]]
 output = "polished_sapphire"
@@ -4241,7 +4241,7 @@ seconds = 120.0
 spark = 800
 power = 1000
 xp = 30
-wear = 20
+wear = 11
 
 [[recipe]]
 output = "polished_topaz"
@@ -4251,7 +4251,7 @@ seconds = 120.0
 spark = 800
 power = 1000
 xp = 30
-wear = 20
+wear = 11
 
 [[recipe]]
 output = "polished_diamond"
@@ -4261,7 +4261,7 @@ seconds = 120.0
 spark = 800
 power = 1000
 xp = 30
-wear = 20
+wear = 11
 
 [[recipe]]
 output = "polished_ruby"
@@ -4271,7 +4271,7 @@ seconds = 120.0
 spark = 800
 power = 1000
 xp = 30
-wear = 20
+wear = 11
 
 [[recipe]]
 output = "polished_aurorite"
@@ -4310,7 +4310,7 @@ station = "refinery"
 seconds = 60.0
 spark = 400
 xp = 16
-wear = 10
+wear = 35
 
 # Milestone 22 part 2: doors, trapdoors, the lock and pipe (Boundless's
 # recipes, docs/research/building-blocks.md). Wear a guess.
@@ -4322,7 +4322,7 @@ inputs = [["any_base_metal", 6], ["relic_fragment", 1]]
 station = "workbench"
 seconds = 60.0
 xp = 6
-wear = 6
+wear = 7
 
 [[recipe]]
 output = "lock"
@@ -4330,7 +4330,7 @@ inputs = [["any_base_metal", 3], ["cog", 6]]
 station = "refinery"
 seconds = 180.0
 xp = 12
-wear = 10
+wear = 70
 
 [[recipe]]
 output = "plain_wood_door"
@@ -4355,7 +4355,7 @@ station = "refinery"
 seconds = 120.0
 spark = 200
 xp = 15
-wear = 10
+wear = 55
 
 [[recipe]]
 output = "plain_crystal_door"
@@ -4364,7 +4364,7 @@ station = "refinery"
 seconds = 180.0
 spark = 400
 xp = 24
-wear = 10
+wear = 70
 
 [[recipe]]
 output = "stylish_wood_door"
@@ -4372,7 +4372,7 @@ inputs = [["any_timber", 12], ["any_leaves", 3], ["nail", 6]]
 station = "refinery"
 seconds = 120.0
 xp = 12
-wear = 10
+wear = 55
 tint = 0
 
 [[recipe]]
@@ -4382,7 +4382,7 @@ station = "refinery"
 seconds = 180.0
 spark = 400
 xp = 22
-wear = 10
+wear = 70
 tint = 0
 
 [[recipe]]
@@ -4393,7 +4393,7 @@ seconds = 240.0
 spark = 600
 power = 1000
 xp = 32
-wear = 10
+wear = 85
 
 [[recipe]]
 output = "stylish_crystal_door"
@@ -4403,7 +4403,7 @@ seconds = 300.0
 spark = 800
 power = 2000
 xp = 40
-wear = 10
+wear = 100
 
 [[recipe]]
 output = "ornate_wood_door"
@@ -4412,7 +4412,7 @@ station = "refinery"
 seconds = 240.0
 spark = 400
 xp = 28
-wear = 10
+wear = 85
 tint = 0
 
 [[recipe]]
@@ -4423,7 +4423,7 @@ seconds = 360.0
 spark = 600
 power = 1000
 xp = 40
-wear = 10
+wear = 120
 tint = 0
 
 [[recipe]]
@@ -4434,7 +4434,7 @@ seconds = 480.0
 spark = 800
 power = 2000
 xp = 54
-wear = 10
+wear = 150
 
 [[recipe]]
 output = "ornate_crystal_door"
@@ -4444,7 +4444,7 @@ seconds = 600.0
 spark = 2000
 power = 3000
 xp = 80
-wear = 10
+wear = 190
 
 [[recipe]]
 output = "plain_wood_trapdoor"
@@ -4452,7 +4452,7 @@ inputs = [["any_timber", 8]]
 station = "refinery"
 seconds = 60.0
 xp = 6
-wear = 10
+wear = 35
 tint = 0
 
 [[recipe]]
@@ -4461,7 +4461,7 @@ inputs = [["any_stones", 16]]
 station = "refinery"
 seconds = 90.0
 xp = 8
-wear = 10
+wear = 45
 tint = 0
 
 [[recipe]]
@@ -4471,7 +4471,7 @@ station = "refinery"
 seconds = 120.0
 spark = 200
 xp = 15
-wear = 10
+wear = 55
 
 [[recipe]]
 output = "plain_crystal_trapdoor"
@@ -4480,7 +4480,7 @@ station = "refinery"
 seconds = 180.0
 spark = 400
 xp = 24
-wear = 10
+wear = 70
 
 [[recipe]]
 output = "stylish_wood_trapdoor"
@@ -4488,7 +4488,7 @@ inputs = [["any_timber", 12], ["any_leaves", 3], ["nail", 6]]
 station = "refinery"
 seconds = 120.0
 xp = 12
-wear = 10
+wear = 55
 tint = 0
 
 [[recipe]]
@@ -4498,7 +4498,7 @@ station = "refinery"
 seconds = 180.0
 spark = 400
 xp = 22
-wear = 10
+wear = 70
 tint = 0
 
 [[recipe]]
@@ -4509,7 +4509,7 @@ seconds = 240.0
 spark = 600
 power = 1000
 xp = 32
-wear = 10
+wear = 85
 
 [[recipe]]
 output = "stylish_crystal_trapdoor"
@@ -4519,7 +4519,7 @@ seconds = 300.0
 spark = 800
 power = 2000
 xp = 42
-wear = 10
+wear = 100
 
 [[recipe]]
 output = "ornate_wood_trapdoor"
@@ -4528,7 +4528,7 @@ station = "refinery"
 seconds = 240.0
 spark = 400
 xp = 28
-wear = 10
+wear = 85
 tint = 0
 
 [[recipe]]
@@ -4539,7 +4539,7 @@ seconds = 360.0
 spark = 600
 power = 1000
 xp = 40
-wear = 10
+wear = 120
 tint = 0
 
 [[recipe]]
@@ -4550,7 +4550,7 @@ seconds = 480.0
 spark = 800
 power = 2000
 xp = 54
-wear = 10
+wear = 150
 
 [[recipe]]
 output = "ornate_crystal_trapdoor"
@@ -4560,4 +4560,441 @@ seconds = 600.0
 spark = 2000
 power = 3000
 xp = 80
-wear = 10
+wear = 190
+
+# Milestone 22 part 3: furnishings (Boundless's recipes, `docs/research/furnishings.md`).
+
+[[recipe]]
+output = "plain_wood_pole"
+inputs = [["any_timber", 8]]
+station = "refinery"
+seconds = 60.0
+xp = 4
+wear = 35
+tint = 0
+
+[[recipe]]
+output = "plain_stone_pole"
+inputs = [["any_stones", 16]]
+station = "refinery"
+seconds = 90.0
+xp = 8
+wear = 45
+tint = 0
+
+[[recipe]]
+output = "plain_metal_pole"
+inputs = [["any_metal", 4]]
+station = "refinery"
+seconds = 120.0
+spark = 200
+xp = 15
+wear = 55
+
+[[recipe]]
+output = "plain_crystal_pole"
+inputs = [["glow_crystal", 4], ["vital_essence", 2]]
+station = "refinery"
+seconds = 180.0
+spark = 400
+xp = 24
+wear = 70
+
+[[recipe]]
+output = "stylish_wood_pole"
+inputs = [["any_timber", 12], ["any_leaves", 3], ["nail", 6]]
+station = "refinery"
+seconds = 120.0
+xp = 12
+wear = 55
+tint = 0
+
+[[recipe]]
+output = "stylish_stone_pole"
+inputs = [["any_stones", 12], ["glue", 2]]
+station = "refinery"
+seconds = 180.0
+spark = 400
+xp = 22
+wear = 70
+tint = 0
+
+[[recipe]]
+output = "stylish_metal_pole"
+inputs = [["any_metal", 6], ["pipe", 6]]
+station = "refinery"
+seconds = 240.0
+spark = 600
+power = 1000
+xp = 32
+wear = 85
+
+[[recipe]]
+output = "stylish_crystal_pole"
+inputs = [["glow_crystal", 6], ["any_base_metal", 2], ["vital_essence", 4]]
+station = "refinery"
+seconds = 300.0
+spark = 800
+power = 2000
+xp = 40
+wear = 100
+
+[[recipe]]
+output = "ornate_wood_pole"
+inputs = [["any_refined_wood", 4], ["any_leaves", 6], ["nail", 6]]
+station = "refinery"
+seconds = 240.0
+spark = 400
+xp = 28
+wear = 85
+tint = 0
+
+[[recipe]]
+output = "ornate_stone_pole"
+inputs = [["any_refined_rock", 8], ["glue", 4]]
+station = "refinery"
+seconds = 360.0
+spark = 600
+power = 1000
+xp = 40
+wear = 120
+tint = 0
+
+[[recipe]]
+output = "ornate_metal_pole"
+inputs = [["any_base_metal", 4], ["any_base_alloy", 4], ["pipe", 6]]
+station = "refinery"
+seconds = 480.0
+spark = 800
+power = 2000
+xp = 54
+wear = 150
+
+[[recipe]]
+output = "ornate_crystal_pole"
+inputs = [["glow_crystal", 12], ["any_base_alloy", 4], ["vital_essence", 4]]
+station = "refinery"
+seconds = 600.0
+spark = 2000
+power = 3000
+xp = 80
+wear = 190
+
+[[recipe]]
+output = "plain_wood_beam"
+inputs = [["any_timber", 8]]
+station = "refinery"
+seconds = 60.0
+xp = 4
+wear = 35
+tint = 0
+
+[[recipe]]
+output = "plain_stone_beam"
+inputs = [["any_stones", 16]]
+station = "refinery"
+seconds = 90.0
+xp = 8
+wear = 45
+tint = 0
+
+[[recipe]]
+output = "plain_metal_beam"
+inputs = [["any_metal", 4]]
+station = "refinery"
+seconds = 120.0
+spark = 200
+xp = 15
+wear = 55
+
+[[recipe]]
+output = "plain_crystal_beam"
+inputs = [["glow_crystal", 4], ["vital_essence", 2]]
+station = "refinery"
+seconds = 180.0
+spark = 400
+xp = 24
+wear = 70
+
+[[recipe]]
+output = "stylish_wood_beam"
+inputs = [["any_timber", 12], ["any_leaves", 3], ["nail", 6]]
+station = "refinery"
+seconds = 120.0
+xp = 12
+wear = 55
+tint = 0
+
+[[recipe]]
+output = "stylish_stone_beam"
+inputs = [["any_stones", 12], ["glue", 2]]
+station = "refinery"
+seconds = 180.0
+spark = 400
+xp = 22
+wear = 70
+tint = 0
+
+[[recipe]]
+output = "stylish_metal_beam"
+inputs = [["any_metal", 6], ["pipe", 6]]
+station = "refinery"
+seconds = 240.0
+spark = 600
+power = 1000
+xp = 32
+wear = 85
+
+[[recipe]]
+output = "stylish_crystal_beam"
+inputs = [["glow_crystal", 6], ["any_base_metal", 2], ["vital_essence", 4]]
+station = "refinery"
+seconds = 300.0
+spark = 800
+power = 2000
+xp = 40
+wear = 100
+
+[[recipe]]
+output = "ornate_wood_beam"
+inputs = [["any_refined_wood", 4], ["any_leaves", 6], ["nail", 6]]
+station = "refinery"
+seconds = 240.0
+spark = 400
+xp = 28
+wear = 85
+tint = 0
+
+[[recipe]]
+output = "ornate_stone_beam"
+inputs = [["any_refined_rock", 8], ["glue", 4]]
+station = "refinery"
+seconds = 360.0
+spark = 600
+power = 1000
+xp = 40
+wear = 120
+tint = 0
+
+[[recipe]]
+output = "ornate_metal_beam"
+inputs = [["any_base_metal", 4], ["any_base_alloy", 4], ["pipe", 6]]
+station = "refinery"
+seconds = 480.0
+spark = 800
+power = 2000
+xp = 50
+wear = 150
+
+[[recipe]]
+output = "ornate_crystal_beam"
+inputs = [["glow_crystal", 12], ["any_base_alloy", 4], ["vital_essence", 4]]
+station = "refinery"
+seconds = 600.0
+spark = 2000
+power = 3000
+xp = 80
+wear = 190
+
+[[recipe]]
+output = "plain_glass_pane"
+inputs = [["glass", 4], ["refined_glow_crystal", 2]]
+station = "refinery"
+seconds = 60.0
+spark = 400
+xp = 12
+wear = 35
+
+[[recipe]]
+output = "stylish_glass_pane"
+inputs = [["glass", 6], ["refined_glow_crystal", 3], ["any_base_metal", 2]]
+station = "refinery"
+seconds = 120.0
+spark = 800
+power = 1000
+xp = 24
+wear = 55
+
+[[recipe]]
+output = "ornate_glass_pane"
+inputs = [["glass", 12], ["refined_glow_crystal", 6], ["any_base_alloy", 4]]
+station = "refinery"
+seconds = 180.0
+spark = 2000
+power = 2000
+xp = 50
+wear = 70
+
+[[recipe]]
+output = "stone_plinth"
+inputs = [["any_stones", 10], ["any_base_metal", 2], ["glue", 2]]
+station = "refinery"
+seconds = 180.0
+xp = 14
+wear = 70
+tint = 0
+
+[[recipe]]
+output = "wood_table"
+inputs = [["any_timber", 6], ["any_base_metal", 2], ["nail", 4], ["glue", 1]]
+station = "refinery"
+seconds = 180.0
+xp = 12
+wear = 70
+tint = 0
+
+[[recipe]]
+output = "wood_chair"
+inputs = [["any_timber", 6], ["any_base_metal", 2], ["nail", 4], ["glue", 1]]
+station = "refinery"
+seconds = 180.0
+xp = 12
+wear = 70
+tint = 0
+
+[[recipe]]
+output = "plain_wood_storage"
+inputs = [["any_timber", 6], ["glue", 1]]
+station = "crafting_table"
+seconds = 60.0
+xp = 6
+tint = 0
+
+[[recipe]]
+output = "stylish_wood_storage"
+inputs = [["any_timber", 12], ["any_base_metal", 2], ["glue", 1], ["nail", 6]]
+station = "refinery"
+seconds = 120.0
+spark = 200
+power = 500
+xp = 12
+wear = 55
+tint = 0
+
+[[recipe]]
+output = "ornate_wood_storage"
+inputs = [["any_refined_wood", 4], ["any_base_alloy", 2], ["glue", 1], ["nail", 6], ["wax", 6]]
+station = "refinery"
+seconds = 240.0
+spark = 400
+power = 1000
+xp = 28
+wear = 85
+tint = 0
+
+[[recipe]]
+output = "plain_stone_storage"
+inputs = [["any_stones", 12], ["glue", 1]]
+station = "crafting_table"
+seconds = 90.0
+xp = 9
+tint = 0
+
+[[recipe]]
+output = "stylish_stone_storage"
+inputs = [["any_refined_rock", 4], ["any_base_metal", 2], ["glue", 1], ["nail", 6]]
+station = "refinery"
+seconds = 180.0
+spark = 400
+power = 500
+xp = 18
+wear = 70
+tint = 0
+
+[[recipe]]
+output = "ornate_stone_storage"
+inputs = [["any_refined_rock", 4], ["any_base_alloy", 2], ["glue", 1], ["nail", 6], ["wax", 6]]
+station = "refinery"
+seconds = 360.0
+spark = 600
+power = 1000
+xp = 36
+wear = 120
+tint = 0
+
+[[recipe]]
+output = "plain_metal_storage"
+inputs = [["any_metal", 4], ["glue", 1]]
+station = "refinery"
+seconds = 120.0
+spark = 400
+xp = 16
+wear = 55
+
+[[recipe]]
+output = "stylish_metal_storage"
+inputs = [["any_metal", 6], ["pipe", 6], ["nail", 6]]
+station = "refinery"
+seconds = 240.0
+spark = 600
+power = 1000
+xp = 32
+wear = 85
+
+[[recipe]]
+output = "ornate_metal_storage"
+inputs = [["any_base_metal", 4], ["any_base_alloy", 4], ["pipe", 8], ["nail", 12], ["wax", 12]]
+station = "refinery"
+seconds = 480.0
+spark = 800
+power = 2000
+xp = 48
+wear = 150
+
+[[recipe]]
+output = "plain_crystal_storage"
+inputs = [["refined_glow_crystal", 6], ["vital_essence", 2], ["relic_fragment", 6]]
+station = "refinery"
+seconds = 180.0
+spark = 400
+xp = 20
+wear = 70
+
+[[recipe]]
+output = "stylish_crystal_storage"
+inputs = [["refined_glow_crystal", 8], ["vital_essence", 4], ["any_metal", 8]]
+station = "refinery"
+seconds = 360.0
+spark = 800
+power = 2000
+xp = 40
+wear = 120
+
+[[recipe]]
+output = "ornate_crystal_storage"
+inputs = [["refined_glow_crystal", 12], ["vital_essence", 6], ["any_base_metal", 4], ["any_base_alloy", 4]]
+station = "refinery"
+seconds = 640.0
+spark = 2000
+power = 4000
+xp = 80
+wear = 200
+
+[[recipe]]
+output = "plain_wicker_storage"
+inputs = [["stick", 6], ["rice_grain", 12], ["cotton_cloth", 1]]
+station = "refinery"
+seconds = 90.0
+spark = 200
+xp = 12
+wear = 45
+
+[[recipe]]
+output = "stylish_wicker_storage"
+inputs = [["stick", 6], ["wheat_grain", 12], ["leather", 1], ["wax", 6]]
+station = "refinery"
+seconds = 180.0
+spark = 400
+power = 500
+xp = 18
+wear = 70
+
+[[recipe]]
+output = "ornate_wicker_storage"
+inputs = [["stick", 6], ["waxy_tuber", 12], ["hard_leather", 2], ["nail", 6], ["wax", 6]]
+station = "refinery"
+seconds = 360.0
+spark = 600
+power = 1000
+xp = 32
+wear = 120

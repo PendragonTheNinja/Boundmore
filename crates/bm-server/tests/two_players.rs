@@ -6823,3 +6823,60 @@ async fn doors_swing_together_and_locks_keep_others_out() {
     drop((alice, bob));
     server.stop();
 }
+
+/// Milestone 22 part 3: furnishings take their form turned as Boundless's
+/// were: poles along the face clicked, or as the pole they are put against;
+/// a pane on the side nearest its placer; storage of every size.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn furnishings_turn_as_they_are_placed() {
+    use bm_core::Mount;
+    use bm_core::forms::{Form, FormKind, Style};
+    let dir = tempfile::tempdir().unwrap();
+    seed(
+        dir.path(),
+        "Alice",
+        &[
+            (5, "plain_wood_pole", 4, 0),
+            (6, "stylish_stone_beam", 2, 0),
+            (7, "ornate_glass_pane", 1, 0),
+            (8, "wood_chair", 1, 0),
+        ],
+    );
+    let server = bm_server::start(config(dir.path())).unwrap();
+    let mut alice = TestClient::login(&server, "Alice").await;
+    let feet = alice.feet();
+    alice.wait_for_chunk(feet.chunk()).await;
+    let form = |a: &TestClient, p| Form::of(state_at(a, p).shape);
+    let at = |kind, style, turn| Form::new(kind, style, turn);
+
+    // On the ground: upright. Against its side: as that pole, not along x.
+    let pole = feet.offset(2, 1, 0);
+    assert!(place(&mut alice, 1, pole, 5, Some(Mount::Floor)).await.0);
+    assert!(place(&mut alice, 2, pole.offset(1, 0, 0), 5, Some(Mount::West)).await.0);
+    // A beam put against a wall's north face runs along z.
+    let beam = feet.offset(-2, 1, 3);
+    assert!(place(&mut alice, 3, beam, 6, Some(Mount::North)).await.0);
+    // A pane stands on the side nearest Alice (west of it); a chair faces
+    // her (she is south of it).
+    let pane = feet.offset(4, 1, 1);
+    assert!(place(&mut alice, 4, pane, 7, Some(Mount::Floor)).await.0);
+    let chair = feet.offset(2, 1, -3);
+    assert!(place(&mut alice, 5, chair, 8, Some(Mount::Floor)).await.0);
+    alice.settle().await;
+    assert_eq!(form(&alice, pole), at(FormKind::Pole, Style::Plain, 1));
+    assert_eq!(form(&alice, pole.offset(1, 0, 0)), at(FormKind::Pole, Style::Plain, 1));
+    assert_eq!(form(&alice, beam), at(FormKind::Beam, Style::Stylish, 2));
+    assert_eq!(form(&alice, pane), at(FormKind::Pane, Style::Ornate, 3));
+    assert_eq!(form(&alice, chair), at(FormKind::Chair, Style::Plain, 2));
+
+    // Storage holds Boundless's slots for its material and style.
+    let reg = bm_core::BlockRegistry::builtin();
+    let slots = |n: &str| reg.get(reg.id(n).unwrap()).storage;
+    assert_eq!(
+        [slots("plain_wood_storage"), slots("stylish_stone_storage"), slots("ornate_wicker_storage")],
+        [16, 24, 32]
+    );
+    assert_eq!([slots("plain_metal_storage"), slots("ornate_crystal_storage")], [24, 40]);
+    drop(alice);
+    server.stop();
+}

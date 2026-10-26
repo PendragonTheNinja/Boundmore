@@ -48,6 +48,9 @@ pub const CHEST: [i64; 3] = [126, 44, 126];
 pub const WALL: [i64; 3] = [120, 48, 114];
 /// Where `show_shapes` puts the player: on a pillar behind the rows.
 pub const SHAPES_VIEW: [f64; 3] = [128.5, 46.0, 130.5];
+
+/// Where the furnishings showroom is seen from.
+pub const FURNISHINGS_VIEW: [f64; 3] = [128.5, 47.0, 131.5];
 /// The west end of the grapple demo's arch beam, which runs ten blocks east.
 pub const GRAPPLE_BEAM: [i64; 3] = [124, 56, 118];
 /// The torch demo's hall (`show_torches`), inside: west and east x, north
@@ -683,6 +686,83 @@ impl Demo {
         self.slots_since(&before);
         let chunks = self.chunks_around_spawn();
         self.events.extend(chunks.into_iter().map(NetEvent::Msg));
+    }
+
+    /// Turns the first planet into a showroom for milestone 22's doors and
+    /// furnishings: doors and trapdoors shut and open, upright poles and
+    /// lying beams of every style and material, panes, furniture and every
+    /// storage block, in rows from near to far.
+    pub fn show_furnishings(&mut self) {
+        use bm_core::doors::{Side, open_door, open_trapdoor, shut_door, shut_trapdoor};
+        use bm_core::forms::{Form, FormKind, Style};
+        let b = |n: &str| self.blocks.id(n).expect("builtin block");
+        let c = |name: &str| self.colours.id(name).expect("palette colour");
+        let mut put = Vec::new();
+        let y = 44;
+        let mut at = |x: i64, z: i64, name: &str, shape: bm_core::Shape, colour: Option<&str>| {
+            put.push((
+                BlockPos::new(x, y, z),
+                BlockState {
+                    id: b(name),
+                    colour: colour.map(c).unwrap_or(Colour::NATURAL),
+                    shape,
+                },
+            ));
+        };
+        let mats = ["wood", "stone", "metal", "crystal"];
+        let styles = [("plain", Style::Plain), ("stylish", Style::Stylish), ("ornate", Style::Ornate)];
+        // Nearest: doors shut and open, trapdoors shut and open.
+        for (k, (s, _)) in styles.iter().enumerate() {
+            for (m, mat) in mats.iter().enumerate() {
+                let x = 116 + (k * 8 + m * 2) as i64;
+                let open = (k + m) % 2 == 1;
+                let name = format!("{s}_{mat}_door{}", if open { "_open" } else { "" });
+                let shape = if open { open_door(Side::South) } else { shut_door(Side::South) };
+                at(x, 127, &name, shape, None);
+                let name = format!("{s}_{mat}_trapdoor{}", if open { "_open" } else { "" });
+                let shape = if open { open_trapdoor(Side::South) } else { shut_trapdoor() };
+                at(x + 1, 127, &name, shape, None);
+            }
+        }
+        // Upright poles, then beams lying along x, by style then material.
+        for (k, (s, style)) in styles.iter().enumerate() {
+            for (m, mat) in mats.iter().enumerate() {
+                let x = 116 + (k * 8 + m * 2) as i64;
+                let tint = (*mat == "wood").then_some("Rich Azure");
+                let pole = Form::new(FormKind::Pole, *style, 1).unwrap().shape();
+                at(x, 124, &format!("{s}_{mat}_pole"), pole, None);
+                let beam = Form::new(FormKind::Beam, *style, 0).unwrap().shape();
+                at(x, 121, &format!("{s}_{mat}_beam"), beam, tint);
+                at(x + 1, 121, &format!("{s}_{mat}_beam"), beam, tint);
+            }
+        }
+        // Panes facing the view, then the plinth, table and chair.
+        for (k, (s, style)) in styles.iter().enumerate() {
+            for d in 0..2 {
+                let pane = Form::new(FormKind::Pane, *style, 2).unwrap().shape();
+                at(116 + (k * 3) as i64 + d, 118, &format!("{s}_glass_pane"), pane, None);
+            }
+        }
+        let form = |kind, turn| Form::new(kind, Style::Plain, turn).unwrap().shape();
+        at(126, 118, "stone_plinth", form(FormKind::Plinth, 0), None);
+        at(128, 118, "wood_table", form(FormKind::Table, 0), None);
+        at(129, 118, "wood_chair", form(FormKind::Chair, 3), None);
+        at(127, 118, "wood_chair", form(FormKind::Chair, 1), Some("Bright Crimson"));
+        // Furthest: every storage block.
+        for (m, mat) in ["wood", "stone", "metal", "crystal", "wicker"].iter().enumerate() {
+            for (k, (s, _)) in styles.iter().enumerate() {
+                let x = 116 + (m * 4 + k) as i64;
+                at(x, 115, &format!("{s}_{mat}_storage"), bm_core::Shape::FULL, None);
+            }
+        }
+        // A post to look down from (`FURNISHINGS_VIEW`).
+        for y in 44..47 {
+            put.push((BlockPos::new(128, y, 131), BlockState::plain(b("stone"))));
+        }
+        let planet = &mut self.planets[0];
+        planet.flat = true;
+        planet.edits.clear();
+        planet.edits.extend(put);
     }
 
     /// Turns the first planet into a showroom for chisel cuts (ADR-0008):

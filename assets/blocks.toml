@@ -3897,7 +3897,7 @@ name = "plain_wood_door"
 chisel = "none"
 color = [150, 108, 64]
 solid = true
-opaque = false
+opaque = true
 translucent = false
 breakable = true
 placeable = true
@@ -3914,7 +3914,7 @@ name = "plain_wood_door_open"
 chisel = "none"
 color = [150, 108, 64]
 solid = false
-opaque = false
+opaque = true
 translucent = false
 breakable = true
 placeable = false
@@ -3932,7 +3932,7 @@ name = "plain_stone_door"
 chisel = "none"
 color = [128, 124, 120]
 solid = true
-opaque = false
+opaque = true
 translucent = false
 breakable = true
 placeable = true
@@ -3949,7 +3949,7 @@ name = "plain_stone_door_open"
 chisel = "none"
 color = [128, 124, 120]
 solid = false
-opaque = false
+opaque = true
 translucent = false
 breakable = true
 placeable = false
@@ -3968,7 +3968,7 @@ chisel = "none"
 colourable = false
 color = [160, 150, 140]
 solid = true
-opaque = false
+opaque = true
 translucent = false
 breakable = true
 placeable = true
@@ -3986,7 +3986,7 @@ chisel = "none"
 colourable = false
 color = [160, 150, 140]
 solid = false
-opaque = false
+opaque = true
 translucent = false
 breakable = true
 placeable = false
@@ -4005,7 +4005,7 @@ chisel = "none"
 colourable = false
 color = [150, 230, 255]
 solid = true
-opaque = false
+opaque = true
 translucent = false
 breakable = true
 placeable = true
@@ -4023,7 +4023,7 @@ chisel = "none"
 colourable = false
 color = [150, 230, 255]
 solid = false
-opaque = false
+opaque = true
 translucent = false
 breakable = true
 placeable = false
@@ -4041,7 +4041,7 @@ name = "stylish_wood_door"
 chisel = "none"
 color = [150, 108, 64]
 solid = true
-opaque = false
+opaque = true
 translucent = false
 breakable = true
 placeable = true
@@ -4058,7 +4058,7 @@ name = "stylish_wood_door_open"
 chisel = "none"
 color = [150, 108, 64]
 solid = false
-opaque = false
+opaque = true
 translucent = false
 breakable = true
 placeable = false
@@ -4076,7 +4076,7 @@ name = "stylish_stone_door"
 chisel = "none"
 color = [128, 124, 120]
 solid = true
-opaque = false
+opaque = true
 translucent = false
 breakable = true
 placeable = true
@@ -4093,7 +4093,7 @@ name = "stylish_stone_door_open"
 chisel = "none"
 color = [128, 124, 120]
 solid = false
-opaque = false
+opaque = true
 translucent = false
 breakable = true
 placeable = false
@@ -4112,7 +4112,7 @@ chisel = "none"
 colourable = false
 color = [160, 150, 140]
 solid = true
-opaque = false
+opaque = true
 translucent = false
 breakable = true
 placeable = true
@@ -4130,7 +4130,7 @@ chisel = "none"
 colourable = false
 color = [160, 150, 140]
 solid = false
-opaque = false
+opaque = true
 translucent = false
 breakable = true
 placeable = false
@@ -4149,7 +4149,7 @@ chisel = "none"
 colourable = false
 color = [150, 230, 255]
 solid = true
-opaque = false
+opaque = true
 translucent = false
 breakable = true
 placeable = true
@@ -4167,7 +4167,7 @@ chisel = "none"
 colourable = false
 color = [150, 230, 255]
 solid = false
-opaque = false
+opaque = true
 translucent = false
 breakable = true
 placeable = false
@@ -4185,7 +4185,7 @@ name = "ornate_wood_door"
 chisel = "none"
 color = [150, 108, 64]
 solid = true
-opaque = false
+opaque = true
 translucent = false
 breakable = true
 placeable = true
@@ -4202,7 +4202,7 @@ name = "ornate_wood_door_open"
 chisel = "none"
 color = [150, 108, 64]
 solid = false
-opaque = false
+opaque = true
 translucent = false
 breakable = true
 placeable = false
@@ -4220,7 +4220,7 @@ name = "ornate_stone_door"
 chisel = "none"
 color = [128, 124, 120]
 solid = true
-opaque = false
+opaque = true
 translucent = false
 breakable = true
 placeable = true
@@ -4237,7 +4237,7 @@ name = "ornate_stone_door_open"
 chisel = "none"
 color = [128, 124, 120]
 solid = false
-opaque = false
+opaque = true
 translucent = false
 breakable = true
 placeable = false
@@ -4256,7 +4256,7 @@ chisel = "none"
 colourable = false
 color = [160, 150, 140]
 solid = true
-opaque = false
+opaque = true
 translucent = false
 breakable = true
 placeable = true
@@ -4274,7 +4274,7 @@ chisel = "none"
 colourable = false
 color = [160, 150, 140]
 solid = false
-opaque = false
+opaque = true
 translucent = false
 breakable = true
 placeable = false
@@ -4293,7 +4293,7 @@ chisel = "none"
 colourable = false
 color = [150, 230, 255]
 solid = true
-opaque = false
+opaque = true
 translucent = false
 breakable = true
 placeable = true
@@ -4311,7 +4311,7 @@ chisel = "none"
 colourable = false
 color = [150, 230, 255]
 solid = false
-opaque = false
+opaque = true
 translucent = false
 breakable = true
 placeable = false
@@ -4329,7 +4329,7 @@ name = "plain_wood_trapdoor"
 chisel = "none"
 color = [150, 108, 64]
 solid = true
-opaque = false
+opaque = true
 translucent = false
 breakable = true
 placeable = true
@@ -4346,7 +4346,7 @@ name = "plain_wood_trapdoor_open"
 chisel = "none"
 color = [150, 108, 64]
 solid = false
-opaque = false
+opaque = true
 translucent = false
 breakable = true
 placeable = false
@@ -4364,7 +4364,7 @@ name = "plain_stone_trapdoor"
 chisel = "none"
 color = [128, 124, 120]
 solid = true
-opaque = false
+opaque = true
 translucent = false
 breakable = true
 placeable = true
@@ -4381,7 +4381,7 @@ name = "plain_stone_trapdoor_open"
 chisel = "none"
 color = [128, 124, 120]
 solid = false
-opaque = false
+opaque = true
 translucent = false
 breakable = true
 placeable = false
@@ -4400,7 +4400,7 @@ chisel = "none"
 colourable = false
 color = [160, 150, 140]
 solid = true
-opaque = false
+opaque = true
 translucent = false
 breakable = true
 placeable = true
@@ -4418,7 +4418,7 @@ chisel = "none"
 colourable = false
 color = [160, 150, 140]
 solid = false
-opaque = false
+opaque = true
 translucent = false
 breakable = true
 placeable = false
@@ -4437,7 +4437,7 @@ chisel = "none"
 colourable = false
 color = [150, 230, 255]
 solid = true
-opaque = false
+opaque = true
 translucent = false
 breakable = true
 placeable = true
@@ -4455,7 +4455,7 @@ chisel = "none"
 colourable = false
 color = [150, 230, 255]
 solid = false
-opaque = false
+opaque = true
 translucent = false
 breakable = true
 placeable = false
@@ -4473,7 +4473,7 @@ name = "stylish_wood_trapdoor"
 chisel = "none"
 color = [150, 108, 64]
 solid = true
-opaque = false
+opaque = true
 translucent = false
 breakable = true
 placeable = true
@@ -4490,7 +4490,7 @@ name = "stylish_wood_trapdoor_open"
 chisel = "none"
 color = [150, 108, 64]
 solid = false
-opaque = false
+opaque = true
 translucent = false
 breakable = true
 placeable = false
@@ -4508,7 +4508,7 @@ name = "stylish_stone_trapdoor"
 chisel = "none"
 color = [128, 124, 120]
 solid = true
-opaque = false
+opaque = true
 translucent = false
 breakable = true
 placeable = true
@@ -4525,7 +4525,7 @@ name = "stylish_stone_trapdoor_open"
 chisel = "none"
 color = [128, 124, 120]
 solid = false
-opaque = false
+opaque = true
 translucent = false
 breakable = true
 placeable = false
@@ -4544,7 +4544,7 @@ chisel = "none"
 colourable = false
 color = [160, 150, 140]
 solid = true
-opaque = false
+opaque = true
 translucent = false
 breakable = true
 placeable = true
@@ -4562,7 +4562,7 @@ chisel = "none"
 colourable = false
 color = [160, 150, 140]
 solid = false
-opaque = false
+opaque = true
 translucent = false
 breakable = true
 placeable = false
@@ -4581,7 +4581,7 @@ chisel = "none"
 colourable = false
 color = [150, 230, 255]
 solid = true
-opaque = false
+opaque = true
 translucent = false
 breakable = true
 placeable = true
@@ -4599,7 +4599,7 @@ chisel = "none"
 colourable = false
 color = [150, 230, 255]
 solid = false
-opaque = false
+opaque = true
 translucent = false
 breakable = true
 placeable = false
@@ -4617,7 +4617,7 @@ name = "ornate_wood_trapdoor"
 chisel = "none"
 color = [150, 108, 64]
 solid = true
-opaque = false
+opaque = true
 translucent = false
 breakable = true
 placeable = true
@@ -4634,7 +4634,7 @@ name = "ornate_wood_trapdoor_open"
 chisel = "none"
 color = [150, 108, 64]
 solid = false
-opaque = false
+opaque = true
 translucent = false
 breakable = true
 placeable = false
@@ -4652,7 +4652,7 @@ name = "ornate_stone_trapdoor"
 chisel = "none"
 color = [128, 124, 120]
 solid = true
-opaque = false
+opaque = true
 translucent = false
 breakable = true
 placeable = true
@@ -4669,7 +4669,7 @@ name = "ornate_stone_trapdoor_open"
 chisel = "none"
 color = [128, 124, 120]
 solid = false
-opaque = false
+opaque = true
 translucent = false
 breakable = true
 placeable = false
@@ -4688,7 +4688,7 @@ chisel = "none"
 colourable = false
 color = [160, 150, 140]
 solid = true
-opaque = false
+opaque = true
 translucent = false
 breakable = true
 placeable = true
@@ -4706,7 +4706,7 @@ chisel = "none"
 colourable = false
 color = [160, 150, 140]
 solid = false
-opaque = false
+opaque = true
 translucent = false
 breakable = true
 placeable = false
@@ -4725,7 +4725,7 @@ chisel = "none"
 colourable = false
 color = [150, 230, 255]
 solid = true
-opaque = false
+opaque = true
 translucent = false
 breakable = true
 placeable = true
@@ -4743,7 +4743,7 @@ chisel = "none"
 colourable = false
 color = [150, 230, 255]
 solid = false
-opaque = false
+opaque = true
 translucent = false
 breakable = true
 placeable = false
@@ -4769,5 +4769,816 @@ placeable = true
 health = "hard"
 textures = { all = "lock" }
 material = "rock"
+mine_xp = 2
+build_xp = 12
+
+# Milestone 22 part 3: furnishings. Poles, beams, panes and furniture take a
+# form (`form`, `style`): a fixed model turned as they are placed
+# (`bm_core::forms`). Storage variants are whole blocks with slots.
+
+[[block]]
+name = "plain_wood_pole"
+chisel = "none"
+colourable = true
+color = [166, 120, 74]
+solid = true
+opaque = true
+translucent = false
+breakable = true
+placeable = true
+health = "hard"
+textures = { all = "plain_wood_pole" }
+material = "wood"
+form = "pole"
+style = "plain"
+mine_xp = 2
+build_xp = 12
+
+[[block]]
+name = "plain_stone_pole"
+chisel = "none"
+colourable = true
+color = [150, 150, 146]
+solid = true
+opaque = true
+translucent = false
+breakable = true
+placeable = true
+health = "hard"
+textures = { all = "plain_stone_pole" }
+material = "rock"
+form = "pole"
+style = "plain"
+mine_xp = 2
+build_xp = 12
+
+[[block]]
+name = "plain_metal_pole"
+chisel = "none"
+colourable = false
+color = [150, 154, 160]
+solid = true
+opaque = true
+translucent = false
+breakable = true
+placeable = true
+health = "hard"
+textures = { all = "plain_metal_pole" }
+material = "rock"
+form = "pole"
+style = "plain"
+mine_xp = 2
+build_xp = 12
+
+[[block]]
+name = "plain_crystal_pole"
+chisel = "none"
+colourable = false
+color = [150, 230, 255]
+solid = true
+opaque = true
+translucent = false
+breakable = true
+placeable = true
+health = "hard"
+textures = { all = "plain_crystal_pole" }
+material = "crystal"
+light = 6
+form = "pole"
+style = "plain"
+mine_xp = 2
+build_xp = 12
+
+[[block]]
+name = "stylish_wood_pole"
+chisel = "none"
+colourable = true
+color = [166, 120, 74]
+solid = true
+opaque = true
+translucent = false
+breakable = true
+placeable = true
+health = "hard"
+textures = { all = "stylish_wood_pole" }
+material = "wood"
+form = "pole"
+style = "stylish"
+mine_xp = 2
+build_xp = 12
+
+[[block]]
+name = "stylish_stone_pole"
+chisel = "none"
+colourable = true
+color = [150, 150, 146]
+solid = true
+opaque = true
+translucent = false
+breakable = true
+placeable = true
+health = "hard"
+textures = { all = "stylish_stone_pole" }
+material = "rock"
+form = "pole"
+style = "stylish"
+mine_xp = 2
+build_xp = 12
+
+[[block]]
+name = "stylish_metal_pole"
+chisel = "none"
+colourable = false
+color = [150, 154, 160]
+solid = true
+opaque = true
+translucent = false
+breakable = true
+placeable = true
+health = "hard"
+textures = { all = "stylish_metal_pole" }
+material = "rock"
+form = "pole"
+style = "stylish"
+mine_xp = 2
+build_xp = 12
+
+[[block]]
+name = "stylish_crystal_pole"
+chisel = "none"
+colourable = false
+color = [150, 230, 255]
+solid = true
+opaque = true
+translucent = false
+breakable = true
+placeable = true
+health = "hard"
+textures = { all = "stylish_crystal_pole" }
+material = "crystal"
+light = 6
+form = "pole"
+style = "stylish"
+mine_xp = 2
+build_xp = 12
+
+[[block]]
+name = "ornate_wood_pole"
+chisel = "none"
+colourable = true
+color = [166, 120, 74]
+solid = true
+opaque = true
+translucent = false
+breakable = true
+placeable = true
+health = "hard"
+textures = { all = "ornate_wood_pole" }
+material = "wood"
+form = "pole"
+style = "ornate"
+mine_xp = 2
+build_xp = 12
+
+[[block]]
+name = "ornate_stone_pole"
+chisel = "none"
+colourable = true
+color = [150, 150, 146]
+solid = true
+opaque = true
+translucent = false
+breakable = true
+placeable = true
+health = "hard"
+textures = { all = "ornate_stone_pole" }
+material = "rock"
+form = "pole"
+style = "ornate"
+mine_xp = 2
+build_xp = 12
+
+[[block]]
+name = "ornate_metal_pole"
+chisel = "none"
+colourable = false
+color = [150, 154, 160]
+solid = true
+opaque = true
+translucent = false
+breakable = true
+placeable = true
+health = "hard"
+textures = { all = "ornate_metal_pole" }
+material = "rock"
+form = "pole"
+style = "ornate"
+mine_xp = 2
+build_xp = 12
+
+[[block]]
+name = "ornate_crystal_pole"
+chisel = "none"
+colourable = false
+color = [150, 230, 255]
+solid = true
+opaque = true
+translucent = false
+breakable = true
+placeable = true
+health = "hard"
+textures = { all = "ornate_crystal_pole" }
+material = "crystal"
+light = 6
+form = "pole"
+style = "ornate"
+mine_xp = 2
+build_xp = 12
+
+[[block]]
+name = "plain_wood_beam"
+chisel = "none"
+colourable = true
+color = [166, 120, 74]
+solid = true
+opaque = true
+translucent = false
+breakable = true
+placeable = true
+health = "hard"
+textures = { all = "plain_wood_beam" }
+material = "wood"
+form = "beam"
+style = "plain"
+mine_xp = 2
+build_xp = 12
+
+[[block]]
+name = "plain_stone_beam"
+chisel = "none"
+colourable = true
+color = [150, 150, 146]
+solid = true
+opaque = true
+translucent = false
+breakable = true
+placeable = true
+health = "hard"
+textures = { all = "plain_stone_beam" }
+material = "rock"
+form = "beam"
+style = "plain"
+mine_xp = 2
+build_xp = 12
+
+[[block]]
+name = "plain_metal_beam"
+chisel = "none"
+colourable = false
+color = [150, 154, 160]
+solid = true
+opaque = true
+translucent = false
+breakable = true
+placeable = true
+health = "hard"
+textures = { all = "plain_metal_beam" }
+material = "rock"
+form = "beam"
+style = "plain"
+mine_xp = 2
+build_xp = 12
+
+[[block]]
+name = "plain_crystal_beam"
+chisel = "none"
+colourable = false
+color = [150, 230, 255]
+solid = true
+opaque = true
+translucent = false
+breakable = true
+placeable = true
+health = "hard"
+textures = { all = "plain_crystal_beam" }
+material = "crystal"
+light = 6
+form = "beam"
+style = "plain"
+mine_xp = 2
+build_xp = 12
+
+[[block]]
+name = "stylish_wood_beam"
+chisel = "none"
+colourable = true
+color = [166, 120, 74]
+solid = true
+opaque = true
+translucent = false
+breakable = true
+placeable = true
+health = "hard"
+textures = { all = "stylish_wood_beam" }
+material = "wood"
+form = "beam"
+style = "stylish"
+mine_xp = 2
+build_xp = 12
+
+[[block]]
+name = "stylish_stone_beam"
+chisel = "none"
+colourable = true
+color = [150, 150, 146]
+solid = true
+opaque = true
+translucent = false
+breakable = true
+placeable = true
+health = "hard"
+textures = { all = "stylish_stone_beam" }
+material = "rock"
+form = "beam"
+style = "stylish"
+mine_xp = 2
+build_xp = 12
+
+[[block]]
+name = "stylish_metal_beam"
+chisel = "none"
+colourable = false
+color = [150, 154, 160]
+solid = true
+opaque = true
+translucent = false
+breakable = true
+placeable = true
+health = "hard"
+textures = { all = "stylish_metal_beam" }
+material = "rock"
+form = "beam"
+style = "stylish"
+mine_xp = 2
+build_xp = 12
+
+[[block]]
+name = "stylish_crystal_beam"
+chisel = "none"
+colourable = false
+color = [150, 230, 255]
+solid = true
+opaque = true
+translucent = false
+breakable = true
+placeable = true
+health = "hard"
+textures = { all = "stylish_crystal_beam" }
+material = "crystal"
+light = 6
+form = "beam"
+style = "stylish"
+mine_xp = 2
+build_xp = 12
+
+[[block]]
+name = "ornate_wood_beam"
+chisel = "none"
+colourable = true
+color = [166, 120, 74]
+solid = true
+opaque = true
+translucent = false
+breakable = true
+placeable = true
+health = "hard"
+textures = { all = "ornate_wood_beam" }
+material = "wood"
+form = "beam"
+style = "ornate"
+mine_xp = 2
+build_xp = 12
+
+[[block]]
+name = "ornate_stone_beam"
+chisel = "none"
+colourable = true
+color = [150, 150, 146]
+solid = true
+opaque = true
+translucent = false
+breakable = true
+placeable = true
+health = "hard"
+textures = { all = "ornate_stone_beam" }
+material = "rock"
+form = "beam"
+style = "ornate"
+mine_xp = 2
+build_xp = 12
+
+[[block]]
+name = "ornate_metal_beam"
+chisel = "none"
+colourable = false
+color = [150, 154, 160]
+solid = true
+opaque = true
+translucent = false
+breakable = true
+placeable = true
+health = "hard"
+textures = { all = "ornate_metal_beam" }
+material = "rock"
+form = "beam"
+style = "ornate"
+mine_xp = 2
+build_xp = 12
+
+[[block]]
+name = "ornate_crystal_beam"
+chisel = "none"
+colourable = false
+color = [150, 230, 255]
+solid = true
+opaque = true
+translucent = false
+breakable = true
+placeable = true
+health = "hard"
+textures = { all = "ornate_crystal_beam" }
+material = "crystal"
+light = 6
+form = "beam"
+style = "ornate"
+mine_xp = 2
+build_xp = 12
+
+[[block]]
+name = "plain_glass_pane"
+chisel = "none"
+colourable = false
+color = [200, 228, 236]
+solid = true
+opaque = false
+translucent = true
+breakable = true
+placeable = true
+health = "hard"
+opacity = 0.12
+textures = { all = "plain_glass_pane" }
+material = "crystal"
+form = "pane"
+style = "plain"
+mine_xp = 2
+build_xp = 12
+
+[[block]]
+name = "stylish_glass_pane"
+chisel = "none"
+colourable = false
+color = [200, 228, 236]
+solid = true
+opaque = false
+translucent = true
+breakable = true
+placeable = true
+health = "hard"
+opacity = 0.12
+textures = { all = "stylish_glass_pane" }
+material = "crystal"
+form = "pane"
+style = "stylish"
+mine_xp = 2
+build_xp = 12
+
+[[block]]
+name = "ornate_glass_pane"
+chisel = "none"
+colourable = false
+color = [200, 228, 236]
+solid = true
+opaque = false
+translucent = true
+breakable = true
+placeable = true
+health = "hard"
+opacity = 0.12
+textures = { all = "ornate_glass_pane" }
+material = "crystal"
+form = "pane"
+style = "ornate"
+mine_xp = 2
+build_xp = 12
+
+[[block]]
+name = "stone_plinth"
+chisel = "none"
+colourable = true
+color = [150, 150, 146]
+solid = true
+opaque = true
+translucent = false
+breakable = true
+placeable = true
+health = "hard"
+textures = { all = "stone_plinth" }
+material = "rock"
+form = "plinth"
+style = "plain"
+mine_xp = 2
+build_xp = 12
+
+[[block]]
+name = "wood_table"
+chisel = "none"
+colourable = true
+color = [166, 120, 74]
+solid = true
+opaque = true
+translucent = false
+breakable = true
+placeable = true
+health = "hard"
+textures = { all = "wood_table" }
+material = "wood"
+form = "table"
+style = "plain"
+mine_xp = 2
+build_xp = 12
+
+[[block]]
+name = "wood_chair"
+chisel = "none"
+colourable = true
+color = [166, 120, 74]
+solid = true
+opaque = true
+translucent = false
+breakable = true
+placeable = true
+health = "hard"
+textures = { all = "wood_chair" }
+material = "wood"
+form = "chair"
+style = "plain"
+mine_xp = 2
+build_xp = 12
+
+[[block]]
+name = "plain_wood_storage"
+chisel = "any"
+colourable = true
+color = [166, 120, 74]
+solid = true
+opaque = true
+translucent = false
+breakable = true
+placeable = true
+health = "hard"
+textures = { top = "plain_wood_storage_top", side = "plain_wood_storage_side", bottom = "plain_wood_storage_top" }
+material = "wood"
+storage = 16
+mine_xp = 2
+build_xp = 12
+
+[[block]]
+name = "stylish_wood_storage"
+chisel = "any"
+colourable = true
+color = [166, 120, 74]
+solid = true
+opaque = true
+translucent = false
+breakable = true
+placeable = true
+health = "hard"
+textures = { top = "stylish_wood_storage_top", side = "stylish_wood_storage_side", bottom = "stylish_wood_storage_top" }
+material = "wood"
+storage = 24
+mine_xp = 2
+build_xp = 12
+
+[[block]]
+name = "ornate_wood_storage"
+chisel = "any"
+colourable = true
+color = [166, 120, 74]
+solid = true
+opaque = true
+translucent = false
+breakable = true
+placeable = true
+health = "hard"
+textures = { top = "ornate_wood_storage_top", side = "ornate_wood_storage_side", bottom = "ornate_wood_storage_top" }
+material = "wood"
+storage = 32
+mine_xp = 2
+build_xp = 12
+
+[[block]]
+name = "plain_stone_storage"
+chisel = "any"
+colourable = true
+color = [150, 150, 146]
+solid = true
+opaque = true
+translucent = false
+breakable = true
+placeable = true
+health = "hard"
+textures = { top = "plain_stone_storage_top", side = "plain_stone_storage_side", bottom = "plain_stone_storage_top" }
+material = "rock"
+storage = 16
+mine_xp = 2
+build_xp = 12
+
+[[block]]
+name = "stylish_stone_storage"
+chisel = "any"
+colourable = true
+color = [150, 150, 146]
+solid = true
+opaque = true
+translucent = false
+breakable = true
+placeable = true
+health = "hard"
+textures = { top = "stylish_stone_storage_top", side = "stylish_stone_storage_side", bottom = "stylish_stone_storage_top" }
+material = "rock"
+storage = 24
+mine_xp = 2
+build_xp = 12
+
+[[block]]
+name = "ornate_stone_storage"
+chisel = "any"
+colourable = true
+color = [150, 150, 146]
+solid = true
+opaque = true
+translucent = false
+breakable = true
+placeable = true
+health = "hard"
+textures = { top = "ornate_stone_storage_top", side = "ornate_stone_storage_side", bottom = "ornate_stone_storage_top" }
+material = "rock"
+storage = 32
+mine_xp = 2
+build_xp = 12
+
+[[block]]
+name = "plain_metal_storage"
+chisel = "any"
+colourable = false
+color = [150, 154, 160]
+solid = true
+opaque = true
+translucent = false
+breakable = true
+placeable = true
+health = "hard"
+textures = { top = "plain_metal_storage_top", side = "plain_metal_storage_side", bottom = "plain_metal_storage_top" }
+material = "rock"
+storage = 24
+mine_xp = 2
+build_xp = 12
+
+[[block]]
+name = "stylish_metal_storage"
+chisel = "any"
+colourable = false
+color = [150, 154, 160]
+solid = true
+opaque = true
+translucent = false
+breakable = true
+placeable = true
+health = "hard"
+textures = { top = "stylish_metal_storage_top", side = "stylish_metal_storage_side", bottom = "stylish_metal_storage_top" }
+material = "rock"
+storage = 32
+mine_xp = 2
+build_xp = 12
+
+[[block]]
+name = "ornate_metal_storage"
+chisel = "any"
+colourable = false
+color = [150, 154, 160]
+solid = true
+opaque = true
+translucent = false
+breakable = true
+placeable = true
+health = "hard"
+textures = { top = "ornate_metal_storage_top", side = "ornate_metal_storage_side", bottom = "ornate_metal_storage_top" }
+material = "rock"
+storage = 40
+mine_xp = 2
+build_xp = 12
+
+[[block]]
+name = "plain_crystal_storage"
+chisel = "any"
+colourable = false
+color = [150, 230, 255]
+solid = true
+opaque = true
+translucent = false
+breakable = true
+placeable = true
+health = "hard"
+textures = { top = "plain_crystal_storage_top", side = "plain_crystal_storage_side", bottom = "plain_crystal_storage_top" }
+material = "crystal"
+light = 8
+storage = 24
+mine_xp = 2
+build_xp = 12
+
+[[block]]
+name = "stylish_crystal_storage"
+chisel = "any"
+colourable = false
+color = [150, 230, 255]
+solid = true
+opaque = true
+translucent = false
+breakable = true
+placeable = true
+health = "hard"
+textures = { top = "stylish_crystal_storage_top", side = "stylish_crystal_storage_side", bottom = "stylish_crystal_storage_top" }
+material = "crystal"
+light = 8
+storage = 32
+mine_xp = 2
+build_xp = 12
+
+[[block]]
+name = "ornate_crystal_storage"
+chisel = "any"
+colourable = false
+color = [150, 230, 255]
+solid = true
+opaque = true
+translucent = false
+breakable = true
+placeable = true
+health = "hard"
+textures = { top = "ornate_crystal_storage_top", side = "ornate_crystal_storage_side", bottom = "ornate_crystal_storage_top" }
+material = "crystal"
+light = 8
+storage = 40
+mine_xp = 2
+build_xp = 12
+
+[[block]]
+name = "plain_wicker_storage"
+chisel = "any"
+colourable = false
+color = [196, 160, 96]
+solid = true
+opaque = true
+translucent = false
+breakable = true
+placeable = true
+health = "hard"
+textures = { top = "plain_wicker_storage_top", side = "plain_wicker_storage_side", bottom = "plain_wicker_storage_top" }
+material = "wood"
+storage = 16
+mine_xp = 2
+build_xp = 12
+
+[[block]]
+name = "stylish_wicker_storage"
+chisel = "any"
+colourable = false
+color = [196, 160, 96]
+solid = true
+opaque = true
+translucent = false
+breakable = true
+placeable = true
+health = "hard"
+textures = { top = "stylish_wicker_storage_top", side = "stylish_wicker_storage_side", bottom = "stylish_wicker_storage_top" }
+material = "wood"
+storage = 24
+mine_xp = 2
+build_xp = 12
+
+[[block]]
+name = "ornate_wicker_storage"
+chisel = "any"
+colourable = false
+color = [196, 160, 96]
+solid = true
+opaque = true
+translucent = false
+breakable = true
+placeable = true
+health = "hard"
+textures = { top = "ornate_wicker_storage_top", side = "ornate_wicker_storage_side", bottom = "ornate_wicker_storage_top" }
+material = "wood"
+storage = 32
 mine_xp = 2
 build_xp = 12

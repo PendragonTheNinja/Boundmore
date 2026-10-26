@@ -2285,12 +2285,18 @@ impl Game {
                     Colour::NATURAL
                 };
                 let mut placed = BlockState::coloured(block, colour);
-                // A door stands on the side nearest whoever places it
-                // (milestone 22 part 2).
-                if let Some(swing) = reg.get(block).swing {
+                // A door stands on the side nearest whoever places it, a
+                // furnishing takes its form turned to how it was placed
+                // (milestone 22 parts 2 and 3).
+                let def = reg.get(block);
+                if def.swing.is_some() || def.form.is_some() {
                     let centre = DVec3::new(canon.x as f64 + 0.5, canon.y as f64 + 0.5, canon.z as f64 + 0.5);
                     let d = shape.delta(centre, placer);
-                    placed.shape = bm_core::doors::placed(swing, d.x, d.z);
+                    let support = mount.and_then(|m| {
+                        let (dx, dy, dz) = m.support();
+                        world.state(canon.offset(dx, dy, dz))
+                    });
+                    placed.shape = bm_core::forms::placed_shape(def, mount, support, d.x, d.z);
                 }
                 Ok(Accepted {
                     block: placed,

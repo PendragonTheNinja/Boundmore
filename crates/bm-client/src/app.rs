@@ -558,7 +558,9 @@ impl Session {
         let registry = &self.items.registry;
         let block = registry.get(item)?.block()?;
         if registry.prop_block(&self.world.registry, item, Mount::Floor).is_none() {
-            return Some((block, None));
+            // Furnishings turn by the face clicked (`bm_core::forms`).
+            let mount = self.target.and_then(|h| crate::mining::mount_for_face(h.normal));
+            return Some((block, mount));
         }
         let hit = self.target?;
         let support = self.world.block(hit.block)?;
@@ -2211,8 +2213,18 @@ impl App {
                     Some(h) if s.world.registry.get(block).colourable => h.colour,
                     _ => Colour::NATURAL,
                 };
-                s.world
-                    .predict_edit(s.edit_seq, at, BlockState::coloured(block, colour));
+                let mut placed = BlockState::coloured(block, colour);
+                let def = s.world.registry.get(block);
+                if def.swing.is_some() || def.form.is_some() {
+                    let centre = DVec3::new(at.x as f64 + 0.5, at.y as f64 + 0.5, at.z as f64 + 0.5);
+                    let d = s.world.shape.delta(centre, s.me.state.pos);
+                    let support = mount.and_then(|m| {
+                        let (dx, dy, dz) = m.support();
+                        s.world.state(at.offset(dx, dy, dz))
+                    });
+                    placed.shape = bm_core::forms::placed_shape(def, mount, support, d.x, d.z);
+                }
+                s.world.predict_edit(s.edit_seq, at, placed);
                 link.send(ClientMsg::Edit {
                     seq: s.edit_seq,
                     at: s.me.seq,
@@ -3040,6 +3052,22 @@ impl App {
                     d.show_colours();
                 }
                 self.open_menu(Menu::Inventory);
+            }
+            // Milestone 22: doors, trapdoors and furnishings in daylight.
+            "furnishings" => {
+                if let Some(Link::Demo(d)) = &mut self.link {
+                    d.show_furnishings();
+                }
+                if let Some(s) = &mut self.session {
+                    s.me.teleport(bm_core::PlayerState {
+                        pos: DVec3::from_array(crate::demo::FURNISHINGS_VIEW),
+                        vel: DVec3::ZERO,
+                        on_ground: true,
+                        hook: None,
+                        ..Default::default()
+                    });
+                }
+                (self.yaw, self.pitch) = (0.0, -0.5);
             }
             // Chisel cuts of every family in daylight; with "chisel", a
             // bevel chisel in hand aimed at a brick, its cut outlined.

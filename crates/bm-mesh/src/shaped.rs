@@ -59,6 +59,18 @@ pub fn template(shape: Shape) -> &'static [ShapeTri] {
     if !shape.is_valid() {
         return &[];
     }
+    if let Some(form) = bm_core::forms::Form::of(shape) {
+        static FORMS: OnceLock<Vec<Vec<ShapeTri>>> = OnceLock::new();
+        let table = FORMS.get_or_init(|| {
+            (0u16..1 << 9)
+                .map(|b| {
+                    bm_core::forms::Form::of(Shape(bm_core::forms::FORM_BIT | b))
+                        .map_or_else(Vec::new, form_tris)
+                })
+                .collect()
+        });
+        return &table[(form.shape().0 & 0x1ff) as usize];
+    }
     let Some(family) = shape.family() else {
         return &[];
     };
@@ -81,6 +93,61 @@ fn build(family: ShapeFamily, removed: u8) -> Vec<ShapeTri> {
 }
 
 type V3 = [f32; 3];
+
+// ---- forms: furnishings drawn as boxes ----
+
+/// A form's drawn boxes as triangles. A box face is left out where another
+/// box covers it (inside it, or flush with a face of its at least as large),
+/// so overlapping boxes neither show hidden faces nor flicker.
+fn form_tris(form: bm_core::forms::Form) -> Vec<ShapeTri> {
+    let boxes: Vec<([f32; 3], [f32; 3])> = form
+        .drawn()
+        .iter()
+        .map(|(l, h)| (l.map(|v| v as f32 / 16.0), h.map(|v| v as f32 / 16.0)))
+        .collect();
+    let mut out = Vec::new();
+    for (k, &(lo, hi)) in boxes.iter().enumerate() {
+        for a in 0..3 {
+            let (b, c) = ((a + 1) % 3, (a + 2) % 3);
+            for positive in [false, true] {
+                let at = if positive { hi[a] } else { lo[a] };
+                let covered = boxes.iter().enumerate().any(|(j, &(ol, oh))| {
+                    if j == k || ol[b] > lo[b] || oh[b] < hi[b] || ol[c] > lo[c] || oh[c] < hi[c] {
+                        return false;
+                    }
+                    // Strictly inside the other box across the plane, or
+                    // flush with its face on the same side (the earlier or
+                    // larger one draws it).
+                    let inside = ol[a] < at && at < oh[a];
+                    let same = (ol[b], oh[b], ol[c], oh[c]) == (lo[b], hi[b], lo[c], hi[c]);
+                    let flush = if positive { oh[a] == at } else { ol[a] == at };
+                    let outward = if positive { oh[a] > at } else { ol[a] < at };
+                    inside || (outward && ol[a] <= at && at <= oh[a]) || (flush && (!same || j < k))
+                });
+                if covered {
+                    continue;
+                }
+                let mut n = [0.0; 3];
+                n[a] = if positive { 1.0 } else { -1.0 };
+                let corner = |u: f32, v: f32| {
+                    let mut p = [0.0; 3];
+                    p[a] = at;
+                    p[b] = u;
+                    p[c] = v;
+                    p
+                };
+                let pts = [
+                    corner(lo[b], lo[c]),
+                    corner(hi[b], lo[c]),
+                    corner(hi[b], hi[c]),
+                    corner(lo[b], hi[c]),
+                ];
+                flat_poly(&mut out, &pts, n, block_face(n, at));
+            }
+        }
+    }
+    out
+}
 
 fn sub(a: V3, b: V3) -> V3 {
     [a[0] - b[0], a[1] - b[1], a[2] - b[2]]
@@ -563,6 +630,23 @@ fn block_face(normal: V3, offset: f32) -> Option<Face> {
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
+
+    #[test]
+    fn forms_draw_their_boxes_without_hidden_or_doubled_faces() {
+        use bm_core::forms::{Form, FormKind, Style};
+        for f in Form::all() {
+            assert!(!template(f.shape()).is_empty(), "{f:?}");
+        }
+        // A plain upright pole: one box, six faces, the ends on the block's
+        // top and bottom faces (culled against a pole-free full block).
+        let pole = template(Form::new(FormKind::Pole, Style::Plain, 1).unwrap().shape());
+        assert_eq!(pole.len(), 12);
+        assert_eq!(pole.iter().filter(|t| t.face.is_some()).count(), 4);
+        // A stylish pole's collars cover the shaft's ends, flush with their
+        // own: the shaft keeps its four sides, each collar all six faces.
+        let stylish = template(Form::new(FormKind::Pole, Style::Stylish, 1).unwrap().shape());
+        assert_eq!(stylish.len(), 4 * 2 + 2 * 12);
+    }
 
     /// Whether a point (block units) is inside the drawn solid, from the
     /// families' definitions (independently of the triangles).

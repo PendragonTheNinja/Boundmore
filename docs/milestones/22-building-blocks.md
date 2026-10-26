@@ -38,6 +38,22 @@ Rules: `BlockDef::{swing, toggle}`; the shape of a placed door from the placer's
 
 Acceptance: a door opens and shuts with E and joins its neighbours; a locked door on a claim opens only for its owner; a player walks through an open door and not a shut one (end to end).
 
+## Part 3: furnishings
+
+From Boundless (`docs/research/furnishings.md`; recipes from the game's data, every input resolved): poles and beams come plain, stylish and ornate in wood, stone, metal and gleam, sit in the middle of their voxel and go **upright or lying along the face clicked**, a pole put against a pole (or beam against beam) **taking its orientation**; crystal ones give a little light. **Glass panes** (plain, stylish, ornate) are thin plates on one edge of their voxel, like a door. The **plinth, table and chair** are decoration only (no sitting). **Storage** comes in wood, stone, metal, gleam and farmed, plain to ornate, with **16, 24 and 32 slots (metal and gleam 24, 32 and 40)**. Signs are a system of their own (text, joining modules, glowing text) and get part 4.
+
+Decided:
+
+10. **A form is a shape.** A furnishing's model lives in its block's `Shape` (bit 11 set, ADR-0008's encoding extended: kind, style, turn), so collision, targeting and the mesher read it through `Shape::boxes` and the mesher's templates; light treats it as any cut block. A form is never chiselled. Chunks holding forms are format 3 (laid out as 2; an older server refuses them rather than flattening them).
+11. **Placing turns it.** `bm_core::forms::placed_shape`, used by the server and by the client's prediction (doors too, so a door no longer shows as a full block until the server answers): poles and beams along the axis of the face clicked (upright on a floor or under a ceiling), or as the pole or beam they are put against; panes on the side nearest the placer, as doors; chairs facing the placer.
+12. **Sizes** (sixteenths of a block; Boundless never published them, so they are guesses on the Measure list): pole 6 wide, beam 8, pane 2 thick, plinth 12 wide, table top 16 wide at half height and above, chair seat 12 at half height with a back. What collides is plain boxes; the drawn model adds collars, rails and legs by style.
+13. **Storage variants** are whole blocks with Boundless's slot counts; the window shows rows of 8.
+14. Recipes are Boundless's (machine, time, spark, power, XP, wear). Two of Boundless's take both "Any Metal" and "Any Base Alloy", which overlap and Boundmore's recipes refuse; those take "Any Base Metal" in the first place. Boundless's nuts are Boundmore's waxy tubers. Metal and gleam furnishings are natural (metals carry no colours yet).
+
+Rules: `bm_core::forms` (`Form`, `FormKind`, `Style`, `placed_shape`), `BlockDef::{form, style}`, a block drawn by its shape must be opaque or translucent (a startup error otherwise); `CHUNK_FORMAT_VERSION` 3, protocol 37; 24 poles and beams, 3 panes, 3 furniture blocks, 15 storage blocks and their textures; `--demo-ui furnishings`.
+
+Acceptance: furnishings place turned as above (end to end); every form collides, targets and draws by its boxes (unit tests); an old universe opens and saves its chunks as format 3 (upgrade check).
+
 ## Rules (part 1)
 
 1. `Recipe::tint: Option<u8>` (an input index) in `assets/recipes.toml` (`tint = 0`); `Recipe::plan` takes the chosen colour for that input; `Inventory` counts and removes by item and colour.
@@ -64,6 +80,9 @@ Acceptance: a door opens and shuts with E and joins its neighbours; a locked doo
 1. Does the colour choice in the craft window feel like Boundless's?
 2. Do the families read as Boundless's did: which ones you miss, which look wrong?
 3. Recipe costs (Boundless's): any that feel off for Boundmore's pace?
+4. Doors: do they open and shut like Boundless's (one block, joined neighbours, E)? Does the open door's strip at the hinge look right?
+5. Poles, beams and panes: how thick were they in Boundless (pole 6/16, beam 8/16 and pane 2/16 here are guesses)? Did beams meeting a pole look joined (here they stop at their own block's edge)? Did poles show caps at their ends?
+6. Did chairs face the placer? Could you walk through panes or tables in Boundless (here they collide)?
 
 ## Status
 
@@ -72,4 +91,5 @@ Acceptance: a door opens and shuts with E and joins its neighbours; a locked doo
 - **Upgrade check** (2026-10-26): a version 14 universe (made by `main`, opened by M21) opened as version 15 with no warnings.
 - **Known limits:** inputs other than the tinted one are taken in whatever colour comes first and come back natural if a station is broken mid-job (as before this milestone).
 - **Part 2 built** (2026-10-26, same branch): `bm_core::doors` (the four shapes, the placer's side, the swung shape), `BlockDef::{swing, toggle}` checked at startup (a toggle must name a block that toggles back with the same swing), 48 door and trapdoor blocks, the lock, the pipe, 26 recipes; the server's `swing_door` (reach, the joined door by faces, one claim, at most 64 blocks, locks, nobody in the way); the client's E on an aimed door; textures by `bm-texgen/src/doors.rs`. End to end: `doors_swing_together_and_locks_keep_others_out`. No save change, so no upgrade check.
+- **Fixed with part 3 (2026-10-26):** every door and trapdoor was invisible: the catalogue made them neither opaque nor translucent, and the shaped mesher draws only those. A startup check now refuses such a block (test `doors_and_furnishings_must_be_drawn`). The M22 recipes' machine wear was a guess (5 or 10); it is now Boundless's per recipe, from the game data.
 - **Known limits (part 2):** plain stone and plain metal doors are both grey in their natural colour (metal darker, with rivets; stone takes colour).

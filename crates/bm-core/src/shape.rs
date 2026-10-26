@@ -5,6 +5,8 @@
 //! Encoding (`Shape(u16)`, saved in chunks, never reinterpret): bits 0-7 are
 //! the removed octants, octant `i = x | z << 1 | y << 2` with each of x, y, z
 //! 0 (low half) or 1 (high half); bits 8-10 are the family; bits 11-15 are 0.
+//! A shape with bit 11 set is a furnishing's form instead (`crate::forms`):
+//! no family, never chiselled, its boxes the form's.
 //! How each family draws its cuts (square: cubes; slope: planes through the
 //! block's corners; bevel: 45 degree cuts; round: curves) is the mesher's;
 //! what is solid is the same for all: the kept octants.
@@ -65,7 +67,12 @@ impl Shape {
     }
 
     pub fn is_full(self) -> bool {
-        self.removed() == 0
+        !self.is_form() && self.removed() == 0
+    }
+
+    /// Whether this is a furnishing's form (`crate::forms`), not a cut.
+    pub fn is_form(self) -> bool {
+        self.0 & crate::forms::FORM_BIT != 0
     }
 
     /// Octants cut away.
@@ -75,7 +82,7 @@ impl Shape {
 
     /// The family, or `None` for the full cube (which belongs to all).
     pub fn family(self) -> Option<ShapeFamily> {
-        if self.is_full() {
+        if self.is_full() || self.is_form() {
             None
         } else {
             ShapeFamily::from_bits(self.0 >> 8 & 7)
@@ -87,6 +94,7 @@ impl Shape {
     /// checked with this before use.
     pub fn is_valid(self) -> bool {
         self.is_full()
+            || crate::forms::Form::of(self).is_some()
             || (self.0 >> 11 == 0 && self.removed() != 0xff && ShapeFamily::from_bits(self.0 >> 8 & 7).is_some())
     }
 
@@ -98,19 +106,22 @@ impl Shape {
     /// The solid boxes, in block units within `0..=1`: one per kept octant
     /// (collision and targeting use these for every family, ADR-0008).
     pub fn boxes(self) -> impl Iterator<Item = ([f64; 3], [f64; 3])> {
-        (0u8..8).filter(move |&i| self.keeps(i)).map(|i| {
+        let form = crate::forms::Form::of(self).map(|f| f.solid());
+        let cut = !self.is_form();
+        let octants = (0u8..8).filter(move |&i| cut && self.keeps(i)).map(|i| {
             let (x, z, y) = ((i & 1) as f64, (i >> 1 & 1) as f64, (i >> 2 & 1) as f64);
             (
                 [x * 0.5, y * 0.5, z * 0.5],
                 [x * 0.5 + 0.5, y * 0.5 + 0.5, z * 0.5 + 0.5],
             )
-        })
+        });
+        octants.chain(form.into_iter().flatten())
     }
 
     /// This shape with `cut` also removed, if the result is still a shape and
     /// the families agree (a full block takes the chisel's family).
     pub fn chiselled(self, family: ShapeFamily, cut: u8) -> Option<Shape> {
-        if self.family().is_some_and(|f| f != family) {
+        if self.is_form() || self.family().is_some_and(|f| f != family) {
             return None;
         }
         Shape::new(family, self.removed() | cut)
@@ -118,6 +129,9 @@ impl Shape {
 
     /// This shape with `fill` put back (`Shape::FULL` once nothing is removed).
     pub fn restored(self, fill: u8) -> Shape {
+        if self.is_form() {
+            return self;
+        }
         match self.family() {
             None => self,
             Some(f) => Shape::new(f, self.removed() & !fill).unwrap_or(Shape::FULL),

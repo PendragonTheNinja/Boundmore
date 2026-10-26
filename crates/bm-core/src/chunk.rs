@@ -12,7 +12,10 @@ use crate::block::{BlockId, BlockState, Colour, Shape};
 use crate::coords::{CHUNK_VOLUME, LocalPos};
 
 /// Version of the serialized chunk format. Bump on any change to `encode`.
-pub const CHUNK_FORMAT_VERSION: u8 = 2;
+/// Version 3 (milestone 22 part 3) is laid out as 2 and may hold
+/// furnishings' forms (`crate::forms`), which an older server would read as
+/// invalid shapes and flatten to full blocks: so it refuses them instead.
+pub const CHUNK_FORMAT_VERSION: u8 = 3;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Chunk {
@@ -294,7 +297,7 @@ impl Chunk {
         let raw = lz4_flex::decompress_size_prepended(bytes).map_err(|_| ChunkDecodeError::Compression)?;
         let mut r = Reader { b: &raw, at: 0 };
         let version = r.u8()?;
-        if version != 1 && version != CHUNK_FORMAT_VERSION {
+        if version == 0 || version > CHUNK_FORMAT_VERSION {
             return Err(ChunkDecodeError::Version(version));
         }
         let len = r.u16()? as usize;
@@ -553,6 +556,34 @@ mod tests {
         let c = Chunk::decode(&lz4_flex::compress_prepend_size(&raw)).unwrap();
         assert_eq!(c.state_index(0), BlockState::plain(BlockId(7)));
         assert_eq!(c.get_index(1), BlockId::AIR);
+    }
+
+    #[test]
+    fn forms_round_trip_and_version_2_chunks_still_decode() {
+        use crate::forms::{Form, FormKind, Style};
+        let pole = Form::new(FormKind::Pole, Style::Ornate, 2).unwrap().shape();
+        let mut c = Chunk::filled(BlockId::AIR);
+        let state = BlockState {
+            id: BlockId(5),
+            colour: Colour::NATURAL,
+            shape: pole,
+        };
+        c.set_state(LocalPos::new(3, 4, 5), state);
+        let bytes = c.encode();
+        let mut back = Chunk::decode(&bytes).unwrap();
+        assert_eq!(back.fix_invalid_shapes(), 0, "a form is a valid shape");
+        assert_eq!(back.state(LocalPos::new(3, 4, 5)), state);
+        // The same layout under version 2 decodes the same.
+        let mut raw = lz4_flex::decompress_size_prepended(&bytes).unwrap();
+        assert_eq!(raw[0], 3);
+        raw[0] = 2;
+        let v2 = Chunk::decode(&lz4_flex::compress_prepend_size(&raw)).unwrap();
+        assert_eq!(v2.to_dense_states(), c.to_dense_states());
+        raw[0] = 4;
+        assert!(matches!(
+            Chunk::decode(&lz4_flex::compress_prepend_size(&raw)),
+            Err(ChunkDecodeError::Version(4))
+        ));
     }
 
     #[test]
