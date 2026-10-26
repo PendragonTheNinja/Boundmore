@@ -231,8 +231,8 @@ fn frame(fx: f32, fy: f32, w: f32, rails_full: bool, groove: bool) -> Option<Px>
 fn boards(m: Mat, fx: f32, fy: f32, lo: f32, hi: f32, along_y: bool) -> Px {
     let v = if along_y { fx } else { fy };
     let (k, a, b) = board(v, lo, hi, m.boards());
-    // A dark joint on each board's leading edge (the frame's rebate before the first).
-    if a < 1.0 {
+    // A dark joint between boards.
+    if k > 0 && a < 1.0 {
         return gap(0.1);
     }
     body(0.45 + 0.35 * rise(a.min(b) - 0.5, 1.2), 10 + k, !along_y)
@@ -324,7 +324,7 @@ fn plain_door(m: Mat, fx: f32, fy: f32) -> Px {
     if let Some(p) = frame(fx, fy, 3.5, false, false) {
         // Metal: rivets down the stiles and along the rails.
         if m == Mat::Metal {
-            let near = |v: f32| ((v - 1.75).rem_euclid(5.0) - 2.5).abs();
+            let near = |v: f32| ((v - 1.75 + 2.85).rem_euclid(5.7) - 2.85).abs();
             let on_stile = !(3.5..=SIZEF - 3.5).contains(&fx);
             let (cx, along) = if on_stile {
                 (if fx < 16.0 { 1.75 } else { SIZEF - 1.75 }, near(fy))
@@ -332,7 +332,7 @@ fn plain_door(m: Mat, fx: f32, fy: f32) -> Px {
                 (if fy < 16.0 { 1.75 } else { SIZEF - 1.75 }, near(fx))
             };
             let across = if on_stile { fx - cx } else { fy - cx };
-            if let Some(s) = stud(along, across, 0.0, 0.0, 0.85) {
+            if let Some(s) = stud(along, across, 0.0, 0.0, 1.1) {
                 return fit(1.2 + s * 0.4);
             }
         }
