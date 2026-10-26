@@ -2117,7 +2117,10 @@ pub fn paint_named(name: &str, variant: u32) -> Option<Tex> {
         "medium_coal_seam" => medium_coal_seam,
         "hard_coal_seam" => hard_coal_seam,
         other => {
-            if let Some(t) = crate::farming::paint_crop(other).or_else(|| crate::building::paint(other)) {
+            if let Some(t) = crate::farming::paint_crop(other)
+                .or_else(|| crate::building::paint(other))
+                .or_else(|| crate::doors::paint(other))
+            {
                 return Some(t);
             }
             crate::spark::painter(other)

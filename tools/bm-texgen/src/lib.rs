@@ -10,6 +10,7 @@ pub mod building;
 pub mod canvas;
 pub mod color;
 pub mod creatures;
+pub mod doors;
 pub mod farming;
 pub mod flora;
 pub mod food;

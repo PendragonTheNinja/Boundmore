@@ -40,27 +40,27 @@ use crate::worlds::{gold_alloy_ramp, titanium_alloy_ramp};
 // ----------------------------------------------------------------- shapes
 
 /// A field from a function of the pixel centre, in units.
-fn field(f: impl Fn(f32, f32) -> f32) -> Field {
+pub(crate) fn field(f: impl Fn(f32, f32) -> f32) -> Field {
     Field::from_fn(|x, y| f(c(x), c(y)))
 }
 
 /// How far a point lies inside the rectangle (negative outside).
-fn inset(p: (f32, f32), x0: f32, y0: f32, x1: f32, y1: f32) -> f32 {
+pub(crate) fn inset(p: (f32, f32), x0: f32, y0: f32, x1: f32, y1: f32) -> f32 {
     (p.0 - x0).min(x1 - p.0).min(p.1 - y0).min(y1 - p.1)
 }
 
 /// How far a point lies inside the face.
-fn face_inset(p: (f32, f32)) -> f32 {
+pub(crate) fn face_inset(p: (f32, f32)) -> f32 {
     inset(p, 0.0, 0.0, SIZEF, SIZEF)
 }
 
 /// A bevelled rise: 0 at `d` = 0, 1 by `w` units in.
-fn rise(d: f32, w: f32) -> f32 {
+pub(crate) fn rise(d: f32, w: f32) -> f32 {
     (d / w).clamp(0.0, 1.0)
 }
 
 /// A soft bump on the band `lo..hi` of `d`: 0 outside, 1 in the middle.
-fn ridge(d: f32, lo: f32, hi: f32) -> f32 {
+pub(crate) fn ridge(d: f32, lo: f32, hi: f32) -> f32 {
     let mid = (lo + hi) * 0.5;
     let half = (hi - lo) * 0.5;
     (1.0 - ((d - mid) / half).abs()).clamp(0.0, 1.0)
@@ -68,13 +68,13 @@ fn ridge(d: f32, lo: f32, hi: f32) -> f32 {
 
 /// Paints a height field lit from the top left through `ramp`: `tone`
 /// gives each pixel's tone before the light, `k` how strongly slopes shade.
-fn shade(ramp: &Ramp, height: &Field, k: f32, tone: impl Fn(usize, usize, f32) -> f32) -> Tex {
+pub(crate) fn shade(ramp: &Ramp, height: &Field, k: f32, tone: impl Fn(usize, usize, f32) -> f32) -> Tex {
     let light = height.light();
     Tex::from_fn(|x, y| ramp.pick(tone(x, y, height.at(x, y)) + light.at(x, y) * k, x, y))
 }
 
 /// Sets a few one-pixel sparkles (a white centre and a soft cross).
-fn sparkles(tex: &mut Tex, at: &[(i32, i32)]) {
+pub(crate) fn sparkles(tex: &mut Tex, at: &[(i32, i32)]) {
     let white = Rgba::hex(0xffffff);
     for &(x, y) in at {
         for (dx, dy) in [(0, 0), (1, 0), (-1, 0), (0, 1), (0, -1)] {
@@ -110,7 +110,7 @@ impl Rock {
         }
     }
 
-    fn ramp(self) -> Ramp {
+    pub(crate) fn ramp(self) -> Ramp {
         match self {
             Rock::Stone => stone_ramp(),
             Rock::Basalt => basalt_ramp(),
@@ -160,7 +160,7 @@ impl Rock {
 
     /// The rock's grain around zero: its slabs, columns or beds, softened
     /// so they read as the stone a block was cut from, not as joins.
-    fn grain(self, salt: u32) -> Field {
+    pub(crate) fn grain(self, salt: u32) -> Field {
         let mut style = self.style();
         style.salt = hash2(style.salt, salt);
         style.cracks *= 0.4;
@@ -178,7 +178,7 @@ impl Rock {
     }
 
     /// The rock's own flecks: basalt's pale crystals, limestone's shells.
-    fn flecks(self, tex: &mut Tex, salt: u32) {
+    pub(crate) fn flecks(self, tex: &mut Tex, salt: u32) {
         match self {
             Rock::Stone => specks(Ctx::BASE, tex, salt, 7.0, 0.25, Rgba::hex(0x3f4560)),
             Rock::Basalt => specks(Ctx::BASE, tex, salt, 6.0, 0.4, Rgba::hex(0xb8cad6)),
@@ -458,7 +458,7 @@ impl Wood {
         }
     }
 
-    fn ramp(self) -> Ramp {
+    pub(crate) fn ramp(self) -> Ramp {
         match self {
             Wood::Timber => plank_ramp(),
             Wood::Pale => pale_wood_ramp(),
@@ -467,7 +467,7 @@ impl Wood {
     }
 
     /// Grain: streaks along `x` (or along `y`), a little wavier for gnarled.
-    fn grain(self, salt: u32, fx: f32, fy: f32, across: bool) -> f32 {
+    pub(crate) fn grain(self, salt: u32, fx: f32, fy: f32, across: bool) -> f32 {
         let wave = match self {
             Wood::Gnarled => (fbm(salt ^ 7, 2, 2, 2, fx, fy) - 0.5) * 3.0,
             _ => 0.0,
@@ -824,7 +824,7 @@ impl MetalBlock {
         }
     }
 
-    fn ramp(self) -> Ramp {
+    pub(crate) fn ramp(self) -> Ramp {
         match self {
             MetalBlock::Copper => copper_ramp(),
             MetalBlock::Iron => steel_ramp(),

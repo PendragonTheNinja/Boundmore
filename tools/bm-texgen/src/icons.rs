@@ -1428,7 +1428,8 @@ pub fn paint_icon(name: &str) -> Option<Tex> {
                 .or_else(|| crate::forge::paint_icon(other))
                 .or_else(|| crate::worlds::paint_icon(other))
                 .or_else(|| crate::gems::paint_icon(other))
-                .or_else(|| crate::building::paint_icon(other));
+                .or_else(|| crate::building::paint_icon(other))
+                .or_else(|| crate::doors::paint_icon(other));
         }
     })
 }
