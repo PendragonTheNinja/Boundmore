@@ -168,6 +168,19 @@ pub struct ServerConfig {
     /// Seconds a sealed item waits in a forge's queue, instead of its
     /// rank's (tests).
     pub forge_queue_seconds: Option<u32>,
+    /// Wandering worlds (milestone 21): slots running the stream; 0 turns
+    /// them off. Each slot brings a new world every `exo_slots *
+    /// exo_every_hours`.
+    pub exo_slots: u8,
+    /// Hours between arrivals across all slots (Boundless: 48).
+    pub exo_every_hours: f64,
+    /// Shortest and longest stay, hours (Boundless: 113 to 128).
+    pub exo_life_hours: [f64; 2],
+    /// How long before leaving a wanderer's air starts to climb, minutes
+    /// (Boundless: 30).
+    pub exo_leaving_minutes: f64,
+    /// A wanderer's size, chunks around.
+    pub exo_width_chunks: u32,
 
     /// Save version 2 settings, still read so an old `server.toml` keeps its
     /// planet: they apply to the first planet.
@@ -214,6 +227,11 @@ impl Default for ServerConfig {
             placed_meteor: None,
             machine_wear_start: None,
             forge_queue_seconds: None,
+            exo_slots: 3,
+            exo_every_hours: 48.0,
+            exo_life_hours: [113.0, 128.0],
+            exo_leaving_minutes: 30.0,
+            exo_width_chunks: 48,
             planet_name: None,
             seed: None,
             width_chunks: None,
@@ -277,6 +295,21 @@ impl ServerConfig {
     }
 
     /// The portal tunables, the cooldown in ticks.
+    /// The wandering worlds' rules, in ticks.
+    pub fn exo_rules(&self) -> crate::exo::ExoRules {
+        let ticks = |hours: f64| (hours.max(0.0) * crate::exo::HOUR as f64).round() as u64;
+        crate::exo::ExoRules {
+            slots: self.exo_slots,
+            every: ticks(self.exo_every_hours).max(1),
+            life: (
+                ticks(self.exo_life_hours[0]).max(1),
+                ticks(self.exo_life_hours[1]).max(1),
+            ),
+            leaving: ticks(self.exo_leaving_minutes / 60.0),
+            width_chunks: self.exo_width_chunks,
+        }
+    }
+
     pub fn portal_rules(&self) -> crate::portals::PortalRules {
         crate::portals::PortalRules {
             capacity: self.portal_tank_capacity,
@@ -314,6 +347,23 @@ impl ServerConfig {
         }
         if self.planets.len() > u16::MAX as usize {
             bail!("too many planets");
+        }
+        if self.planets.len() >= crate::exo::FIRST_EXO_ID as usize {
+            bail!(
+                "at most {} permanent planets (higher ids belong to wandering worlds)",
+                crate::exo::FIRST_EXO_ID
+            );
+        }
+        if self.exo_slots > 16 {
+            bail!("exo_slots must be at most 16");
+        }
+        if self.exo_slots > 0 {
+            if self.exo_life_hours[0] > self.exo_life_hours[1] || self.exo_life_hours[0] <= 0.0 {
+                bail!("exo_life_hours must be [shortest, longest], above 0");
+            }
+            if self.exo_width_chunks < 8 || self.view_radius as u32 * 2 + 1 >= self.exo_width_chunks {
+                bail!("exo_width_chunks must be at least 8 and wider than the view");
+            }
         }
         if self.start_planet >= self.planets.len() {
             bail!("start_planet {} is not in the planet list", self.start_planet);
@@ -392,5 +442,7 @@ mod tests {
             (d.start_planet, d.height_chunks, d.shrine_guard)
         );
         assert_eq!(cfg.portal_rules(), d.portal_rules());
+        assert_eq!(cfg.exo_rules(), d.exo_rules());
+        assert_eq!(d.exo_rules(), crate::exo::ExoRules::default());
     }
 }

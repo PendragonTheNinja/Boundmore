@@ -49,8 +49,10 @@ fn draw_planets(dir: vec3<f32>, c_in: vec3<f32>, behind: vec3<f32>, pixel: f32) 
         let p = g.planets[i];
         let centre = p.dir.xyz;
         let r = p.dir.w;
+        // A wandering world (milestone 21) wears a wide halo.
+        let wander = p.color.w > 0.5;
         let cosang = dot(dir, centre);
-        if (cosang < cos(r * 1.5)) {
+        if (cosang < cos(r * select(1.5, 3.2, wander))) {
             continue;
         }
         // Position on the disc: 0 at the centre, 1 at the limb.
@@ -90,6 +92,10 @@ fn draw_planets(dir: vec3<f32>, c_in: vec3<f32>, behind: vec3<f32>, pixel: f32) 
             c = mix(c, disc, cover);
         }
         c += air * glow * rim_lit * 0.35 * above * step(1.0, t + aa * 0.5);
+        if (wander) {
+            let ring = exp(-abs(t - 1.75) / 0.3) * (1.0 - smoothstep(2.6, 3.2, t));
+            c += mix(p.color.rgb, vec3<f32>(1.0, 0.95, 0.85), 0.5) * ring * 0.25 * above * step(1.0, t + aa * 0.5);
+        }
     }
     return c;
 }

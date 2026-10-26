@@ -23,6 +23,15 @@ portal_tank_capacity = 500
 portal_trip_cost_same_planet = 1
 portal_trip_cost_other_planet = 2
 portal_charge_cooldown = 3600
+# Wandering worlds (milestone 21): temporary planets that arrive beside a
+# host, stay a few days and leave, taking everything on them. Slots running
+# the stream (0 turns them off); hours between arrivals; shortest and longest
+# stay in hours; minutes before leaving that the air starts to climb; size.
+exo_slots = 3
+exo_every_hours = 48.0
+exo_life_hours = [113.0, 128.0]
+exo_leaving_minutes = 30.0
+exo_width_chunks = 48
 # Index into the list below of the planet new players start on.
 start_planet = 0
 

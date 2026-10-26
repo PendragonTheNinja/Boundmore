@@ -1537,6 +1537,7 @@ impl App {
         match m {
             // Milestone 17: a session of ours ended.
             ServerMsg::Creative { at, on } => s.creative(at, on),
+            ServerMsg::Air { at, air } => s.me.set_air(at, air, &s.movement, s.world.shape, &s.world),
             ServerMsg::Forged { outcome, .. } => {
                 let text = crate::forge_screen::outcome_text(&s.items, &outcome);
                 self.notices.push(text, now);
@@ -2401,6 +2402,7 @@ impl App {
                     &ctx,
                     &TravelView {
                         planets: &s.universe,
+                        tick: s.server_tick(local),
                         here: s.planet.id,
                         shrine,
                         items: &s.items,

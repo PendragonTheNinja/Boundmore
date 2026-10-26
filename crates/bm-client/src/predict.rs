@@ -31,6 +31,8 @@ enum After {
     Body(Body),
     /// Food eaten (milestone 16).
     Eat(FoodStats),
+    /// The planet's air changed (milestone 21: a wandering world leaving).
+    Air(bm_core::atmosphere::Air),
 }
 
 struct Entry {
@@ -178,6 +180,31 @@ impl Predictor {
         let mut state = self.history[i].state;
         let _ = state.eat(&food);
         self.history[i].after.push(After::Eat(food));
+        self.history[i].state = state;
+        for e in self.history.iter_mut().skip(i + 1) {
+            replay(&mut state, e, cfg, shape, world);
+        }
+        self.state = state;
+    }
+
+    /// The planet's air is `air` from right after input `at` (milestone 21),
+    /// as the server sets it: set there, and the inputs after it replayed.
+    pub fn set_air(
+        &mut self,
+        at: u32,
+        air: bm_core::atmosphere::Air,
+        cfg: &MoveConfig,
+        shape: PlanetShape,
+        world: &impl PhysicsWorld,
+    ) {
+        let Some(i) = self.history.iter().position(|e| e.seq == at) else {
+            self.state.air = air;
+            self.previous.air = air;
+            return;
+        };
+        let mut state = self.history[i].state;
+        state.air = air;
+        self.history[i].after.push(After::Air(air));
         self.history[i].state = state;
         for e in self.history.iter_mut().skip(i + 1) {
             replay(&mut state, e, cfg, shape, world);
@@ -338,6 +365,7 @@ fn replay(state: &mut PlayerState, e: &mut Entry, cfg: &MoveConfig, shape: Plane
             After::Eat(food) => {
                 let _ = state.eat(&food);
             }
+            After::Air(air) => state.air = air,
         }
     }
     e.state = *state;
@@ -571,6 +599,46 @@ mod tests {
             let seq = p.tick(*input, None, Default::default(), &cfg, shape(), &w);
             if seq == 122 {
                 p.eat(120, broth, &cfg, shape(), &w);
+            }
+            if i >= 5 && i % 3 == 0 {
+                let ack = i as u32 - 4;
+                p.reconcile(i as u64, ack, truth[ack as usize - 1], &cfg, shape(), &w);
+            }
+        }
+        assert_eq!(p.corrections, 0);
+        assert_eq!(p.state, truth[239]);
+    }
+
+    #[test]
+    fn a_planets_air_changing_lands_where_the_server_sets_it() {
+        // Milestone 21: a wandering world's air thickens after input 100;
+        // we hear of it three inputs late. Air then runs out on both sides
+        // alike.
+        use bm_core::atmosphere::{Air, AirLine};
+        let (cfg, w) = (MoveConfig::default(), Floor(10));
+        let thick = Air {
+            line: AirLine::Charged,
+            hazard: 6,
+        };
+        let inputs: Vec<PlayerInput> = (1..=240).map(walk).collect();
+        let mut s = spawn();
+        let truth: Vec<PlayerState> = inputs
+            .iter()
+            .enumerate()
+            .map(|(i, input)| {
+                movement::step(&mut s, input, &cfg, None, shape(), &w);
+                if i as u32 + 1 == 100 {
+                    s.air = thick;
+                }
+                s
+            })
+            .collect();
+        assert!(truth[239].air_used > 0, "the air ran down");
+        let mut p = Predictor::new(spawn());
+        for (i, input) in inputs.iter().enumerate() {
+            let seq = p.tick(*input, None, Default::default(), &cfg, shape(), &w);
+            if seq == 103 {
+                p.set_air(100, thick, &cfg, shape(), &w);
             }
             if i >= 5 && i % 3 == 0 {
                 let ack = i as u32 - 4;

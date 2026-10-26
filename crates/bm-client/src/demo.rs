@@ -3066,6 +3066,10 @@ fn demo_planets(blocks: &BlockRegistry) -> Vec<DemoPlanet> {
                     color: k.look.color,
                     width_blocks: *width,
                     players: (i == 0) as u16 + [0, 3, 0, 7][i],
+                    // The fourth shows as a wandering world by the first
+                    // (milestone 21), leaving in about four days.
+                    host: (i == 3).then_some(0),
+                    leaves: (i == 3).then_some(100 * 3600 * 60),
                 },
                 edits,
                 flat: false,

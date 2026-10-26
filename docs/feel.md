@@ -305,3 +305,17 @@ Boundless's live tree and tables exactly (Nathan, 2026-10-20), in Boundmore's na
 | Lifted land | islands 40 to 110 over the sea, shelves 30 to 62, overhangs and spires up to 70 over the ground; noise 34 blocks across; fill -0.28 to 0.12 | shapes after Boundless's 3D biomes (bands y 90 to 220 against its sea at 64); every number a **guess** (Measure 5) |
 | Caves by tier | flat caves (tier 1+), 2-deep linings (2+), rooms and thicker tunnels (3+), halls and tall caves 24+ under the sea (5+), shafts (a third of 32-block squares, 70 deep) and pillars (6+) | Boundless's cave sets by tier; sizes and chances **guesses** (Measure 5) |
 
+
+## Wandering worlds (M21, `docs/milestones/21-wandering-worlds.md`, `bm-server/src/exo.rs`)
+
+| Value | Now | Source, or guess |
+|---|---|---|
+| Arrivals | one every 48 hours (three slots, each every 6 days, staggered 2 days) | Boundless's live game: 281 of 418 gaps exactly two days (`research/exoworlds.md`) |
+| Stay | 113 to 128 hours, drawn per world | Boundless's live game (34 sampled) |
+| Tiers | 4: 10%, 5: 31%, 6: 29%, 7: 30% | Boundless's live mix, 2023 to 2024 |
+| Host | tier 4 by a tier 1 or 2 planet, tier 5 by tier 3, tiers 6 and 7 by tier 4 or 5; reached only from the host's shrine | the archive's hosts; reaching only from the host is Boundless's (Measure 4) |
+| Air as it leaves | from 30 minutes before, its own hazard climbing in steady steps to 10 | Boundless's 30 minutes; the climb's shape a **guess** |
+| Leaving | players still on it are carried to the host's shrine | **changed on purpose**: Boundless let the air kill them (Measure 2) |
+| Size | 48 chunks (1,536 blocks) | half Boundless's 3,072 m, as Boundmore's planets are throughout |
+| Colours | a recipe around a random base hue: rock in its muted shades, growth 4 to 8 hues round, wood and soil beside, sand warm, frost pale | Boundless's exoworld colour recipes (a player's write-up, medium); the offsets **guesses** (Measure 3) |
+| Time | the universe clock (stops while the server is off) | **guess**: Boundless ran on real time |

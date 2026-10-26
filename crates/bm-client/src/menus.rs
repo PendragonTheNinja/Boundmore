@@ -2161,6 +2161,19 @@ fn paint_planet(painter: &egui::Painter, centre: egui::Pos2, radius: f32, colour
     painter.circle_stroke(centre, radius, Stroke::new(1.0, air.gamma_multiply(0.7)));
 }
 
+/// How long until a wandering world leaves: "Leaves in 3 days", "in 5 hours",
+/// "in 12 minutes", "Leaving now".
+pub fn leaves_in(leaves: u64, tick: u64) -> String {
+    let secs = leaves.saturating_sub(tick) / bm_core::movement::TICK_HZ as u64;
+    let (n, unit) = match secs {
+        0..60 => return "Leaving now".into(),
+        60..3600 => (secs / 60, "minute"),
+        3600..172_800 => (secs / 3600, "hour"),
+        _ => (secs / 86_400, "day"),
+    };
+    format!("Leaves in {n} {unit}{}", if n == 1 { "" } else { "s" })
+}
+
 fn players_there(n: u16) -> String {
     match n {
         0 => "Nobody there".into(),
@@ -2171,6 +2184,8 @@ fn players_there(n: u16) -> String {
 
 pub struct TravelView<'a> {
     pub planets: &'a [PlanetSummary],
+    /// The server's tick now, for how long wandering worlds stay.
+    pub tick: u64,
     /// The planet we are on.
     pub here: u16,
     /// The shrine the menu was opened at.
@@ -2275,11 +2290,13 @@ fn reclaim_tab(ui: &mut Ui, v: &TravelView, actions: &mut Vec<UiAction>) {
 
 fn worlds_tab(ui: &mut Ui, v: &TravelView, actions: &mut Vec<UiAction>) {
     let mut list: Vec<&PlanetSummary> = v.planets.iter().collect();
-    list.sort_by_key(|p| (p.id != v.here, p.tier, p.id));
+    list.sort_by_key(|p| (p.id != v.here, p.host.is_some(), p.tier, p.id));
     ui.label(
-        egui::RichText::new("The shrine opens a way to any world it knows.")
-            .color(MUTED)
-            .small(),
+        egui::RichText::new(
+            "The shrine opens a way to any world it knows. A wandering world is reached from its host's shrine.",
+        )
+        .color(MUTED)
+        .small(),
     );
     ui.add_space(4.0);
     egui::ScrollArea::vertical().max_height(420.0).show(ui, |ui| {
@@ -2308,10 +2325,26 @@ fn worlds_tab(ui: &mut Ui, v: &TravelView, actions: &mut Vec<UiAction>) {
                                     .small(),
                             );
                             ui.label(egui::RichText::new(players_there(p.players)).color(MUTED).small());
+                            if let (Some(host), Some(leaves)) = (p.host, p.leaves) {
+                                let host = host_name(v.planets, host);
+                                ui.label(
+                                    egui::RichText::new(format!(
+                                        "Wandering world by {host}. {}",
+                                        leaves_in(leaves, v.tick)
+                                    ))
+                                    .color(GOLD_DIM)
+                                    .small(),
+                                );
+                            }
                         });
+                        let from_elsewhere = p.host.is_some_and(|h| h != v.here);
                         ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                             if here {
                                 ui.label(egui::RichText::new("You are here").color(GOLD));
+                            } else if from_elsewhere {
+                                let host = host_name(v.planets, p.host.unwrap_or_default());
+                                ui.label(egui::RichText::new(format!("From {host}")).color(MUTED))
+                                    .on_hover_text(format!("Reach it from {host}'s warp shrine"));
                             } else if ui
                                 .add_sized(
                                     [86.0, 32.0],
@@ -2331,6 +2364,14 @@ fn worlds_tab(ui: &mut Ui, v: &TravelView, actions: &mut Vec<UiAction>) {
                 });
         }
     });
+}
+
+/// A planet's name from the list, by id.
+fn host_name(planets: &[PlanetSummary], id: u16) -> String {
+    planets
+        .iter()
+        .find(|p| p.id == id)
+        .map_or_else(|| "its host".to_string(), |p| p.name.clone())
 }
 
 /// Where we are going, for the screen shown on the way.
@@ -2395,6 +2436,17 @@ fn paint_planet_faded(painter: &egui::Painter, centre: egui::Pos2, radius: f32, 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_wanderers_time_left_reads_plainly() {
+        let s = bm_core::movement::TICK_HZ as u64;
+        assert_eq!(leaves_in(1000, 1000), "Leaving now");
+        assert_eq!(leaves_in(90 * s, 0), "Leaves in 1 minute");
+        assert_eq!(leaves_in(30 * 60 * s, 0), "Leaves in 30 minutes");
+        assert_eq!(leaves_in(5 * 3600 * s, 0), "Leaves in 5 hours");
+        assert_eq!(leaves_in(120 * 3600 * s, 0), "Leaves in 5 days");
+        assert_eq!(leaves_in(0, 50), "Leaving now");
+    }
 
     #[test]
     fn the_power_line_counts_coils() {

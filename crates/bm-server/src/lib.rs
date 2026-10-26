@@ -7,6 +7,7 @@ pub mod claims;
 pub mod config;
 pub mod crafting;
 pub mod damage;
+pub mod exo;
 pub mod far;
 pub mod farm;
 pub mod forging;
@@ -145,7 +146,7 @@ pub fn start(cfg: ServerConfig) -> Result<RunningServer> {
     }
     let (store, _upgraded) = Store::open_universe(&cfg.data_dir, &cfg.planets[0].name, &kinds)?;
     for id in store.planet_ids()? {
-        if id as usize >= cfg.planets.len() {
+        if id as usize >= cfg.planets.len() && id < exo::FIRST_EXO_ID {
             tracing::warn!(
                 "planet {id} is saved but not in the config's planet list; it is not hosted (its players start on {})",
                 cfg.planets[cfg.start_planet].name
@@ -177,6 +178,16 @@ pub fn start(cfg: ServerConfig) -> Result<RunningServer> {
             claims_by_planet.remove(&id).unwrap_or_default(),
         )?);
     }
+    // Wandering worlds (milestone 21) follow the permanent planets.
+    let exos = planet::open_exo_slots(
+        &store,
+        &cfg.exo_rules(),
+        cfg.height_chunks,
+        cfg.shrine_guard,
+        &cat,
+        &planets,
+    )?;
+    planets.extend(exos);
     let identity = bm_net::load_or_create_identity(&cfg.data_dir)?;
 
     let rt = tokio::runtime::Builder::new_multi_thread()
@@ -201,7 +212,7 @@ pub fn start(cfg: ServerConfig) -> Result<RunningServer> {
     let held = store.clone();
     let start = cfg.start_planet;
     let game = game::Game::new(
-        cfg, planets, start, next_claim, items, recipes, creatures, store, writer_tx, events_rx,
+        cfg, planets, start, next_claim, items, recipes, creatures, store, writer_tx, events_rx, kinds,
     )?;
     let load = game.load_handle();
     let running = Arc::new(AtomicBool::new(true));

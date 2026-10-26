@@ -63,6 +63,9 @@ pub struct Planet {
     pub guard: i64,
     /// Players on it now.
     pub players: usize,
+    /// What it is as a wandering world (milestone 21); None for a permanent
+    /// planet.
+    pub exo: Option<crate::exo::ExoRecord>,
 }
 
 impl Planet {
@@ -80,8 +83,16 @@ impl Planet {
         }
     }
 
+    /// Whether players can see and reach it at `tick`: a permanent planet
+    /// always, a wanderer once it has arrived and until it leaves.
+    pub fn present(&self, tick: u64) -> bool {
+        self.exo.as_ref().is_none_or(|e| tick >= e.arrives && tick < e.leaves)
+    }
+
     pub fn summary(&self) -> PlanetSummary {
         PlanetSummary {
+            host: self.exo.as_ref().map(|e| e.host),
+            leaves: self.exo.as_ref().map(|e| e.leaves),
             id: self.id,
             name: self.name.clone(),
             kind: self.kind_display.clone(),
@@ -376,7 +387,49 @@ pub fn open(
         plaza,
         guard,
         players: 0,
+        exo: None,
     })
+}
+
+/// Opens a wandering world (milestone 21) from its record: made with its own
+/// colours the first time, then opened as any planet, with its tier, air and
+/// look its record's rather than its kind's.
+pub fn open_exo(
+    store: &Store,
+    rec: &crate::exo::ExoRecord,
+    rules: &crate::exo::ExoRules,
+    height_chunks: u32,
+    guard: u32,
+    cat: &Catalogue,
+    palette: &bm_core::ColourPalette,
+) -> Result<Planet> {
+    let spec = PlanetSpec::new(&rec.name, &rec.kind, rec.seed, rules.width_chunks);
+    let kind = cat
+        .kinds
+        .get(&rec.kind)
+        .with_context(|| format!("wandering world {}: no planet kind `{}`", rec.name, rec.kind))?;
+    if store.planet(rec.id)?.is_none() {
+        let mut saved = new_record(rec.id, &spec, height_chunks, cat.kinds, cat.biomes)?;
+        let choices = crate::exo::colour_choices(kind.colours.keys().cloned(), rec.hue, rec.seed, palette);
+        saved
+            .generation
+            .colours
+            .extend(bm_worldgen::pick_colours(&choices, rec.seed));
+        store.put_planet(rec.id, &saved)?;
+        tracing::info!(
+            "made wandering world {} ({}, tier {}), seed {}",
+            rec.name,
+            rec.kind,
+            rec.tier,
+            rec.seed
+        );
+    }
+    let mut planet = open(store, rec.id, &spec, height_chunks, guard, cat, Vec::new())?;
+    planet.tier = rec.tier;
+    planet.air = Air::of(rec.line, rec.tier);
+    planet.look = crate::exo::look(&kind.look, rec.hue, palette);
+    planet.exo = Some(rec.clone());
+    Ok(planet)
 }
 
 /// Appends the ores a planet's kind lists after the planet's own saved ores
@@ -555,6 +608,88 @@ impl PlazaCut<'_> {
         }
         Ok(())
     }
+}
+
+/// The salt of a universe's stream of wanderers: its first planet's seed.
+pub fn exo_salt(store: &Store) -> Result<u64> {
+    Ok(store.planet(0)?.map_or(0, |p| p.generation.seed))
+}
+
+/// A slot's next wanderer, drawn and saved (its id taken for good) but not
+/// yet made: `hosts` are the permanent planets (id, tier), `taken` the names
+/// in use.
+#[allow(clippy::too_many_arguments)]
+pub fn next_exo(
+    store: &Store,
+    slot: u8,
+    arrives: u64,
+    rules: &crate::exo::ExoRules,
+    kinds: &PlanetKinds,
+    hosts: &[(u16, u8)],
+    taken: &[&str],
+    salt: u64,
+) -> Result<crate::exo::ExoRecord> {
+    let id = store.next_exo_id()?;
+    let rec = crate::exo::draw(id, slot, salt, arrives, rules, kinds, hosts, taken);
+    store.put_exo(&rec)?;
+    Ok(rec)
+}
+
+/// Opens every wandering-world slot at start-up (ADR-0011): each slot's saved
+/// wanderer, or a new one for a slot that has none (the first arriving at
+/// once in a universe that has never had any). Wanderers in slots no longer
+/// configured, and rows a late write left under old wanderer ids, are
+/// deleted.
+pub fn open_exo_slots(
+    store: &Store,
+    rules: &crate::exo::ExoRules,
+    height_chunks: u32,
+    guard: u32,
+    cat: &Catalogue,
+    permanent: &[Planet],
+) -> Result<Vec<Planet>> {
+    let palette = bm_core::ColourPalette::builtin();
+    let saved = store.exos()?;
+    for r in saved.iter().filter(|r| r.slot >= rules.slots) {
+        tracing::info!("wandering world {} leaves: its slot is no longer configured", r.name);
+        store.forget_planets(&[(r.id, Some(r.host))])?;
+        store.drop_exo_slot(r.slot)?;
+    }
+    let clock = store.clock()?;
+    let salt = exo_salt(store)?;
+    let hosts: Vec<(u16, u8)> = permanent.iter().map(|p| (p.id, p.tier)).collect();
+    let mut out: Vec<Planet> = Vec::new();
+    for slot in 0..rules.slots {
+        let rec = match saved.iter().find(|r| r.slot == slot) {
+            Some(r) => r.clone(),
+            None => {
+                let names: Vec<&str> = permanent.iter().chain(out.iter()).map(|p| p.name.as_str()).collect();
+                next_exo(
+                    store,
+                    slot,
+                    rules.first_arrival(slot, clock),
+                    rules,
+                    cat.kinds,
+                    &hosts,
+                    &names,
+                    salt,
+                )?
+            }
+        };
+        out.push(open_exo(store, &rec, rules, height_chunks, guard, cat, &palette)?);
+    }
+    let current: BTreeSet<u16> = out.iter().map(|p| p.id).collect();
+    let stale: Vec<(u16, Option<u16>)> = store
+        .exo_ids_with_rows()?
+        .into_iter()
+        .filter(|id| !current.contains(id))
+        .map(|id| (id, None))
+        .collect();
+    if !stale.is_empty() {
+        tracing::info!("deleting rows left under {} departed wandering worlds", stale.len());
+        store.forget_planets(&stale)?;
+    }
+    Ok(out)
 }
 
 #[cfg(test)]

@@ -25,7 +25,7 @@ use glam::DVec3;
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
 
 /// Bump on any change to a message below. Client and server must match.
-pub const PROTOCOL_VERSION: u32 = 33;
+pub const PROTOCOL_VERSION: u32 = 34;
 
 /// QUIC application protocol name; also refuses non-Boundmore peers early.
 pub const ALPN: &[u8] = b"boundmore/1";
@@ -356,6 +356,11 @@ pub struct PlanetSummary {
     pub width_blocks: u32,
     /// Players there when the list was sent.
     pub players: u16,
+    /// A wandering world's host, the planet whose shrine reaches it
+    /// (milestone 21); None for a permanent planet.
+    pub host: Option<u16>,
+    /// When a wandering world leaves (universe tick).
+    pub leaves: Option<u64>,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -637,6 +642,12 @@ pub enum ServerMsg {
     Creative {
         at: u32,
         on: bool,
+    },
+    /// The planet's air from right after input `at` (milestone 21: a
+    /// wandering world's air climbs as it leaves).
+    Air {
+        at: u32,
+        air: bm_core::atmosphere::Air,
     },
 }
 
@@ -1156,6 +1167,8 @@ mod tests {
                     color: [0.5; 3],
                     width_blocks: 2048,
                     players: 100,
+                    host: Some(3),
+                    leaves: Some(u64::MAX),
                 })
                 .collect(),
             blocks: blocks.defs().to_vec(),

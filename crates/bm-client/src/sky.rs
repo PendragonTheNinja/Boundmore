@@ -40,6 +40,8 @@ pub struct SkyPlanet {
     pub radius: f32,
     /// Linear RGB.
     pub color: [f32; 3],
+    /// A wandering world (milestone 21): drawn with a halo.
+    pub wandering: bool,
 }
 
 /// At most this many planets are drawn (the shader's array size).
@@ -106,6 +108,7 @@ impl Sky {
                 dir: (self.sky_rotation * star_direction(p.id)).to_array(),
                 radius: apparent_radius(p.width_blocks),
                 color: p.color,
+                wandering: p.host.is_some(),
             })
             .collect()
     }
@@ -173,6 +176,8 @@ mod tests {
             kind: "Temperate".into(),
             tier: 1,
             air: Default::default(),
+            host: None,
+            leaves: None,
             color: [0.5, 0.4, 0.3],
             width_blocks: width,
             players: 0,

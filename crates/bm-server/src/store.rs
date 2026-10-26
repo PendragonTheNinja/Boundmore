@@ -73,6 +73,13 @@ const DISCOVERIES: TableDefinition<&str, &[u8]> = TableDefinition::new("discover
 /// from the chunks, each in `FarChunk`'s encoding with its format version.
 /// Saving a chunk deletes its copy in the same write.
 const FAR: TableDefinition<&[u8], &[u8]> = TableDefinition::new("planet_far");
+/// Each wandering-world slot's current wanderer (milestone 21, ADR-0011):
+/// slot -> [`crate::exo::ExoRecord`]. The next wanderer id is in `META`
+/// under "next_exo". A new table: no save version change.
+const EXOS: TableDefinition<u8, &[u8]> = TableDefinition::new("exo");
+/// Departed wanderers' hosts: planet id -> host planet id, so a player saved
+/// on one arrives at its host.
+const EXO_GONE: TableDefinition<u16, u16> = TableDefinition::new("exo_gone");
 
 /// Save version 1 and 2 tables, read only to upgrade, then deleted.
 const V1_PLAYERS: TableDefinition<&str, &[u8]> = TableDefinition::new("players");
@@ -1038,6 +1045,25 @@ fn block_from_key(k: &[u8]) -> Option<BlockPos> {
 }
 
 /// Every key of one planet in a table keyed by [`chunk_key`] or [`block_key`].
+/// Deletes every row of one planet: its record, chunks, far copies,
+/// stations, storage, crops and sky.
+fn forget_planet(tx: &WriteTransaction, id: u16) -> Result<()> {
+    tx.open_table(PLANETS)?.remove(id)?;
+    tx.open_table(SKIES)?.remove(id)?;
+    let (lo, hi) = planet_range(id);
+    for table in [CHUNKS, FAR, STATIONS, STORAGE, CROPS] {
+        let mut t = tx.open_table(table)?;
+        let keys: Vec<Vec<u8>> = t
+            .range(lo.as_slice()..hi.as_slice())?
+            .map(|r| r.map(|(k, _)| k.value().to_vec()))
+            .collect::<Result<_, _>>()?;
+        for k in keys {
+            t.remove(k.as_slice())?;
+        }
+    }
+    Ok(())
+}
+
 fn planet_range(planet: u16) -> (Vec<u8>, Vec<u8>) {
     let lo = planet.to_be_bytes().to_vec();
     let hi = match planet.checked_add(1) {
@@ -1153,6 +1179,10 @@ impl Store {
         tx.open_table(RECLAIM)?;
         tx.open_table(PORTALS)?;
         tx.open_table(FAR)?;
+        tx.open_table(SKIES)?;
+        tx.open_table(CROPS)?;
+        tx.open_table(EXOS)?;
+        tx.open_table(EXO_GONE)?;
         tx.commit()?;
         Ok(Self { db: Arc::new(db) })
     }
@@ -1720,6 +1750,120 @@ impl Store {
                 found.insert(key.as_str(), postcard::to_stdvec(d)?.as_slice())?;
             }
         }
+        // After every table above is closed: a table opens once at a time.
+        for (id, host) in &batch.forget_planets {
+            forget_planet(&tx, *id)?;
+            tx.open_table(EXO_GONE)?.insert(*id, *host)?;
+        }
+        tx.commit()?;
+        Ok(())
+    }
+
+    /// Each slot's current wanderer (milestone 21), by slot.
+    pub fn exos(&self) -> Result<Vec<crate::exo::ExoRecord>> {
+        let tx = self.db.begin_read()?;
+        let t = tx.open_table(EXOS)?;
+        let mut out = Vec::new();
+        for row in t.iter()? {
+            let (slot, v) = row?;
+            match postcard::from_bytes::<crate::exo::ExoRecord>(v.value()) {
+                Ok(r) => out.push(r),
+                Err(e) => tracing::error!(
+                    "wandering world in slot {}: unreadable ({e}); a new one is made",
+                    slot.value()
+                ),
+            }
+        }
+        Ok(out)
+    }
+
+    /// The next wanderer id: one past every id ever handed out.
+    pub fn next_exo_id(&self) -> Result<u16> {
+        let tx = self.db.begin_read()?;
+        let t = tx.open_table(META)?;
+        Ok(match t.get("next_exo")? {
+            Some(v) => postcard::from_bytes(v.value())?,
+            None => crate::exo::FIRST_EXO_ID,
+        })
+    }
+
+    /// Saves a slot's new wanderer and moves the next id past it, at once
+    /// (before anything of it is made, so its id is never handed out again).
+    pub fn put_exo(&self, rec: &crate::exo::ExoRecord) -> Result<()> {
+        let tx = self.db.begin_write()?;
+        tx.open_table(EXOS)?
+            .insert(rec.slot, postcard::to_stdvec(rec)?.as_slice())?;
+        let next = rec.id.checked_add(1).context("wandering world ids are used up")?;
+        let mut meta = tx.open_table(META)?;
+        let saved: u16 = match meta.get("next_exo")? {
+            Some(v) => postcard::from_bytes(v.value())?,
+            None => crate::exo::FIRST_EXO_ID,
+        };
+        meta.insert("next_exo", postcard::to_stdvec(&next.max(saved))?.as_slice())?;
+        drop(meta);
+        tx.commit()?;
+        Ok(())
+    }
+
+    /// Removes a slot's record (a slot no longer configured).
+    pub fn drop_exo_slot(&self, slot: u8) -> Result<()> {
+        let tx = self.db.begin_write()?;
+        tx.open_table(EXOS)?.remove(slot)?;
+        tx.commit()?;
+        Ok(())
+    }
+
+    /// The host of a departed wanderer.
+    pub fn exo_host(&self, id: u16) -> Result<Option<u16>> {
+        let tx = self.db.begin_read()?;
+        let t = tx.open_table(EXO_GONE)?;
+        Ok(t.get(id)?.map(|v| v.value()))
+    }
+
+    /// Wanderer ids with rows saved under them (planet records, chunks, far
+    /// copies, stations, storage, crops, skies), for the start-up sweep of
+    /// rows a late write left behind (ADR-0011).
+    pub fn exo_ids_with_rows(&self) -> Result<std::collections::BTreeSet<u16>> {
+        let tx = self.db.begin_read()?;
+        let mut out = std::collections::BTreeSet::new();
+        let first = crate::exo::FIRST_EXO_ID;
+        for row in tx.open_table(PLANETS)?.range(first..)? {
+            out.insert(row?.0.value());
+        }
+        for row in tx.open_table(SKIES)?.range(first..)? {
+            out.insert(row?.0.value());
+        }
+        let lo = first.to_be_bytes().to_vec();
+        for table in [CHUNKS, FAR, STATIONS, STORAGE, CROPS] {
+            let t = tx.open_table(table)?;
+            let mut from = lo.clone();
+            // One probe per id: jump to the next id after each found.
+            while let Some(row) = t.range(from.as_slice()..)?.next() {
+                let row = row?;
+                let key = row.0.value();
+                let Some(id) = key.get(0..2).map(|b| u16::from_be_bytes([b[0], b[1]])) else {
+                    break;
+                };
+                out.insert(id);
+                match id.checked_add(1) {
+                    Some(n) => from = n.to_be_bytes().to_vec(),
+                    None => break,
+                }
+            }
+        }
+        Ok(out)
+    }
+
+    /// Deletes every row under these planet ids at once, remembering a
+    /// departed wanderer's host where one is given.
+    pub fn forget_planets(&self, ids: &[(u16, Option<u16>)]) -> Result<()> {
+        let tx = self.db.begin_write()?;
+        for (id, host) in ids {
+            forget_planet(&tx, *id)?;
+            if let Some(h) = host {
+                tx.open_table(EXO_GONE)?.insert(*id, *h)?;
+            }
+        }
         tx.commit()?;
         Ok(())
     }
@@ -2070,6 +2214,9 @@ pub struct WriteBatch {
     pub discoveries: Vec<(String, Discoveries)>,
     /// The universe clock, so days and station jobs continue across restarts.
     pub clock: Option<u64>,
+    /// Departed wanderers (milestone 21): every row under each id is deleted,
+    /// after everything else in the batch, and its host remembered.
+    pub forget_planets: Vec<(u16, u16)>,
     /// Each is signalled once the batch is durable (shutdown waits on one;
     /// departed players' data and evicted chunks are held in memory until
     /// theirs fires).
@@ -2090,6 +2237,7 @@ impl WriteBatch {
             && self.next_portal.is_none()
             && self.skies.is_empty()
             && self.discoveries.is_empty()
+            && self.forget_planets.is_empty()
     }
 }
 
@@ -2224,6 +2372,98 @@ mod tests {
         }
     }
 
+    /// Milestone 21 (ADR-0011): a departed wanderer's rows all go in one
+    /// write, even one that also saves its chunks, and its host is kept.
+    #[test]
+    fn forgetting_a_planet_deletes_every_row_under_its_id() {
+        let dir = tempfile::tempdir().unwrap();
+        let s = Store::open(&dir.path().join("u.redb")).unwrap();
+        let exo = crate::exo::FIRST_EXO_ID;
+        s.put_planet(exo, &planet("Wanderer")).unwrap();
+        s.put_planet(1, &planet("Home")).unwrap();
+        let at = BlockPos::new(1, 2, 3);
+        let rows = |id: u16| WriteBatch {
+            chunks: vec![
+                (id, ChunkPos::new(0, 1, 0), vec![1]),
+                (id, ChunkPos::new(-5, 2, 7), vec![2]),
+            ],
+            far: vec![(id, ChunkPos::new(3, 0, 3), vec![3])],
+            crops: vec![(
+                id,
+                at,
+                Some(SavedCrop {
+                    crop: "oats".into(),
+                    sown_at: 1,
+                    fertilised_at: None,
+                    tilled: true,
+                    wet: false,
+                    epic: false,
+                }),
+            )],
+            skies: vec![(id, SavedSky::default())],
+            ..Default::default()
+        };
+        s.write(&rows(exo)).unwrap();
+        s.write(&rows(1)).unwrap();
+        assert_eq!(
+            s.exo_ids_with_rows().unwrap().into_iter().collect::<Vec<_>>(),
+            vec![exo]
+        );
+        // A late save of its chunks in the same batch as the forgetting.
+        s.write(&WriteBatch {
+            chunks: vec![(exo, ChunkPos::new(9, 1, 9), vec![4])],
+            forget_planets: vec![(exo, 1)],
+            ..Default::default()
+        })
+        .unwrap();
+        assert!(s.planet(exo).unwrap().is_none());
+        assert_eq!(s.stored_chunks(exo).unwrap(), 0);
+        assert!(s.crops(exo).unwrap().is_empty());
+        assert!(s.sky(exo).unwrap().is_none());
+        assert!(s.exo_ids_with_rows().unwrap().is_empty());
+        assert_eq!(s.exo_host(exo).unwrap(), Some(1));
+        // The neighbour keeps everything.
+        assert!(s.planet(1).unwrap().is_some());
+        assert_eq!(s.stored_chunks(1).unwrap(), 2);
+        assert_eq!(s.crops(1).unwrap().len(), 1);
+        assert!(s.sky(1).unwrap().is_some());
+    }
+
+    #[test]
+    fn wanderer_ids_are_never_handed_out_twice() {
+        let dir = tempfile::tempdir().unwrap();
+        let s = Store::open(&dir.path().join("u.redb")).unwrap();
+        let first = crate::exo::FIRST_EXO_ID;
+        assert_eq!(s.next_exo_id().unwrap(), first);
+        let rec = crate::exo::ExoRecord {
+            id: first,
+            slot: 0,
+            name: "A".into(),
+            kind: "temperate".into(),
+            tier: 4,
+            line: bm_core::atmosphere::AirLine::Acid,
+            seed: 1,
+            host: 0,
+            arrives: 0,
+            leaves: 10,
+            hue: 3,
+        };
+        s.put_exo(&rec).unwrap();
+        assert_eq!(s.next_exo_id().unwrap(), first + 1);
+        s.put_exo(&crate::exo::ExoRecord {
+            id: first + 1,
+            ..rec.clone()
+        })
+        .unwrap();
+        assert_eq!(s.exos().unwrap().len(), 1, "one record per slot");
+        assert_eq!(s.exos().unwrap()[0].id, first + 1);
+        // Re-saving an older record never moves the counter back.
+        s.put_exo(&rec).unwrap();
+        assert_eq!(s.next_exo_id().unwrap(), first + 2);
+        s.drop_exo_slot(0).unwrap();
+        assert!(s.exos().unwrap().is_empty());
+    }
+
     fn planet(name: &str) -> SavedPlanet {
         SavedPlanet {
             generator_version: GENERATOR_VERSION,
@@ -2317,6 +2557,7 @@ mod tests {
                     (3, ChunkPos::new(-1, 2, 3), vec![8]),
                 ],
                 far: Vec::new(),
+                forget_planets: Vec::new(),
                 players: vec![(
                     "pendragon".into(),
                     PlayerData {

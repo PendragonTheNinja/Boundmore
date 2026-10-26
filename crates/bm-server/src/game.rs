@@ -28,6 +28,7 @@ mod blasts;
 mod combat;
 mod creative;
 mod creatures;
+mod exo;
 mod farm;
 mod food;
 mod forge;
@@ -414,6 +415,15 @@ pub struct Game {
     meteor_loot: bm_core::meteors::MeteorLoot,
     meteor_shell_id: BlockId,
     meteor_heart_id: BlockId,
+    /// Planet kinds, for making wandering worlds (milestone 21).
+    kinds: bm_worldgen::PlanetKinds,
+    /// How many of `planets` are permanent; the rest are wandering-world
+    /// slots (ADR-0011).
+    permanent: usize,
+    /// The tick the wanderers were last looked over.
+    exo_checked: u64,
+    /// Departed wanderers whose rows the next save deletes, with their hosts.
+    forget_planets: Vec<(u16, u16)>,
 }
 
 /// One planet's load, as the report shows it.
@@ -602,6 +612,7 @@ impl Game {
         store: Store,
         writer: Sender<WriteBatch>,
         events: Receiver<Event>,
+        kinds: bm_worldgen::PlanetKinds,
     ) -> Result<Self> {
         let tick = store.clock().unwrap_or_else(|e| {
             tracing::error!("reading the universe clock: {e:#}; starting at 0");
@@ -635,6 +646,7 @@ impl Game {
         let reclaims = Reclaims::load(store.reclaims()?, &items);
         let last_seen = claim_owners_last_seen(&store, &planets, planets[start].id);
         let planet_count = planets.len();
+        let planets_permanent = planets.iter().take_while(|p| p.exo.is_none()).count();
         let creature_moves = creature_kinds.defs().iter().map(|d| d.move_config()).collect();
         let meteor_shell_id = registry.id("meteor_shell")?;
         let meteor_heart_id = registry.id("meteor_heart")?;
@@ -727,6 +739,10 @@ impl Game {
             meteor_loot: bm_core::meteors::MeteorLoot::builtin(),
             meteor_shell_id,
             meteor_heart_id,
+            permanent: planets_permanent,
+            kinds,
+            exo_checked: tick,
+            forget_planets: Vec::new(),
         })
     }
 
@@ -884,6 +900,7 @@ impl Game {
             self.step_farms();
         }
         self.step_lapses();
+        self.step_exos();
         if self.tick % mining::HEAL_SWEEP_EVERY == 0 {
             self.heal_blocks();
         }
@@ -947,8 +964,14 @@ impl Game {
         }
     }
 
+    /// The planets players can see now (a wandering world only while it is
+    /// in the sky).
     fn universe(&self) -> Vec<PlanetSummary> {
-        self.planets.iter().map(Planet::summary).collect()
+        self.planets
+            .iter()
+            .filter(|p| p.present(self.tick))
+            .map(Planet::summary)
+            .collect()
     }
 
     fn send_universe(&mut self) {
@@ -1083,6 +1106,8 @@ impl Game {
             out.close("this server is full");
             return;
         }
+        // Told after the welcome: the wandering world they were on has gone.
+        let mut came_back: Option<String> = None;
         let (planet, saved, mut inventory, character, hurt, food, air_used) = match self.departed.remove(&account) {
             Some(d) => (
                 d.planet,
@@ -1094,17 +1119,27 @@ impl Game {
                 d.state.air_used,
             ),
             None => match self.store.player(&account) {
-                Ok(Some(data)) => (
-                    data.planet as usize,
-                    data.state.map(PlayerState::from),
-                    Inventory {
-                        slots: load_slots(&self.items, &data.inventory, &name),
-                    },
-                    skills::sanitize(data.character.into(), &self.skills),
-                    data.hurt,
-                    data.food,
-                    data.air_used,
-                ),
+                Ok(Some(data)) => {
+                    // A planet that is gone reads as one this server does
+                    // not host; a departed wanderer's players go to its host.
+                    let (pi, why) = self.returning_to(data.planet).unwrap_or((usize::MAX, None));
+                    let state = match why {
+                        Some(_) => None,
+                        None => data.state.map(PlayerState::from),
+                    };
+                    came_back = why;
+                    (
+                        pi,
+                        state,
+                        Inventory {
+                            slots: load_slots(&self.items, &data.inventory, &name),
+                        },
+                        skills::sanitize(data.character.into(), &self.skills),
+                        data.hurt,
+                        data.food,
+                        data.air_used,
+                    )
+                }
                 Ok(None) => (
                     self.start,
                     None,
@@ -1274,6 +1309,9 @@ impl Game {
         self.arrived_in_sky(id);
         self.tell_tokens(id);
         self.server_line(planet, arrived);
+        if let Some(text) = came_back {
+            self.notice(id, &text);
+        }
         if let Some(text) = self.players[&id].state.air_warning() {
             self.notice(id, &text);
         }
@@ -2179,6 +2217,9 @@ impl Game {
                     Self::sowing_allowed(&self.crops, kind, world, canon, p.effects.farming)?;
                 }
                 if block == self.claim_stone {
+                    if planet.exo.is_some() {
+                        return Err(Refusal::Told(exo::NO_CLAIM.into()));
+                    }
                     planet.claims.can_create(&p.account, canon, allowance)?;
                 }
                 // A working four-block machine never changes while it stands.
@@ -2299,12 +2340,15 @@ impl Game {
         }
         let Some(p) = self.players.get(&id) else { return };
         let from = &self.planets[p.planet];
-        let Some(to) = self.planets.iter().position(|pl| pl.id == dest) else {
-            return self.tell(id, "no such planet".into());
+        let Some(to) = self.index_of(dest).filter(|&i| self.planets[i].present(self.tick)) else {
+            return self.notice(id, "That world is not in the sky");
         };
         if to == p.planet {
             let text = format!("You are already on {}", from.name);
             return self.notice(id, &text);
+        }
+        if !self.exo_reachable(id, to) {
+            return;
         }
         self.travel(id, to, None);
     }
@@ -3108,6 +3152,7 @@ impl Game {
             skies,
             discoveries,
             clock: Some(self.tick),
+            forget_planets: std::mem::take(&mut self.forget_planets),
             done,
         };
         if !batch.is_empty() || batch.done.len() > 1 {

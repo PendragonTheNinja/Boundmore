@@ -25,7 +25,7 @@ struct Globals {
 struct SkyPlanet {
     // xyz: unit direction, w: apparent radius in radians
     dir: vec4<f32>,
-    // rgb: linear colour
+    // rgb: linear colour, w: 1 for a wandering world (a halo)
     color: vec4<f32>,
 };
 

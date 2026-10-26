@@ -73,7 +73,7 @@ fn point_lights_gpu(shape: &PlanetShape, eye: DVec3, lights: &[(DVec3, u8)]) -> 
 struct SkyPlanetGpu {
     /// xyz: unit direction, w: apparent radius in radians.
     dir: [f32; 4],
-    /// rgb: linear colour.
+    /// rgb: linear colour, w: 1 for a wandering world (drawn with a halo).
     color: [f32; 4],
 }
 
@@ -1181,7 +1181,7 @@ fn sky_planets(list: &[SkyPlanet]) -> [SkyPlanetGpu; MAX_SKY_PLANETS] {
     let mut out = [SkyPlanetGpu::default(); MAX_SKY_PLANETS];
     for (o, p) in out.iter_mut().zip(list) {
         o.dir = [p.dir[0], p.dir[1], p.dir[2], p.radius];
-        o.color = [p.color[0], p.color[1], p.color[2], 1.0];
+        o.color = [p.color[0], p.color[1], p.color[2], if p.wandering { 1.0 } else { 0.0 }];
     }
     out
 }

@@ -572,6 +572,8 @@ fn config(dir: &Path) -> ServerConfig {
         // The layouts beside the arrival point were built on the single
         // landscape; biome planets have their own test.
         biomes: false,
+        // Wandering worlds have their own test; the rest need none.
+        exo_slots: 0,
         ..Default::default()
     }
 }
@@ -6525,4 +6527,170 @@ async fn far_copies_reach_the_horizon_and_follow_edits() {
     let store = Store::open(&dir.path().join(UNIVERSE_FILE)).unwrap();
     assert!(store.stored_far(0).unwrap() >= want as u64);
     assert!(store.far(0, chunk).unwrap().is_some(), "the edited chunk's new copy");
+}
+
+/// Warps a client from its shrine to `planet` and waits until it is there.
+async fn warp_to(c: &mut TestClient, planet: u16) -> Box<bm_protocol::Travel> {
+    let shrine = c.shrine();
+    c.wait_for_chunk(shrine.chunk()).await;
+    c.send(ClientMsg::Warp { shrine, planet }).await;
+    match c
+        .until(|m| matches!(m, ServerMsg::Travel(t) if t.planet.id == planet))
+        .await
+    {
+        ServerMsg::Travel(t) => t,
+        _ => unreachable!(),
+    }
+}
+
+/// Milestone 21: a wandering world arrives at once in a new universe, is
+/// reached only from its host's shrine, refuses claims, thickens its air as it
+/// leaves, carries its players to the host when it goes, is deleted from the
+/// save, and is followed by a new one with a new id; a player who logged out
+/// on it comes back on the host.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn wandering_worlds_come_are_reached_from_their_host_and_leave() {
+    let dir = tempfile::tempdir().unwrap();
+    seed(dir.path(), "Alice", &[(5, "claim_stone", 1, 0)]);
+    let secs = |s: f64| s / 3600.0;
+    let cfg = ServerConfig {
+        planets: vec![
+            PlanetSpec::new("Testworld", "temperate", 7, 16),
+            PlanetSpec::new("Dryside", "arid", 8, 16),
+        ],
+        exo_slots: 1,
+        // One stays 24 s; the next comes as it goes.
+        exo_every_hours: secs(24.0),
+        exo_life_hours: [secs(24.0), secs(24.0)],
+        exo_leaving_minutes: 10.0 / 60.0,
+        exo_width_chunks: 16,
+        ..config(dir.path())
+    };
+    let server = bm_server::start(cfg.clone()).unwrap();
+    let mut alice = TestClient::login(&server, "Alice").await;
+    let mut bob = TestClient::register(&server, "Bob").await;
+    let exo = alice
+        .welcome
+        .universe
+        .iter()
+        .find(|p| p.host.is_some())
+        .expect("a wandering world is up at once")
+        .clone();
+    assert!(exo.id >= 1000, "{}", exo.id);
+    assert!(exo.tier >= 4, "{}", exo.tier);
+    assert!(exo.air.hazardous(), "{:?}", exo.air);
+    let host = exo.host.unwrap();
+    assert!(host < 2);
+    assert!(exo.leaves.is_some());
+
+    // Only its host's shrine reaches it.
+    if host != 0 {
+        let shrine = alice.shrine();
+        alice.wait_for_chunk(shrine.chunk()).await;
+        alice.send(ClientMsg::Warp { shrine, planet: exo.id }).await;
+        let host_name = &alice.welcome.universe[host as usize].name.clone();
+        alice
+            .notice(&format!("{} is reached only from {host_name}'s warp shrine", exo.name))
+            .await;
+        warp_to(&mut alice, host).await;
+        warp_to(&mut bob, host).await;
+    }
+    let travel = warp_to(&mut alice, exo.id).await;
+    assert_eq!(travel.planet.tier, exo.tier);
+    assert_eq!(travel.planet.air, exo.air);
+    assert_eq!(travel.spawn.air, exo.air, "she breathes its air");
+    warp_to(&mut bob, exo.id).await;
+
+    // Nothing can be claimed there.
+    // (Beside her on the plaza: a hand stone cannot dig ground of tier 4.)
+    after_travel(&mut alice).await;
+    let beside = alice.feet().offset(1, 1, 0);
+    alice.wait_for_chunk(beside.chunk()).await;
+    assert!(
+        !alice
+            .edit(41, beside, EditAction::Place { slot: 5, mount: None })
+            .await
+            .0
+    );
+    alice
+        .notice("Nothing can be claimed on a wandering world: it will leave, and all on it")
+        .await;
+    assert_eq!(alice.count("claim_stone"), 1);
+
+    // Bob leaves while it is up.
+    drop(bob);
+
+    // Its air climbs in its last ten seconds, up to 10.
+    let mut highest = exo.air.hazard;
+    while highest < 10 {
+        match alice.until(|m| matches!(m, ServerMsg::Air { .. })).await {
+            ServerMsg::Air { air, .. } => {
+                assert_eq!(air.line, exo.air.line);
+                assert!(air.hazard >= highest, "{} after {highest}", air.hazard);
+                highest = air.hazard;
+            }
+            _ => unreachable!(),
+        }
+    }
+
+    // Then it goes: she is carried to the host.
+    let back = match alice.until(|m| matches!(m, ServerMsg::Travel(_))).await {
+        ServerMsg::Travel(t) => t,
+        _ => unreachable!(),
+    };
+    assert_eq!(back.planet.id, host);
+    let host_name = back.planet.name.clone();
+    alice
+        .notice(&format!(
+            "{} has left the sky. You were carried to {host_name}.",
+            exo.name
+        ))
+        .await;
+    assert_eq!(back.spawn.air, back.planet.air, "she breathes the host's air again");
+    // The list loses it, and the slot's next arrives with a new id.
+    let next = loop {
+        match alice.until(|m| matches!(m, ServerMsg::Universe { .. })).await {
+            ServerMsg::Universe { planets } => {
+                assert!(planets.iter().all(|p| p.id != exo.id), "it is gone from the list");
+                if let Some(n) = planets.iter().find(|p| p.host.is_some()) {
+                    break n.clone();
+                }
+            }
+            _ => unreachable!(),
+        }
+    };
+    assert!(next.id > exo.id);
+    drop(alice);
+    tokio::time::sleep(Duration::from_millis(300)).await;
+    server.stop();
+
+    // Nothing of it is left in the save, and its host is remembered.
+    {
+        let store = Store::open(&planet_file(dir.path())).unwrap();
+        assert!(store.planet(exo.id).unwrap().is_none());
+        assert_eq!(store.stored_chunks(exo.id).unwrap(), 0);
+        assert_eq!(store.exo_host(exo.id).unwrap(), Some(host));
+        assert!(store.planet(next.id).unwrap().is_some(), "the next one is made");
+    }
+
+    // Bob, who logged out on it, comes back on its host.
+    let server = bm_server::start(ServerConfig {
+        // The next one stays a while, so this check is not raced by it.
+        exo_every_hours: 1.0,
+        exo_life_hours: [1.0, 1.0],
+        ..cfg
+    })
+    .unwrap();
+    let mut bob = TestClient::login(&server, "Bob").await;
+    assert_eq!(bob.welcome.planet.id, host);
+    bob.notice(&format!(
+        "The wandering world you were on has left the sky; you are back on {host_name}"
+    ))
+    .await;
+    assert!(
+        bob.welcome.universe.iter().any(|p| p.id == next.id),
+        "the next one is still up after a restart"
+    );
+    drop(bob);
+    server.stop();
 }
