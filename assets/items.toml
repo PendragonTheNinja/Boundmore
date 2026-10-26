@@ -1980,3 +1980,8 @@ name = "limestone_brick_mix"
 
 [[item]]
 name = "wax"
+
+# Milestone 22 part 2.
+
+[[item]]
+name = "pipe"

@@ -175,6 +175,14 @@ pub struct BlockDef {
     /// anything else (`crops`).
     #[serde(default)]
     pub crop: u8,
+    /// A door or trapdoor (milestone 22 part 2): E swings it, turning it
+    /// into its `toggle` block; its shape draws and collides it
+    /// (`crate::doors`).
+    #[serde(default)]
+    pub swing: Option<crate::doors::Swing>,
+    /// The block a door becomes when swung (its open or shut self).
+    #[serde(default)]
+    pub toggle: Option<String>,
 }
 
 /// A block's health category [tuning 2.2]: soft 800 (soil, sand, foliage),
@@ -405,6 +413,8 @@ pub enum RegistryError {
     TooBright(String, u8),
     #[error("prop `{0}` must be neither solid nor opaque, with health `prop` or `plant`")]
     BadProp(String),
+    #[error("door `{0}` must toggle to a door of the same swing that toggles back")]
+    BadDoor(String),
     #[error("block `{0}` has a bonus with a negative or non-finite count")]
     BadBonus(String),
 }
@@ -459,6 +469,19 @@ impl BlockRegistry {
             }
             if by_name.insert(d.name.clone(), BlockId(i as u16)).is_some() {
                 return Err(RegistryError::Duplicate(d.name.clone()));
+            }
+        }
+        // A door's toggle is a door of the same swing that toggles back.
+        for d in &defs {
+            if d.swing.is_some() || d.toggle.is_some() {
+                let back = d
+                    .toggle
+                    .as_ref()
+                    .and_then(|t| by_name.get(t))
+                    .map(|id| &defs[id.0 as usize]);
+                if !back.is_some_and(|b| b.swing == d.swing && b.toggle.as_deref() == Some(d.name.as_str())) {
+                    return Err(RegistryError::BadDoor(d.name.clone()));
+                }
             }
         }
         Ok(Self { defs, by_name })

@@ -35,6 +35,20 @@ items = ["stones", "basalt_stones", "limestone_stones"]
 name = "any_timber"
 items = ["timber", "pale_timber", "gnarled_timber"]
 
+# Milestone 22 part 2: doors and furnishings take these.
+[[group]]
+name = "any_metal"
+label = "Any Metal Bar"
+items = ["copper_ingot", "iron_ingot", "silver_alloy", "gold_alloy", "titanium_alloy"]
+
+[[group]]
+name = "any_refined_rock"
+items = ["refined_stone", "refined_basalt", "refined_limestone"]
+
+[[group]]
+name = "any_refined_wood"
+items = ["refined_timber", "refined_pale_timber", "refined_gnarled_timber"]
+
 [[group]]
 name = "any_leaves"
 items = ["foliage", "fronds", "glossy_foliage"]
@@ -4296,4 +4310,254 @@ station = "refinery"
 seconds = 60.0
 spark = 400
 xp = 16
+wear = 10
+
+# Milestone 22 part 2: doors, trapdoors, the lock and pipe (Boundless's
+# recipes, docs/research/building-blocks.md). Wear a guess.
+
+[[recipe]]
+output = "pipe"
+count = 10
+inputs = [["any_base_metal", 6], ["relic_fragment", 1]]
+station = "workbench"
+seconds = 60.0
+xp = 6
+wear = 6
+
+[[recipe]]
+output = "lock"
+inputs = [["any_base_metal", 3], ["cog", 6]]
+station = "refinery"
+seconds = 180.0
+xp = 12
+wear = 10
+
+[[recipe]]
+output = "plain_wood_door"
+inputs = [["any_timber", 8]]
+station = "crafting_table"
+seconds = 60.0
+xp = 6
+tint = 0
+
+[[recipe]]
+output = "plain_stone_door"
+inputs = [["any_stones", 16]]
+station = "crafting_table"
+seconds = 90.0
+xp = 6
+tint = 0
+
+[[recipe]]
+output = "plain_metal_door"
+inputs = [["any_metal", 4]]
+station = "refinery"
+seconds = 120.0
+spark = 200
+xp = 15
+wear = 10
+
+[[recipe]]
+output = "plain_crystal_door"
+inputs = [["glow_crystal", 4]]
+station = "refinery"
+seconds = 180.0
+spark = 400
+xp = 24
+wear = 10
+
+[[recipe]]
+output = "stylish_wood_door"
+inputs = [["any_timber", 12], ["any_leaves", 3], ["nail", 6]]
+station = "refinery"
+seconds = 120.0
+xp = 12
+wear = 10
+tint = 0
+
+[[recipe]]
+output = "stylish_stone_door"
+inputs = [["any_stones", 12], ["glue", 2]]
+station = "refinery"
+seconds = 180.0
+spark = 400
+xp = 22
+wear = 10
+tint = 0
+
+[[recipe]]
+output = "stylish_metal_door"
+inputs = [["any_metal", 6], ["pipe", 6]]
+station = "refinery"
+seconds = 240.0
+spark = 600
+power = 1000
+xp = 32
+wear = 10
+
+[[recipe]]
+output = "stylish_crystal_door"
+inputs = [["glow_crystal", 6], ["any_base_metal", 2]]
+station = "refinery"
+seconds = 300.0
+spark = 800
+power = 2000
+xp = 40
+wear = 10
+
+[[recipe]]
+output = "ornate_wood_door"
+inputs = [["any_refined_wood", 4], ["any_leaves", 6], ["nail", 6]]
+station = "refinery"
+seconds = 240.0
+spark = 400
+xp = 28
+wear = 10
+tint = 0
+
+[[recipe]]
+output = "ornate_stone_door"
+inputs = [["any_refined_rock", 8], ["glue", 4]]
+station = "refinery"
+seconds = 360.0
+spark = 600
+power = 1000
+xp = 40
+wear = 10
+tint = 0
+
+[[recipe]]
+output = "ornate_metal_door"
+inputs = [["any_base_alloy", 6], ["pipe", 6]]
+station = "refinery"
+seconds = 480.0
+spark = 800
+power = 2000
+xp = 54
+wear = 10
+
+[[recipe]]
+output = "ornate_crystal_door"
+inputs = [["glow_crystal", 12], ["any_base_alloy", 4]]
+station = "refinery"
+seconds = 600.0
+spark = 2000
+power = 3000
+xp = 80
+wear = 10
+
+[[recipe]]
+output = "plain_wood_trapdoor"
+inputs = [["any_timber", 8]]
+station = "refinery"
+seconds = 60.0
+xp = 6
+wear = 10
+tint = 0
+
+[[recipe]]
+output = "plain_stone_trapdoor"
+inputs = [["any_stones", 16]]
+station = "refinery"
+seconds = 90.0
+xp = 8
+wear = 10
+tint = 0
+
+[[recipe]]
+output = "plain_metal_trapdoor"
+inputs = [["any_metal", 4]]
+station = "refinery"
+seconds = 120.0
+spark = 200
+xp = 15
+wear = 10
+
+[[recipe]]
+output = "plain_crystal_trapdoor"
+inputs = [["glow_crystal", 4]]
+station = "refinery"
+seconds = 180.0
+spark = 400
+xp = 24
+wear = 10
+
+[[recipe]]
+output = "stylish_wood_trapdoor"
+inputs = [["any_timber", 12], ["any_leaves", 3], ["nail", 6]]
+station = "refinery"
+seconds = 120.0
+xp = 12
+wear = 10
+tint = 0
+
+[[recipe]]
+output = "stylish_stone_trapdoor"
+inputs = [["any_stones", 12], ["glue", 2]]
+station = "refinery"
+seconds = 180.0
+spark = 400
+xp = 22
+wear = 10
+tint = 0
+
+[[recipe]]
+output = "stylish_metal_trapdoor"
+inputs = [["any_metal", 6], ["pipe", 6]]
+station = "refinery"
+seconds = 240.0
+spark = 600
+power = 1000
+xp = 32
+wear = 10
+
+[[recipe]]
+output = "stylish_crystal_trapdoor"
+inputs = [["glow_crystal", 6], ["any_base_metal", 2]]
+station = "refinery"
+seconds = 300.0
+spark = 800
+power = 2000
+xp = 42
+wear = 10
+
+[[recipe]]
+output = "ornate_wood_trapdoor"
+inputs = [["any_refined_wood", 4], ["any_leaves", 6], ["nail", 6]]
+station = "refinery"
+seconds = 240.0
+spark = 400
+xp = 28
+wear = 10
+tint = 0
+
+[[recipe]]
+output = "ornate_stone_trapdoor"
+inputs = [["any_refined_rock", 8], ["glue", 4]]
+station = "refinery"
+seconds = 360.0
+spark = 600
+power = 1000
+xp = 40
+wear = 10
+tint = 0
+
+[[recipe]]
+output = "ornate_metal_trapdoor"
+inputs = [["any_base_alloy", 6], ["pipe", 6]]
+station = "refinery"
+seconds = 480.0
+spark = 800
+power = 2000
+xp = 54
+wear = 10
+
+[[recipe]]
+output = "ornate_crystal_trapdoor"
+inputs = [["glow_crystal", 12], ["any_base_alloy", 4]]
+station = "refinery"
+seconds = 600.0
+spark = 2000
+power = 3000
+xp = 80
 wear = 10

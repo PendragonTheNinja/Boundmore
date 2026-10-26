@@ -3887,3 +3887,887 @@ light = 14
 material = "crystal"
 mine_xp = 2
 build_xp = 16
+
+# Milestone 22 part 2: doors and trapdoors. Each kind is a shut block and an
+# open one naming each other (`toggle`); their shape (set by the server)
+# draws and collides them. The open one drops the shut one.
+
+[[block]]
+name = "plain_wood_door"
+chisel = "none"
+color = [150, 108, 64]
+solid = true
+opaque = false
+translucent = false
+breakable = true
+placeable = true
+health = "hard"
+textures = { all = "plain_wood_door" }
+material = "wood"
+swing = "door"
+toggle = "plain_wood_door_open"
+mine_xp = 2
+build_xp = 12
+
+[[block]]
+name = "plain_wood_door_open"
+chisel = "none"
+color = [150, 108, 64]
+solid = false
+opaque = false
+translucent = false
+breakable = true
+placeable = false
+health = "hard"
+textures = { all = "plain_wood_door" }
+material = "wood"
+swing = "door"
+toggle = "plain_wood_door"
+drops = "plain_wood_door"
+mine_xp = 2
+build_xp = 12
+
+[[block]]
+name = "plain_stone_door"
+chisel = "none"
+color = [128, 124, 120]
+solid = true
+opaque = false
+translucent = false
+breakable = true
+placeable = true
+health = "hard"
+textures = { all = "plain_stone_door" }
+material = "rock"
+swing = "door"
+toggle = "plain_stone_door_open"
+mine_xp = 2
+build_xp = 12
+
+[[block]]
+name = "plain_stone_door_open"
+chisel = "none"
+color = [128, 124, 120]
+solid = false
+opaque = false
+translucent = false
+breakable = true
+placeable = false
+health = "hard"
+textures = { all = "plain_stone_door" }
+material = "rock"
+swing = "door"
+toggle = "plain_stone_door"
+drops = "plain_stone_door"
+mine_xp = 2
+build_xp = 12
+
+[[block]]
+name = "plain_metal_door"
+chisel = "none"
+colourable = false
+color = [160, 150, 140]
+solid = true
+opaque = false
+translucent = false
+breakable = true
+placeable = true
+health = "hard"
+textures = { all = "plain_metal_door" }
+material = "rock"
+swing = "door"
+toggle = "plain_metal_door_open"
+mine_xp = 2
+build_xp = 12
+
+[[block]]
+name = "plain_metal_door_open"
+chisel = "none"
+colourable = false
+color = [160, 150, 140]
+solid = false
+opaque = false
+translucent = false
+breakable = true
+placeable = false
+health = "hard"
+textures = { all = "plain_metal_door" }
+material = "rock"
+swing = "door"
+toggle = "plain_metal_door"
+drops = "plain_metal_door"
+mine_xp = 2
+build_xp = 12
+
+[[block]]
+name = "plain_crystal_door"
+chisel = "none"
+colourable = false
+color = [150, 230, 255]
+solid = true
+opaque = false
+translucent = false
+breakable = true
+placeable = true
+health = "hard"
+textures = { all = "plain_crystal_door" }
+material = "crystal"
+swing = "door"
+toggle = "plain_crystal_door_open"
+mine_xp = 2
+build_xp = 12
+
+[[block]]
+name = "plain_crystal_door_open"
+chisel = "none"
+colourable = false
+color = [150, 230, 255]
+solid = false
+opaque = false
+translucent = false
+breakable = true
+placeable = false
+health = "hard"
+textures = { all = "plain_crystal_door" }
+material = "crystal"
+swing = "door"
+toggle = "plain_crystal_door"
+drops = "plain_crystal_door"
+mine_xp = 2
+build_xp = 12
+
+[[block]]
+name = "stylish_wood_door"
+chisel = "none"
+color = [150, 108, 64]
+solid = true
+opaque = false
+translucent = false
+breakable = true
+placeable = true
+health = "hard"
+textures = { all = "stylish_wood_door" }
+material = "wood"
+swing = "door"
+toggle = "stylish_wood_door_open"
+mine_xp = 2
+build_xp = 12
+
+[[block]]
+name = "stylish_wood_door_open"
+chisel = "none"
+color = [150, 108, 64]
+solid = false
+opaque = false
+translucent = false
+breakable = true
+placeable = false
+health = "hard"
+textures = { all = "stylish_wood_door" }
+material = "wood"
+swing = "door"
+toggle = "stylish_wood_door"
+drops = "stylish_wood_door"
+mine_xp = 2
+build_xp = 12
+
+[[block]]
+name = "stylish_stone_door"
+chisel = "none"
+color = [128, 124, 120]
+solid = true
+opaque = false
+translucent = false
+breakable = true
+placeable = true
+health = "hard"
+textures = { all = "stylish_stone_door" }
+material = "rock"
+swing = "door"
+toggle = "stylish_stone_door_open"
+mine_xp = 2
+build_xp = 12
+
+[[block]]
+name = "stylish_stone_door_open"
+chisel = "none"
+color = [128, 124, 120]
+solid = false
+opaque = false
+translucent = false
+breakable = true
+placeable = false
+health = "hard"
+textures = { all = "stylish_stone_door" }
+material = "rock"
+swing = "door"
+toggle = "stylish_stone_door"
+drops = "stylish_stone_door"
+mine_xp = 2
+build_xp = 12
+
+[[block]]
+name = "stylish_metal_door"
+chisel = "none"
+colourable = false
+color = [160, 150, 140]
+solid = true
+opaque = false
+translucent = false
+breakable = true
+placeable = true
+health = "hard"
+textures = { all = "stylish_metal_door" }
+material = "rock"
+swing = "door"
+toggle = "stylish_metal_door_open"
+mine_xp = 2
+build_xp = 12
+
+[[block]]
+name = "stylish_metal_door_open"
+chisel = "none"
+colourable = false
+color = [160, 150, 140]
+solid = false
+opaque = false
+translucent = false
+breakable = true
+placeable = false
+health = "hard"
+textures = { all = "stylish_metal_door" }
+material = "rock"
+swing = "door"
+toggle = "stylish_metal_door"
+drops = "stylish_metal_door"
+mine_xp = 2
+build_xp = 12
+
+[[block]]
+name = "stylish_crystal_door"
+chisel = "none"
+colourable = false
+color = [150, 230, 255]
+solid = true
+opaque = false
+translucent = false
+breakable = true
+placeable = true
+health = "hard"
+textures = { all = "stylish_crystal_door" }
+material = "crystal"
+swing = "door"
+toggle = "stylish_crystal_door_open"
+mine_xp = 2
+build_xp = 12
+
+[[block]]
+name = "stylish_crystal_door_open"
+chisel = "none"
+colourable = false
+color = [150, 230, 255]
+solid = false
+opaque = false
+translucent = false
+breakable = true
+placeable = false
+health = "hard"
+textures = { all = "stylish_crystal_door" }
+material = "crystal"
+swing = "door"
+toggle = "stylish_crystal_door"
+drops = "stylish_crystal_door"
+mine_xp = 2
+build_xp = 12
+
+[[block]]
+name = "ornate_wood_door"
+chisel = "none"
+color = [150, 108, 64]
+solid = true
+opaque = false
+translucent = false
+breakable = true
+placeable = true
+health = "hard"
+textures = { all = "ornate_wood_door" }
+material = "wood"
+swing = "door"
+toggle = "ornate_wood_door_open"
+mine_xp = 2
+build_xp = 12
+
+[[block]]
+name = "ornate_wood_door_open"
+chisel = "none"
+color = [150, 108, 64]
+solid = false
+opaque = false
+translucent = false
+breakable = true
+placeable = false
+health = "hard"
+textures = { all = "ornate_wood_door" }
+material = "wood"
+swing = "door"
+toggle = "ornate_wood_door"
+drops = "ornate_wood_door"
+mine_xp = 2
+build_xp = 12
+
+[[block]]
+name = "ornate_stone_door"
+chisel = "none"
+color = [128, 124, 120]
+solid = true
+opaque = false
+translucent = false
+breakable = true
+placeable = true
+health = "hard"
+textures = { all = "ornate_stone_door" }
+material = "rock"
+swing = "door"
+toggle = "ornate_stone_door_open"
+mine_xp = 2
+build_xp = 12
+
+[[block]]
+name = "ornate_stone_door_open"
+chisel = "none"
+color = [128, 124, 120]
+solid = false
+opaque = false
+translucent = false
+breakable = true
+placeable = false
+health = "hard"
+textures = { all = "ornate_stone_door" }
+material = "rock"
+swing = "door"
+toggle = "ornate_stone_door"
+drops = "ornate_stone_door"
+mine_xp = 2
+build_xp = 12
+
+[[block]]
+name = "ornate_metal_door"
+chisel = "none"
+colourable = false
+color = [160, 150, 140]
+solid = true
+opaque = false
+translucent = false
+breakable = true
+placeable = true
+health = "hard"
+textures = { all = "ornate_metal_door" }
+material = "rock"
+swing = "door"
+toggle = "ornate_metal_door_open"
+mine_xp = 2
+build_xp = 12
+
+[[block]]
+name = "ornate_metal_door_open"
+chisel = "none"
+colourable = false
+color = [160, 150, 140]
+solid = false
+opaque = false
+translucent = false
+breakable = true
+placeable = false
+health = "hard"
+textures = { all = "ornate_metal_door" }
+material = "rock"
+swing = "door"
+toggle = "ornate_metal_door"
+drops = "ornate_metal_door"
+mine_xp = 2
+build_xp = 12
+
+[[block]]
+name = "ornate_crystal_door"
+chisel = "none"
+colourable = false
+color = [150, 230, 255]
+solid = true
+opaque = false
+translucent = false
+breakable = true
+placeable = true
+health = "hard"
+textures = { all = "ornate_crystal_door" }
+material = "crystal"
+swing = "door"
+toggle = "ornate_crystal_door_open"
+mine_xp = 2
+build_xp = 12
+
+[[block]]
+name = "ornate_crystal_door_open"
+chisel = "none"
+colourable = false
+color = [150, 230, 255]
+solid = false
+opaque = false
+translucent = false
+breakable = true
+placeable = false
+health = "hard"
+textures = { all = "ornate_crystal_door" }
+material = "crystal"
+swing = "door"
+toggle = "ornate_crystal_door"
+drops = "ornate_crystal_door"
+mine_xp = 2
+build_xp = 12
+
+[[block]]
+name = "plain_wood_trapdoor"
+chisel = "none"
+color = [150, 108, 64]
+solid = true
+opaque = false
+translucent = false
+breakable = true
+placeable = true
+health = "hard"
+textures = { all = "plain_wood_trapdoor" }
+material = "wood"
+swing = "trapdoor"
+toggle = "plain_wood_trapdoor_open"
+mine_xp = 2
+build_xp = 12
+
+[[block]]
+name = "plain_wood_trapdoor_open"
+chisel = "none"
+color = [150, 108, 64]
+solid = false
+opaque = false
+translucent = false
+breakable = true
+placeable = false
+health = "hard"
+textures = { all = "plain_wood_trapdoor" }
+material = "wood"
+swing = "trapdoor"
+toggle = "plain_wood_trapdoor"
+drops = "plain_wood_trapdoor"
+mine_xp = 2
+build_xp = 12
+
+[[block]]
+name = "plain_stone_trapdoor"
+chisel = "none"
+color = [128, 124, 120]
+solid = true
+opaque = false
+translucent = false
+breakable = true
+placeable = true
+health = "hard"
+textures = { all = "plain_stone_trapdoor" }
+material = "rock"
+swing = "trapdoor"
+toggle = "plain_stone_trapdoor_open"
+mine_xp = 2
+build_xp = 12
+
+[[block]]
+name = "plain_stone_trapdoor_open"
+chisel = "none"
+color = [128, 124, 120]
+solid = false
+opaque = false
+translucent = false
+breakable = true
+placeable = false
+health = "hard"
+textures = { all = "plain_stone_trapdoor" }
+material = "rock"
+swing = "trapdoor"
+toggle = "plain_stone_trapdoor"
+drops = "plain_stone_trapdoor"
+mine_xp = 2
+build_xp = 12
+
+[[block]]
+name = "plain_metal_trapdoor"
+chisel = "none"
+colourable = false
+color = [160, 150, 140]
+solid = true
+opaque = false
+translucent = false
+breakable = true
+placeable = true
+health = "hard"
+textures = { all = "plain_metal_trapdoor" }
+material = "rock"
+swing = "trapdoor"
+toggle = "plain_metal_trapdoor_open"
+mine_xp = 2
+build_xp = 12
+
+[[block]]
+name = "plain_metal_trapdoor_open"
+chisel = "none"
+colourable = false
+color = [160, 150, 140]
+solid = false
+opaque = false
+translucent = false
+breakable = true
+placeable = false
+health = "hard"
+textures = { all = "plain_metal_trapdoor" }
+material = "rock"
+swing = "trapdoor"
+toggle = "plain_metal_trapdoor"
+drops = "plain_metal_trapdoor"
+mine_xp = 2
+build_xp = 12
+
+[[block]]
+name = "plain_crystal_trapdoor"
+chisel = "none"
+colourable = false
+color = [150, 230, 255]
+solid = true
+opaque = false
+translucent = false
+breakable = true
+placeable = true
+health = "hard"
+textures = { all = "plain_crystal_trapdoor" }
+material = "crystal"
+swing = "trapdoor"
+toggle = "plain_crystal_trapdoor_open"
+mine_xp = 2
+build_xp = 12
+
+[[block]]
+name = "plain_crystal_trapdoor_open"
+chisel = "none"
+colourable = false
+color = [150, 230, 255]
+solid = false
+opaque = false
+translucent = false
+breakable = true
+placeable = false
+health = "hard"
+textures = { all = "plain_crystal_trapdoor" }
+material = "crystal"
+swing = "trapdoor"
+toggle = "plain_crystal_trapdoor"
+drops = "plain_crystal_trapdoor"
+mine_xp = 2
+build_xp = 12
+
+[[block]]
+name = "stylish_wood_trapdoor"
+chisel = "none"
+color = [150, 108, 64]
+solid = true
+opaque = false
+translucent = false
+breakable = true
+placeable = true
+health = "hard"
+textures = { all = "stylish_wood_trapdoor" }
+material = "wood"
+swing = "trapdoor"
+toggle = "stylish_wood_trapdoor_open"
+mine_xp = 2
+build_xp = 12
+
+[[block]]
+name = "stylish_wood_trapdoor_open"
+chisel = "none"
+color = [150, 108, 64]
+solid = false
+opaque = false
+translucent = false
+breakable = true
+placeable = false
+health = "hard"
+textures = { all = "stylish_wood_trapdoor" }
+material = "wood"
+swing = "trapdoor"
+toggle = "stylish_wood_trapdoor"
+drops = "stylish_wood_trapdoor"
+mine_xp = 2
+build_xp = 12
+
+[[block]]
+name = "stylish_stone_trapdoor"
+chisel = "none"
+color = [128, 124, 120]
+solid = true
+opaque = false
+translucent = false
+breakable = true
+placeable = true
+health = "hard"
+textures = { all = "stylish_stone_trapdoor" }
+material = "rock"
+swing = "trapdoor"
+toggle = "stylish_stone_trapdoor_open"
+mine_xp = 2
+build_xp = 12
+
+[[block]]
+name = "stylish_stone_trapdoor_open"
+chisel = "none"
+color = [128, 124, 120]
+solid = false
+opaque = false
+translucent = false
+breakable = true
+placeable = false
+health = "hard"
+textures = { all = "stylish_stone_trapdoor" }
+material = "rock"
+swing = "trapdoor"
+toggle = "stylish_stone_trapdoor"
+drops = "stylish_stone_trapdoor"
+mine_xp = 2
+build_xp = 12
+
+[[block]]
+name = "stylish_metal_trapdoor"
+chisel = "none"
+colourable = false
+color = [160, 150, 140]
+solid = true
+opaque = false
+translucent = false
+breakable = true
+placeable = true
+health = "hard"
+textures = { all = "stylish_metal_trapdoor" }
+material = "rock"
+swing = "trapdoor"
+toggle = "stylish_metal_trapdoor_open"
+mine_xp = 2
+build_xp = 12
+
+[[block]]
+name = "stylish_metal_trapdoor_open"
+chisel = "none"
+colourable = false
+color = [160, 150, 140]
+solid = false
+opaque = false
+translucent = false
+breakable = true
+placeable = false
+health = "hard"
+textures = { all = "stylish_metal_trapdoor" }
+material = "rock"
+swing = "trapdoor"
+toggle = "stylish_metal_trapdoor"
+drops = "stylish_metal_trapdoor"
+mine_xp = 2
+build_xp = 12
+
+[[block]]
+name = "stylish_crystal_trapdoor"
+chisel = "none"
+colourable = false
+color = [150, 230, 255]
+solid = true
+opaque = false
+translucent = false
+breakable = true
+placeable = true
+health = "hard"
+textures = { all = "stylish_crystal_trapdoor" }
+material = "crystal"
+swing = "trapdoor"
+toggle = "stylish_crystal_trapdoor_open"
+mine_xp = 2
+build_xp = 12
+
+[[block]]
+name = "stylish_crystal_trapdoor_open"
+chisel = "none"
+colourable = false
+color = [150, 230, 255]
+solid = false
+opaque = false
+translucent = false
+breakable = true
+placeable = false
+health = "hard"
+textures = { all = "stylish_crystal_trapdoor" }
+material = "crystal"
+swing = "trapdoor"
+toggle = "stylish_crystal_trapdoor"
+drops = "stylish_crystal_trapdoor"
+mine_xp = 2
+build_xp = 12
+
+[[block]]
+name = "ornate_wood_trapdoor"
+chisel = "none"
+color = [150, 108, 64]
+solid = true
+opaque = false
+translucent = false
+breakable = true
+placeable = true
+health = "hard"
+textures = { all = "ornate_wood_trapdoor" }
+material = "wood"
+swing = "trapdoor"
+toggle = "ornate_wood_trapdoor_open"
+mine_xp = 2
+build_xp = 12
+
+[[block]]
+name = "ornate_wood_trapdoor_open"
+chisel = "none"
+color = [150, 108, 64]
+solid = false
+opaque = false
+translucent = false
+breakable = true
+placeable = false
+health = "hard"
+textures = { all = "ornate_wood_trapdoor" }
+material = "wood"
+swing = "trapdoor"
+toggle = "ornate_wood_trapdoor"
+drops = "ornate_wood_trapdoor"
+mine_xp = 2
+build_xp = 12
+
+[[block]]
+name = "ornate_stone_trapdoor"
+chisel = "none"
+color = [128, 124, 120]
+solid = true
+opaque = false
+translucent = false
+breakable = true
+placeable = true
+health = "hard"
+textures = { all = "ornate_stone_trapdoor" }
+material = "rock"
+swing = "trapdoor"
+toggle = "ornate_stone_trapdoor_open"
+mine_xp = 2
+build_xp = 12
+
+[[block]]
+name = "ornate_stone_trapdoor_open"
+chisel = "none"
+color = [128, 124, 120]
+solid = false
+opaque = false
+translucent = false
+breakable = true
+placeable = false
+health = "hard"
+textures = { all = "ornate_stone_trapdoor" }
+material = "rock"
+swing = "trapdoor"
+toggle = "ornate_stone_trapdoor"
+drops = "ornate_stone_trapdoor"
+mine_xp = 2
+build_xp = 12
+
+[[block]]
+name = "ornate_metal_trapdoor"
+chisel = "none"
+colourable = false
+color = [160, 150, 140]
+solid = true
+opaque = false
+translucent = false
+breakable = true
+placeable = true
+health = "hard"
+textures = { all = "ornate_metal_trapdoor" }
+material = "rock"
+swing = "trapdoor"
+toggle = "ornate_metal_trapdoor_open"
+mine_xp = 2
+build_xp = 12
+
+[[block]]
+name = "ornate_metal_trapdoor_open"
+chisel = "none"
+colourable = false
+color = [160, 150, 140]
+solid = false
+opaque = false
+translucent = false
+breakable = true
+placeable = false
+health = "hard"
+textures = { all = "ornate_metal_trapdoor" }
+material = "rock"
+swing = "trapdoor"
+toggle = "ornate_metal_trapdoor"
+drops = "ornate_metal_trapdoor"
+mine_xp = 2
+build_xp = 12
+
+[[block]]
+name = "ornate_crystal_trapdoor"
+chisel = "none"
+colourable = false
+color = [150, 230, 255]
+solid = true
+opaque = false
+translucent = false
+breakable = true
+placeable = true
+health = "hard"
+textures = { all = "ornate_crystal_trapdoor" }
+material = "crystal"
+swing = "trapdoor"
+toggle = "ornate_crystal_trapdoor_open"
+mine_xp = 2
+build_xp = 12
+
+[[block]]
+name = "ornate_crystal_trapdoor_open"
+chisel = "none"
+colourable = false
+color = [150, 230, 255]
+solid = false
+opaque = false
+translucent = false
+breakable = true
+placeable = false
+health = "hard"
+textures = { all = "ornate_crystal_trapdoor" }
+material = "crystal"
+swing = "trapdoor"
+toggle = "ornate_crystal_trapdoor"
+drops = "ornate_crystal_trapdoor"
+mine_xp = 2
+build_xp = 12
+
+[[block]]
+name = "lock"
+chisel = "none"
+colourable = false
+color = [150, 140, 120]
+solid = true
+opaque = true
+translucent = false
+breakable = true
+placeable = true
+health = "hard"
+textures = { all = "lock" }
+material = "rock"
+mine_xp = 2
+build_xp = 12

@@ -11,6 +11,7 @@ pub mod combat;
 pub mod coords;
 pub mod creatures;
 pub mod crops;
+pub mod doors;
 pub mod energy;
 pub mod far;
 pub mod food;
