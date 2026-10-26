@@ -30,11 +30,11 @@ From Boundless (forum, 2016 to 2021): a door is a **single block**; door blocks 
 Decided:
 
 6. **Each door kind is two blocks**: shut and open, each naming the other (`BlockDef::swing` and `toggle`). Their state is drawn and felt through the block's shape (ADR-0008's octants), so nothing new is needed to draw or collide them: a **shut door** is a solid half-thick slab standing on the side of its block nearest whoever placed it; an **open door** is a quarter-wide strip at its hinge, passable (not solid). A **shut trapdoor** is a solid half-height slab (the lower half, or the upper when placed against a ceiling); an **open trapdoor** stands up as a passable half slab against one side. They cannot be chiselled.
-7. **E opens and shuts.** `ClientMsg::Swing { pos }`: in reach, the server flips the whole joined door (same kind, same orientation, touching by faces, in the same claim or none; at most 64 blocks) and sends the block changes. A door does not shut on a player standing in it.
+7. **E opens and shuts.** `ClientMsg::SwingDoor { pos }`: in reach, the server flips the whole joined door (same kind, same orientation, touching by faces, in the same claim or none; at most 64 blocks) and sends the block changes. A door does not shut on a player standing in it.
 8. **Locks.** A lock block beside any block of a door on a claim keeps it shut to everyone but the claim's owner.
 9. Ingredients Boundmore lacked: **pipe** (workbench: 6 base metal and a relic fragment → 10) and the **lock** (refinery: 3 base metal and 6 cogs).
 
-Rules: `BlockDef::{swing, toggle}`; the shape of a placed door from the placer's side (server, `game::doors`); `ClientMsg::Swing` (protocol 36); 24 door and trapdoor kinds, 48 blocks, their textures; the open block drops the shut one.
+Rules: `BlockDef::{swing, toggle}`; the shape of a placed door from the placer's side (server, `game::doors`); `ClientMsg::SwingDoor` (protocol 36); 24 door and trapdoor kinds, 48 blocks, their textures; the open block drops the shut one.
 
 Acceptance: a door opens and shuts with E and joins its neighbours; a locked door on a claim opens only for its owner; a player walks through an open door and not a shut one (end to end).
 

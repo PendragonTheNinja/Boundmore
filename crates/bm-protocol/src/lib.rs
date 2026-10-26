@@ -25,7 +25,7 @@ use glam::DVec3;
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
 
 /// Bump on any change to a message below. Client and server must match.
-pub const PROTOCOL_VERSION: u32 = 35;
+pub const PROTOCOL_VERSION: u32 = 36;
 
 /// QUIC application protocol name; also refuses non-Boundmore peers early.
 pub const ALPN: &[u8] = b"boundmore/1";
@@ -98,6 +98,10 @@ pub enum ClientMsg {
         /// most crafts can be made in. Ignored for other recipes.
         colour: Option<bm_core::Colour>,
     },
+    /// Open or shut the door or trapdoor at `pos` (milestone 22 part 2),
+    /// with every door block joined to it. The server answers with block
+    /// changes, or a `Notice` saying why not.
+    SwingDoor { pos: BlockPos },
     /// Start (or with `None`, stop) receiving `Station` updates for one
     /// station, e.g. while its screen is open.
     WatchStation { pos: Option<BlockPos> },

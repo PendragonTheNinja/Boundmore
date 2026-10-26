@@ -439,6 +439,11 @@ impl Session {
                 if world.registry.get(st.id).is_prop() {
                     return Some(Shape::FULL);
                 }
+                // An open door (milestone 22) is not solid, but is aimed at
+                // by its strip, to shut it or break it.
+                if world.registry.get(st.id).swing.is_some() {
+                    return Some(world.block_shape(p));
+                }
                 world.flags.solid(st.id).then(|| world.block_shape(p))
             })
         };
@@ -727,6 +732,13 @@ impl Session {
     fn aiming_at_portal(&self) -> Option<BlockPos> {
         let hit = self.use_target?;
         self.is_portal_block(hit.block).then_some(hit.block)
+    }
+
+    /// The door or trapdoor aimed at for E, if any (milestone 22).
+    fn aiming_at_door(&self) -> Option<BlockPos> {
+        let hit = self.use_target?;
+        let b = self.world.block(hit.block)?;
+        self.world.registry.get(b).swing.map(|_| hit.block)
     }
 
     /// The open meteor heart aimed at, whose share we have not taken.
@@ -3471,6 +3483,8 @@ impl ApplicationHandler for App {
                                 self.open_portal(pos);
                             } else if let Some(pos) = s.aiming_at_heart() {
                                 self.send(ClientMsg::LootHeart { pos });
+                            } else if let Some(pos) = s.aiming_at_door() {
+                                self.send(ClientMsg::SwingDoor { pos });
                             }
                         }
                     }

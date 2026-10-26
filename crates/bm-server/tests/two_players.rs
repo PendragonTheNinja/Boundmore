@@ -6748,3 +6748,78 @@ async fn crafting_passes_the_chosen_colour_on() {
     drop(alice);
     server.stop();
 }
+
+/// Milestone 22 part 2: a door stands on its placer's side; E swings it
+/// with the door block stacked on it; it shuts where it was; a lock beside
+/// it on a claim keeps it shut to everyone but the owner.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn doors_swing_together_and_locks_keep_others_out() {
+    use bm_core::doors::{Side, open_door, shut_door};
+    let dir = tempfile::tempdir().unwrap();
+    seed(
+        dir.path(),
+        "Alice",
+        &[
+            (5, "plain_wood_door", 4, 0),
+            (6, "lock", 1, 0),
+            (7, "claim_stone", 1, 0),
+        ],
+    );
+    let server = bm_server::start(config(dir.path())).unwrap();
+    let mut alice = TestClient::login(&server, "Alice").await;
+    let mut bob = TestClient::register(&server, "Bob").await;
+    let feet = alice.feet();
+    alice.wait_for_chunk(feet.chunk()).await;
+    let (low, high) = (feet.offset(2, 1, 0), feet.offset(2, 2, 0));
+    assert!(place(&mut alice, 1, low, 5, None).await.0);
+    assert!(place(&mut alice, 2, high, 5, None).await.0);
+    alice.settle().await;
+    let shut = state_at(&alice, low);
+    assert_eq!(shut.id, alice.block("plain_wood_door"));
+    assert_eq!(shut.shape, shut_door(Side::West), "on her side");
+    assert_eq!(state_at(&alice, high), shut);
+
+    // E opens both, then shuts both where they were.
+    alice.send(ClientMsg::SwingDoor { pos: low }).await;
+    alice
+        .until(|m| matches!(m, ServerMsg::BlockChanged { pos, .. } if *pos == high))
+        .await;
+    alice.settle().await;
+    for b in [low, high] {
+        let s = state_at(&alice, b);
+        assert_eq!(
+            (s.id, s.shape),
+            (alice.block("plain_wood_door_open"), open_door(Side::West))
+        );
+    }
+    alice.send(ClientMsg::SwingDoor { pos: high }).await;
+    alice
+        .until(|m| matches!(m, ServerMsg::BlockChanged { pos, block } if *pos == low && block.id == shut.id))
+        .await;
+    alice.settle().await;
+    assert_eq!(state_at(&alice, high), shut);
+
+    // Bob may swing an unlocked door.
+    bob.wait_for_chunk(low.chunk()).await;
+    bob.send(ClientMsg::SwingDoor { pos: low }).await;
+    bob.until(|m| matches!(m, ServerMsg::BlockChanged { pos, block } if *pos == low && block.id != shut.id))
+        .await;
+    bob.send(ClientMsg::SwingDoor { pos: low }).await;
+    bob.until(|m| matches!(m, ServerMsg::BlockChanged { pos, block } if *pos == low && block.id == shut.id))
+        .await;
+
+    // Claimed and locked: Bob cannot, Alice can.
+    claim_around(&mut alice, 10, 7).await;
+    assert!(place(&mut alice, 40, low.offset(0, 0, 1), 6, None).await.0, "the lock");
+    bob.settle().await;
+    bob.send(ClientMsg::SwingDoor { pos: low }).await;
+    bob.notice("This door is locked").await;
+    bob.settle().await;
+    assert_eq!(state_at(&bob, low), shut);
+    alice.send(ClientMsg::SwingDoor { pos: low }).await;
+    alice
+        .until(|m| matches!(m, ServerMsg::BlockChanged { pos, block } if *pos == low && block.id != shut.id))
+        .await;
+    drop((alice, bob));
+    server.stop();
+}

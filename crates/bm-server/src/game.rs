@@ -28,6 +28,7 @@ mod blasts;
 mod combat;
 mod creative;
 mod creatures;
+mod doors;
 mod exo;
 mod farm;
 mod food;
@@ -424,6 +425,9 @@ pub struct Game {
     exo_checked: u64,
     /// Departed wanderers whose rows the next save deletes, with their hosts.
     forget_planets: Vec<(u16, u16)>,
+    /// The lock block (milestone 22 part 2): beside a door on a claim, it
+    /// keeps the door shut to all but the owner.
+    lock: BlockId,
 }
 
 /// One planet's load, as the report shows it.
@@ -743,6 +747,7 @@ impl Game {
             kinds,
             exo_checked: tick,
             forget_planets: Vec::new(),
+            lock: registry.id("lock")?,
         })
     }
 
@@ -1068,6 +1073,7 @@ impl Game {
                 ClientMsg::Discard { slot } => {
                     self.change_inventory(id, |inv, _| inv.clear(slot as usize));
                 }
+                ClientMsg::SwingDoor { pos } => self.swing_door(id, pos),
                 ClientMsg::Craft {
                     recipe,
                     count,
@@ -2171,6 +2177,7 @@ impl Game {
         match action {
             EditAction::Place { slot, mount } => {
                 let slot = slot as usize;
+                let placer = p.state.pos;
                 if slot >= HOTBAR_SLOTS {
                     return Err("not a hotbar slot".into());
                 }
@@ -2277,8 +2284,16 @@ impl Game {
                 } else {
                     Colour::NATURAL
                 };
+                let mut placed = BlockState::coloured(block, colour);
+                // A door stands on the side nearest whoever places it
+                // (milestone 22 part 2).
+                if let Some(swing) = reg.get(block).swing {
+                    let centre = DVec3::new(canon.x as f64 + 0.5, canon.y as f64 + 0.5, canon.z as f64 + 0.5);
+                    let d = shape.delta(centre, placer);
+                    placed.shape = bm_core::doors::placed(swing, d.x, d.z);
+                }
                 Ok(Accepted {
-                    block: BlockState::coloured(block, colour),
+                    block: placed,
                     effect: Effect::Placed { slot },
                 })
             }
