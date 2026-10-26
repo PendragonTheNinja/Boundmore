@@ -2609,3 +2609,1281 @@ drops = "rough_gloamite"
 bonus = [{ item = "rough_gloamite", per_tier = [0, 0, 0, 0, 0.5, 0.8, 0.8, 1.2] }]
 mine_xp = 216
 build_xp = 0
+
+# Milestone 22: building blocks (Boundless's crafted families, research
+# docs/research/building-blocks.md). Build XP a guess within Boundless's
+# 2 to 44 range.
+
+[[block]]
+name = "stone_bricks"
+chisel = "any"
+color = [128, 124, 120]
+solid = true
+opaque = true
+translucent = false
+breakable = true
+placeable = true
+health = "hard"
+textures = { all = "stone_bricks" }
+material = "rock"
+mine_xp = 2
+build_xp = 16
+
+[[block]]
+name = "refined_stone"
+chisel = "any"
+color = [128, 124, 120]
+solid = true
+opaque = true
+translucent = false
+breakable = true
+placeable = true
+health = "hard"
+textures = { all = "refined_stone" }
+material = "rock"
+mine_xp = 2
+build_xp = 16
+
+[[block]]
+name = "carved_stone"
+chisel = "any"
+color = [128, 124, 120]
+solid = true
+opaque = true
+translucent = false
+breakable = true
+placeable = true
+health = "hard"
+textures = { all = "carved_stone" }
+material = "rock"
+mine_xp = 2
+build_xp = 16
+
+[[block]]
+name = "tiled_stone"
+chisel = "any"
+color = [128, 124, 120]
+solid = true
+opaque = true
+translucent = false
+breakable = true
+placeable = true
+health = "hard"
+textures = { all = "tiled_stone" }
+material = "rock"
+mine_xp = 2
+build_xp = 16
+
+[[block]]
+name = "basalt_bricks"
+chisel = "any"
+color = [70, 68, 74]
+solid = true
+opaque = true
+translucent = false
+breakable = true
+placeable = true
+health = "hard"
+textures = { all = "basalt_bricks" }
+material = "rock"
+mine_xp = 2
+build_xp = 16
+
+[[block]]
+name = "refined_basalt"
+chisel = "any"
+color = [70, 68, 74]
+solid = true
+opaque = true
+translucent = false
+breakable = true
+placeable = true
+health = "hard"
+textures = { all = "refined_basalt" }
+material = "rock"
+mine_xp = 2
+build_xp = 16
+
+[[block]]
+name = "carved_basalt"
+chisel = "any"
+color = [70, 68, 74]
+solid = true
+opaque = true
+translucent = false
+breakable = true
+placeable = true
+health = "hard"
+textures = { all = "carved_basalt" }
+material = "rock"
+mine_xp = 2
+build_xp = 16
+
+[[block]]
+name = "tiled_basalt"
+chisel = "any"
+color = [70, 68, 74]
+solid = true
+opaque = true
+translucent = false
+breakable = true
+placeable = true
+health = "hard"
+textures = { all = "tiled_basalt" }
+material = "rock"
+mine_xp = 2
+build_xp = 16
+
+[[block]]
+name = "limestone_bricks"
+chisel = "any"
+color = [214, 204, 176]
+solid = true
+opaque = true
+translucent = false
+breakable = true
+placeable = true
+health = "hard"
+textures = { all = "limestone_bricks" }
+material = "rock"
+mine_xp = 2
+build_xp = 16
+
+[[block]]
+name = "refined_limestone"
+chisel = "any"
+color = [214, 204, 176]
+solid = true
+opaque = true
+translucent = false
+breakable = true
+placeable = true
+health = "hard"
+textures = { all = "refined_limestone" }
+material = "rock"
+mine_xp = 2
+build_xp = 16
+
+[[block]]
+name = "carved_limestone"
+chisel = "any"
+color = [214, 204, 176]
+solid = true
+opaque = true
+translucent = false
+breakable = true
+placeable = true
+health = "hard"
+textures = { all = "carved_limestone" }
+material = "rock"
+mine_xp = 2
+build_xp = 16
+
+[[block]]
+name = "tiled_limestone"
+chisel = "any"
+color = [214, 204, 176]
+solid = true
+opaque = true
+translucent = false
+breakable = true
+placeable = true
+health = "hard"
+textures = { all = "tiled_limestone" }
+material = "rock"
+mine_xp = 2
+build_xp = 16
+
+[[block]]
+name = "marble"
+chisel = "any"
+color = [226, 222, 214]
+solid = true
+opaque = true
+translucent = false
+breakable = true
+placeable = true
+health = "hard"
+textures = { all = "marble" }
+material = "rock"
+mine_xp = 2
+build_xp = 16
+
+[[block]]
+name = "bordered_marble"
+chisel = "any"
+color = [226, 222, 214]
+solid = true
+opaque = true
+translucent = false
+breakable = true
+placeable = true
+health = "hard"
+textures = { all = "bordered_marble" }
+material = "rock"
+mine_xp = 2
+build_xp = 16
+
+[[block]]
+name = "marble_frieze"
+chisel = "any"
+color = [226, 222, 214]
+solid = true
+opaque = true
+translucent = false
+breakable = true
+placeable = true
+health = "hard"
+textures = { all = "marble_frieze" }
+material = "rock"
+mine_xp = 2
+build_xp = 16
+
+[[block]]
+name = "refined_timber"
+chisel = "any"
+color = [176, 134, 86]
+solid = true
+opaque = true
+translucent = false
+breakable = true
+placeable = true
+health = "hard"
+textures = { all = "refined_timber" }
+material = "wood"
+mine_xp = 2
+build_xp = 16
+
+[[block]]
+name = "carved_timber"
+chisel = "any"
+color = [176, 134, 86]
+solid = true
+opaque = true
+translucent = false
+breakable = true
+placeable = true
+health = "hard"
+textures = { all = "carved_timber" }
+material = "wood"
+mine_xp = 2
+build_xp = 16
+
+[[block]]
+name = "pale_timber"
+chisel = "any"
+color = [214, 196, 160]
+solid = true
+opaque = true
+translucent = false
+breakable = true
+placeable = true
+health = "hard"
+textures = { all = "pale_timber" }
+material = "wood"
+fuel = 15
+mine_xp = 2
+build_xp = 16
+
+[[block]]
+name = "refined_pale_timber"
+chisel = "any"
+color = [214, 196, 160]
+solid = true
+opaque = true
+translucent = false
+breakable = true
+placeable = true
+health = "hard"
+textures = { all = "refined_pale_timber" }
+material = "wood"
+mine_xp = 2
+build_xp = 16
+
+[[block]]
+name = "carved_pale_timber"
+chisel = "any"
+color = [214, 196, 160]
+solid = true
+opaque = true
+translucent = false
+breakable = true
+placeable = true
+health = "hard"
+textures = { all = "carved_pale_timber" }
+material = "wood"
+mine_xp = 2
+build_xp = 16
+
+[[block]]
+name = "gnarled_timber"
+chisel = "any"
+color = [120, 84, 58]
+solid = true
+opaque = true
+translucent = false
+breakable = true
+placeable = true
+health = "hard"
+textures = { all = "gnarled_timber" }
+material = "wood"
+fuel = 15
+mine_xp = 2
+build_xp = 16
+
+[[block]]
+name = "refined_gnarled_timber"
+chisel = "any"
+color = [120, 84, 58]
+solid = true
+opaque = true
+translucent = false
+breakable = true
+placeable = true
+health = "hard"
+textures = { all = "refined_gnarled_timber" }
+material = "wood"
+mine_xp = 2
+build_xp = 16
+
+[[block]]
+name = "carved_gnarled_timber"
+chisel = "any"
+color = [120, 84, 58]
+solid = true
+opaque = true
+translucent = false
+breakable = true
+placeable = true
+health = "hard"
+textures = { all = "carved_gnarled_timber" }
+material = "wood"
+mine_xp = 2
+build_xp = 16
+
+[[block]]
+name = "compact_soil"
+chisel = "any"
+color = [120, 86, 60]
+solid = true
+opaque = true
+translucent = false
+breakable = true
+placeable = true
+health = "hard"
+textures = { all = "compact_soil" }
+material = "soil"
+mine_xp = 2
+build_xp = 16
+
+[[block]]
+name = "compact_clay"
+chisel = "any"
+color = [166, 110, 84]
+solid = true
+opaque = true
+translucent = false
+breakable = true
+placeable = true
+health = "hard"
+textures = { all = "compact_clay" }
+material = "soil"
+mine_xp = 2
+build_xp = 16
+
+[[block]]
+name = "compact_peat"
+chisel = "any"
+color = [70, 52, 40]
+solid = true
+opaque = true
+translucent = false
+breakable = true
+placeable = true
+health = "hard"
+textures = { all = "compact_peat" }
+material = "soil"
+mine_xp = 2
+build_xp = 16
+
+[[block]]
+name = "compact_gravel"
+chisel = "any"
+color = [130, 126, 120]
+solid = true
+opaque = true
+translucent = false
+breakable = true
+placeable = true
+health = "hard"
+textures = { all = "compact_gravel" }
+material = "soil"
+mine_xp = 2
+build_xp = 16
+
+[[block]]
+name = "refined_glow_crystal"
+chisel = "any"
+colourable = false
+color = [150, 230, 255]
+solid = true
+opaque = true
+translucent = false
+breakable = true
+placeable = true
+health = "hard"
+textures = { all = "refined_glow_crystal" }
+light = 12
+material = "crystal"
+mine_xp = 2
+build_xp = 16
+
+[[block]]
+name = "faceted_glow_crystal"
+chisel = "any"
+colourable = false
+color = [170, 240, 255]
+solid = true
+opaque = true
+translucent = false
+breakable = true
+placeable = true
+health = "hard"
+textures = { all = "faceted_glow_crystal" }
+light = 13
+material = "crystal"
+mine_xp = 2
+build_xp = 16
+
+[[block]]
+name = "clear_glass"
+chisel = "any"
+color = [200, 228, 236]
+solid = true
+opaque = false
+translucent = true
+breakable = true
+placeable = true
+health = "hard"
+opacity = 0.12
+textures = { all = "clear_glass" }
+material = "crystal"
+mine_xp = 2
+build_xp = 16
+
+[[block]]
+name = "framed_glass"
+chisel = "any"
+color = [200, 228, 236]
+solid = true
+opaque = false
+translucent = true
+breakable = true
+placeable = true
+health = "hard"
+opacity = 0.3
+textures = { all = "framed_glass" }
+material = "crystal"
+mine_xp = 2
+build_xp = 16
+
+[[block]]
+name = "ornate_glass"
+chisel = "any"
+color = [200, 228, 236]
+solid = true
+opaque = false
+translucent = true
+breakable = true
+placeable = true
+health = "hard"
+opacity = 0.35
+textures = { all = "ornate_glass" }
+material = "crystal"
+mine_xp = 2
+build_xp = 16
+
+[[block]]
+name = "compact_copper"
+chisel = "any"
+colourable = false
+color = [200, 120, 70]
+solid = true
+opaque = true
+translucent = false
+breakable = true
+placeable = true
+health = "hard"
+textures = { all = "compact_copper" }
+material = "rock"
+mine_xp = 2
+build_xp = 16
+
+[[block]]
+name = "refined_copper"
+chisel = "any"
+colourable = false
+color = [200, 120, 70]
+solid = true
+opaque = true
+translucent = false
+breakable = true
+placeable = true
+health = "hard"
+textures = { all = "refined_copper" }
+material = "rock"
+mine_xp = 2
+build_xp = 16
+
+[[block]]
+name = "machined_copper"
+chisel = "any"
+colourable = false
+color = [200, 120, 70]
+solid = true
+opaque = true
+translucent = false
+breakable = true
+placeable = true
+health = "hard"
+textures = { all = "machined_copper" }
+material = "rock"
+mine_xp = 2
+build_xp = 16
+
+[[block]]
+name = "circuit_copper"
+chisel = "any"
+colourable = false
+color = [200, 120, 70]
+solid = true
+opaque = true
+translucent = false
+breakable = true
+placeable = true
+health = "hard"
+textures = { all = "circuit_copper" }
+material = "rock"
+mine_xp = 2
+build_xp = 16
+
+[[block]]
+name = "filigree_copper"
+chisel = "any"
+colourable = false
+color = [200, 120, 70]
+solid = true
+opaque = true
+translucent = false
+breakable = true
+placeable = true
+health = "hard"
+textures = { all = "filigree_copper" }
+material = "rock"
+mine_xp = 2
+build_xp = 16
+
+[[block]]
+name = "grid_copper"
+chisel = "any"
+colourable = false
+color = [200, 120, 70]
+solid = true
+opaque = true
+translucent = false
+breakable = true
+placeable = true
+health = "hard"
+textures = { all = "grid_copper" }
+material = "rock"
+mine_xp = 2
+build_xp = 16
+
+[[block]]
+name = "compact_iron"
+chisel = "any"
+colourable = false
+color = [150, 150, 156]
+solid = true
+opaque = true
+translucent = false
+breakable = true
+placeable = true
+health = "hard"
+textures = { all = "compact_iron" }
+material = "rock"
+mine_xp = 2
+build_xp = 16
+
+[[block]]
+name = "refined_iron"
+chisel = "any"
+colourable = false
+color = [150, 150, 156]
+solid = true
+opaque = true
+translucent = false
+breakable = true
+placeable = true
+health = "hard"
+textures = { all = "refined_iron" }
+material = "rock"
+mine_xp = 2
+build_xp = 16
+
+[[block]]
+name = "machined_iron"
+chisel = "any"
+colourable = false
+color = [150, 150, 156]
+solid = true
+opaque = true
+translucent = false
+breakable = true
+placeable = true
+health = "hard"
+textures = { all = "machined_iron" }
+material = "rock"
+mine_xp = 2
+build_xp = 16
+
+[[block]]
+name = "circuit_iron"
+chisel = "any"
+colourable = false
+color = [150, 150, 156]
+solid = true
+opaque = true
+translucent = false
+breakable = true
+placeable = true
+health = "hard"
+textures = { all = "circuit_iron" }
+material = "rock"
+mine_xp = 2
+build_xp = 16
+
+[[block]]
+name = "filigree_iron"
+chisel = "any"
+colourable = false
+color = [150, 150, 156]
+solid = true
+opaque = true
+translucent = false
+breakable = true
+placeable = true
+health = "hard"
+textures = { all = "filigree_iron" }
+material = "rock"
+mine_xp = 2
+build_xp = 16
+
+[[block]]
+name = "grid_iron"
+chisel = "any"
+colourable = false
+color = [150, 150, 156]
+solid = true
+opaque = true
+translucent = false
+breakable = true
+placeable = true
+health = "hard"
+textures = { all = "grid_iron" }
+material = "rock"
+mine_xp = 2
+build_xp = 16
+
+[[block]]
+name = "compact_silver_alloy"
+chisel = "any"
+colourable = false
+color = [200, 206, 214]
+solid = true
+opaque = true
+translucent = false
+breakable = true
+placeable = true
+health = "hard"
+textures = { all = "compact_silver_alloy" }
+material = "rock"
+mine_xp = 2
+build_xp = 16
+
+[[block]]
+name = "refined_silver_alloy"
+chisel = "any"
+colourable = false
+color = [200, 206, 214]
+solid = true
+opaque = true
+translucent = false
+breakable = true
+placeable = true
+health = "hard"
+textures = { all = "refined_silver_alloy" }
+material = "rock"
+mine_xp = 2
+build_xp = 16
+
+[[block]]
+name = "machined_silver_alloy"
+chisel = "any"
+colourable = false
+color = [200, 206, 214]
+solid = true
+opaque = true
+translucent = false
+breakable = true
+placeable = true
+health = "hard"
+textures = { all = "machined_silver_alloy" }
+material = "rock"
+mine_xp = 2
+build_xp = 16
+
+[[block]]
+name = "circuit_silver_alloy"
+chisel = "any"
+colourable = false
+color = [200, 206, 214]
+solid = true
+opaque = true
+translucent = false
+breakable = true
+placeable = true
+health = "hard"
+textures = { all = "circuit_silver_alloy" }
+material = "rock"
+mine_xp = 2
+build_xp = 16
+
+[[block]]
+name = "filigree_silver_alloy"
+chisel = "any"
+colourable = false
+color = [200, 206, 214]
+solid = true
+opaque = true
+translucent = false
+breakable = true
+placeable = true
+health = "hard"
+textures = { all = "filigree_silver_alloy" }
+material = "rock"
+mine_xp = 2
+build_xp = 16
+
+[[block]]
+name = "grid_silver_alloy"
+chisel = "any"
+colourable = false
+color = [200, 206, 214]
+solid = true
+opaque = true
+translucent = false
+breakable = true
+placeable = true
+health = "hard"
+textures = { all = "grid_silver_alloy" }
+material = "rock"
+mine_xp = 2
+build_xp = 16
+
+[[block]]
+name = "compact_gold_alloy"
+chisel = "any"
+colourable = false
+color = [230, 190, 80]
+solid = true
+opaque = true
+translucent = false
+breakable = true
+placeable = true
+health = "hard"
+textures = { all = "compact_gold_alloy" }
+material = "rock"
+mine_xp = 2
+build_xp = 16
+
+[[block]]
+name = "refined_gold_alloy"
+chisel = "any"
+colourable = false
+color = [230, 190, 80]
+solid = true
+opaque = true
+translucent = false
+breakable = true
+placeable = true
+health = "hard"
+textures = { all = "refined_gold_alloy" }
+material = "rock"
+mine_xp = 2
+build_xp = 16
+
+[[block]]
+name = "machined_gold_alloy"
+chisel = "any"
+colourable = false
+color = [230, 190, 80]
+solid = true
+opaque = true
+translucent = false
+breakable = true
+placeable = true
+health = "hard"
+textures = { all = "machined_gold_alloy" }
+material = "rock"
+mine_xp = 2
+build_xp = 16
+
+[[block]]
+name = "circuit_gold_alloy"
+chisel = "any"
+colourable = false
+color = [230, 190, 80]
+solid = true
+opaque = true
+translucent = false
+breakable = true
+placeable = true
+health = "hard"
+textures = { all = "circuit_gold_alloy" }
+material = "rock"
+mine_xp = 2
+build_xp = 16
+
+[[block]]
+name = "filigree_gold_alloy"
+chisel = "any"
+colourable = false
+color = [230, 190, 80]
+solid = true
+opaque = true
+translucent = false
+breakable = true
+placeable = true
+health = "hard"
+textures = { all = "filigree_gold_alloy" }
+material = "rock"
+mine_xp = 2
+build_xp = 16
+
+[[block]]
+name = "grid_gold_alloy"
+chisel = "any"
+colourable = false
+color = [230, 190, 80]
+solid = true
+opaque = true
+translucent = false
+breakable = true
+placeable = true
+health = "hard"
+textures = { all = "grid_gold_alloy" }
+material = "rock"
+mine_xp = 2
+build_xp = 16
+
+[[block]]
+name = "compact_titanium_alloy"
+chisel = "any"
+colourable = false
+color = [170, 190, 210]
+solid = true
+opaque = true
+translucent = false
+breakable = true
+placeable = true
+health = "hard"
+textures = { all = "compact_titanium_alloy" }
+material = "rock"
+mine_xp = 2
+build_xp = 16
+
+[[block]]
+name = "refined_titanium_alloy"
+chisel = "any"
+colourable = false
+color = [170, 190, 210]
+solid = true
+opaque = true
+translucent = false
+breakable = true
+placeable = true
+health = "hard"
+textures = { all = "refined_titanium_alloy" }
+material = "rock"
+mine_xp = 2
+build_xp = 16
+
+[[block]]
+name = "machined_titanium_alloy"
+chisel = "any"
+colourable = false
+color = [170, 190, 210]
+solid = true
+opaque = true
+translucent = false
+breakable = true
+placeable = true
+health = "hard"
+textures = { all = "machined_titanium_alloy" }
+material = "rock"
+mine_xp = 2
+build_xp = 16
+
+[[block]]
+name = "circuit_titanium_alloy"
+chisel = "any"
+colourable = false
+color = [170, 190, 210]
+solid = true
+opaque = true
+translucent = false
+breakable = true
+placeable = true
+health = "hard"
+textures = { all = "circuit_titanium_alloy" }
+material = "rock"
+mine_xp = 2
+build_xp = 16
+
+[[block]]
+name = "filigree_titanium_alloy"
+chisel = "any"
+colourable = false
+color = [170, 190, 210]
+solid = true
+opaque = true
+translucent = false
+breakable = true
+placeable = true
+health = "hard"
+textures = { all = "filigree_titanium_alloy" }
+material = "rock"
+mine_xp = 2
+build_xp = 16
+
+[[block]]
+name = "grid_titanium_alloy"
+chisel = "any"
+colourable = false
+color = [170, 190, 210]
+solid = true
+opaque = true
+translucent = false
+breakable = true
+placeable = true
+health = "hard"
+textures = { all = "grid_titanium_alloy" }
+material = "rock"
+mine_xp = 2
+build_xp = 16
+
+[[block]]
+name = "compact_amethyst"
+chisel = "any"
+colourable = false
+color = [150, 90, 210]
+solid = true
+opaque = true
+translucent = false
+breakable = true
+placeable = true
+health = "hard"
+textures = { all = "compact_amethyst" }
+material = "rock"
+mine_xp = 2
+build_xp = 16
+
+[[block]]
+name = "polished_amethyst"
+chisel = "any"
+colourable = false
+color = [150, 90, 210]
+solid = true
+opaque = true
+translucent = false
+breakable = true
+placeable = true
+health = "hard"
+textures = { all = "polished_amethyst" }
+material = "rock"
+mine_xp = 2
+build_xp = 16
+
+[[block]]
+name = "compact_emerald"
+chisel = "any"
+colourable = false
+color = [60, 190, 110]
+solid = true
+opaque = true
+translucent = false
+breakable = true
+placeable = true
+health = "hard"
+textures = { all = "compact_emerald" }
+material = "rock"
+mine_xp = 2
+build_xp = 16
+
+[[block]]
+name = "polished_emerald"
+chisel = "any"
+colourable = false
+color = [60, 190, 110]
+solid = true
+opaque = true
+translucent = false
+breakable = true
+placeable = true
+health = "hard"
+textures = { all = "polished_emerald" }
+material = "rock"
+mine_xp = 2
+build_xp = 16
+
+[[block]]
+name = "compact_sapphire"
+chisel = "any"
+colourable = false
+color = [70, 110, 230]
+solid = true
+opaque = true
+translucent = false
+breakable = true
+placeable = true
+health = "hard"
+textures = { all = "compact_sapphire" }
+material = "rock"
+mine_xp = 2
+build_xp = 16
+
+[[block]]
+name = "polished_sapphire"
+chisel = "any"
+colourable = false
+color = [70, 110, 230]
+solid = true
+opaque = true
+translucent = false
+breakable = true
+placeable = true
+health = "hard"
+textures = { all = "polished_sapphire" }
+material = "rock"
+mine_xp = 2
+build_xp = 16
+
+[[block]]
+name = "compact_topaz"
+chisel = "any"
+colourable = false
+color = [240, 150, 40]
+solid = true
+opaque = true
+translucent = false
+breakable = true
+placeable = true
+health = "hard"
+textures = { all = "compact_topaz" }
+material = "rock"
+mine_xp = 2
+build_xp = 16
+
+[[block]]
+name = "polished_topaz"
+chisel = "any"
+colourable = false
+color = [240, 150, 40]
+solid = true
+opaque = true
+translucent = false
+breakable = true
+placeable = true
+health = "hard"
+textures = { all = "polished_topaz" }
+material = "rock"
+mine_xp = 2
+build_xp = 16
+
+[[block]]
+name = "compact_diamond"
+chisel = "any"
+colourable = false
+color = [200, 236, 244]
+solid = true
+opaque = true
+translucent = false
+breakable = true
+placeable = true
+health = "hard"
+textures = { all = "compact_diamond" }
+material = "rock"
+mine_xp = 2
+build_xp = 16
+
+[[block]]
+name = "polished_diamond"
+chisel = "any"
+colourable = false
+color = [200, 236, 244]
+solid = true
+opaque = true
+translucent = false
+breakable = true
+placeable = true
+health = "hard"
+textures = { all = "polished_diamond" }
+material = "rock"
+mine_xp = 2
+build_xp = 16
+
+[[block]]
+name = "compact_ruby"
+chisel = "any"
+colourable = false
+color = [220, 40, 70]
+solid = true
+opaque = true
+translucent = false
+breakable = true
+placeable = true
+health = "hard"
+textures = { all = "compact_ruby" }
+material = "rock"
+mine_xp = 2
+build_xp = 16
+
+[[block]]
+name = "polished_ruby"
+chisel = "any"
+colourable = false
+color = [220, 40, 70]
+solid = true
+opaque = true
+translucent = false
+breakable = true
+placeable = true
+health = "hard"
+textures = { all = "polished_ruby" }
+material = "rock"
+mine_xp = 2
+build_xp = 16
+
+[[block]]
+name = "compact_aurorite"
+chisel = "any"
+colourable = false
+color = [90, 220, 230]
+solid = true
+opaque = true
+translucent = false
+breakable = true
+placeable = true
+health = "hard"
+textures = { all = "compact_aurorite" }
+material = "rock"
+mine_xp = 2
+build_xp = 16
+
+[[block]]
+name = "polished_aurorite"
+chisel = "any"
+colourable = false
+color = [90, 220, 230]
+solid = true
+opaque = true
+translucent = false
+breakable = true
+placeable = true
+health = "hard"
+textures = { all = "polished_aurorite" }
+material = "rock"
+mine_xp = 2
+build_xp = 16
+
+[[block]]
+name = "compact_pyrelith"
+chisel = "any"
+colourable = false
+color = [250, 150, 50]
+solid = true
+opaque = true
+translucent = false
+breakable = true
+placeable = true
+health = "hard"
+textures = { all = "compact_pyrelith" }
+material = "rock"
+mine_xp = 2
+build_xp = 16
+
+[[block]]
+name = "polished_pyrelith"
+chisel = "any"
+colourable = false
+color = [250, 150, 50]
+solid = true
+opaque = true
+translucent = false
+breakable = true
+placeable = true
+health = "hard"
+textures = { all = "polished_pyrelith" }
+material = "rock"
+mine_xp = 2
+build_xp = 16
+
+[[block]]
+name = "compact_gloamite"
+chisel = "any"
+colourable = false
+color = [150, 40, 120]
+solid = true
+opaque = true
+translucent = false
+breakable = true
+placeable = true
+health = "hard"
+textures = { all = "compact_gloamite" }
+material = "rock"
+mine_xp = 2
+build_xp = 16
+
+[[block]]
+name = "polished_gloamite"
+chisel = "any"
+colourable = false
+color = [150, 40, 120]
+solid = true
+opaque = true
+translucent = false
+breakable = true
+placeable = true
+health = "hard"
+textures = { all = "polished_gloamite" }
+material = "rock"
+mine_xp = 2
+build_xp = 16
+
+[[block]]
+name = "lantern"
+chisel = "any"
+colourable = false
+color = [250, 220, 150]
+solid = true
+opaque = true
+translucent = false
+breakable = true
+placeable = true
+health = "hard"
+textures = { all = "lantern" }
+light = 14
+material = "crystal"
+mine_xp = 2
+build_xp = 16

@@ -461,33 +461,6 @@ name = "relic_component"
 name = "cog"
 
 [[item]]
-name = "compact_copper"
-
-[[item]]
-name = "compact_iron"
-
-[[item]]
-name = "compact_silver_alloy"
-
-[[item]]
-name = "refined_copper"
-
-[[item]]
-name = "refined_iron"
-
-[[item]]
-name = "refined_silver_alloy"
-
-[[item]]
-name = "machined_copper"
-
-[[item]]
-name = "machined_iron"
-
-[[item]]
-name = "machined_silver_alloy"
-
-[[item]]
 name = "cotton_cloth"
 
 # What a broken spark generator gives back: 1,000 spark each (Boundless's
@@ -1244,24 +1217,6 @@ display = "Titanium Bar"
 [[item]]
 name = "titanium_alloy"
 
-[[item]]
-name = "compact_gold_alloy"
-
-[[item]]
-name = "compact_titanium_alloy"
-
-[[item]]
-name = "refined_gold_alloy"
-
-[[item]]
-name = "refined_titanium_alloy"
-
-[[item]]
-name = "machined_gold_alloy"
-
-[[item]]
-name = "machined_titanium_alloy"
-
 # Boundless's bonding agent and enriched bonding agent.
 [[item]]
 name = "bonding_agent"
@@ -1508,16 +1463,10 @@ food = { hunger = 5000, buff = "burning_air", rank = 3, minutes = 30 }
 name = "rough_amethyst"
 
 [[item]]
-name = "compact_amethyst"
-
-[[item]]
 name = "refined_amethyst"
 
 [[item]]
 name = "rough_emerald"
-
-[[item]]
-name = "compact_emerald"
 
 [[item]]
 name = "refined_emerald"
@@ -1526,16 +1475,10 @@ name = "refined_emerald"
 name = "rough_sapphire"
 
 [[item]]
-name = "compact_sapphire"
-
-[[item]]
 name = "refined_sapphire"
 
 [[item]]
 name = "rough_topaz"
-
-[[item]]
-name = "compact_topaz"
 
 [[item]]
 name = "refined_topaz"
@@ -1544,16 +1487,10 @@ name = "refined_topaz"
 name = "rough_diamond"
 
 [[item]]
-name = "compact_diamond"
-
-[[item]]
 name = "refined_diamond"
 
 [[item]]
 name = "rough_ruby"
-
-[[item]]
-name = "compact_ruby"
 
 [[item]]
 name = "refined_ruby"
@@ -1872,9 +1809,6 @@ name = "supreme_bonding_agent"
 name = "rough_aurorite"
 
 [[item]]
-name = "compact_aurorite"
-
-[[item]]
 name = "refined_aurorite"
 
 [[item]]
@@ -1925,9 +1859,6 @@ chisel = { family = "bevel", precise = true, durability = 2000, energy = 20, adv
 
 [[item]]
 name = "rough_pyrelith"
-
-[[item]]
-name = "compact_pyrelith"
 
 [[item]]
 name = "refined_pyrelith"
@@ -1982,9 +1913,6 @@ chisel = { family = "slope", precise = true, durability = 2000, energy = 20, adv
 name = "rough_gloamite"
 
 [[item]]
-name = "compact_gloamite"
-
-[[item]]
 name = "refined_gloamite"
 
 [[item]]
@@ -2032,3 +1960,23 @@ flex = 100
 rank = 180
 stack = 1
 chisel = { family = "square", precise = true, durability = 2000, energy = 20, advanced = true }
+
+# Milestone 22: the other two rocks' stones, brick mixes and wax.
+
+[[item]]
+name = "basalt_stones"
+
+[[item]]
+name = "limestone_stones"
+
+[[item]]
+name = "stone_brick_mix"
+
+[[item]]
+name = "basalt_brick_mix"
+
+[[item]]
+name = "limestone_brick_mix"
+
+[[item]]
+name = "wax"

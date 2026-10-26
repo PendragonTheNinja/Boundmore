@@ -39,6 +39,11 @@ pub struct Recipe {
     /// (`spark::power_scale`).
     #[serde(default)]
     pub power: u32,
+    /// The input whose colour the output takes (milestone 22, Boundless's
+    /// `tintTakenFrom`): crafting picks that colour, that input is taken
+    /// only from stacks of it, and the output has it. None: natural output.
+    #[serde(default)]
+    pub tint: Option<u8>,
 }
 
 /// A recipe's crafting-skill requirement.
@@ -163,6 +168,8 @@ pub enum RecipeError {
     Empty(String),
     #[error("recipe for `{0}` names `{1}` in two of its inputs")]
     Overlap(String, String),
+    #[error("recipe for `{0}` takes its colour from an input it does not have")]
+    Tint(String),
     #[error("recipe group `{0}` is empty, repeats a member, shares an item's name or is listed twice")]
     BadGroup(String),
 }
@@ -221,6 +228,8 @@ struct RecipeEntry {
     wear: u16,
     #[serde(default)]
     power: u32,
+    #[serde(default)]
+    tint: Option<u8>,
 }
 
 fn one() -> u16 {
@@ -282,7 +291,11 @@ impl RecipeBook {
                     return Err(RecipeError::Overlap(e.output, name));
                 }
             }
+            if e.tint.is_some_and(|t| t as usize >= inputs.len()) {
+                return Err(RecipeError::Tint(e.output));
+            }
             recipes.push(Recipe {
+                tint: e.tint,
                 output,
                 output_count: e.count,
                 inputs,
@@ -417,10 +430,12 @@ mod tests {
         let r = book.recipes.iter().find(|r| r.output == timber).unwrap();
         let mut inv = Inventory::default();
         assert!(!r.affordable(&inv, 1));
-        inv.add(&items, items.id("trunk").unwrap(), 1);
+        inv.add(&items, items.id("trunk").unwrap(), 2);
+        // Each trunk makes its own timber (milestone 22): pale does not count.
         inv.add(&items, items.id("pale_trunk").unwrap(), 1);
         assert!(r.affordable(&inv, 2));
         assert!(!r.affordable(&inv, 3));
+        assert_eq!(r.tint, Some(0), "timber takes the trunk's colour");
     }
 
     #[test]
@@ -435,13 +450,12 @@ mod tests {
     fn a_group_input_takes_mixed_members_in_group_order() {
         let blocks = BlockRegistry::builtin();
         let items = ItemRegistry::builtin(&blocks);
-        let book = RecipeBook::builtin(&items);
+        // (Milestone 22 split the built-in any-rock stones recipe by rock.)
+        let src = "[[group]]\nname = \"any_rock\"\nitems = [\"stone\", \"basalt\", \"limestone\"]\n\
+                   [[recipe]]\noutput = \"stones\"\ninputs = [[\"any_rock\", 1]]\n";
+        let book = RecipeBook::from_toml(src, &items).unwrap();
         let id = |n: &str| items.id(n).unwrap();
-        let stones = book
-            .recipes
-            .iter()
-            .find(|r| r.output == id("stones") && r.inputs[0].accepts(id("basalt")))
-            .unwrap();
+        let stones = &book.recipes[0];
         assert_eq!(stones.inputs[0].group.as_deref(), Some("Any Rock"));
         assert_eq!(stones.inputs[0].items, vec![id("stone"), id("basalt"), id("limestone")]);
         let mut inv = Inventory::default();

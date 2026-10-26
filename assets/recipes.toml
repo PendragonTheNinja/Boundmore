@@ -25,6 +25,16 @@ items = ["stone", "basalt", "limestone"]
 name = "any_trunk"
 items = ["trunk", "pale_trunk", "gnarled_trunk"]
 
+# Milestone 22: each rock breaks into its own stones and each trunk into
+# its own timber; what took stones or timber takes any of them.
+[[group]]
+name = "any_stones"
+items = ["stones", "basalt_stones", "limestone_stones"]
+
+[[group]]
+name = "any_timber"
+items = ["timber", "pale_timber", "gnarled_timber"]
+
 [[group]]
 name = "any_leaves"
 items = ["foliage", "fronds", "glossy_foliage"]
@@ -61,7 +71,20 @@ items = ["blast_paste", "burn_paste"]
 [[recipe]]
 output = "timber"
 count = 2
-inputs = [["any_trunk", 1]]
+inputs = [["trunk", 1]]
+tint = 0
+
+[[recipe]]
+output = "pale_timber"
+count = 2
+inputs = [["pale_trunk", 1]]
+tint = 0
+
+[[recipe]]
+output = "gnarled_timber"
+count = 2
+inputs = [["gnarled_trunk", 1]]
+tint = 0
 
 [[recipe]]
 output = "stick"
@@ -70,7 +93,7 @@ inputs = [["any_trunk", 1]]
 
 [[recipe]]
 output = "crafting_table"
-inputs = [["timber", 10]]
+inputs = [["any_timber", 10]]
 
 [[recipe]]
 output = "hand_stone"
@@ -78,15 +101,15 @@ inputs = []
 
 [[recipe]]
 output = "wood_hammer"
-inputs = [["timber", 4], ["stick", 4], ["any_leaves", 4]]
+inputs = [["any_timber", 4], ["stick", 4], ["any_leaves", 4]]
 
 [[recipe]]
 output = "wood_shovel"
-inputs = [["timber", 4], ["stick", 4], ["any_leaves", 4]]
+inputs = [["any_timber", 4], ["stick", 4], ["any_leaves", 4]]
 
 [[recipe]]
 output = "wood_axe"
-inputs = [["timber", 4], ["stick", 4], ["any_leaves", 4]]
+inputs = [["any_timber", 4], ["stick", 4], ["any_leaves", 4]]
 
 [[recipe]]
 output = "torch"
@@ -97,9 +120,29 @@ inputs = [["stick", 1], ["flint", 1]]
 [[recipe]]
 output = "stones"
 count = 2
-inputs = [["any_rock", 1]]
+inputs = [["stone", 1]]
 station = "crafting_table"
 seconds = 10.0
+xp = 1
+tint = 0
+
+[[recipe]]
+output = "basalt_stones"
+count = 2
+inputs = [["basalt", 1]]
+station = "crafting_table"
+seconds = 10.0
+xp = 1
+tint = 0
+
+[[recipe]]
+output = "limestone_stones"
+count = 2
+inputs = [["limestone", 1]]
+station = "crafting_table"
+seconds = 10.0
+xp = 1
+tint = 0
 
 [[recipe]]
 output = "stones"
@@ -110,28 +153,28 @@ seconds = 10.0
 
 [[recipe]]
 output = "stone_hammer"
-inputs = [["stones", 4], ["stick", 4], ["any_leaves", 4]]
+inputs = [["any_stones", 4], ["stick", 4], ["any_leaves", 4]]
 station = "crafting_table"
 seconds = 10.0
 xp = 4
 
 [[recipe]]
 output = "stone_shovel"
-inputs = [["stones", 4], ["stick", 4], ["any_leaves", 4]]
+inputs = [["any_stones", 4], ["stick", 4], ["any_leaves", 4]]
 station = "crafting_table"
 seconds = 10.0
 xp = 4
 
 [[recipe]]
 output = "stone_axe"
-inputs = [["stones", 4], ["stick", 4], ["any_leaves", 4]]
+inputs = [["any_stones", 4], ["stick", 4], ["any_leaves", 4]]
 station = "crafting_table"
 seconds = 10.0
 xp = 4
 
 [[recipe]]
 output = "square_chisel"
-inputs = [["stones", 4], ["stick", 4], ["any_leaves", 4]]
+inputs = [["any_stones", 4], ["stick", 4], ["any_leaves", 4]]
 station = "crafting_table"
 seconds = 10.0
 xp = 4
@@ -139,14 +182,14 @@ xp = 4
 # The stone furnace: a crucible on a base.
 [[recipe]]
 output = "furnace"
-inputs = [["stones", 10], ["flint", 1]]
+inputs = [["any_stones", 10], ["flint", 1]]
 station = "crafting_table"
 seconds = 15.0
 xp = 4
 
 [[recipe]]
 output = "furnace_crucible"
-inputs = [["stones", 10]]
+inputs = [["any_stones", 10]]
 station = "crafting_table"
 seconds = 15.0
 xp = 4
@@ -155,14 +198,14 @@ xp = 4
 [[recipe]]
 output = "workbench"
 count = 4
-inputs = [["timber", 10], ["any_base_metal", 3], ["relic_fragment", 1]]
+inputs = [["any_timber", 10], ["any_base_metal", 3], ["relic_fragment", 1]]
 station = "crafting_table"
 seconds = 60.0
 xp = 6
 
 [[recipe]]
 output = "storage_chest"
-inputs = [["timber", 6], ["glue", 1]]
+inputs = [["any_timber", 6], ["glue", 1]]
 station = "crafting_table"
 seconds = 60.0
 xp = 6
@@ -223,7 +266,7 @@ xp = 6
 [[recipe]]
 output = "extractor"
 count = 4
-inputs = [["stones", 10], ["any_base_metal", 3], ["relic_fragment", 3]]
+inputs = [["any_stones", 10], ["any_base_metal", 3], ["relic_fragment", 3]]
 station = "workbench"
 seconds = 180.0
 xp = 12
@@ -352,7 +395,7 @@ wear = 7
 
 [[recipe]]
 output = "claim_stone"
-inputs = [["stones", 6], ["glow_crystal", 1]]
+inputs = [["any_stones", 6], ["glow_crystal", 1]]
 station = "workbench"
 seconds = 5.0
 xp = 4
@@ -361,7 +404,7 @@ wear = 9
 [[recipe]]
 output = "portal_conduit"
 count = 2
-inputs = [["stones", 4], ["copper_ingot", 1], ["wayshard", 1]]
+inputs = [["any_stones", 4], ["copper_ingot", 1], ["wayshard", 1]]
 station = "workbench"
 seconds = 4.0
 xp = 50
@@ -381,7 +424,7 @@ wear = 6
 
 [[recipe]]
 output = "stone_sling"
-inputs = [["stones", 4], ["stick", 4], ["any_leaves", 4]]
+inputs = [["any_stones", 4], ["stick", 4], ["any_leaves", 4]]
 station = "crafting_table"
 seconds = 10.0
 xp = 4
@@ -557,7 +600,7 @@ skill = { name = "machine_crafting", level = 1 }
 [[recipe]]
 output = "mixer"
 count = 4
-inputs = [["stones", 10], ["any_base_metal", 3], ["relic_fragment", 6]]
+inputs = [["any_stones", 10], ["any_base_metal", 3], ["relic_fragment", 6]]
 station = "workbench"
 seconds = 450.0
 xp = 28
@@ -567,7 +610,7 @@ skill = { name = "machine_crafting", level = 1 }
 [[recipe]]
 output = "refinery"
 count = 4
-inputs = [["stones", 10], ["silver_alloy", 3], ["relic_fragment", 6], ["relic_component", 1]]
+inputs = [["any_stones", 10], ["silver_alloy", 3], ["relic_fragment", 6], ["relic_component", 1]]
 station = "workbench"
 seconds = 450.0
 spark = 400
@@ -578,7 +621,7 @@ skill = { name = "machine_crafting", level = 1 }
 [[recipe]]
 output = "compactor"
 count = 4
-inputs = [["stones", 10], ["silver_alloy", 3], ["relic_fragment", 6], ["relic_component", 1]]
+inputs = [["any_stones", 10], ["silver_alloy", 3], ["relic_fragment", 6], ["relic_component", 1]]
 station = "workbench"
 seconds = 450.0
 spark = 400
@@ -693,7 +736,7 @@ wear = 35
 
 [[recipe]]
 output = "stone_spanner"
-inputs = [["stones", 4], ["stick", 4], ["any_leaves", 4]]
+inputs = [["any_stones", 4], ["stick", 4], ["any_leaves", 4]]
 station = "crafting_table"
 seconds = 10.0
 xp = 4
@@ -914,7 +957,7 @@ wear = 6
 
 [[recipe]]
 output = "bucket"
-inputs = [["timber", 1], ["nail", 6]]
+inputs = [["any_timber", 1], ["nail", 6]]
 station = "workbench"
 seconds = 30.0
 xp = 6
@@ -960,7 +1003,7 @@ skill = { name = "food_crafting", level = 2 }
 
 [[recipe]]
 output = "wood_tiller"
-inputs = [["timber", 2], ["stick", 1], ["any_leaves", 1]]
+inputs = [["any_timber", 2], ["stick", 1], ["any_leaves", 1]]
 station = "crafting_table"
 seconds = 10.0
 xp = 2
@@ -1312,7 +1355,7 @@ skill = { name = "food_crafting", level = 4 }
 [[recipe]]
 output = "forge"
 count = 4
-inputs = [["stones", 10], ["silver_alloy", 3], ["relic_fragment", 6], ["relic_component", 1]]
+inputs = [["any_stones", 10], ["silver_alloy", 3], ["relic_fragment", 6], ["relic_component", 1]]
 station = "workbench"
 seconds = 900.0
 xp = 46
@@ -3663,3 +3706,594 @@ power = 3000
 xp = 320
 wear = 100
 skill = { name = "tech_crafting", level = 3 }
+
+# Milestone 22: building blocks (Boundless's recipes, docs/research/
+# building-blocks.md). `tint` names the input whose colour the output takes.
+# Machine wear is a guess where Boundless's is not in the data.
+
+[[recipe]]
+output = "wax"
+count = 4
+inputs = [["waxy_tuber", 1]]
+station = "extractor"
+seconds = 60.0
+xp = 1
+wear = 6
+
+[[recipe]]
+output = "stone_brick_mix"
+inputs = [["stones", 6], ["compact_clay", 1], ["ash", 4], ["mud", 4]]
+station = "mixer"
+seconds = 30.0
+spark = 200
+xp = 10
+wear = 10
+tint = 0
+
+[[recipe]]
+output = "stone_bricks"
+count = 4
+inputs = [["stone_brick_mix", 1]]
+station = "furnace"
+seconds = 120.0
+heat = 200
+xp = 6
+tint = 0
+
+[[recipe]]
+output = "refined_stone"
+inputs = [["stones", 8]]
+station = "refinery"
+seconds = 30.0
+xp = 4
+wear = 5
+tint = 0
+
+[[recipe]]
+output = "carved_stone"
+inputs = [["refined_stone", 1], ["wax", 1]]
+station = "workbench"
+seconds = 30.0
+spark = 200
+xp = 9
+wear = 5
+tint = 0
+
+[[recipe]]
+output = "tiled_stone"
+inputs = [["refined_stone", 1], ["wax", 1]]
+station = "workbench"
+seconds = 30.0
+spark = 200
+xp = 9
+wear = 5
+tint = 0
+
+[[recipe]]
+output = "basalt_brick_mix"
+inputs = [["basalt_stones", 6], ["compact_clay", 1], ["ash", 4], ["mud", 4]]
+station = "mixer"
+seconds = 30.0
+spark = 200
+xp = 10
+wear = 10
+tint = 0
+
+[[recipe]]
+output = "basalt_bricks"
+count = 4
+inputs = [["basalt_brick_mix", 1]]
+station = "furnace"
+seconds = 120.0
+heat = 200
+xp = 6
+tint = 0
+
+[[recipe]]
+output = "refined_basalt"
+inputs = [["basalt_stones", 8]]
+station = "refinery"
+seconds = 30.0
+xp = 4
+wear = 5
+tint = 0
+
+[[recipe]]
+output = "carved_basalt"
+inputs = [["refined_basalt", 1], ["wax", 1]]
+station = "workbench"
+seconds = 30.0
+spark = 200
+xp = 9
+wear = 5
+tint = 0
+
+[[recipe]]
+output = "tiled_basalt"
+inputs = [["refined_basalt", 1], ["wax", 1]]
+station = "workbench"
+seconds = 30.0
+spark = 200
+xp = 9
+wear = 5
+tint = 0
+
+[[recipe]]
+output = "limestone_brick_mix"
+inputs = [["limestone_stones", 6], ["compact_clay", 1], ["ash", 4], ["mud", 4]]
+station = "mixer"
+seconds = 30.0
+spark = 200
+xp = 10
+wear = 10
+tint = 0
+
+[[recipe]]
+output = "limestone_bricks"
+count = 4
+inputs = [["limestone_brick_mix", 1]]
+station = "furnace"
+seconds = 120.0
+heat = 200
+xp = 6
+tint = 0
+
+[[recipe]]
+output = "refined_limestone"
+inputs = [["limestone_stones", 8]]
+station = "refinery"
+seconds = 30.0
+xp = 4
+wear = 5
+tint = 0
+
+[[recipe]]
+output = "carved_limestone"
+inputs = [["refined_limestone", 1], ["wax", 1]]
+station = "workbench"
+seconds = 30.0
+spark = 200
+xp = 9
+wear = 5
+tint = 0
+
+[[recipe]]
+output = "tiled_limestone"
+inputs = [["refined_limestone", 1], ["wax", 1]]
+station = "workbench"
+seconds = 30.0
+spark = 200
+xp = 9
+wear = 5
+tint = 0
+
+[[recipe]]
+output = "marble"
+count = 4
+inputs = [["refined_stone", 5], ["bonding_agent", 1], ["refined_glow_crystal", 2]]
+station = "refinery"
+seconds = 180.0
+spark = 400
+power = 800
+xp = 18
+wear = 15
+tint = 0
+
+[[recipe]]
+output = "bordered_marble"
+count = 4
+inputs = [["refined_stone", 5], ["strong_bonding_agent", 1], ["refined_glow_crystal", 2]]
+station = "refinery"
+seconds = 180.0
+spark = 400
+power = 1000
+xp = 20
+wear = 15
+tint = 0
+
+[[recipe]]
+output = "marble_frieze"
+count = 4
+inputs = [["refined_stone", 5], ["supreme_bonding_agent", 1], ["refined_glow_crystal", 2]]
+station = "refinery"
+seconds = 180.0
+spark = 400
+power = 1200
+xp = 22
+wear = 15
+tint = 0
+
+[[recipe]]
+output = "refined_timber"
+inputs = [["timber", 8]]
+station = "refinery"
+seconds = 30.0
+xp = 4
+wear = 5
+tint = 0
+
+[[recipe]]
+output = "carved_timber"
+inputs = [["refined_timber", 1], ["wax", 1]]
+station = "workbench"
+seconds = 30.0
+spark = 200
+xp = 9
+wear = 5
+tint = 0
+
+[[recipe]]
+output = "refined_pale_timber"
+inputs = [["pale_timber", 8]]
+station = "refinery"
+seconds = 30.0
+xp = 4
+wear = 5
+tint = 0
+
+[[recipe]]
+output = "carved_pale_timber"
+inputs = [["refined_pale_timber", 1], ["wax", 1]]
+station = "workbench"
+seconds = 30.0
+spark = 200
+xp = 9
+wear = 5
+tint = 0
+
+[[recipe]]
+output = "refined_gnarled_timber"
+inputs = [["gnarled_timber", 8]]
+station = "refinery"
+seconds = 30.0
+xp = 4
+wear = 5
+tint = 0
+
+[[recipe]]
+output = "carved_gnarled_timber"
+inputs = [["refined_gnarled_timber", 1], ["wax", 1]]
+station = "workbench"
+seconds = 30.0
+spark = 200
+xp = 9
+wear = 5
+tint = 0
+
+[[recipe]]
+output = "compact_soil"
+inputs = [["soil", 10]]
+station = "compactor"
+seconds = 60.0
+spark = 100
+xp = 7
+wear = 5
+tint = 0
+
+[[recipe]]
+output = "compact_clay"
+inputs = [["clay", 10]]
+station = "compactor"
+seconds = 60.0
+spark = 100
+xp = 7
+wear = 5
+tint = 0
+
+[[recipe]]
+output = "compact_peat"
+inputs = [["peat", 10]]
+station = "compactor"
+seconds = 60.0
+spark = 100
+xp = 7
+wear = 5
+tint = 0
+
+[[recipe]]
+output = "compact_gravel"
+count = 4
+inputs = [["gravel", 10], ["bonding_agent", 1]]
+station = "compactor"
+seconds = 180.0
+spark = 400
+power = 1200
+xp = 22
+wear = 15
+tint = 0
+
+[[recipe]]
+output = "refined_glow_crystal"
+inputs = [["glow_crystal", 1]]
+station = "refinery"
+seconds = 30.0
+xp = 6
+wear = 5
+
+[[recipe]]
+output = "faceted_glow_crystal"
+inputs = [["refined_glow_crystal", 2], ["bonding_agent", 1], ["any_base_metal", 1]]
+station = "refinery"
+seconds = 30.0
+spark = 800
+power = 1000
+xp = 20
+wear = 10
+
+[[recipe]]
+output = "clear_glass"
+inputs = [["glass", 4], ["refined_glow_crystal", 2]]
+station = "refinery"
+seconds = 60.0
+spark = 400
+xp = 12
+wear = 10
+
+[[recipe]]
+output = "framed_glass"
+inputs = [["glass", 6], ["refined_glow_crystal", 3], ["any_base_metal", 2]]
+station = "refinery"
+seconds = 120.0
+spark = 800
+power = 1000
+xp = 24
+wear = 15
+
+[[recipe]]
+output = "ornate_glass"
+inputs = [["glass", 12], ["refined_glow_crystal", 6], ["any_base_alloy", 4]]
+station = "refinery"
+seconds = 180.0
+spark = 2000
+power = 2000
+xp = 50
+wear = 25
+
+[[recipe]]
+output = "circuit_copper"
+inputs = [["refined_copper", 1], ["relic_fragment", 2], ["bonding_agent", 1]]
+station = "refinery"
+seconds = 20.0
+spark = 200
+power = 400
+xp = 15
+wear = 10
+
+[[recipe]]
+output = "filigree_copper"
+inputs = [["refined_copper", 1], ["relic_component", 2], ["bonding_agent", 1]]
+station = "refinery"
+seconds = 20.0
+spark = 200
+power = 400
+xp = 15
+wear = 10
+
+[[recipe]]
+output = "grid_copper"
+inputs = [["refined_copper", 1], ["cog", 6]]
+station = "compactor"
+seconds = 20.0
+spark = 200
+power = 400
+xp = 15
+wear = 10
+
+[[recipe]]
+output = "circuit_iron"
+inputs = [["refined_iron", 1], ["relic_fragment", 2], ["bonding_agent", 1]]
+station = "refinery"
+seconds = 30.0
+spark = 200
+power = 400
+xp = 17
+wear = 10
+
+[[recipe]]
+output = "filigree_iron"
+inputs = [["refined_iron", 1], ["relic_component", 2], ["bonding_agent", 1]]
+station = "refinery"
+seconds = 30.0
+spark = 200
+power = 400
+xp = 17
+wear = 10
+
+[[recipe]]
+output = "grid_iron"
+inputs = [["refined_iron", 1], ["cog", 6]]
+station = "compactor"
+seconds = 30.0
+spark = 200
+power = 400
+xp = 17
+wear = 10
+
+[[recipe]]
+output = "circuit_silver_alloy"
+inputs = [["refined_silver_alloy", 1], ["relic_fragment", 2], ["strong_bonding_agent", 1]]
+station = "refinery"
+seconds = 40.0
+spark = 400
+power = 800
+xp = 20
+wear = 10
+
+[[recipe]]
+output = "filigree_silver_alloy"
+inputs = [["refined_silver_alloy", 1], ["relic_component", 2], ["strong_bonding_agent", 1]]
+station = "refinery"
+seconds = 40.0
+spark = 400
+power = 800
+xp = 20
+wear = 10
+
+[[recipe]]
+output = "grid_silver_alloy"
+inputs = [["refined_silver_alloy", 1], ["cog", 6]]
+station = "compactor"
+seconds = 40.0
+spark = 400
+power = 800
+xp = 20
+wear = 10
+
+[[recipe]]
+output = "circuit_gold_alloy"
+inputs = [["refined_gold_alloy", 1], ["relic_fragment", 2], ["strong_bonding_agent", 1]]
+station = "refinery"
+seconds = 50.0
+spark = 400
+power = 800
+xp = 22
+wear = 10
+
+[[recipe]]
+output = "filigree_gold_alloy"
+inputs = [["refined_gold_alloy", 1], ["relic_component", 2], ["strong_bonding_agent", 1]]
+station = "refinery"
+seconds = 50.0
+spark = 400
+power = 800
+xp = 22
+wear = 10
+
+[[recipe]]
+output = "grid_gold_alloy"
+inputs = [["refined_gold_alloy", 1], ["cog", 6]]
+station = "compactor"
+seconds = 50.0
+spark = 400
+power = 800
+xp = 22
+wear = 10
+
+[[recipe]]
+output = "circuit_titanium_alloy"
+inputs = [["refined_titanium_alloy", 1], ["relic_fragment", 2], ["supreme_bonding_agent", 1]]
+station = "refinery"
+seconds = 60.0
+spark = 600
+power = 1200
+xp = 25
+wear = 10
+
+[[recipe]]
+output = "filigree_titanium_alloy"
+inputs = [["refined_titanium_alloy", 1], ["relic_component", 2], ["supreme_bonding_agent", 1]]
+station = "refinery"
+seconds = 60.0
+spark = 600
+power = 1200
+xp = 25
+wear = 10
+
+[[recipe]]
+output = "grid_titanium_alloy"
+inputs = [["refined_titanium_alloy", 1], ["cog", 6]]
+station = "compactor"
+seconds = 60.0
+spark = 600
+power = 1200
+xp = 25
+wear = 10
+
+[[recipe]]
+output = "polished_amethyst"
+inputs = [["refined_amethyst", 1]]
+station = "workbench"
+seconds = 120.0
+spark = 800
+power = 1000
+xp = 30
+wear = 20
+
+[[recipe]]
+output = "polished_emerald"
+inputs = [["refined_emerald", 1]]
+station = "workbench"
+seconds = 120.0
+spark = 800
+power = 1000
+xp = 30
+wear = 20
+
+[[recipe]]
+output = "polished_sapphire"
+inputs = [["refined_sapphire", 1]]
+station = "workbench"
+seconds = 120.0
+spark = 800
+power = 1000
+xp = 30
+wear = 20
+
+[[recipe]]
+output = "polished_topaz"
+inputs = [["refined_topaz", 1]]
+station = "workbench"
+seconds = 120.0
+spark = 800
+power = 1000
+xp = 30
+wear = 20
+
+[[recipe]]
+output = "polished_diamond"
+inputs = [["refined_diamond", 1]]
+station = "workbench"
+seconds = 120.0
+spark = 800
+power = 1000
+xp = 30
+wear = 20
+
+[[recipe]]
+output = "polished_ruby"
+inputs = [["refined_ruby", 1]]
+station = "workbench"
+seconds = 120.0
+spark = 800
+power = 1000
+xp = 30
+wear = 20
+
+[[recipe]]
+output = "polished_aurorite"
+inputs = [["refined_aurorite", 1]]
+station = "workbench"
+seconds = 240.0
+spark = 2000
+power = 2000
+xp = 60
+wear = 30
+
+[[recipe]]
+output = "polished_pyrelith"
+inputs = [["refined_pyrelith", 1]]
+station = "workbench"
+seconds = 240.0
+spark = 2000
+power = 2000
+xp = 60
+wear = 30
+
+[[recipe]]
+output = "polished_gloamite"
+inputs = [["refined_gloamite", 1]]
+station = "workbench"
+seconds = 240.0
+spark = 2000
+power = 2000
+xp = 60
+wear = 30
+
+[[recipe]]
+output = "lantern"
+inputs = [["tallow_torch", 1], ["glass", 1]]
+station = "refinery"
+seconds = 60.0
+spark = 400
+xp = 16
+wear = 10
