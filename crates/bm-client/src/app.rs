@@ -2209,11 +2209,9 @@ impl App {
         let center = BlockPos::containing(eye.x, eye.y, eye.z).chunk();
         s.world
             .schedule_meshing(s.world.shape.wrap_chunk(center), rayon::current_num_threads() * 2);
-        // Far meshes after near ones: a few threads, so near terrain is
-        // never waiting behind the horizon.
+        // Far meshes after near ones (both on the pool, near queued first).
         let center = s.world.shape.wrap_chunk(center);
-        s.far
-            .schedule_meshing(center, (rayon::current_num_threads() / 2).max(1));
+        s.far.schedule_meshing(center, rayon::current_num_threads());
         if let Some(r) = &mut self.renderer {
             for m in s.world.take_meshes() {
                 r.upload_chunk(m.pos, &m.mesh);

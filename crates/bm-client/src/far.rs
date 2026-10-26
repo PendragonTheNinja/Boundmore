@@ -44,6 +44,8 @@ pub struct FarWorld {
     in_flight: usize,
     done_tx: Sender<FarMesh>,
     done: Receiver<FarMesh>,
+    /// Meshes known empty without a job (open sky, buried rock).
+    empty: Vec<ChunkPos>,
 }
 
 impl FarWorld {
@@ -60,6 +62,7 @@ impl FarWorld {
             in_flight: 0,
             done_tx,
             done,
+            empty: Vec::new(),
         }
     }
 
@@ -152,6 +155,11 @@ impl FarWorld {
                 break;
             }
             self.dirty.remove(&p);
+            if self.shows_nothing(p) {
+                self.versions.remove(&p);
+                self.empty.push(p);
+                continue;
+            }
             let mut near: [Option<Arc<FarChunk>>; 27] = Default::default();
             for dy in -1..=1 {
                 for dz in -1..=1 {
@@ -187,9 +195,37 @@ impl FarWorld {
         }
     }
 
+    /// Open sky, or opaque all through with opaque all round: no faces.
+    fn shows_nothing(&self, p: ChunkPos) -> bool {
+        let uniform = |c: ChunkPos| self.held.get(&self.shape.wrap_chunk(c)).and_then(|h| h.copy.uniform());
+        match uniform(p) {
+            Some(s) if s.id.is_air() => true,
+            Some(s) if self.flags.opaque(s.id) => {
+                let h = self.shape.height_chunks as i32;
+                [(1, 0, 0), (-1, 0, 0), (0, 1, 0), (0, -1, 0), (0, 0, 1), (0, 0, -1)]
+                    .iter()
+                    .all(|&(dx, dy, dz)| {
+                        let n = p.offset(dx, dy, dz);
+                        // Off the planet's top or floor, the edge goes on.
+                        n.y < 0 || n.y >= h || uniform(n).is_some_and(|s| self.flags.opaque(s.id))
+                    })
+            }
+            _ => false,
+        }
+    }
+
     /// Finished meshes that are still current.
     pub fn take_meshes(&mut self) -> Vec<FarMesh> {
-        let mut out = Vec::new();
+        let mut out: Vec<FarMesh> = self
+            .empty
+            .drain(..)
+            .filter(|p| self.held.contains_key(p))
+            .map(|pos| FarMesh {
+                pos,
+                version: 0,
+                mesh: ChunkMesh::default(),
+            })
+            .collect();
         while let Ok(r) = self.done.try_recv() {
             self.in_flight -= 1;
             if self.versions.get(&r.pos) == Some(&r.version) && self.held.contains_key(&r.pos) {
