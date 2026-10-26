@@ -15,7 +15,7 @@ A player mines red basalt on one world and green limestone on another, and build
    - **Wood, in each of the three timbers:** refined (refinery: 8 timber → 1) and carved (workbench: 1 refined and 1 wax).
    - **Compact soil, clay and peat** (compactor 10 → 1); **compact gravel** (compactor: 10 gravel and a bonding agent → 4).
    - **Glow crystal** (Boundless's gleam): refined (refinery 1 → 1) and faceted (2 refined, a bonding agent and an ingot); both glow.
-   - **Glass:** clear, framed and ornate (refinery: glass with refined glow crystal, framed adds base metal, ornate base alloy), coloured by the glow crystal.
+   - **Glass:** clear, framed and ornate (refinery: glass with refined glow crystal, framed adds base metal, ornate base alloy). Boundless coloured them by the gleam; Boundmore's glow crystal has no colours yet, so they are natural until it does.
    - **Metal blocks:** the compact, refined and machined copper, iron, silver, gold and titanium already made become placeable blocks; with circuit, filigree and grid blocks of each (refinery or compactor: refined metal with relic fragments, relic components or cogs). One look each, no colour (Boundless's).
    - **Gem blocks:** compact gems become placeable, with a polished block of each gem and astral ore (workbench: 1 refined).
    - **Lantern:** a glowing block of a tallow torch in glass (refinery).
@@ -52,4 +52,6 @@ A player mines red basalt on one world and green limestone on another, and build
 
 ## Status
 
-- *Spec written 2026-10-26.* Part 1 next.
+- *Spec written 2026-10-26.* **Part 1 built the same day** (branch `ccr-5b303ad7-6coo06`): `Recipe::tint`, `Recipe::{plan_in, max_crafts_in, colour_choices, input_of}`, `Inventory::{count_coloured, colours_of, remove_coloured}`; the server's `craft_colour`, `take_inputs_keeping_in`, `craft_by_hand_in`, `Job::colour`, the tinted input refunded in its colour; `ClientMsg::Craft::colour` (protocol 35); `SavedStation::job_colours` (`SAVE_VERSION` 15, a version 14 layout read for the upgrade); the craft window's colour swatches (the choice kept per recipe, the counts and the output shown in it). The catalogue: three stones, three timbers, the `any_stones` and `any_timber` groups (every recipe that took stones or timber), 87 new blocks and 6 items with Boundless's recipes; compact, refined and machined metals and compact gems are now placeable blocks (saved items keep their names). Textures and icons painted by `bm-texgen/src/building.rs` (a texture agent; every existing texture unchanged).
+- **Tests:** colour choices, a tinted hand craft refused in a colour not carried and made in the one asked, the most plentiful colour by default, a station job keeping its colour through a save and giving its input back in it when taken; a version 14 universe's queued jobs kept, natural; end to end (`crafting_passes_the_chosen_colour_on`); the crafting-table test moved to basalt stones and pale timber.
+- **Known limits:** inputs other than the tinted one are taken in whatever colour comes first and come back natural if a station is broken mid-job (as before this milestone).

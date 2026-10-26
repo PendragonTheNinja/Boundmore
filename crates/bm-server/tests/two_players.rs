@@ -1039,7 +1039,8 @@ async fn crafting_by_hand_at_a_table_and_at_a_four_block_workbench() {
     assert_eq!((alice.count("crafting_table"), alice.count("timber")), (1, 0));
 
     // A table recipe needs a table.
-    let stones = alice.recipe("stones");
+    // (Milestone 22: each rock makes its own stones; basalt here.)
+    let stones = alice.recipe("basalt_stones");
     craft_at(&mut alice, stones, 1, None).await;
     alice.notice("That is made at a Crafting Table").await;
 
@@ -1054,10 +1055,12 @@ async fn crafting_by_hand_at_a_table_and_at_a_four_block_workbench() {
         (table, Station::CraftingTable, None)
     );
     assert!(empty.jobs.is_empty() && empty.output.is_empty());
-    // Hand recipes work at a table too, still instantly.
-    craft_at(&mut alice, timber, 1, Some(table)).await;
+    // Hand recipes work at a table too, still instantly (a pale trunk
+    // makes pale timber, milestone 22).
+    let pale = alice.recipe("pale_timber");
+    craft_at(&mut alice, pale, 1, Some(table)).await;
     alice.settle().await;
-    assert_eq!((alice.count("pale_trunk"), alice.count("timber")), (0, 2));
+    assert_eq!((alice.count("pale_trunk"), alice.count("pale_timber")), (0, 2));
     // A workbench recipe is not made at a table.
     let r = alice.recipe("claim_stone");
     craft_at(&mut alice, r, 1, Some(table)).await;
@@ -1075,11 +1078,14 @@ async fn crafting_by_hand_at_a_table_and_at_a_four_block_workbench() {
     assert!(!alice.dig(2, table).await.0, "a working station cannot be broken");
     alice.notice("Empty the Crafting Table before breaking it").await;
     let done = look_at_station(&mut alice, table, |v| !v.output.is_empty()).await;
-    assert_eq!((done.output[0].item, done.output[0].count), (alice.item("stones"), 2));
+    assert_eq!(
+        (done.output[0].item, done.output[0].count),
+        (alice.item("basalt_stones"), 2)
+    );
     alice.send(ClientMsg::CollectStation { pos: table }).await;
     alice.station(|v| v.output.is_empty()).await;
     alice.settle().await;
-    assert_eq!(alice.count("stones"), 8);
+    assert_eq!(alice.count("basalt_stones"), 2);
     // Three workbench blocks do nothing.
     let row = [feet.offset(1, 1, 2), feet.offset(2, 1, 2), feet.offset(3, 1, 2)].map(|p| shape.wrap_block(p));
     for (i, p) in row.iter().enumerate() {

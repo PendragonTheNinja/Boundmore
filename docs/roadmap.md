@@ -72,6 +72,8 @@ What a Boundless player expects to find, and where each stands. "Ours" is the Bo
 
 **M21: Wandering worlds** (built 2026-10-26, `milestones/21-wandering-worlds.md`, ADR-0011). Boundless's exoworlds: temporary planets every two days for about five days, reached from a host's shrine, unclaimable, leaving with everything on them; tier 7 worlds with three astral ores, their creatures and gear.
 
+**M22: Building blocks** (part 1 built 2026-10-26, `milestones/22-building-blocks.md`). Colour passes through crafting; Boundless's crafted building families (bricks, refined, carved and tiled rock, marble, planed and carved wood, metal and gem blocks, glass, lanterns); then doors and trapdoors, then furnishings.
+
 *After that, still Boundless first (Nathan, 2026-10-19 and 2026-10-20): creatures and combat (bone, tallow and hide, then glue's real recipe), food and hunger, forging. Each gets its own spec and number when it starts.*
 
 **Society.** Shop stands, request baskets, settlements and their ranking, guilds, mail.
