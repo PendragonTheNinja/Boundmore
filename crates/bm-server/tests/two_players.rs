@@ -3370,6 +3370,7 @@ async fn feats_count_pay_coin_and_are_kept() {
         };
         assert_eq!(l.coin, bm_core::feats::STARTING_COIN);
         assert_eq!(l.count("worlds"), 1, "the world they stand on");
+        assert_eq!(l.count("level"), 8, "the level already reached counts");
         let s = alice.feet().offset(1, 1, 0);
         alice.wait_for_chunk(s.chunk()).await;
         assert!(place(&mut alice, 1, s, 1, None).await.0);

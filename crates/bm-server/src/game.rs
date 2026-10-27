@@ -1161,7 +1161,7 @@ impl Game {
         // Brews come from their own table (milestone 23 part 2); a departed
         // player carries theirs in the state.
         let mut brews = None;
-        let (planet, saved, mut inventory, character, hurt, food, air_used) = match self.departed.remove(&account) {
+        let (planet, saved, mut inventory, mut character, hurt, food, air_used) = match self.departed.remove(&account) {
             Some(d) => (
                 d.planet,
                 Some(d.state),
@@ -1232,6 +1232,19 @@ impl Game {
                 }
             }
         }
+        // The level already reached counts (a character from before feats):
+        // paid before the welcome, so it carries the XP; told once they are in.
+        let joined_feats = {
+            let ledger = self.ledgers.get_mut(&account).expect("loaded above");
+            let reached = ledger.raise(&self.feat_book, "level", character.level() as u64);
+            for r in &reached {
+                character.add_xp(r.xp);
+            }
+            if !reached.is_empty() {
+                self.ledgers_dirty.insert(account.clone());
+            }
+            reached
+        };
         let (planet, saved) = if planet < self.planets.len() {
             (planet, saved)
         } else {
@@ -1380,6 +1393,10 @@ impl Game {
             },
         );
         self.ledgers_unsent.insert(id);
+        for r in joined_feats {
+            let name = self.feat_book.get(&r.feat).map_or(r.feat.clone(), |d| d.name.clone());
+            self.notice(id, &format!("Feat: {name} {}, {} coin", feats::roman(r.tier), r.coin));
+        }
         let key = self.players[&id].account.clone();
         if !self.discoveries.contains_key(&key) {
             let found = self.store.discoveries(&key).unwrap_or_else(|e| {

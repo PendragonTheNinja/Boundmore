@@ -3041,6 +3041,54 @@ impl App {
         let now = self.now();
         match screen.as_str() {
             "inventory" => self.open_menu(Menu::Inventory),
+            // Milestone 24: someone's shop stand and request basket, as a
+            // customer sees them, with coin to spend; and the feats.
+            "shop" | "basket" | "feats" => {
+                let Some(s) = &mut self.session else { return };
+                let id = |n: &str| s.items.registry.id(n).ok();
+                let mut ledger = bm_core::feats::Ledger {
+                    coin: 1_340,
+                    ..Default::default()
+                };
+                let book = &*FEAT_BOOK;
+                ledger.add(book, "placed", 3_100);
+                ledger.add(book, "mine:rock", 640);
+                ledger.add(book, "kill:grazer", 23);
+                s.ledger = Some(ledger);
+                if let (Some(stone), Some(copper), Some(torch)) = (id("stone"), id("copper_ingot"), id("torch")) {
+                    s.items.inventory.slots[3] = Some(bm_core::ItemStack::new(copper, 12));
+                    let pos = BlockPos::new(130, 44, 130);
+                    let basket = screen == "basket";
+                    self.shop_view = Some(bm_protocol::ShopView {
+                        pos,
+                        kind: if basket {
+                            bm_protocol::ShopKind::Basket
+                        } else {
+                            bm_protocol::ShopKind::Stand
+                        },
+                        owner: "Alice".into(),
+                        mine: false,
+                        slots: vec![
+                            Some(bm_core::ItemStack::new(
+                                if basket { copper } else { stone },
+                                if basket { 1 } else { 64 },
+                            )),
+                            Some(bm_core::ItemStack::new(torch, 20)),
+                        ],
+                        prices: vec![if basket { 30 } else { 4 }, 25],
+                        till: if basket { 900 } else { 0 },
+                        fee_percent: bm_core::trade::SALES_FEE_PERCENT,
+                        closed: false,
+                    });
+                    if screen == "feats" {
+                        self.shop_view = None;
+                        self.open_menu(Menu::Feats);
+                    } else {
+                        self.menu = Some(Menu::Shop(pos));
+                        self.set_grab(false);
+                    }
+                }
+            }
             // A level 24 character with two pages and marks, some points
             // spent; the demo answers changes as the server would.
             "skills" => {

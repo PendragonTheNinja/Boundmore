@@ -95,6 +95,6 @@ impl Game {
 }
 
 /// "I" to "V".
-fn roman(n: u8) -> &'static str {
+pub(super) fn roman(n: u8) -> &'static str {
     ["", "I", "II", "III", "IV", "V"][n.min(5) as usize]
 }
