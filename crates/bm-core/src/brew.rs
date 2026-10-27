@@ -198,12 +198,21 @@ impl PlayerState {
             Brew::Clearing => self.sick = (self.sick as u32).saturating_sub(CLEAR[g] * TICK_HZ) as u16,
             // The server moves the creatures' threat; nothing on the body.
             Brew::Soothing | Brew::Taunting => {}
-            Brew::Lifesaving => self.revive = kind.ticks(),
-            _ => {
+            Brew::Lifesaving => self.revive = self.buff_ticks(kind.ticks()),
+            // Healing and energy over time keep their minute (an inference:
+            // Zeal would otherwise add to what they give).
+            Brew::Mending | Brew::Steady => {
                 self.brew = BrewBuff {
                     kind,
                     grade,
                     left: kind.ticks(),
+                };
+            }
+            _ => {
+                self.brew = BrewBuff {
+                    kind,
+                    grade,
+                    left: self.buff_ticks(kind.ticks()),
                 };
             }
         }
@@ -439,6 +448,28 @@ mod tests {
         assert_eq!(s.revive, 0, "used");
         s.take(s.max_health());
         assert!(s.down, "only once");
+    }
+
+    /// Zeal: buffs 6% longer a rank, debuffs 6% shorter (Boundless's skill
+    /// text); healing over time keeps its minute.
+    #[test]
+    fn zeal_lengthens_buffs_and_shortens_sickness() {
+        let mut s = standing();
+        s.body.buff_bonus = 48;
+        s.eat(&brew(Brew::Swift, 1)).unwrap();
+        assert_eq!(s.brew.left, Brew::Swift.ticks() * 148 / 100);
+        s.chew = 0;
+        s.eat(&brew(Brew::Mending, 1)).unwrap();
+        assert_eq!(s.brew.left, Brew::Mending.ticks());
+        s.chew = 0;
+        s.hunger = 1000 * crate::food::HUNGER_SCALE;
+        s.eat(&FoodStats {
+            hunger: 10,
+            sick: true,
+            ..Default::default()
+        })
+        .unwrap();
+        assert_eq!(s.sick as u32, crate::food::SICK_TICKS as u32 * 52 / 100);
     }
 
     #[test]

@@ -64,7 +64,7 @@ category = "attributes"
 ranks = 8
 cost = 1
 effect = "zeal"
-text = "More energy"
+text = "More energy; buffs last 6% longer and sickness 6% shorter a rank"
 
 [[skill]]
 id = "vitality"

@@ -297,6 +297,9 @@ pub struct Body {
     pub wards: [u8; 3],
     /// Percent more healing from brews: 10 an Insight rank (milestone 23).
     pub heal_bonus: u16,
+    /// Zeal's (de)buff duration modifier, percent: 6 a rank (Boundless's
+    /// skill text): buffs last this much longer, debuffs this much shorter.
+    pub buff_bonus: u16,
     /// Creative mode (a testing aid, allowed only on servers started with
     /// `--creative`): flies where the player looks, takes no harm, never
     /// tires, hungers or runs out of air.

@@ -861,6 +861,7 @@ impl Effects {
             mending: self.health_regen_epic,
             wards: self.wards.map(crate::atmosphere::ward_points),
             heal_bonus: (10.0 * self.insight).round().clamp(0.0, u16::MAX as f64) as u16,
+            buff_bonus: (6.0 * self.zeal).round().clamp(0.0, 90.0) as u16,
             // Creative mode is the server's switch, not a skill: whoever
             // sets the body from the skills keeps the player's own.
             creative: false,

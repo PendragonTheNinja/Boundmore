@@ -313,6 +313,7 @@ Boundless's live tree and tables exactly (Nathan, 2026-10-20), in Boundmore's na
 | Hushed | 30 / 40 / 55% nearer (II to IV) | III Boundless's; II and IV inferred |
 | Glowing | light 10 / 11 / 12 (II to IV) | **guess** (Boundless 6 to 12 m) |
 | Soothing, Taunting | 10000 threat, creatures within 32 blocks already fighting | the threat Boundless's; the range a **guess** |
+| Zeal | buffs (food, timed brews) 6% longer a rank, sickness 6% shorter; Mending and Steady keep 60 s | Boundless's skill text; over-time brews unscaled an inference |
 | Lifesaving | back up at 25% health with half the energy spent | **guess** (Boundless: "a health and energy deficit") |
 | Deepwater recipe | grade I flask, 3 rice, a float sac, a bucket of water | **guess** (Boundless's Kraken took event orbs) |
 

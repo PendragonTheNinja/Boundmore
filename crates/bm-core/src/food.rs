@@ -312,16 +312,26 @@ impl PlayerState {
             self.buff = FoodBuff {
                 kind: food.buff,
                 rank: food.rank,
-                left: food.minutes as u32 * 60 * TICK_HZ,
+                left: self.buff_ticks(food.minutes as u32 * 60 * TICK_HZ),
             };
         }
         if food.sick {
-            self.sick = SICK_TICKS;
+            self.sick = self.debuff_ticks(SICK_TICKS as u32) as u16;
         }
         self.drink(food.brew, food.rank);
         self.chew = EAT_TICKS;
         self.clamp_to_maxima();
         Ok(())
+    }
+
+    /// A buff's ticks with Zeal: 6% longer a rank.
+    pub fn buff_ticks(&self, ticks: u32) -> u32 {
+        (ticks as u64 * (100 + self.body.buff_bonus as u64) / 100) as u32
+    }
+
+    /// A debuff's ticks with Zeal: 6% shorter a rank.
+    pub fn debuff_ticks(&self, ticks: u32) -> u32 {
+        (ticks as u64 * 100u64.saturating_sub(self.body.buff_bonus as u64) / 100) as u32
     }
 
     /// One tick of food: the buff and sickness run down. Sickness and
