@@ -37,6 +37,7 @@ pub mod signs;
 pub mod skills;
 pub mod spark;
 pub mod time;
+pub mod trade;
 
 pub use block::{
     BlockDef, BlockFlags, BlockId, BlockRegistry, BlockState, Bonus, Chiselling, Colour, Health, Material, Model,

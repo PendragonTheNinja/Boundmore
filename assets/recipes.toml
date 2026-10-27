@@ -67,6 +67,11 @@ name = "any_base_alloy"
 items = ["silver_alloy", "gold_alloy"]
 
 [[group]]
+name = "any_storage"
+label = "Any Storage Block"
+items = ["storage_chest", "plain_wood_storage", "stylish_wood_storage", "ornate_wood_storage", "plain_stone_storage", "stylish_stone_storage", "ornate_stone_storage", "plain_metal_storage", "stylish_metal_storage", "ornate_metal_storage", "plain_crystal_storage", "stylish_crystal_storage", "ornate_crystal_storage", "plain_wicker_storage", "stylish_wicker_storage", "ornate_wicker_storage"]
+
+[[group]]
 name = "acid_paste"
 label = "Any Acid Paste"
 items = ["corrosion_paste", "toxin_paste"]
@@ -5763,3 +5768,26 @@ seconds = 60.0
 xp = 14
 wear = 15
 
+
+# Milestone 24 part 2: Boundless's trading stands (refinery, 7 min 30 s,
+# spark 200, wear 150; Decoration Crafting 2 and 3).
+
+[[recipe]]
+output = "shop_stand"
+inputs = [["any_storage", 2], ["stone_plinth", 1], ["cotton_cloth", 2]]
+station = "refinery"
+seconds = 450.0
+spark = 200
+xp = 35
+wear = 150
+skill = { name = "decoration_crafting", level = 2 }
+
+[[recipe]]
+output = "request_basket"
+inputs = [["any_storage", 2], ["stone_plinth", 1], ["cotton_cloth", 2]]
+station = "refinery"
+seconds = 450.0
+spark = 200
+xp = 35
+wear = 150
+skill = { name = "decoration_crafting", level = 3 }

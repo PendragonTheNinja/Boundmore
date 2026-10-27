@@ -3229,6 +3229,7 @@ impl Game {
         let mut storage = Vec::new();
         let mut crops = Vec::new();
         let mut signs = Vec::new();
+        let mut shops = Vec::new();
         for p in &mut self.planets {
             p.world.forget_saved();
             let id = p.id;
@@ -3247,6 +3248,7 @@ impl Game {
             claims.extend(p.claims.take_dirty());
             crops.extend(p.farm.take_dirty(&self.crops).into_iter().map(|(pos, c)| (id, pos, c)));
             signs.extend(p.signs.take_dirty().into_iter().map(|(pos, s)| (id, pos, s)));
+            shops.extend(p.shops.take_dirty().into_iter().map(|(pos, s)| (id, pos, s)));
             storage.extend(
                 p.storage
                     .take_dirty(&self.items)
@@ -3301,6 +3303,7 @@ impl Game {
             discoveries,
             brews,
             ledgers,
+            shops,
             clock: Some(self.tick),
             forget_planets: std::mem::take(&mut self.forget_planets),
             done,

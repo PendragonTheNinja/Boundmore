@@ -54,6 +54,8 @@ pub struct Planet {
     pub stations: Stations,
     /// Storage blocks with something in them.
     pub storage: Storages,
+    /// Shop stands' and baskets' prices and tills (milestone 24 part 2).
+    pub shops: crate::shops::Shops,
     /// Growing crops (milestone 16 part 2); filled by `Game::new`.
     pub farm: crate::farm::Farm,
     /// Written signs (milestone 22 part 4); filled by `Game::new`.
@@ -355,6 +357,7 @@ pub fn open(
         .map_err(|e| anyhow::anyhow!("planet {}: {e}", saved.name))?;
     let stations = Stations::load(store.stations(id)?, cat.items, cat.recipes);
     let storage = Storages::load(store.storage(id)?, cat.items);
+    let shops = crate::shops::Shops::load(store.shops(id)?);
     let mut claims = Claims::load(id, saved.shape, claims);
     let guard = guard as i64;
     claims.reserve(guarded_plots(saved.shape, shrine, guard));
@@ -388,6 +391,7 @@ pub fn open(
         world: World::new(id, saved.shape, cat.registry.clone(), generator, store.clone()),
         stations,
         storage,
+        shops,
         farm: Default::default(),
         signs: Default::default(),
         claims,

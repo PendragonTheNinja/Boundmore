@@ -73,6 +73,9 @@ const SIGNS: TableDefinition<&[u8], &[u8]> = TableDefinition::new("planet_signs"
 /// Each account's brews (milestone 23 part 2): account -> [`SavedBrews`].
 /// A new table: older universes have none, and a missing row is no brew.
 const BREWS: TableDefinition<&str, &[u8]> = TableDefinition::new("player_brews");
+/// Shop stands' and request baskets' prices and tills (milestone 24 part
+/// 2), keyed like `STORAGE`: `bm_core::trade::ShopRecord`. A new table.
+const SHOPS: TableDefinition<&[u8], &[u8]> = TableDefinition::new("planet_shops");
 /// Each account's coin and feats (milestone 24): account ->
 /// `bm_core::feats::Ledger`. A new table: a character with no row has a new
 /// character's ledger (the starting coin).
@@ -1652,6 +1655,27 @@ impl Store {
         Ok(out)
     }
 
+    /// Every shop record of a planet (none if the table is missing). A
+    /// corrupt record is reported and skipped (left on disk untouched).
+    pub fn shops(&self, planet: u16) -> Result<Vec<(BlockPos, bm_core::trade::ShopRecord)>> {
+        let tx = self.db.begin_read()?;
+        let t = match tx.open_table(SHOPS) {
+            Ok(t) => t,
+            Err(redb::TableError::TableDoesNotExist(_)) => return Ok(Vec::new()),
+            Err(e) => return Err(e.into()),
+        };
+        let (lo, hi) = planet_range(planet);
+        let mut out = Vec::new();
+        for row in t.range(lo.as_slice()..hi.as_slice())? {
+            let (k, v) = row?;
+            match (block_from_key(k.value()), postcard::from_bytes(v.value())) {
+                (Some(p), Ok(s)) => out.push((p, s)),
+                _ => tracing::error!("a saved shop is corrupt; skipped"),
+            }
+        }
+        Ok(out)
+    }
+
     /// Every account's reclaim. A corrupt record is reported and skipped
     /// (left on disk untouched).
     pub fn reclaims(&self) -> Result<Vec<(String, SavedReclaim)>> {
@@ -1918,6 +1942,15 @@ impl Store {
                 found.insert(key.as_str(), postcard::to_stdvec(d)?.as_slice())?;
             }
             drop(found);
+            let mut shops = tx.open_table(SHOPS)?;
+            for (planet, p, r) in &batch.shops {
+                let key = block_key(*planet, *p);
+                match r {
+                    Some(r) => shops.insert(key.as_slice(), postcard::to_stdvec(r)?.as_slice())?,
+                    None => shops.remove(key.as_slice())?,
+                };
+            }
+            drop(shops);
             let mut ledgers = tx.open_table(LEDGER)?;
             for (key, l) in &batch.ledgers {
                 ledgers.insert(key.as_str(), postcard::to_stdvec(l)?.as_slice())?;
@@ -2400,6 +2433,8 @@ pub struct WriteBatch {
     pub brews: Vec<(String, SavedBrews)>,
     /// Coin and feats that changed (milestone 24), by account.
     pub ledgers: Vec<(String, bm_core::feats::Ledger)>,
+    /// Shop records that changed (milestone 24 part 2); None deletes.
+    pub shops: Vec<(u16, BlockPos, Option<bm_core::trade::ShopRecord>)>,
     /// The universe clock, so days and station jobs continue across restarts.
     pub clock: Option<u64>,
     /// Departed wanderers (milestone 21): every row under each id is deleted,
@@ -2427,6 +2462,7 @@ impl WriteBatch {
             && self.skies.is_empty()
             && self.discoveries.is_empty()
             && self.ledgers.is_empty()
+            && self.shops.is_empty()
             && self.forget_planets.is_empty()
     }
 }
@@ -2825,6 +2861,14 @@ mod tests {
                 discoveries: vec![("pendragon".into(), found.clone())],
                 brews: vec![("pendragon".into(), brews), ("nobody".into(), SavedBrews::default())],
                 ledgers: vec![("pendragon".into(), ledger.clone())],
+                shops: vec![(
+                    2,
+                    spot,
+                    Some(bm_core::trade::ShopRecord {
+                        prices: vec![0, 25],
+                        till: 300,
+                    }),
+                )],
                 clock: Some(777),
                 done: Vec::new(),
             })
@@ -2845,6 +2889,14 @@ mod tests {
             ledger,
             "coin and feats kept (milestone 24)"
         );
+        let shops = s.shops(2).unwrap();
+        assert_eq!(shops.len(), 1);
+        assert_eq!(
+            (shops[0].0, shops[0].1.till, shops[0].1.price(1)),
+            (spot, 300, 25),
+            "a shop kept"
+        );
+        assert!(s.shops(3).unwrap().is_empty());
         assert_eq!(
             s.ledger("nobody").unwrap().coin,
             bm_core::feats::STARTING_COIN,

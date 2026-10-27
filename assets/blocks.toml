@@ -5812,3 +5812,36 @@ style = "plain"
 glow_text = true
 mine_xp = 2
 build_xp = 12
+
+# Milestone 24 part 2: trade. Each is a 16-slot storage block (Boundless's
+# count, players' reports), placed only inside its owner's claim.
+
+[[block]]
+name = "shop_stand"
+color = [176, 132, 86]
+solid = true
+opaque = true
+translucent = false
+breakable = true
+placeable = true
+health = "hard"
+textures = { top = "shop_stand_top", side = "shop_stand_side", bottom = "stone_plinth" }
+material = "wood"
+storage = 16
+mine_xp = 2
+build_xp = 16
+
+[[block]]
+name = "request_basket"
+color = [190, 160, 104]
+solid = true
+opaque = true
+translucent = false
+breakable = true
+placeable = true
+health = "hard"
+textures = { top = "request_basket_top", side = "request_basket_side", bottom = "stone_plinth" }
+material = "wood"
+storage = 16
+mine_xp = 2
+build_xp = 16
