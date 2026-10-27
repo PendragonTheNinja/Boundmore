@@ -7,6 +7,7 @@ Start with `../CLAUDE.md` (rules and invariants), then the milestone marked in p
 | `roadmap.md` | Every Boundless system, where Boundmore stands on it, milestone order | Planning anything new |
 | `milestones/NN-*.md` | One spec per milestone: goal, acceptance, non-goals, live **Status** | Before working on that milestone |
 | `decisions/NNNN-*.md` | ADRs: why the architecture is the way it is. Immutable once accepted; superseded by new ones | Before changing anything they cover |
+| `measure-in-boundless.md` | Every number only the live game can answer, grouped into trips for Nathan, with IDs he answers by | Making a guess no site has (add it there); recording his answers |
 | `feel.md` | Every gameplay number and what to calibrate it against, plus Nathan's verdicts | Touching movement, reach, world size, timings |
 | `art-direction.md` | The look: palette, texture rules, what Boundless and Hytale contribute | Making or changing any texture, colour or model |
 | `research/boundless-forum-feedback.md` | What Boundless players liked, disliked and asked for (3,153 forum posts, weighted to 2020+), with candidate design principles | Before designing any Boundless system (upkeep, crafting, PvE, economy, social) |
