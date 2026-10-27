@@ -25,7 +25,7 @@ use glam::DVec3;
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
 
 /// Bump on any change to a message below. Client and server must match.
-pub const PROTOCOL_VERSION: u32 = 43;
+pub const PROTOCOL_VERSION: u32 = 44;
 
 /// QUIC application protocol name; also refuses non-Boundmore peers early.
 pub const ALPN: &[u8] = b"boundmore/1";
@@ -140,6 +140,12 @@ pub enum ClientMsg {
     /// Start (Some) or stop (None) receiving a storage block within reach;
     /// the server answers with `Storage` and repeats it on every change.
     OpenStorage { pos: Option<BlockPos> },
+    /// Open (Some) or close (None) a shop stand or request basket within
+    /// reach (milestone 24 part 2): answered with `Shop`, repeated on every
+    /// change. Its owner also gets it as storage (`Storage`).
+    OpenShop { pos: Option<BlockPos> },
+    /// Do something at the open shop stand or basket.
+    Shop { pos: BlockPos, action: ShopAction },
     /// Move up to `count` between the inventory and the open storage block,
     /// or within either: same rules as `MoveItems` (merge, split, whole-stack
     /// swap). The server answers with `Slots` and/or `Storage`.
@@ -539,6 +545,9 @@ pub enum ServerMsg {
     /// every change; `slots` empty with `closed` set when it is gone or out of
     /// reach.
     Storage(StorageView),
+    /// A shop stand or request basket as its window shows it (milestone 24
+    /// part 2); `closed` when it is gone or out of reach.
+    Shop(ShopView),
     /// Chat lines, oldest first: one as it is said, or the recent history of
     /// the universe channel on joining.
     Chat {
@@ -826,6 +835,50 @@ pub struct ShotView {
     pub kind: ShotKind,
     /// What a homing bolt turns toward.
     pub homing: Option<Target>,
+}
+
+/// What a shop stand or request basket's window asks (milestone 24 part 2).
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub enum ShopAction {
+    /// Owner: a slot's price in coin a piece (0: not for sale or not wanted).
+    SetPrice { slot: u8, price: u64 },
+    /// Owner: the till into their coin.
+    TakeTill,
+    /// Owner of a basket: put this much of their coin into its till.
+    Charge { amount: u64 },
+    /// Anyone else: buy `count` from a stand's slot.
+    Buy { slot: u8, count: u16 },
+    /// Anyone else: sell up to `count` from pack slot `from` into a basket's
+    /// slot.
+    Sell { slot: u8, from: u8, count: u16 },
+}
+
+/// Which of the two.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub enum ShopKind {
+    Stand,
+    Basket,
+}
+
+/// A shop stand or request basket as its window shows it.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct ShopView {
+    pub pos: BlockPos,
+    pub kind: ShopKind,
+    /// The owner's name as shown.
+    pub owner: String,
+    /// The viewer owns it.
+    pub mine: bool,
+    pub slots: Vec<Option<ItemStack>>,
+    /// Coin a piece, by slot (0: not for sale or not wanted).
+    pub prices: Vec<u64>,
+    /// Coin in it: only its owner is told (0 for everyone else), except a
+    /// basket's, which sellers need to see.
+    pub till: u64,
+    /// The sales fee, percent.
+    pub fee_percent: u64,
+    /// Gone or out of reach: the window closes.
+    pub closed: bool,
 }
 
 /// A portal as its window shows it.

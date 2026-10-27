@@ -998,6 +998,10 @@ pub struct App {
     sign_ui: Option<crate::signs::SignUi>,
     /// The open portal window's portal as the server last sent it.
     portal_view: Option<PortalView>,
+    /// The open shop stand or basket (milestone 24 part 2).
+    shop_view: Option<bm_protocol::ShopView>,
+    /// Prices being typed in the owner's price window, by slot.
+    shop_prices: HashMap<u8, String>,
     /// The warp shrine window's open tab.
     shrine_tab: ShrineTab,
     /// The skill screen's chosen category and reset question.
@@ -1067,6 +1071,8 @@ impl App {
             storage_view: None,
             sign_ui: None,
             portal_view: None,
+            shop_view: None,
+            shop_prices: HashMap::new(),
             shrine_tab: ShrineTab::Worlds,
             skill_ui: SkillUi::default(),
             forge_ui: ForgeUi::default(),
@@ -1202,6 +1208,10 @@ impl App {
             self.portal_view = None;
             self.send(ClientMsg::OpenPortal { pos: Some(pos) });
         }
+        if let Menu::Shop(pos) = menu {
+            self.shop_view = None;
+            self.send(ClientMsg::OpenShop { pos: Some(pos) });
+        }
         self.menu = Some(menu);
         self.keys.clear();
         self.mouse = [false; 2];
@@ -1217,6 +1227,11 @@ impl App {
             self.send(ClientMsg::OpenStorage { pos: None });
             self.storage_closing.push(pos);
             self.storage_view = None;
+        }
+        if matches!(self.menu, Some(Menu::Shop(_))) || self.shop_view.is_some() {
+            self.send(ClientMsg::OpenShop { pos: None });
+            self.shop_view = None;
+            self.shop_prices.clear();
         }
         if let Some(Menu::Portal(_)) = self.menu {
             self.send(ClientMsg::OpenPortal { pos: None });
@@ -1273,6 +1288,26 @@ impl App {
     fn open_storage(&mut self, pos: BlockPos) {
         let now = self.now();
         let Some(s) = &self.session else { return };
+        // A shop stand or basket (milestone 24 part 2): its owner stocks it
+        // as storage beside its prices; anyone else gets its shop window.
+        if s.world
+            .block(pos)
+            .is_some_and(|b| crate::shop::is_shop(&s.world.registry.get(b).name))
+        {
+            let pos = s.world.shape.wrap_block(pos);
+            let mine = s
+                .claims
+                .at(PlotPos::of(pos, s.world.shape))
+                .is_some_and(|c| c.owner == s.account);
+            self.shop_prices.clear();
+            if mine {
+                self.open_menu(Menu::Storage(pos));
+                self.send(ClientMsg::OpenShop { pos: Some(pos) });
+            } else {
+                self.open_menu(Menu::Shop(pos));
+            }
+            return;
+        }
         if let Some(c) = s.claims.at(PlotPos::of(pos, s.world.shape))
             && c.owner != s.account
         {
@@ -1330,6 +1365,29 @@ impl App {
     /// A `Portal` from the server: the open window's news, or (None) that
     /// it closed on the server's side: the portal is gone, out of reach or
     /// not ours. Nothing is asked of the server for that close.
+    /// A `Shop` from the server (milestone 24 part 2): kept while its window
+    /// (or, for its owner, its storage window) is open.
+    fn shop_update(&mut self, view: bm_protocol::ShopView) {
+        let showing = match self.menu {
+            Some(Menu::Shop(p)) | Some(Menu::Storage(p)) => p == view.pos,
+            _ => false,
+        };
+        if !showing {
+            return;
+        }
+        if view.closed {
+            self.shop_view = None;
+            if matches!(self.menu, Some(Menu::Shop(_))) {
+                self.menu = None;
+                if self.session.is_some() && !self.chat.open {
+                    self.set_grab(true);
+                }
+            }
+            return;
+        }
+        self.shop_view = Some(view);
+    }
+
     /// A `PortalClosed`: shuts the window if it is still that portal's (or
     /// one whose open was refused); a late close of a portal left behind,
     /// while another opens, is ignored (M8 follow-up, 2026-10-27).
@@ -1583,6 +1641,7 @@ impl App {
         let m = match m {
             ServerMsg::Travel(t) => return self.travel(*t),
             ServerMsg::Storage(view) => return self.storage_update(view),
+            ServerMsg::Shop(view) => return self.shop_update(view),
             ServerMsg::Portal(view) => return self.portal_update(Some(view)),
             ServerMsg::PortalClosed { id } => return self.portal_closed(id),
             ServerMsg::Defeated { debt, by } => {
@@ -1728,6 +1787,7 @@ impl App {
             | ServerMsg::Storage(_)
             | ServerMsg::Portal(_)
             | ServerMsg::PortalClosed { .. }
+            | ServerMsg::Shop(_)
             | ServerMsg::Defeated { .. }
             | ServerMsg::Teleport { .. } => {}
         }
@@ -2339,6 +2399,8 @@ impl App {
         let chat = &mut self.chat;
         let storage_view = self.storage_view.as_ref();
         let portal_view = self.portal_view.as_ref();
+        let shop_view = self.shop_view.as_ref();
+        let shop_prices = &mut self.shop_prices;
         let notices = self.notices.visible(now);
         let menu = self.menu;
         let login = &mut self.login;
@@ -2564,8 +2626,27 @@ impl App {
                         drag,
                         &mut actions,
                     );
+                    // Its prices and till, if it is our shop (milestone 24).
+                    if let Some(v) = shop_view.filter(|v| v.pos == pos && v.mine) {
+                        menus::shop_owner(
+                            &ctx,
+                            v,
+                            &s.items,
+                            s.ledger.as_ref().map_or(0, |l| l.coin),
+                            shop_prices,
+                            &mut actions,
+                        );
+                    }
                 }
                 Some(Menu::Feats) => menus::feats(&ctx, &FEAT_BOOK, s.ledger.as_ref(), &mut actions),
+                Some(Menu::Shop(pos)) => menus::shop(
+                    &ctx,
+                    shop_view.filter(|v| v.pos == pos),
+                    &s.items,
+                    &s.icons,
+                    s.ledger.as_ref().map_or(0, |l| l.coin),
+                    &mut actions,
+                ),
                 Some(Menu::Skills) => {
                     let wait = s.progress.switch_wait(s.server_tick(local));
                     crate::skill_screen::skills(

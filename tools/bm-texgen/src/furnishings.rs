@@ -1006,6 +1006,12 @@ pub fn paint(name: &str) -> Option<Tex> {
         "stone_plinth" => return Some(stone_plinth()),
         "wood_table" => return Some(wood_table()),
         "wood_chair" => return Some(wood_chair()),
+        // Milestone 24 part 2's trading blocks, for now in the ornate
+        // storage designs (wood for the stand, wicker for the basket).
+        "shop_stand_top" => return paint("ornate_wood_storage_top"),
+        "shop_stand_side" => return paint("ornate_wood_storage_side"),
+        "request_basket_top" => return paint("ornate_wicker_storage_top"),
+        "request_basket_side" => return paint("ornate_wicker_storage_side"),
         _ => {}
     }
     for (suffix, beam) in [("_pole", false), ("_beam", true)] {

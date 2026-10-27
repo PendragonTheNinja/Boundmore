@@ -37,6 +37,7 @@ mod forge;
 mod meteors;
 mod mining;
 mod portal;
+mod shops;
 mod signs;
 mod skills;
 mod stations;
@@ -234,6 +235,8 @@ struct Player {
     watching: Option<BlockPos>,
     /// The storage block this player has open (canonical).
     storage: Option<BlockPos>,
+    /// The shop stand or basket whose window is open (milestone 24 part 2).
+    shop: Option<BlockPos>,
     chat: ChatLimit,
     /// Edits and swings tagged with an input up to this one came from before
     /// the last travel (see `TRAVEL_GUARD_INPUTS`).
@@ -343,6 +346,9 @@ pub struct Game {
     colours: ColourPalette,
     recipes: RecipeBook,
     claim_stone: BlockId,
+    /// The trading blocks (milestone 24 part 2).
+    shop_stand: BlockId,
+    request_basket: BlockId,
     warp_shrine: BlockId,
     /// Claim ids are unique across the universe.
     next_claim: u32,
@@ -639,6 +645,8 @@ impl Game {
         });
         let registry = planets.first().context("no planets")?.world.registry.clone();
         let claim_stone = registry.id("claim_stone")?;
+        let shop_stand = registry.id("shop_stand")?;
+        let request_basket = registry.id("request_basket")?;
         let warp_shrine = registry.id("warp_shrine")?;
         let ash = registry.id("ash")?;
         let portal_conduit = registry.id("portal_conduit")?;
@@ -708,6 +716,8 @@ impl Game {
             colours: ColourPalette::builtin(),
             recipes,
             claim_stone,
+            shop_stand,
+            request_basket,
             warp_shrine,
             next_claim: next_claim.max(1),
             store,
@@ -934,6 +944,7 @@ impl Game {
         }
         if self.tick % STORAGE_CHECK_EVERY == 0 {
             self.check_open_storage();
+            self.check_open_shops();
             self.check_open_portals();
             self.update_inner_light();
         }
@@ -1112,6 +1123,8 @@ impl Game {
                 ClientMsg::ReleasePlot { plot } => self.release_plot(id, plot),
                 ClientMsg::Warp { shrine, planet } => self.warp(id, shrine, planet),
                 ClientMsg::OpenStorage { pos } => self.open_storage(id, pos),
+                ClientMsg::OpenShop { pos } => self.open_shop(id, pos),
+                ClientMsg::Shop { pos, action } => self.shop_action(id, pos, action),
                 ClientMsg::StorageMove { pos, from, to, count } => self.storage_move(id, pos, from, to, count),
                 ClientMsg::Chat { channel, text } => self.chat(id, channel, text),
                 ClientMsg::CollectReclaim { shrine } => self.collect_reclaim(id, shrine),
@@ -1344,6 +1357,7 @@ impl Game {
                 edits: VecDeque::new(),
                 watching: None,
                 storage: None,
+                shop: None,
                 chat: ChatLimit::new(self.tick),
                 travel_guard: None,
                 portal: None,
@@ -2331,6 +2345,15 @@ impl Game {
                 if let Some(kind) = self.crops.sown_as(block) {
                     Self::sowing_allowed(&self.crops, kind, world, canon, p.effects.farming)?;
                 }
+                // Trading blocks only on the placer's own claim (milestone 24
+                // part 2): the claim is what keeps their stock theirs.
+                if (block == self.shop_stand || block == self.request_basket)
+                    && planet.claims.at_block(canon).is_none_or(|c| c.owner != p.account)
+                {
+                    return Err(Refusal::Told(
+                        "A shop stand or request basket goes on your own claim".into(),
+                    ));
+                }
                 if block == self.claim_stone {
                     if planet.exo.is_some() {
                         return Err(Refusal::Told(exo::NO_CLAIM.into()));
@@ -2535,6 +2558,7 @@ impl Game {
         p.far_cursor = 0;
         // The client drops the old planet's creatures on `Travel`.
         p.known.clear();
+        p.shop = None;
         p.in_view.clear();
         let name = p.name.clone();
         let planet = &self.planets[to];
@@ -2600,6 +2624,19 @@ impl Game {
     /// The block at `pos` if this player may use what it is: loaded for
     /// them, within reach, and not on someone else's claim.
     fn block_access(&self, id: u32, pos: BlockPos) -> Result<(BlockPos, BlockId), Refusal> {
+        let (canon, block) = self.block_in_reach(id, pos)?;
+        let p = &self.players[&id];
+        if let Some(c) = self.planets[p.planet].claims.at_block(canon)
+            && c.owner != p.account
+        {
+            return Err(ClaimError::OwnedBy(c.owner_name.clone()).into());
+        }
+        Ok((canon, block))
+    }
+
+    /// The block at `pos` if it is loaded for this player and within reach,
+    /// whoever's claim it is on.
+    fn block_in_reach(&self, id: u32, pos: BlockPos) -> Result<(BlockPos, BlockId), Refusal> {
         let p = self.players.get(&id).ok_or("no such player")?;
         let planet = &self.planets[p.planet];
         let shape = planet.world.shape;
@@ -2620,11 +2657,6 @@ impl Game {
             return Err(Refusal::Told("That is out of reach".into()));
         }
         let block = planet.world.block(canon).ok_or("chunk not resident")?;
-        if let Some(c) = planet.claims.at_block(canon)
-            && c.owner != p.account
-        {
-            return Err(ClaimError::OwnedBy(c.owner_name.clone()).into());
-        }
         Ok((canon, block))
     }
 
@@ -2813,6 +2845,7 @@ impl Game {
         if slots != stored {
             self.planets[pi].storage.set(canon, slots);
             self.push_storage(pi, canon, size);
+            self.push_shop(pi, canon);
             let viewers: Vec<u32> = self
                 .players
                 .iter()
@@ -3047,6 +3080,8 @@ impl Game {
         let mut changed = Vec::new();
         let mut items = Vec::new();
         let mut emptied = Vec::new();
+        // Coin in the plot's shop tills goes back to the owner.
+        let mut tills = 0u64;
         // A plot the owner released (or a claim gone) is left alone.
         let held = planet.claims.get(job.claim).is_some_and(|c| c.plots.contains(&plot));
         if let (true, Some(reference)) = (held, &job.reference) {
@@ -3061,6 +3096,7 @@ impl Game {
                             items.extend(planet.storage.take(p));
                             emptied.push(p);
                         }
+                        tills += planet.shops.take(p);
                         if planet.stations.has_contents(p) {
                             items.extend(planet.stations.take(p, &self.items, &self.recipes));
                         }
@@ -3111,6 +3147,7 @@ impl Game {
             self.reclaims.add(&owner, items);
             self.push_reclaim(&owner);
         }
+        self.pay_account(&owner, tills);
         if done {
             self.finish_lapse(i);
         }

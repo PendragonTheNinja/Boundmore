@@ -68,6 +68,9 @@ pub enum Menu {
     Sign(BlockPos),
     /// Feats and coin (milestone 24).
     Feats,
+    /// Someone else's shop stand or request basket at this block (milestone
+    /// 24 part 2).
+    Shop(BlockPos),
 }
 
 #[derive(Default)]
@@ -625,6 +628,161 @@ pub fn feats(
     if !open {
         actions.push(UiAction::CloseMenu);
     }
+}
+
+/// Someone else's shop stand or request basket (milestone 24 part 2): a
+/// stand lists what it sells with buy buttons; a basket what it wants, with
+/// a sell button where the pack has some.
+pub fn shop(
+    ctx: &egui::Context,
+    view: Option<&bm_protocol::ShopView>,
+    items: &Items,
+    icons: &ItemIcons,
+    coin: u64,
+    actions: &mut Vec<UiAction>,
+) {
+    use bm_protocol::{ShopAction, ShopKind};
+    let mut open = true;
+    let title = match view.map(|v| v.kind) {
+        Some(ShopKind::Basket) => "Request Basket",
+        _ => "Shop Stand",
+    };
+    window(title).open(&mut open).show(ctx, |ui| {
+        let Some(v) = view else {
+            ui.label(egui::RichText::new("Opening").color(MUTED));
+            return;
+        };
+        ui.label(egui::RichText::new(format!("{}'s", v.owner)).color(MUTED));
+        ui.label(egui::RichText::new(format!("You have {}", coin_text(coin))).color(COIN));
+        ui.add_space(6.0);
+        let act = |action| UiAction::Send(ClientMsg::Shop { pos: v.pos, action });
+        match v.kind {
+            ShopKind::Stand => {
+                let offers = crate::shop::offers(v, items);
+                if offers.is_empty() {
+                    ui.label(egui::RichText::new("Nothing for sale.").color(MUTED));
+                }
+                for o in offers {
+                    ui.horizontal(|ui| {
+                        let (rect, _) = ui.allocate_exact_size(Vec2::splat(28.0), Sense::hover());
+                        paint_icon(ui.painter(), rect, icons.get(&o.stack), 1.0);
+                        ui.label(format!("{} x{}", o.name, o.stack.count));
+                        ui.label(egui::RichText::new(format!("{} each", coin_text(o.price))).color(COIN));
+                        for want in [1u16, 10, o.stack.count] {
+                            let n = crate::shop::affordable(&o, coin, want);
+                            let label = if want == o.stack.count {
+                                "All".to_string()
+                            } else {
+                                format!("{want}")
+                            };
+                            if action_button(ui, &label, n == want.min(o.stack.count) && n > 0, "Not enough coin") {
+                                actions.push(act(ShopAction::Buy { slot: o.slot, count: n }));
+                            }
+                        }
+                    });
+                }
+            }
+            ShopKind::Basket => {
+                ui.label(egui::RichText::new(format!("It has {} to buy with", coin_text(v.till))).color(MUTED));
+                let wants = crate::shop::wants(v, items);
+                if wants.is_empty() {
+                    ui.label(egui::RichText::new("It wants nothing.").color(MUTED));
+                }
+                for w in wants {
+                    ui.horizontal(|ui| {
+                        let (rect, _) = ui.allocate_exact_size(Vec2::splat(28.0), Sense::hover());
+                        paint_icon(ui.painter(), rect, icons.get(&w.stack), 1.0);
+                        ui.label(&w.name);
+                        ui.label(egui::RichText::new(format!("pays {} each", coin_text(w.price))).color(COIN));
+                        let enabled = w.have.is_some() && v.till >= w.price;
+                        let why = if w.have.is_none() {
+                            "You carry none"
+                        } else {
+                            "It has no coin left"
+                        };
+                        if action_button(ui, "Sell", enabled, why)
+                            && let Some((from, count)) = w.have
+                        {
+                            actions.push(act(ShopAction::Sell {
+                                slot: w.slot,
+                                from,
+                                count,
+                            }));
+                        }
+                    });
+                }
+            }
+        }
+        ui.add_space(4.0);
+        ui.label(
+            egui::RichText::new(format!("A {}% sales fee goes to nobody.", v.fee_percent))
+                .color(MUTED)
+                .small(),
+        );
+    });
+    if !open {
+        actions.push(UiAction::CloseMenu);
+    }
+}
+
+/// The owner's prices and till beside their stand's storage window
+/// (milestone 24 part 2). `edits` keeps what is being typed per slot.
+pub fn shop_owner(
+    ctx: &egui::Context,
+    view: &bm_protocol::ShopView,
+    items: &Items,
+    coin: u64,
+    edits: &mut HashMap<u8, String>,
+    actions: &mut Vec<UiAction>,
+) {
+    use bm_protocol::{ShopAction, ShopKind};
+    let act = |action| UiAction::Send(ClientMsg::Shop { pos: view.pos, action });
+    egui::Window::new("Prices")
+        .default_pos(egui::pos2(24.0, 120.0))
+        .resizable(false)
+        .collapsible(false)
+        .show(ctx, |ui| {
+            let what = if view.kind == ShopKind::Basket {
+                "pays"
+            } else {
+                "sells for"
+            };
+            ui.label(
+                egui::RichText::new(format!("Coin a piece each slot {what}; 0 for none."))
+                    .color(MUTED)
+                    .small(),
+            );
+            for (i, s) in view.slots.iter().enumerate() {
+                let Some(s) = s else { continue };
+                let i = i as u8;
+                ui.horizontal(|ui| {
+                    ui.label(format!("{} x{}", items.name(s), s.count));
+                    let price = view.prices.get(i as usize).copied().unwrap_or(0);
+                    let text = edits.entry(i).or_insert_with(|| price.to_string());
+                    ui.add(egui::TextEdit::singleline(text).desired_width(70.0));
+                    let typed = text.trim().parse::<u64>().ok();
+                    if action_button(ui, "Set", typed.is_some_and(|t| t != price), "Type a whole number")
+                        && let Some(t) = typed
+                    {
+                        actions.push(act(ShopAction::SetPrice { slot: i, price: t }));
+                    }
+                });
+            }
+            ui.add_space(6.0);
+            ui.label(egui::RichText::new(format!("In the till: {}", coin_text(view.till))).color(COIN));
+            ui.horizontal(|ui| {
+                if action_button(ui, "Take the coin", view.till > 0, "The till is empty") {
+                    actions.push(act(ShopAction::TakeTill));
+                }
+                if view.kind == ShopKind::Basket {
+                    for add in [100u64, 1000] {
+                        if action_button(ui, &format!("Add {add}"), coin >= add, "Not enough coin") {
+                            actions.push(act(ShopAction::Charge { amount: add }));
+                        }
+                    }
+                }
+            });
+        });
 }
 
 /// "1,250 coin".

@@ -178,6 +178,12 @@ impl TestClient {
         self.items.id(name).unwrap()
     }
 
+    /// The block at `p` in the chunks we hold.
+    fn block_at(&self, p: BlockPos) -> BlockId {
+        let p = self.shape().wrap_block(p);
+        self.chunks[&p.chunk()].get(p.local())
+    }
+
     fn block(&self, name: &str) -> BlockId {
         BlockId(self.welcome.blocks.iter().position(|b| b.name == name).unwrap() as u16)
     }
@@ -3396,6 +3402,188 @@ async fn feats_count_pay_coin_and_are_kept() {
     };
     assert_eq!(l.coin, bm_core::feats::STARTING_COIN + 100, "kept across a restart");
     assert_eq!(l.count("placed"), 1);
+    server.stop();
+}
+
+/// Waits for a `Shop` view of `pos` that `pred` accepts.
+async fn shop_until(
+    c: &mut TestClient,
+    pos: BlockPos,
+    pred: impl Fn(&bm_protocol::ShopView) -> bool,
+) -> bm_protocol::ShopView {
+    match c
+        .until(|m| matches!(m, ServerMsg::Shop(v) if v.pos == pos && pred(v)))
+        .await
+    {
+        ServerMsg::Shop(v) => v,
+        _ => unreachable!(),
+    }
+}
+
+/// Waits for a `Ledger` that `pred` accepts.
+async fn ledger_until(c: &mut TestClient, pred: impl Fn(&bm_core::feats::Ledger) -> bool) -> bm_core::feats::Ledger {
+    match c.until(|m| matches!(m, ServerMsg::Ledger(l) if pred(l))).await {
+        ServerMsg::Ledger(l) => l,
+        _ => unreachable!(),
+    }
+}
+
+/// Milestone 24 part 2: Alice stocks and prices a shop stand on her claim;
+/// Bob buys from it (paying the price, the stand's till keeping it less the
+/// 2% fee) and Alice takes the till; Alice's request basket, charged with
+/// coin, buys Bob's stone at its price until its coin runs out; a stand
+/// cannot go outside its owner's claim.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn shop_stands_sell_and_request_baskets_buy() {
+    use bm_core::feats::STARTING_COIN;
+    use bm_protocol::{ShopAction, ShopKind};
+    let dir = tempfile::tempdir().unwrap();
+    seed(
+        dir.path(),
+        "Alice",
+        &[
+            (5, "claim_stone", 1, 0),
+            (0, "shop_stand", 2, 0),
+            (1, "request_basket", 1, 0),
+            (2, "stone", 20, 0),
+        ],
+    );
+    seed(dir.path(), "Bob", &[(0, "stone", 13, 0)]);
+    let server = bm_server::start(config(dir.path())).unwrap();
+    let mut alice = TestClient::login(&server, "Alice").await;
+    let mut bob = TestClient::login(&server, "Bob").await;
+    let feet = alice.feet();
+    alice.wait_for_chunk(feet.chunk()).await;
+    bob.wait_for_chunk(feet.chunk()).await;
+    let shape = alice.shape();
+
+    // Outside a claim: refused.
+    let half = bm_core::PLOT_SIZE / 2;
+    let side = |v: i64| {
+        if v.rem_euclid(bm_core::PLOT_SIZE) < half { 1 } else { -1 }
+    };
+    let stand = feet.offset(side(feet.x), 0, 0);
+    let basket = feet.offset(0, 0, side(feet.z));
+    assert_eq!(PlotPos::of(stand, shape), PlotPos::of(feet, shape));
+    assert_eq!(PlotPos::of(basket, shape), PlotPos::of(feet, shape));
+    // Room for both (the ground may be uneven), on solid ground.
+    let air = alice.block("air");
+    for (seq, p) in [(20, stand), (21, basket)] {
+        if alice.block_at(p) != air {
+            assert!(alice.dig(seq, p).await.0);
+        }
+        assert_ne!(alice.block_at(p.offset(0, -1, 0)), air, "something to stand on");
+    }
+    assert!(!place(&mut alice, 1, stand, 0, None).await.0);
+    alice
+        .notice("A shop stand or request basket goes on your own claim")
+        .await;
+    // The claim, then the stand and basket on it.
+    assert!(alice.dig(2, feet).await.0);
+    assert!(place(&mut alice, 3, feet, 5, None).await.0);
+    assert!(place(&mut alice, 4, stand, 0, None).await.0);
+    assert!(place(&mut alice, 5, basket, 1, None).await.0);
+
+    // Alice stocks 10 stone at 50 each.
+    alice.send(ClientMsg::OpenShop { pos: Some(stand) }).await;
+    let v = shop_until(&mut alice, stand, |_| true).await;
+    assert!(v.mine && v.kind == ShopKind::Stand);
+    alice
+        .send(ClientMsg::StorageMove {
+            pos: stand,
+            from: SlotRef::Inventory(2),
+            to: SlotRef::Storage(0),
+            count: 10,
+        })
+        .await;
+    alice
+        .send(ClientMsg::Shop {
+            pos: stand,
+            action: ShopAction::SetPrice { slot: 0, price: 50 },
+        })
+        .await;
+    shop_until(&mut alice, stand, |v| v.prices[0] == 50).await;
+
+    // Bob sees it and buys three.
+    bob.send(ClientMsg::OpenShop { pos: Some(stand) }).await;
+    let v = shop_until(&mut bob, stand, |v| v.prices.first() == Some(&50)).await;
+    assert!(!v.mine);
+    assert_eq!(
+        (v.slots[0].unwrap().count, v.till),
+        (10, 0),
+        "the till is the owner's to see"
+    );
+    bob.send(ClientMsg::Shop {
+        pos: stand,
+        action: ShopAction::Buy { slot: 0, count: 3 },
+    })
+    .await;
+    shop_until(&mut bob, stand, |v| v.slots[0].is_some_and(|s| s.count == 7)).await;
+    let l = ledger_until(&mut bob, |l| l.coin < STARTING_COIN).await;
+    assert_eq!(l.coin, STARTING_COIN - 150);
+    assert_eq!(l.count("spent"), 150);
+    bob.settle().await;
+    assert_eq!(bob.count("stone"), 16, "13 and 3 bought");
+    let v = shop_until(&mut alice, stand, |v| v.till > 0).await;
+    assert_eq!(v.till, 150 - 3, "less the 2% fee");
+    alice
+        .send(ClientMsg::Shop {
+            pos: stand,
+            action: ShopAction::TakeTill,
+        })
+        .await;
+    let l = ledger_until(&mut alice, |l| l.coin > STARTING_COIN).await;
+    assert_eq!(l.coin, STARTING_COIN + 147);
+    // Bob may not set prices or take the till.
+    bob.send(ClientMsg::Shop {
+        pos: stand,
+        action: ShopAction::SetPrice { slot: 0, price: 1 },
+    })
+    .await;
+
+    // The basket: one stone shows what it wants, 10 a piece, 100 coin in it.
+    alice.send(ClientMsg::OpenShop { pos: Some(basket) }).await;
+    shop_until(&mut alice, basket, |v| v.mine).await;
+    alice
+        .send(ClientMsg::StorageMove {
+            pos: basket,
+            from: SlotRef::Inventory(2),
+            to: SlotRef::Storage(0),
+            count: 1,
+        })
+        .await;
+    for action in [
+        ShopAction::SetPrice { slot: 0, price: 10 },
+        ShopAction::Charge { amount: 100 },
+    ] {
+        alice.send(ClientMsg::Shop { pos: basket, action }).await;
+    }
+    shop_until(&mut alice, basket, |v| v.till == 100 && v.prices[0] == 10).await;
+    bob.send(ClientMsg::OpenShop { pos: Some(basket) }).await;
+    let v = shop_until(&mut bob, basket, |v| v.till == 100).await;
+    assert_eq!(v.kind, ShopKind::Basket);
+    bob.settle().await;
+    let from = (0..bob.inv.slots.len())
+        .find(|&i| bob.inv.slots[i].is_some_and(|s| s.item == bob.item("stone")))
+        .unwrap() as u8;
+    bob.send(ClientMsg::Shop {
+        pos: basket,
+        action: ShopAction::Sell {
+            slot: 0,
+            from,
+            count: 16,
+        },
+    })
+    .await;
+    let v = shop_until(&mut bob, basket, |v| v.till == 0).await;
+    assert_eq!(v.slots[0].unwrap().count, 11, "ten bought, as far as its coin went");
+    let l = ledger_until(&mut bob, |l| l.coin > STARTING_COIN - 150).await;
+    assert_eq!(l.coin, STARTING_COIN - 150 + 98, "100 less the 2% fee");
+    assert_eq!(l.count("basket_sold"), 1);
+    bob.settle().await;
+    assert_eq!(bob.count("stone"), 6);
+    // The stand, still stocked, cannot be broken.
+    assert!(!alice.dig(9, stand).await.0);
     server.stop();
 }
 

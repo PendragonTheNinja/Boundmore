@@ -151,6 +151,12 @@ impl Game {
                 title_case(&def.name)
             )));
         }
+        if planet.shops.till(canon) > 0 {
+            return Err(Refusal::Told(format!(
+                "Take the coin from the {} before breaking it",
+                title_case(&def.name)
+            )));
+        }
         if let Some(pid) = self.portals.at(planet.id, canon)
             && self.portals.get(pid).is_some_and(|r| r.fuel > 0)
         {

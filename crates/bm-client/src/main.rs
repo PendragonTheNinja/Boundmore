@@ -24,6 +24,7 @@ mod portal;
 mod predict;
 mod render;
 mod settings;
+mod shop;
 mod signs;
 mod skill_screen;
 mod skills;
