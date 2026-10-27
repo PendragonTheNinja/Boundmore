@@ -53,6 +53,8 @@ struct TestClient {
     spawn: PlayerState,
     /// The character as last heard of (milestone 12).
     character: Character,
+    /// Coin and feats, as last sent (milestone 24).
+    ledger: Option<bm_core::feats::Ledger>,
     /// Milestone 13: creatures as last told, shots of others heard, shots
     /// heard to end, hits heard, and the last defeat.
     creatures: HashMap<u32, CreatureView>,
@@ -128,6 +130,7 @@ async fn hello(
         planet: welcome.planet.clone(),
         spawn: welcome.spawn,
         character: welcome.character.clone(),
+        ledger: None,
         welcome,
         items,
         notices: Vec::new(),
@@ -259,6 +262,7 @@ impl TestClient {
             ServerMsg::Claim(c) => self.claim = Some(c.clone()),
             ServerMsg::TokenNames { names } => self.token_names.extend(names.iter().cloned()),
             ServerMsg::Character { character, .. } => self.character = character.clone(),
+            ServerMsg::Ledger(l) => self.ledger = Some(l.clone()),
             ServerMsg::Creature(v) => {
                 self.creatures.insert(v.id, v.clone());
             }
@@ -3333,6 +3337,65 @@ async fn copper_breaks_stone_in_three_swings_at_its_cadence_and_damage_heals() {
     alice.settle().await;
     assert_eq!(stack(&alice, 0).unwrap().wear, 6, "one per accepted swing");
     assert_eq!(stack(&alice, 2).unwrap().wear, 1);
+    server.stop();
+}
+
+/// Milestone 24 part 1: a new character has 500 coin; placing and mining
+/// are counted; reaching level 9 pays the level feat's first tier (100
+/// coin and its XP, told); coin and counts survive a restart.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn feats_count_pay_coin_and_are_kept() {
+    let dir = tempfile::tempdir().unwrap();
+    seed_character(
+        dir.path(),
+        "Alice",
+        &[(0, "copper_hammer", 1, 0), (1, "stone", 10, 0)],
+        Character {
+            xp: xp_for_level(9) - 1,
+            ..Default::default()
+        },
+    );
+    {
+        let server = bm_server::start(config(dir.path())).unwrap();
+        let mut alice = TestClient::login(&server, "Alice").await;
+        let l = match alice.until(|m| matches!(m, ServerMsg::Ledger(_))).await {
+            ServerMsg::Ledger(l) => l,
+            _ => unreachable!(),
+        };
+        assert_eq!(l.coin, bm_core::feats::STARTING_COIN);
+        assert_eq!(l.count("worlds"), 1, "the world they stand on");
+        let s = alice.feet().offset(1, 1, 0);
+        alice.wait_for_chunk(s.chunk()).await;
+        assert!(place(&mut alice, 1, s, 1, None).await.0);
+        for seq in 2..5 {
+            alice.ready();
+            alice.swing(seq, s, 0).await;
+        }
+        alice.notice("Feat: Seasoned I, 100 coin").await;
+        let l = loop {
+            let m = alice.until(|m| matches!(m, ServerMsg::Ledger(_))).await;
+            if let ServerMsg::Ledger(l) = m
+                && l.count("mine:rock") == 1
+            {
+                break l;
+            }
+        };
+        assert_eq!(l.count("placed"), 1);
+        assert_eq!(l.count("placed:rock"), 1);
+        assert_eq!(l.count("mined_kinds"), 1);
+        assert_eq!(l.coin, bm_core::feats::STARTING_COIN + 100);
+        assert_eq!(l.paid.get("level"), Some(&1));
+        drop(alice);
+        server.stop();
+    }
+    let server = bm_server::start(config(dir.path())).unwrap();
+    let mut alice = TestClient::login(&server, "Alice").await;
+    let l = match alice.until(|m| matches!(m, ServerMsg::Ledger(_))).await {
+        ServerMsg::Ledger(l) => l,
+        _ => unreachable!(),
+    };
+    assert_eq!(l.coin, bm_core::feats::STARTING_COIN + 100, "kept across a restart");
+    assert_eq!(l.count("placed"), 1);
     server.stop();
 }
 

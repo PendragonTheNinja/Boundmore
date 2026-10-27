@@ -563,6 +563,22 @@ const FOOD_BUFF: Color32 = Color32::from_rgb(150, 220, 140);
 const FOOD_FULL: Color32 = Color32::from_rgb(196, 230, 150);
 const FOOD_BAD: Color32 = Color32::from_rgb(230, 120, 96);
 const CREATIVE_TAG: Color32 = Color32::from_rgb(140, 200, 255);
+/// Coin in the inventory (milestone 24).
+const COIN: Color32 = Color32::from_rgb(240, 200, 90);
+
+/// "1,250 coin".
+pub fn coin_text(c: u64) -> String {
+    let digits = c.to_string();
+    let mut out = String::new();
+    for (i, ch) in digits.chars().enumerate() {
+        if i > 0 && (digits.len() - i) % 3 == 0 {
+            out.push(',');
+        }
+        out.push(ch);
+    }
+    format!("{out} coin")
+}
+
 /// A brew's tag on the HUD (milestone 23 part 2).
 const BREW_TAG: Color32 = Color32::from_rgb(196, 160, 255);
 
@@ -1240,11 +1256,13 @@ fn drag_and_drop(
     Some((d, target))
 }
 
+#[allow(clippy::too_many_arguments)]
 pub fn inventory(
     ctx: &egui::Context,
     items: &Items,
     icons: &ItemIcons,
     selected: usize,
+    coin: Option<u64>,
     drag: &mut Option<Drag>,
     actions: &mut Vec<UiAction>,
 ) {
@@ -1257,6 +1275,11 @@ pub fn inventory(
     let mut targets: Vec<(Rect, Target)> = Vec::new();
     let mut open = true;
     window("Inventory").open(&mut open).show(ctx, |ui| {
+        // Coin (milestone 24).
+        if let Some(c) = coin {
+            ui.label(egui::RichText::new(coin_text(c)).color(COIN));
+            ui.add_space(4.0);
+        }
         inventory_grid(ui, &src, drag, &mut targets);
         ui.add_space(8.0);
         ui.horizontal(|ui| {
@@ -2621,6 +2644,14 @@ mod tests {
             "Rustland, tier 4, charged air (protection 1)"
         );
         assert_eq!(planet_line("Arid", 2, Air::default()), "Arid, tier 2");
+    }
+
+    #[test]
+    fn coin_reads_with_thousands_marked() {
+        assert_eq!(coin_text(0), "0 coin");
+        assert_eq!(coin_text(500), "500 coin");
+        assert_eq!(coin_text(1250), "1,250 coin");
+        assert_eq!(coin_text(7_700_000), "7,700,000 coin");
     }
 
     #[test]

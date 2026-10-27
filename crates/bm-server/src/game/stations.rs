@@ -160,7 +160,10 @@ impl Game {
                 crafting::craft_by_hand_in(inv, items, &recipe, count, colour)
             }) {
                 Some(Err(e)) => self.notice(id, &e.to_string()),
-                Some(Ok(())) => self.add_xp(id, recipe.xp as u64 * count as u64),
+                Some(Ok(())) => {
+                    self.add_xp(id, recipe.xp as u64 * count as u64);
+                    self.crafted(id, Station::Hand, index, count);
+                }
                 None => {}
             }
             return;
@@ -200,6 +203,7 @@ impl Game {
             tracing::error!("queueing at {key:?} after taking inputs: {e}");
         }
         self.push_station(pi, key);
+        self.crafted(id, m.kind, index, count);
     }
 
     pub(super) fn watch(&mut self, id: u32, pos: Option<BlockPos>) {

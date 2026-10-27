@@ -179,6 +179,8 @@ struct Session {
     universe: Vec<PlanetSummary>,
     /// The colour chosen for each tinted recipe (milestone 22).
     craft_colours: HashMap<u16, bm_core::Colour>,
+    /// Coin and feats, once the server has sent them (milestone 24).
+    ledger: Option<bm_core::feats::Ledger>,
     account: String,
     /// Ours, from the welcome: critical hits and random areas hash it.
     player_id: u32,
@@ -366,6 +368,7 @@ impl Session {
             planet: w.planet,
             universe: w.universe,
             craft_colours: HashMap::new(),
+            ledger: None,
         })
     }
 
@@ -1650,6 +1653,7 @@ impl App {
             }
             ServerMsg::BlockChanged { pos, block } => s.block_changed(pos, block),
             ServerMsg::Character { character, at } => s.character(character, at),
+            ServerMsg::Ledger(l) => s.ledger = Some(l),
             ServerMsg::BlockHealth { pos, damage } => s.block_health(pos, damage),
             ServerMsg::EditResult { seq, pos, block, .. } => s.edit_result(seq, pos, block),
             ServerMsg::PlayerJoined { id, name } => s.remotes.joined(id, name),
@@ -2472,7 +2476,15 @@ impl App {
                 );
             }
             match menu {
-                Some(Menu::Inventory) => menus::inventory(&ctx, &s.items, &s.icons, s.selected, drag, &mut actions),
+                Some(Menu::Inventory) => menus::inventory(
+                    &ctx,
+                    &s.items,
+                    &s.icons,
+                    s.selected,
+                    s.ledger.as_ref().map(|l| l.coin),
+                    drag,
+                    &mut actions,
+                ),
                 Some(Menu::Crafting(station)) => {
                     let station = station.and_then(|pos| {
                         let block = s.world.block(pos)?;

@@ -430,6 +430,22 @@ impl Game {
             self.meteor_shell_broken(id, pi, canon);
         }
         self.add_xp(id, xp);
+        // Feats (milestone 24): what was mined or gathered, and each kind
+        // the first time.
+        let def = self.planets[pi].world.registry.get(state.id);
+        if let Some(k) = bm_core::feats::mined_key(def) {
+            let first = format!("mined:{}", def.name);
+            self.count(id, k, 1);
+            let new_kind = self
+                .players
+                .get(&id)
+                .and_then(|p| self.ledgers.get(&p.account))
+                .is_some_and(|l| l.count(&first) == 0);
+            if new_kind {
+                self.count(id, &first, 1);
+                self.count(id, "mined_kinds", 1);
+            }
+        }
         true
     }
 

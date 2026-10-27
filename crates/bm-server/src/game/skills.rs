@@ -99,11 +99,13 @@ impl Game {
             });
         }
         tracing::info!("{} reached level {}", p.name, before + gained);
+        let level = (before + gained) as u64;
         p.out.send(&ServerMsg::Character {
             character: p.character.clone(),
             at: 0,
         });
         p.character_dirty = false;
+        self.count_at_least(id, "level", level);
     }
 
     /// Sends every character whose XP changed since it was last sent.

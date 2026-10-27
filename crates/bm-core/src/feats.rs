@@ -184,6 +184,52 @@ impl Ledger {
     }
 }
 
+/// The counter a broken block of `def` adds to, if any (miner and gatherer
+/// feats): by its health class, material and name.
+pub fn mined_key(def: &crate::block::BlockDef) -> Option<&'static str> {
+    use crate::block::{Health, Material};
+    const GEMS: [&str; 9] = [
+        "amethyst", "emerald", "sapphire", "topaz", "diamond", "ruby", "aurorite", "pyrelith", "gloamite",
+    ];
+    const ROCKS: [&str; 5] = ["stone", "deep_stone", "sandstone", "basalt", "limestone"];
+    let n = def.name.as_str();
+    Some(match (def.health, def.material) {
+        (Health::Seam, _) if n.contains("coal") => "mine:coal",
+        (Health::Seam, _) if n.contains("relic") => "mine:relic",
+        (Health::Seam, _) if n.contains("fossil") => "mine:fossil",
+        (Health::Seam, _) if GEMS.iter().any(|g| n.starts_with(g)) => "mine:gem",
+        (Health::Seam, _)
+            if ["copper", "iron", "silver", "gold", "titanium"]
+                .iter()
+                .any(|m| n.starts_with(m)) =>
+        {
+            "mine:ore"
+        }
+        (Health::Plant, Material::Rock) => "gather:boulder",
+        (Health::Plant, _) if ["_cap", "glowcap", "_bracket", "_coral"].iter().any(|f| n.ends_with(f)) => {
+            "gather:fungus"
+        }
+        (Health::Plant, _) => "gather:plant",
+        (Health::Soft, Material::Plant) => "gather:foliage",
+        (Health::Soft, Material::Soil) if !n.starts_with("tilled") => "gather:soil",
+        (_, Material::Wood) if n.ends_with("trunk") => "gather:trunk",
+        (_, Material::Rock) if ROCKS.contains(&n) => "mine:rock",
+        _ if n == "glow_crystal" => "mine:crystal",
+        _ => return None,
+    })
+}
+
+/// The material counter a placed block of `def` adds to, beside "placed".
+pub fn placed_key(def: &crate::block::BlockDef) -> Option<&'static str> {
+    use crate::block::Material;
+    match def.material {
+        Material::Wood => Some("placed:wood"),
+        Material::Rock => Some("placed:rock"),
+        Material::Soil => Some("placed:soil"),
+        _ => None,
+    }
+}
+
 /// The counter of feat tiers reached.
 pub const FEATS_DONE: &str = "feats_done";
 
@@ -260,6 +306,37 @@ tiers = [1, 1, 2, 3, 4]
 "#;
         assert!(FeatBook::parse(bad).is_err());
         assert!(FeatBook::parse(&bad.replace("{n}", "it")).is_err());
+    }
+
+    #[test]
+    fn blocks_count_toward_their_feats() {
+        let reg = crate::block::BlockRegistry::builtin();
+        let key = |n: &str| mined_key(reg.get(reg.id(n).unwrap()));
+        for (n, k) in [
+            ("stone", Some("mine:rock")),
+            ("basalt", Some("mine:rock")),
+            ("coal_seam", Some("mine:coal")),
+            ("hard_coal_seam", Some("mine:coal")),
+            ("copper_vein", Some("mine:ore")),
+            ("titanium_seam", Some("mine:ore")),
+            ("relic_seam", Some("mine:relic")),
+            ("small_fossil_seam", Some("mine:fossil")),
+            ("ruby_seam", Some("mine:gem")),
+            ("glow_crystal", Some("mine:crystal")),
+            ("trunk", Some("gather:trunk")),
+            ("foliage", Some("gather:foliage")),
+            ("spikeleaf", Some("gather:plant")),
+            ("glowcap", Some("gather:fungus")),
+            ("tarspot_cap", Some("gather:fungus")),
+            ("boulder", Some("gather:boulder")),
+            ("soil", Some("gather:soil")),
+            ("refined_stone", None),
+            ("timber", None),
+            ("workbench", None),
+        ] {
+            assert_eq!(key(n), k, "{n}");
+        }
+        assert_eq!(placed_key(reg.get(reg.id("timber").unwrap())), Some("placed:wood"));
     }
 
     #[test]

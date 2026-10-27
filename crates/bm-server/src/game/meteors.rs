@@ -298,6 +298,12 @@ impl Game {
         p.region = None;
         p.square = None;
         let (pi, account) = (p.planet, p.account.clone());
+        // Explorer feats (milestone 24): each world the first time.
+        let world = format!("world:{}", self.planets[pi].id);
+        if self.ledgers.get(&account).is_some_and(|l| l.count(&world) == 0) {
+            self.count(id, &world, 1);
+            self.count(id, "worlds", 1);
+        }
         let msg = self.regions_msg(pi, &account);
         let p = &self.players[&id];
         p.out.send(&msg);
@@ -413,6 +419,7 @@ impl Game {
         sky.dirty = true;
         let view = sky.meteors[i].view(&self.players[&id].account);
         self.players[&id].out.send(&ServerMsg::Meteor(view));
+        self.count(id, "hearts", 1);
     }
 
     /// Player `id` returned from defeat: their meteor life is gone.
@@ -521,6 +528,7 @@ impl Game {
         list.push(region as u16);
         let nth = list.len() as u32;
         self.discoveries_dirty.insert(account.to_string());
+        self.count(id, "regions", 1);
         let xp = if self.cfg.discovery_xp { discovery_xp(nth) } else { 0 };
         let name = &self.skies[pi].names[region];
         if let Some(p) = self.players.get(&id) {

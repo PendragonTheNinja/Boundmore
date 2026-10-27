@@ -31,6 +31,7 @@ mod creatures;
 mod doors;
 mod exo;
 mod farm;
+mod feats;
 mod food;
 mod forge;
 mod meteors;
@@ -255,6 +256,9 @@ struct Player {
     character_dirty: bool,
     /// The light-source epic shines now (not in daylight under open sky).
     inner_light: bool,
+    /// Blocks sprinted, swum, climbed and travelled not yet counted toward
+    /// feats (milestone 24; whole blocks go in with the characters' batch).
+    moved: [f64; 4],
     /// Lifesaving ticks left at the last tick (milestone 23 part 2): a drop
     /// from more than one to none means it saved them.
     revive_seen: u32,
@@ -416,6 +420,13 @@ pub struct Game {
     /// whose list changed since the last save.
     discoveries: HashMap<String, crate::store::Discoveries>,
     discoveries_dirty: HashSet<String>,
+    /// Feats (`assets/feats.toml`, milestone 24), and each account's coin
+    /// and feats (loaded on joining, kept after leaving), with the accounts
+    /// changed since the last save and the players to send them to.
+    feat_book: bm_core::feats::FeatBook,
+    ledgers: HashMap<String, bm_core::feats::Ledger>,
+    ledgers_dirty: HashSet<String>,
+    ledgers_unsent: HashSet<u32>,
     next_meteor: u32,
     meteor_loot: bm_core::meteors::MeteorLoot,
     meteor_shell_id: BlockId,
@@ -637,6 +648,8 @@ impl Game {
         let spark_link = registry.id("spark_link")?;
         let spark_item = items.id("spark")?;
         let water_bucket = items.id("water_bucket")?;
+        let feat_book = bm_core::feats::FeatBook::parse(include_str!("../../../assets/feats.toml"))
+            .map_err(|e| anyhow::anyhow!(e))?;
         let crops = bm_core::crops::CropKinds::build(include_str!("../../../assets/crops.toml"), &registry, &items)?;
         let grass_soils = [("turf", "soil"), ("meadow_turf", "clay"), ("moss_turf", "peat")]
             .iter()
@@ -744,6 +757,10 @@ impl Game {
             skies,
             discoveries: HashMap::new(),
             discoveries_dirty: HashSet::new(),
+            feat_book,
+            ledgers: HashMap::new(),
+            ledgers_dirty: HashSet::new(),
+            ledgers_unsent: HashSet::new(),
             next_meteor,
             meteor_loot: bm_core::meteors::MeteorLoot::builtin(),
             meteor_shell_id,
@@ -922,6 +939,8 @@ impl Game {
         }
         if self.tick % skills::CHARACTER_EVERY == 0 {
             self.send_dirty_characters();
+            self.count_moves();
+            self.send_ledgers();
         }
         let ids: Vec<u32> = self.players.keys().copied().collect();
         for id in &ids {
@@ -1186,6 +1205,20 @@ impl Game {
                 }
             },
         };
+        // Coin and feats (milestone 24): never started afresh over a ledger
+        // that could not be read.
+        if !self.ledgers.contains_key(&account) {
+            match self.store.ledger(&account) {
+                Ok(l) => {
+                    self.ledgers.insert(account.clone(), l);
+                }
+                Err(e) => {
+                    tracing::error!("loading {name}'s coin and feats: {e:#}");
+                    out.close("your character could not be loaded; try again in a moment");
+                    return;
+                }
+            }
+        }
         let (planet, saved) = if planet < self.planets.len() {
             (planet, saved)
         } else {
@@ -1322,6 +1355,7 @@ impl Game {
                 character_dirty: false,
                 inner_light: false,
                 revive_seen: state.revive,
+                moved: [0.0; 4],
                 known: HashMap::new(),
                 in_view: Vec::new(),
                 near_creatures: Vec::new(),
@@ -1331,6 +1365,7 @@ impl Game {
                 at_centre: false,
             },
         );
+        self.ledgers_unsent.insert(id);
         let key = self.players[&id].account.clone();
         if !self.discoveries.contains_key(&key) {
             let found = self.store.discoveries(&key).unwrap_or_else(|e| {
@@ -1457,6 +1492,7 @@ impl Game {
                 let world = &self.planets[p.planet].world;
                 // Held at a portal while its far side loads.
                 let held = p.trip.as_ref().map(|t| t.held);
+                let from = p.state.pos;
                 let events = movement::step(
                     &mut p.state,
                     &input,
@@ -1471,6 +1507,26 @@ impl Game {
                         body: p.state.body,
                         ..h
                     };
+                }
+                // Explorer feats (milestone 24): how far, and how.
+                if held.is_none() && !p.state.body.creative && !p.state.down {
+                    let d = world.shape.delta(from, p.state.pos);
+                    let flat = (d.x * d.x + d.z * d.z).sqrt();
+                    if flat + d.y.abs() < 2.0 {
+                        p.moved[3] += flat;
+                        if input.sprint && p.state.on_ground {
+                            p.moved[0] += flat;
+                        }
+                        let chest = p.state.pos.y + self.movement.height * 0.4;
+                        if bm_core::PhysicsWorld::liquid(
+                            world,
+                            BlockPos::containing(p.state.pos.x, chest, p.state.pos.z),
+                        ) {
+                            p.moved[1] += flat + d.y.abs();
+                        } else if d.y > 0.0 {
+                            p.moved[2] += d.y;
+                        }
+                    }
                 }
                 p.last_seq += 1;
                 p.last_input = input;
@@ -2077,6 +2133,19 @@ impl Game {
             self.generator_placed(pi, canon);
         }
         self.add_xp(id, build_xp);
+        // Feats (milestone 24): blocks placed, by material; chiselled; plots.
+        match accepted.effect {
+            Effect::Placed { .. } => {
+                self.count(id, "placed", 1);
+                if let Some(k) = bm_core::feats::placed_key(self.planets[pi].world.registry.get(new.id)) {
+                    self.count(id, k, 1);
+                }
+            }
+            Effect::Chiselled { .. } => self.count(id, "chiselled", 1),
+        }
+        if claim_created.is_some() {
+            self.count(id, "plots", 1);
+        }
         if let Some(claim) = claim_created {
             if let Some(p) = self.players.get(&id) {
                 p.out.send(&ServerMsg::Notice {
@@ -3206,6 +3275,11 @@ impl Game {
                     .map(|(a, d)| (a.clone(), SavedBrews::from(&d.state))),
             )
             .collect();
+        let ledgers = self
+            .ledgers_dirty
+            .drain()
+            .filter_map(|a| self.ledgers.get(&a).map(|l| (a, l.clone())))
+            .collect();
         let discoveries = self
             .discoveries_dirty
             .drain()
@@ -3226,6 +3300,7 @@ impl Game {
             skies,
             discoveries,
             brews,
+            ledgers,
             clock: Some(self.tick),
             forget_planets: std::mem::take(&mut self.forget_planets),
             done,

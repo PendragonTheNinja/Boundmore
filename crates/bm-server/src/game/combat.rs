@@ -554,8 +554,12 @@ impl Game {
         tracing::debug!("{} {cid} died", def.title(c.tier));
         let col = column(BlockPos::containing(at.x, at.y, at.z));
         self.herds[pi].empty.insert(col, tick + EMPTY_AFTER_KILL_TICKS);
+        let kind = format!("kill:{}", def.name);
         for id in hurt_by {
             self.add_xp(id, xp);
+            // Feats (milestone 24).
+            self.count(id, "kill", 1);
+            self.count(id, &kind, 1);
         }
     }
 
