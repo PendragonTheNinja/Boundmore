@@ -86,9 +86,13 @@ pub fn tokens(items: &Items, v: &PortalView) -> Vec<TokenChoice> {
                 return None;
             }
             let name = items.token_name(s.tag).map(str::to_string);
-            let refused = match name.as_deref().and_then(size_in_name) {
-                Some(size) if size != (v.width, v.height) => Some("Another size"),
-                _ => None,
+            let refused = if s.tag == v.id {
+                Some(OWN_TOKEN)
+            } else {
+                match name.as_deref().and_then(size_in_name) {
+                    Some(size) if size != (v.width, v.height) => Some("Another size"),
+                    _ => None,
+                }
             };
             Some(TokenChoice {
                 slot: i as u8,
@@ -98,6 +102,9 @@ pub fn tokens(items: &Items, v: &PortalView) -> Vec<TokenChoice> {
         })
         .collect()
 }
+
+/// Why a token of this very portal cannot link it.
+pub const OWN_TOKEN: &str = "This portal's own token";
 
 /// Wayshards in the pack.
 pub fn wayshards_carried(items: &Items) -> u32 {
@@ -206,6 +213,7 @@ mod tests {
 
     fn view() -> PortalView {
         PortalView {
+            id: 99,
             corner: BlockPos::new(10, 44, 10),
             width: 2,
             height: 3,
@@ -258,6 +266,19 @@ mod tests {
         for t in [trip_text(&far), dormant_because(&unlinked).unwrap().into()] {
             assert!(!t.contains('\u{2014}'), "no em dashes in player text");
         }
+    }
+
+    /// M8 follow-up: a token of this very portal is shown but cannot link it.
+    #[test]
+    fn this_portals_own_token_is_refused() {
+        let mut i = items();
+        let t = i.registry.id("portal_token").unwrap();
+        i.inventory.slots[0] = Some(ItemStack::tagged(t, 99));
+        i.inventory.slots[1] = Some(ItemStack::tagged(t, 8));
+        let got = tokens(&i, &view());
+        assert_eq!(got.len(), 2);
+        assert_eq!(got[0].refused, Some(OWN_TOKEN));
+        assert_eq!(got[1].refused, None);
     }
 
     #[test]

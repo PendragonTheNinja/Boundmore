@@ -2449,8 +2449,8 @@ impl Game {
         p.travel_guard = Some(newest.saturating_add(TRAVEL_GUARD_INPUTS));
         p.edits.clear();
         p.watching = None;
-        if p.portal.take().is_some() {
-            p.out.send(&ServerMsg::Portal(None));
+        if let Some(pid) = p.portal.take() {
+            p.out.send(&ServerMsg::PortalClosed { id: Some(pid) });
         }
         // Closed before `Travel`: after it, everything is the new planet's.
         if let Some(pos) = p.storage.take() {

@@ -1322,6 +1322,19 @@ impl App {
     /// A `Portal` from the server: the open window's news, or (None) that
     /// it closed on the server's side: the portal is gone, out of reach or
     /// not ours. Nothing is asked of the server for that close.
+    /// A `PortalClosed`: shuts the window if it is still that portal's (or
+    /// one whose open was refused); a late close of a portal left behind,
+    /// while another opens, is ignored (M8 follow-up, 2026-10-27).
+    fn portal_closed(&mut self, id: Option<u32>) {
+        let ours = match id {
+            None => true,
+            Some(id) => self.portal_view.as_ref().is_some_and(|v| v.id == id),
+        };
+        if ours {
+            self.portal_update(None);
+        }
+    }
+
     fn portal_update(&mut self, view: Option<PortalView>) {
         if !matches!(self.menu, Some(Menu::Portal(_))) {
             return;
@@ -1562,7 +1575,8 @@ impl App {
         let m = match m {
             ServerMsg::Travel(t) => return self.travel(*t),
             ServerMsg::Storage(view) => return self.storage_update(view),
-            ServerMsg::Portal(view) => return self.portal_update(view),
+            ServerMsg::Portal(view) => return self.portal_update(Some(view)),
+            ServerMsg::PortalClosed { id } => return self.portal_closed(id),
             ServerMsg::Defeated { debt, by } => {
                 // The defeat screen takes the mouse; nothing else stays open.
                 self.close_menu(false);
@@ -1704,6 +1718,7 @@ impl App {
             | ServerMsg::Travel(_)
             | ServerMsg::Storage(_)
             | ServerMsg::Portal(_)
+            | ServerMsg::PortalClosed { .. }
             | ServerMsg::Defeated { .. }
             | ServerMsg::Teleport { .. } => {}
         }
@@ -4200,8 +4215,12 @@ mod tests {
         a.handle_net();
         assert_eq!(a.portal_view.as_ref().unwrap().fuel, 137);
         assert_eq!(crate::portal::wayshards_carried(&a.session.as_ref().unwrap().items), 0);
+        // A late close of another portal (left just before this one opened)
+        // leaves this window alone (M8 follow-up).
+        a.portal_closed(Some(v.id + 1));
+        assert!(a.menu.is_some(), "another portal's close");
         // The server closes it: the window goes, asking nothing.
-        a.portal_update(None);
+        a.portal_closed(Some(v.id));
         assert_eq!(a.menu, None);
         // A refusal while opening is told and closes the waiting window.
         a.open_menu(Menu::Portal(BlockPos::new(0, 44, 0)));

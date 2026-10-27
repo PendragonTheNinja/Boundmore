@@ -2235,6 +2235,9 @@ pub fn portal(ctx: &egui::Context, v: &PortalWindow, actions: &mut Vec<UiAction>
                     egui::Button::new(egui::RichText::new(&t.name)).min_size(vec2(0.0, 28.0)),
                 );
                 match t.refused {
+                    Some(crate::portal::OWN_TOKEN) => {
+                        resp.on_disabled_hover_text("This portal's own token: take it to another portal");
+                    }
                     Some(why) => {
                         resp.on_disabled_hover_text(format!(
                             "{why}: links only to a {} portal",

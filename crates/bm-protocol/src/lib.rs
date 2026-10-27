@@ -25,7 +25,7 @@ use glam::DVec3;
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
 
 /// Bump on any change to a message below. Client and server must match.
-pub const PROTOCOL_VERSION: u32 = 40;
+pub const PROTOCOL_VERSION: u32 = 41;
 
 /// QUIC application protocol name; also refuses non-Boundmore peers early.
 pub const ALPN: &[u8] = b"boundmore/1";
@@ -548,7 +548,14 @@ pub enum ServerMsg {
     },
     /// The watched portal's window (`OpenPortal`), on open and on every
     /// change; None when it is gone, out of reach or no longer yours.
-    Portal(Option<PortalView>),
+    Portal(PortalView),
+    /// The portal window closed on the server's side (gone, out of reach,
+    /// not ours, or a refused open): `id` names the portal, so a late close
+    /// never shuts a window opened on another portal since; None closes
+    /// whatever is open (an open that was refused).
+    PortalClosed {
+        id: Option<u32>,
+    },
     /// Moved on the same planet (through a portal): take `spawn` as where we
     /// are at `tick`, a jump rather than a correction. Chunks, claims and
     /// views carry on.
@@ -821,6 +828,8 @@ pub struct ShotView {
 /// A portal as its window shows it.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct PortalView {
+    /// The portal's id: its tokens carry it as their tag.
+    pub id: u32,
     /// The portal's lowest corner.
     pub corner: BlockPos,
     pub width: u8,

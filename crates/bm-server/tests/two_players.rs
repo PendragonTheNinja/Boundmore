@@ -2758,8 +2758,8 @@ async fn conduit_column(c: &mut TestClient, seq: u32, ground: BlockPos, slot: u8
 
 /// The next portal window matching `pred`.
 async fn portal_view(c: &mut TestClient, mut pred: impl FnMut(&PortalView) -> bool) -> PortalView {
-    match c.until(|m| matches!(m, ServerMsg::Portal(Some(v)) if pred(v))).await {
-        ServerMsg::Portal(Some(v)) => v,
+    match c.until(|m| matches!(m, ServerMsg::Portal(v) if pred(v))).await {
+        ServerMsg::Portal(v) => v,
         _ => unreachable!(),
     }
 }
@@ -2899,7 +2899,7 @@ async fn portals_link_fuel_and_carry_players_paying_once_per_cooldown() {
             pos: Some(l.offset(0, 1, 0)),
         })
         .await;
-    alice.until(|m| matches!(m, ServerMsg::Portal(None))).await;
+    alice.until(|m| matches!(m, ServerMsg::PortalClosed { id: None })).await;
     alice.notice(bm_core::portal::SHAPE_RULE).await;
 
     // The first open makes the portal.
@@ -4161,7 +4161,7 @@ async fn marks_buy_plots_and_portals_need_the_portal_epic() {
     let corner = ground.offset(0, 1, 0);
     alice.send(ClientMsg::OpenPortal { pos: Some(corner) }).await;
     alice.notice("Opening portals needs the Waywise skill").await;
-    alice.until(|m| matches!(m, ServerMsg::Portal(None))).await;
+    alice.until(|m| matches!(m, ServerMsg::PortalClosed { id: None })).await;
     alice.learn("portal_epic", 1).await;
     let view = open_portal(&mut alice, corner).await;
     assert_eq!(view.corner, corner);

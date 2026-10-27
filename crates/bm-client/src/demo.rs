@@ -1226,6 +1226,7 @@ impl Demo {
         let Some(i) = self.open_portal else { return };
         let p = &self.portals[i];
         let view = PortalView {
+            id: i as u32,
             corner: p.frame.corner,
             width: p.frame.width,
             height: p.frame.height,
@@ -1236,7 +1237,7 @@ impl Demo {
             trip_cost: self.trip_cost(i),
             cooldown_hours: 1.0,
         };
-        self.events.push_back(NetEvent::Msg(ServerMsg::Portal(Some(view))));
+        self.events.push_back(NetEvent::Msg(ServerMsg::Portal(view)));
     }
 
     fn open_portal(&mut self, pos: Option<BlockPos>) {
@@ -3973,7 +3974,7 @@ mod tests {
     fn portal_views(ev: &[NetEvent]) -> Vec<PortalView> {
         ev.iter()
             .filter_map(|e| match e {
-                NetEvent::Msg(ServerMsg::Portal(Some(v))) => Some(v.clone()),
+                NetEvent::Msg(ServerMsg::Portal(v)) => Some(v.clone()),
                 _ => None,
             })
             .collect()

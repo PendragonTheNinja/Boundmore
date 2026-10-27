@@ -55,6 +55,7 @@ impl Game {
         let p = self.portals.get(pid)?;
         let r = &self.portal_rules;
         Some(PortalView {
+            id: pid,
             corner: p.frame.corner,
             width: p.frame.width,
             height: p.frame.height,
@@ -72,8 +73,11 @@ impl Game {
     fn push_portal(&self, pid: u32) {
         let mut view = None;
         for p in self.players.values().filter(|p| p.portal == Some(pid)) {
-            let v = view.get_or_insert_with(|| self.portal_view(pid));
-            p.out.send(&ServerMsg::Portal(v.clone()));
+            let msg = view.get_or_insert_with(|| match self.portal_view(pid) {
+                Some(v) => ServerMsg::Portal(v),
+                None => ServerMsg::PortalClosed { id: Some(pid) },
+            });
+            p.out.send(msg);
         }
     }
 
@@ -174,9 +178,9 @@ impl Game {
 
     fn close_portal(&mut self, id: u32) {
         if let Some(p) = self.players.get_mut(&id)
-            && p.portal.take().is_some()
+            && let Some(pid) = p.portal.take()
         {
-            p.out.send(&ServerMsg::Portal(None));
+            p.out.send(&ServerMsg::PortalClosed { id: Some(pid) });
         }
     }
 
@@ -205,10 +209,13 @@ impl Game {
         };
         match access {
             Ok(pid) => {
-                let view = self.portal_view(pid);
+                let msg = match self.portal_view(pid) {
+                    Some(v) => ServerMsg::Portal(v),
+                    None => ServerMsg::PortalClosed { id: Some(pid) },
+                };
                 if let Some(p) = self.players.get_mut(&id) {
                     p.portal = Some(pid);
-                    p.out.send(&ServerMsg::Portal(view));
+                    p.out.send(&msg);
                 }
                 // A new record's blocks are already conduits; nothing to sync.
             }
@@ -216,7 +223,7 @@ impl Game {
                 self.tell(id, r);
                 if let Some(p) = self.players.get_mut(&id) {
                     p.portal = None;
-                    p.out.send(&ServerMsg::Portal(None));
+                    p.out.send(&ServerMsg::PortalClosed { id: None });
                 }
             }
         }
@@ -381,7 +388,7 @@ impl Game {
         for p in self.players.values_mut() {
             if p.portal == Some(pid) {
                 p.portal = None;
-                p.out.send(&ServerMsg::Portal(None));
+                p.out.send(&ServerMsg::PortalClosed { id: Some(pid) });
             }
             if p.told_tokens.contains(&pid) {
                 p.out.send(&ServerMsg::TokenNames {
