@@ -190,6 +190,10 @@ pub struct BlockDef {
     /// How fine its form is drawn.
     #[serde(default)]
     pub style: crate::forms::Style,
+    /// A sign whose text glows (metal, crystal, glowing glass; milestone 22
+    /// part 4).
+    #[serde(default)]
+    pub glow_text: bool,
 }
 
 /// A block's health category [tuning 2.2]: soft 800 (soil, sand, foliage),

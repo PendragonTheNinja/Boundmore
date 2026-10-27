@@ -18,6 +18,7 @@ pub mod net;
 pub mod planet;
 pub mod portals;
 pub mod reclaim;
+pub mod signs;
 pub mod storage;
 pub mod store;
 pub mod world;

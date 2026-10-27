@@ -67,6 +67,9 @@ const SKIES: TableDefinition<u16, &[u8]> = TableDefinition::new("planet_skies");
 /// Planet id and canonical block position -> [`SavedCrop`]: one growing
 /// crop (save version 10, milestone 16 part 2, ADR-0010).
 const CROPS: TableDefinition<&[u8], &[u8]> = TableDefinition::new("planet_crops");
+/// Written signs by anchor (milestone 22 part 4; `crate::signs::SavedSign`,
+/// versioned within). A new table: older universes have none.
+const SIGNS: TableDefinition<&[u8], &[u8]> = TableDefinition::new("planet_signs");
 /// Regions each account has discovered (save version 7).
 const DISCOVERIES: TableDefinition<&str, &[u8]> = TableDefinition::new("discoveries");
 /// Far copies of chunks (milestone 20), keyed like `CHUNKS`: a cache made
@@ -1118,7 +1121,7 @@ fn forget_planet(tx: &WriteTransaction, id: u16) -> Result<()> {
     tx.open_table(PLANETS)?.remove(id)?;
     tx.open_table(SKIES)?.remove(id)?;
     let (lo, hi) = planet_range(id);
-    for table in [CHUNKS, FAR, STATIONS, STORAGE, CROPS] {
+    for table in [CHUNKS, FAR, STATIONS, STORAGE, CROPS, SIGNS] {
         let mut t = tx.open_table(table)?;
         let keys: Vec<Vec<u8>> = t
             .range(lo.as_slice()..hi.as_slice())?
@@ -1248,6 +1251,7 @@ impl Store {
         tx.open_table(FAR)?;
         tx.open_table(SKIES)?;
         tx.open_table(CROPS)?;
+        tx.open_table(SIGNS)?;
         tx.open_table(EXOS)?;
         tx.open_table(EXO_GONE)?;
         tx.commit()?;
@@ -1678,6 +1682,27 @@ impl Store {
         Ok((out, next))
     }
 
+    /// A planet's written signs (milestone 22 part 4). A corrupt record is
+    /// reported and skipped (the sign reads as unwritten).
+    pub fn signs(&self, planet: u16) -> Result<Vec<(BlockPos, crate::signs::SavedSign)>> {
+        let tx = self.db.begin_read()?;
+        let t = match tx.open_table(SIGNS) {
+            Ok(t) => t,
+            Err(redb::TableError::TableDoesNotExist(_)) => return Ok(Vec::new()),
+            Err(e) => return Err(e.into()),
+        };
+        let (lo, hi) = planet_range(planet);
+        let mut out = Vec::new();
+        for row in t.range(lo.as_slice()..hi.as_slice())? {
+            let (k, v) = row?;
+            match (block_from_key(k.value()), postcard::from_bytes(v.value())) {
+                (Some(p), Ok(c)) => out.push((p, c)),
+                _ => tracing::error!("a saved sign is corrupt; skipped"),
+            }
+        }
+        Ok(out)
+    }
+
     /// A planet's growing crops (none before save version 10). A corrupt
     /// record is reported and skipped (its block reads as wild).
     pub fn crops(&self, planet: u16) -> Result<Vec<(BlockPos, SavedCrop)>> {
@@ -1783,6 +1808,15 @@ impl Store {
                 };
             }
             drop(crops);
+            let mut signs = tx.open_table(SIGNS)?;
+            for (planet, p, sign) in &batch.signs {
+                let key = block_key(*planet, *p);
+                match sign {
+                    Some(sign) => signs.insert(key.as_slice(), postcard::to_stdvec(sign)?.as_slice())?,
+                    None => signs.remove(key.as_slice())?,
+                };
+            }
+            drop(signs);
             let mut storage = tx.open_table(STORAGE)?;
             for (planet, p, slots) in &batch.storage {
                 let key = block_key(*planet, *p);
@@ -1909,7 +1943,7 @@ impl Store {
             out.insert(row?.0.value());
         }
         let lo = first.to_be_bytes().to_vec();
-        for table in [CHUNKS, FAR, STATIONS, STORAGE, CROPS] {
+        for table in [CHUNKS, FAR, STATIONS, STORAGE, CROPS, SIGNS] {
             let t = tx.open_table(table)?;
             let mut from = lo.clone();
             // One probe per id: jump to the next id after each found.
@@ -2275,6 +2309,8 @@ pub struct WriteBatch {
     pub claims: Vec<(u32, Option<SavedClaim>)>,
     /// Crops by planet id; None deletes (harvested away or broken).
     pub crops: Vec<(u16, BlockPos, Option<SavedCrop>)>,
+    /// Written signs by planet id and anchor; None deletes (unwritten).
+    pub signs: Vec<(u16, BlockPos, Option<crate::signs::SavedSign>)>,
     /// Storage block slots by planet id; None deletes (it was emptied).
     pub storage: Vec<(u16, BlockPos, Option<SavedSlots>)>,
     /// Reclaims by lowercased account name; None deletes (it was emptied).
@@ -2307,6 +2343,7 @@ impl WriteBatch {
             && self.claims.is_empty()
             && self.storage.is_empty()
             && self.crops.is_empty()
+            && self.signs.is_empty()
             && self.reclaim.is_empty()
             && self.portals.is_empty()
             && self.next_portal.is_none()
@@ -2607,6 +2644,18 @@ mod tests {
             link: Some(4),
             fuel: 499,
         };
+        let sign = crate::signs::SavedSign {
+            version: crate::signs::SIGN_VERSION,
+            view: bm_core::signs::SignView {
+                text: bm_core::signs::SignText {
+                    text: "Hello".into(),
+                    ..Default::default()
+                },
+                across: 1,
+                up: 1,
+            },
+            members: vec![spot],
+        };
         let sky = SavedSky {
             rest_until: vec![0, 99, 5],
             squares: vec![(1, -2, 400)],
@@ -2671,6 +2720,7 @@ mod tests {
                         epic: false,
                     }),
                 )],
+                signs: vec![(2, spot, Some(sign.clone()))],
                 reclaim: vec![(
                     "pendragon".into(),
                     Some(SavedReclaim {
@@ -2691,6 +2741,8 @@ mod tests {
         assert_eq!(s.universe(&kinds()).unwrap(), None);
         assert_eq!(s.sky(2).unwrap(), Some(sky), "skies round-trip");
         assert_eq!(s.sky(3).unwrap(), None);
+        assert_eq!(s.signs(2).unwrap(), vec![(spot, sign)], "signs round-trip");
+        assert!(s.signs(3).unwrap().is_empty());
         assert_eq!(s.discoveries("pendragon").unwrap(), found);
         assert!(s.discoveries("nobody").unwrap().is_empty());
         assert_eq!(

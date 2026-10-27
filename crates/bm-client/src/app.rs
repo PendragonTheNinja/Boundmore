@@ -197,6 +197,8 @@ struct Session {
     /// Level, XP, marks and skill pages: the server's word and our
     /// prediction (milestone 12).
     progress: Progress,
+    /// Written signs by anchor (milestone 22 part 4).
+    signs: crate::signs::Signs,
     world: ClientWorld,
     me: Predictor,
     remotes: Remotes,
@@ -333,6 +335,7 @@ impl Session {
             far: crate::far::FarWorld::new(shape, registry.flags()),
             progress: Progress::new(tree, w.character),
             claims: Claims::new(shape, w.claims),
+            signs: crate::signs::Signs::default(),
             world: ClientWorld::new(shape, registry),
             me: Predictor::new(w.spawn),
             remotes: Remotes::default(),
@@ -375,6 +378,7 @@ impl Session {
         let registry = self.world.registry.clone();
         self.far = crate::far::FarWorld::new(shape, registry.flags());
         self.world = ClientWorld::new(shape, registry);
+        self.signs.clear();
         self.claims = Claims::new(shape, t.claims);
         self.remotes = Remotes::default();
         self.remote_lights.clear();
@@ -736,6 +740,13 @@ impl Session {
         self.is_portal_block(hit.block).then_some(hit.block)
     }
 
+    /// The sign aimed at for E, if any (milestone 22 part 4).
+    fn aiming_at_sign(&self) -> Option<BlockPos> {
+        let hit = self.use_target?;
+        let s = self.world.state(hit.block)?;
+        bm_core::signs::is_sign(s.shape).then_some(hit.block)
+    }
+
     /// The door or trapdoor aimed at for E, if any (milestone 22).
     fn aiming_at_door(&self) -> Option<BlockPos> {
         let hit = self.use_target?;
@@ -973,6 +984,8 @@ pub struct App {
     live_station: Option<LiveStation>,
     /// The open storage block's contents as the server last sent them.
     storage_view: Option<StorageView>,
+    /// The open sign window's text (milestone 22 part 4).
+    sign_ui: Option<crate::signs::SignUi>,
     /// The open portal window's portal as the server last sent it.
     portal_view: Option<PortalView>,
     /// The warp shrine window's open tab.
@@ -1042,6 +1055,7 @@ impl App {
             drag: None,
             live_station: None,
             storage_view: None,
+            sign_ui: None,
             portal_view: None,
             shrine_tab: ShrineTab::Worlds,
             skill_ui: SkillUi::default(),
@@ -1259,6 +1273,27 @@ impl App {
         // The server names storage by canonical position.
         let pos = s.world.shape.wrap_block(pos);
         self.open_menu(Menu::Storage(pos));
+    }
+
+    /// E on a sign: its window, to write where we may (no claim, or ours;
+    /// the server rules it too) and to read elsewhere.
+    fn open_sign(&mut self, pos: BlockPos) {
+        let Some(s) = &self.session else { return };
+        let pos = s.world.shape.wrap_block(pos);
+        let writable = s
+            .claims
+            .at(PlotPos::of(pos, s.world.shape))
+            .is_none_or(|c| c.owner == s.account);
+        let anchor = s.signs.sign_at(&s.world, pos);
+        let text = anchor
+            .and_then(|a| s.signs.get(a))
+            .map(|v| v.text.clone())
+            .unwrap_or_default();
+        if !writable && anchor.is_none() {
+            return;
+        }
+        self.sign_ui = Some(crate::signs::SignUi { text, writable });
+        self.open_menu(Menu::Sign(pos));
     }
 
     /// E on a portal block: open its window, unless it stands on someone
@@ -1579,7 +1614,9 @@ impl App {
                 Ok(c) => s.world.insert_chunk(pos, c),
                 Err(e) => tracing::warn!("bad chunk {pos:?} from server: {e}"),
             },
+            ServerMsg::Sign { anchor, sign } => s.signs.set(anchor, sign),
             ServerMsg::Forget { pos } => {
+                s.signs.forget_chunk(s.world.shape.wrap_chunk(pos));
                 s.world.forget_chunk(pos);
                 if let Some(r) = &mut self.renderer {
                     r.remove_chunk(s.world.shape.wrap_chunk(pos));
@@ -2284,6 +2321,7 @@ impl App {
         let shrine_tab = &mut self.shrine_tab;
         let skill_ui = &mut self.skill_ui;
         let forge_ui = &mut self.forge_ui;
+        let sign_ui = &mut self.sign_ui;
         let alpha = self.accumulator / TICK_DT;
         let (yaw, pitch) = (self.yaw, self.pitch);
         let mut return_pressed = false;
@@ -2354,6 +2392,29 @@ impl App {
                     air: crate::menus::air_view(&s.me.state),
                 },
             );
+            // Written signs, drawn in their planes under every window.
+            if !s.signs.is_empty() {
+                let eye = s.render_eye(alpha);
+                let camera = Camera {
+                    eye,
+                    yaw,
+                    pitch,
+                    fov_y: FOV_Y,
+                };
+                crate::signs::draw(
+                    &ctx.layer_painter(egui::LayerId::background()),
+                    &s.signs,
+                    &crate::signs::DrawView {
+                        world: &s.world,
+                        colours: &s.items.colours,
+                        eye,
+                        forward: camera.forward().as_vec3(),
+                        fov_y: FOV_Y,
+                        screen: ctx.content_rect(),
+                        sky_light: s.planet.day.sky_light(s.sky_tick(local)),
+                    },
+                );
+            }
             // Fighting: name plates, numbers, the hurt flash, the charge
             // ring and the defeat screen.
             {
@@ -2481,6 +2542,14 @@ impl App {
                         &mut actions,
                     );
                 }
+                Some(Menu::Sign(pos)) => match sign_ui.as_mut().map(|u| crate::signs::window(&ctx, u)) {
+                    Some(Some(crate::signs::SignAction::Write(text))) => {
+                        actions.push(UiAction::Send(ClientMsg::WriteSign { pos, text }));
+                        actions.push(UiAction::CloseMenu);
+                    }
+                    Some(Some(crate::signs::SignAction::Close)) | None => actions.push(UiAction::CloseMenu),
+                    Some(None) => {}
+                },
                 Some(Menu::Portal(pos)) => menus::portal(
                     &ctx,
                     &PortalWindow {
@@ -3511,6 +3580,8 @@ impl ApplicationHandler for App {
                                 self.open_portal(pos);
                             } else if let Some(pos) = s.aiming_at_heart() {
                                 self.send(ClientMsg::LootHeart { pos });
+                            } else if let Some(pos) = s.aiming_at_sign() {
+                                self.open_sign(pos);
                             } else if let Some(pos) = s.aiming_at_door() {
                                 self.send(ClientMsg::SwingDoor { pos });
                             }

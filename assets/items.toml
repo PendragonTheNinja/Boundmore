@@ -247,6 +247,10 @@ name = "fibrous_leaf"
 [[item]]
 name = "inky_leaf"
 
+# Milestone 22 part 4: every sign takes one.
+[[item]]
+name = "ink"
+
 [[item]]
 name = "fleshy_leaf"
 

@@ -54,6 +54,22 @@ Rules: `bm_core::forms` (`Form`, `FormKind`, `Style`, `placed_shape`), `BlockDef
 
 Acceptance: furnishings place turned as above (end to end); every form collides, targets and draws by its boxes (unit tests); an old universe opens and saves its chunks as format 3 (upgrade check).
 
+## Part 4: signs
+
+From Boundless (`docs/research/furnishings.md` section 5; recipes from the game's data): a **standalone sign** is a small placard; **sign panels** are 1 m modules of one kind facing one way that join into rectangles up to **10 by 10**, and once written keep their size. A sign has a **display text** of **128 characters** (colour codes count), sized to fit the sign, and a longer **further text** anyone may read. Metal, crystal and glowing glass signs' text glows. Editing needs build rights where the sign stands. Every sign takes **1 ink** (extractor: 5 inky leaves → 1).
+
+Decided:
+
+15. **Kinds**: a standalone sign and a sign panel in wood, stone, metal and crystal, and in glass and glowing glass (12 blocks), drawn and felt through their forms (part 3): a standalone sign is a board on a post standing on a floor, facing its placer, or a board hung on the wall it was put against; a panel is a whole-face plate against the wall it was put against (or, on a floor, on the far side from its placer).
+16. **Writing**: E on a sign opens it. Where the player may build (no claim, or their own), they write: `ClientMsg::WriteSign { pos, text }` with the display text (at most 128 characters, 8 lines), the further text (at most 1000 characters, a guess: Measure 7), the alignment (left, centre, right) and italic. A first write on a panel joins every panel of its kind and facing touching it in its plane; they must make a full rectangle of at most 10 by 10, which the sign keeps. Elsewhere the window shows the sign to read. Empty texts unwrite it.
+17. **Colour codes** are Boundless's (`:#f13:`, `:#ff1133:`, or `:#nn:` a palette colour in hex), for everyone (Boundless kept them for its paid members; Boundmore has none).
+18. **Where it lives**: each written sign is saved by its anchor (its lower left panel as read) in a new `signs` table, sent with its anchor's chunk and when it changes (`ServerMsg::Sign`). Breaking or changing any of its blocks unwrites it; its panels stay as loose panels (Boundless broke a written sign as a whole: a known difference).
+19. **Drawn by the client** in the sign's plane, in perspective, sized to fit, within 32 blocks, when the sign faces the eye and nothing solid stands between; glowing text is drawn bright, other text as lit as the sign. Text on dark signs turns light.
+
+Rules: `bm_core::signs` (texts, limits, colour codes, the text's place on a form), `FormKind::Panel`, `BlockDef::glow_text`, the `ink` item and its recipe, sign recipes (Boundless's), `ClientMsg::WriteSign`, `ServerMsg::Sign` (protocol 38), the `signs` table (no save version change: a new table), the client's sign window and drawing, textures.
+
+Acceptance: a sign written by its claim's owner is seen by another player, and refused to them; four panels in a square take one text; an L of panels is refused; breaking a panel unwrites the sign; the text survives a restart (end to end).
+
 ## Rules (part 1)
 
 1. `Recipe::tint: Option<u8>` (an input index) in `assets/recipes.toml` (`tint = 0`); `Recipe::plan` takes the chosen colour for that input; `Inventory` counts and removes by item and colour.
@@ -83,6 +99,7 @@ Acceptance: furnishings place turned as above (end to end); every form collides,
 4. Doors: do they open and shut like Boundless's (one block, joined neighbours, E)? Does the open door's strip at the hinge look right?
 5. Poles, beams and panes: how thick were they in Boundless (pole 6/16, beam 8/16 and pane 2/16 here are guesses)? Did beams meeting a pole look joined (here they stop at their own block's edge)? Did poles show caps at their ends?
 6. Did chairs face the placer? Could you walk through panes or tables in Boundless (here they collide)?
+7. Signs: how long could the further ("additional") text be? Could a standalone sign stand on a floor, and how was it turned?
 
 ## Status
 

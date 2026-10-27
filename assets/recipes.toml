@@ -4998,3 +4998,133 @@ spark = 600
 power = 1000
 xp = 32
 wear = 120
+
+# Milestone 22 part 4: ink and signs (Boundless's recipes).
+
+[[recipe]]
+output = "ink"
+inputs = [["inky_leaf", 5]]
+station = "extractor"
+seconds = 60.0
+xp = 6
+wear = 7
+
+[[recipe]]
+output = "wood_sign"
+inputs = [["any_timber", 5], ["nail", 2], ["ink", 1]]
+station = "refinery"
+seconds = 180.0
+spark = 200
+xp = 16
+wear = 70
+tint = 0
+
+[[recipe]]
+output = "wood_sign_panel"
+inputs = [["any_timber", 5], ["nail", 2], ["ink", 1]]
+station = "refinery"
+seconds = 180.0
+spark = 200
+xp = 16
+wear = 70
+tint = 0
+
+[[recipe]]
+output = "stone_sign"
+inputs = [["any_stones", 5], ["nail", 2], ["ink", 1]]
+station = "refinery"
+seconds = 180.0
+spark = 200
+xp = 22
+wear = 70
+tint = 0
+
+[[recipe]]
+output = "stone_sign_panel"
+inputs = [["any_stones", 5], ["nail", 2], ["ink", 1]]
+station = "refinery"
+seconds = 180.0
+spark = 200
+xp = 22
+wear = 70
+tint = 0
+
+[[recipe]]
+output = "metal_sign"
+inputs = [["any_metal", 5], ["nail", 2], ["ink", 1]]
+station = "refinery"
+seconds = 180.0
+spark = 400
+power = 500
+xp = 32
+wear = 70
+
+[[recipe]]
+output = "metal_sign_panel"
+inputs = [["any_metal", 5], ["nail", 2], ["ink", 1]]
+station = "refinery"
+seconds = 180.0
+spark = 400
+power = 500
+xp = 32
+wear = 70
+
+[[recipe]]
+output = "crystal_sign"
+inputs = [["glow_crystal", 5], ["nail", 2], ["ink", 1]]
+station = "refinery"
+seconds = 180.0
+spark = 800
+power = 1000
+xp = 44
+wear = 70
+
+[[recipe]]
+output = "crystal_sign_panel"
+inputs = [["glow_crystal", 5], ["nail", 2], ["ink", 1]]
+station = "refinery"
+seconds = 180.0
+spark = 800
+power = 1000
+xp = 44
+wear = 70
+
+[[recipe]]
+output = "glass_sign"
+inputs = [["clear_glass", 5], ["glue", 2], ["ink", 1]]
+station = "refinery"
+seconds = 180.0
+spark = 800
+power = 1000
+xp = 44
+wear = 70
+
+[[recipe]]
+output = "glass_sign_panel"
+inputs = [["clear_glass", 5], ["glue", 2], ["ink", 1]]
+station = "refinery"
+seconds = 180.0
+spark = 800
+power = 1000
+xp = 44
+wear = 70
+
+[[recipe]]
+output = "glowing_glass_sign"
+inputs = [["clear_glass", 5], ["glue", 2], ["ink", 1]]
+station = "refinery"
+seconds = 180.0
+spark = 1200
+power = 2000
+xp = 44
+wear = 70
+
+[[recipe]]
+output = "glowing_glass_sign_panel"
+inputs = [["clear_glass", 5], ["glue", 2], ["ink", 1]]
+station = "refinery"
+seconds = 180.0
+spark = 1200
+power = 2000
+xp = 44
+wear = 70

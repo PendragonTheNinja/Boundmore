@@ -6887,3 +6887,159 @@ async fn furnishings_turn_as_they_are_placed() {
     drop(alice);
     server.stop();
 }
+
+/// Milestone 22 part 4: sign panels join into one rectangle when first
+/// written (an L is refused); everyone holding the chunk is sent the text;
+/// on a claim only its owner writes; the text survives a restart.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn signs_join_into_rectangles_and_keep_their_text() {
+    use bm_core::Mount;
+    use bm_core::signs::SignText;
+    let dir = tempfile::tempdir().unwrap();
+    seed(
+        dir.path(),
+        "Alice",
+        &[(5, "wood_sign_panel", 6, 0), (7, "claim_stone", 1, 0)],
+    );
+    let text = |t: &str| SignText {
+        text: t.into(),
+        more: "Open daily".into(),
+        ..Default::default()
+    };
+    let (anchor, written) = {
+        let server = bm_server::start(config(dir.path())).unwrap();
+        let mut alice = TestClient::login(&server, "Alice").await;
+        let mut bob = TestClient::register(&server, "Bob").await;
+        let feet = alice.feet();
+        alice.wait_for_chunk(feet.chunk()).await;
+        bob.wait_for_chunk(feet.chunk()).await;
+        // An L of three panels facing Alice (west of them).
+        let (a, b, c, d) = (
+            feet.offset(3, 1, 0),
+            feet.offset(3, 1, 1),
+            feet.offset(3, 2, 0),
+            feet.offset(3, 2, 1),
+        );
+        for (seq, p) in [(1, a), (2, b), (3, c)] {
+            assert!(place(&mut alice, seq, p, 5, Some(Mount::Floor)).await.0);
+        }
+        alice.settle().await;
+        alice
+            .send(ClientMsg::WriteSign {
+                pos: a,
+                text: text("Shop"),
+            })
+            .await;
+        alice.notice("Sign panels join only into a full rectangle").await;
+        // The fourth makes a square: one sign, two by two, anchored low left.
+        assert!(place(&mut alice, 4, d, 5, Some(Mount::Floor)).await.0);
+        alice.settle().await;
+        alice
+            .send(ClientMsg::WriteSign {
+                pos: d,
+                text: text("Shop"),
+            })
+            .await;
+        let ServerMsg::Sign {
+            anchor,
+            sign: Some(view),
+        } = bob.until(|m| matches!(m, ServerMsg::Sign { .. })).await
+        else {
+            unreachable!()
+        };
+        assert_eq!(anchor, a);
+        assert_eq!((view.across, view.up, view.text.text.as_str()), (2, 2, "Shop"));
+        // Too long a text is refused.
+        alice
+            .send(ClientMsg::WriteSign {
+                pos: a,
+                text: text(&"x".repeat(129)),
+            })
+            .await;
+        alice.notice("A sign shows at most 128 characters").await;
+        // Claimed: Bob may not write; Alice rewrites it.
+        claim_around(&mut alice, 10, 7).await;
+        bob.settle().await;
+        bob.send(ClientMsg::WriteSign {
+            pos: b,
+            text: text("Mine"),
+        })
+        .await;
+        bob.notice("Only Alice may write on signs here").await;
+        alice
+            .send(ClientMsg::WriteSign {
+                pos: c,
+                text: text("Alice's shop"),
+            })
+            .await;
+        let ServerMsg::Sign { sign: Some(view), .. } = bob.until(|m| matches!(m, ServerMsg::Sign { .. })).await else {
+            unreachable!()
+        };
+        assert_eq!(view.text.text, "Alice's shop");
+        alice.settle().await;
+        drop((alice, bob));
+        server.stop();
+        (anchor, view)
+    };
+    // After a restart it is sent with its chunk; a blank write unwrites it.
+    let server = bm_server::start(config(dir.path())).unwrap();
+    let mut alice = TestClient::login(&server, "Alice").await;
+    let ServerMsg::Sign { anchor: at, sign } = alice.until(|m| matches!(m, ServerMsg::Sign { .. })).await else {
+        unreachable!()
+    };
+    assert_eq!((at, sign), (anchor, Some(written)));
+    alice
+        .send(ClientMsg::WriteSign {
+            pos: anchor,
+            text: SignText::default(),
+        })
+        .await;
+    let ServerMsg::Sign { sign, .. } = alice.until(|m| matches!(m, ServerMsg::Sign { .. })).await else {
+        unreachable!()
+    };
+    assert_eq!(sign, None);
+    drop(alice);
+    server.stop();
+}
+
+/// Milestone 22 part 4: breaking a written sign unwrites it, and everyone
+/// holding its chunk is told.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn breaking_a_sign_unwrites_it() {
+    use bm_core::Mount;
+    use bm_core::signs::SignText;
+    let dir = tempfile::tempdir().unwrap();
+    seed(dir.path(), "Alice", &[(5, "stone_sign", 1, 0)]);
+    let server = bm_server::start(ServerConfig {
+        creative: true,
+        ..config(dir.path())
+    })
+    .unwrap();
+    let mut alice = TestClient::login(&server, "Alice").await;
+    let feet = alice.feet();
+    alice.wait_for_chunk(feet.chunk()).await;
+    let at = alice.seq;
+    alice.send(ClientMsg::Creative { at, on: true }).await;
+    alice.until(|m| matches!(m, ServerMsg::Creative { .. })).await;
+    let sign = feet.offset(2, 1, 0);
+    assert!(place(&mut alice, 1, sign, 5, Some(Mount::Floor)).await.0);
+    alice.settle().await;
+    alice
+        .send(ClientMsg::WriteSign {
+            pos: sign,
+            text: SignText {
+                text: "Keep out".into(),
+                ..Default::default()
+            },
+        })
+        .await;
+    alice
+        .until(|m| matches!(m, ServerMsg::Sign { sign: Some(_), .. }))
+        .await;
+    let swung = alice.swing(2, sign, 6).await;
+    assert!(matches!(swung, Swung::Broke), "{swung:?}");
+    let m = alice.until(|m| matches!(m, ServerMsg::Sign { .. })).await;
+    assert!(matches!(m, ServerMsg::Sign { sign: None, .. }), "{m:?}");
+    drop(alice);
+    server.stop();
+}

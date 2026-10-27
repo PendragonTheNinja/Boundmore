@@ -36,6 +36,7 @@ mod forge;
 mod meteors;
 mod mining;
 mod portal;
+mod signs;
 mod skills;
 mod stations;
 use anyhow::{Context, Result};
@@ -641,6 +642,7 @@ impl Game {
         let tilled_soil = registry.id("tilled_soil")?;
         for p in &mut planets {
             p.farm = crate::farm::Farm::load(store.crops(p.id)?, &crops);
+            p.signs = crate::signs::Signs::load(store.signs(p.id)?);
         }
         let (saved_portals, next_portal) = store.portals()?;
         let portals = Portals::load(saved_portals, next_portal, |id| {
@@ -1074,6 +1076,7 @@ impl Game {
                     self.change_inventory(id, |inv, _| inv.clear(slot as usize));
                 }
                 ClientMsg::SwingDoor { pos } => self.swing_door(id, pos),
+                ClientMsg::WriteSign { pos, text } => self.write_sign(id, pos, text),
                 ClientMsg::Craft {
                     recipe,
                     count,
@@ -1622,7 +1625,8 @@ impl Game {
         // tick marks everyone's view at once.
         let mark = (self.tick + id as u64) % MARK_WANTED_EVERY == 0;
         let p = self.players.get_mut(&id).expect("present");
-        let world = &mut self.planets[pi].world;
+        let planet = &mut self.planets[pi];
+        let (world, signs) = (&mut planet.world, &planet.signs);
         if mark {
             for c in &p.wanted {
                 if let Some(slot) = world.get_mut(*c) {
@@ -1650,6 +1654,13 @@ impl Game {
                     self.stats.bytes_sent += frame.len() as u64;
                     p.out.send_shared(frame);
                     p.sent.insert(c);
+                    // Its written signs after it (milestone 22 part 4).
+                    for (anchor, view) in signs.in_chunk(c) {
+                        p.out.send(&ServerMsg::Sign {
+                            anchor,
+                            sign: Some(view.clone()),
+                        });
+                    }
                 }
                 None => {
                     if world.pending_loads() < MAX_PENDING_LOADS {
@@ -2068,6 +2079,10 @@ impl Game {
     /// Every block change of play goes through here.
     pub(super) fn change_block(&mut self, pi: usize, canon: BlockPos, new: BlockState, by: Option<u32>) {
         let old = self.planets[pi].world.set_state(canon, new);
+        // A written sign whose block changed is unwritten (its panels stay).
+        if old.is_some_and(|o| o.id != new.id || o.shape != new.shape) {
+            self.unwrite_sign_at(pi, canon);
+        }
         let reset = self.damage[pi].clear(canon, self.tick) && !new.id.is_air();
         self.crop_block_changed(pi, canon, new.id, by);
         // A machine block coming or going can make or unmake a machine
@@ -2997,6 +3012,10 @@ impl Game {
                 });
             }
         }
+        // Signs turned to ash are unwritten.
+        for (pos, _) in &changed {
+            self.unwrite_sign_at(pi, *pos);
+        }
         for p in emptied {
             self.close_storage_at(pi, p);
         }
@@ -3121,6 +3140,7 @@ impl Game {
         let mut claims = Vec::new();
         let mut storage = Vec::new();
         let mut crops = Vec::new();
+        let mut signs = Vec::new();
         for p in &mut self.planets {
             p.world.forget_saved();
             let id = p.id;
@@ -3138,6 +3158,7 @@ impl Game {
             );
             claims.extend(p.claims.take_dirty());
             crops.extend(p.farm.take_dirty(&self.crops).into_iter().map(|(pos, c)| (id, pos, c)));
+            signs.extend(p.signs.take_dirty().into_iter().map(|(pos, s)| (id, pos, s)));
             storage.extend(
                 p.storage
                     .take_dirty(&self.items)
@@ -3169,6 +3190,7 @@ impl Game {
             claims,
             storage,
             crops,
+            signs,
             reclaim: self.reclaims.take_dirty(&self.items),
             portals,
             next_portal,

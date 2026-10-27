@@ -31,6 +31,7 @@ pub mod raycast;
 pub mod recipes;
 pub mod regions;
 pub mod shape;
+pub mod signs;
 pub mod skills;
 pub mod spark;
 pub mod time;

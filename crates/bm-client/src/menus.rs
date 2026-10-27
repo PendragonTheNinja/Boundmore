@@ -64,6 +64,8 @@ pub enum Menu {
     Portal(BlockPos),
     /// The skill screen (milestone 12).
     Skills,
+    /// The sign at this block (milestone 22 part 4).
+    Sign(BlockPos),
 }
 
 #[derive(Default)]

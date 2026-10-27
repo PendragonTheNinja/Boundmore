@@ -25,7 +25,7 @@ use glam::DVec3;
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
 
 /// Bump on any change to a message below. Client and server must match.
-pub const PROTOCOL_VERSION: u32 = 37;
+pub const PROTOCOL_VERSION: u32 = 38;
 
 /// QUIC application protocol name; also refuses non-Boundmore peers early.
 pub const ALPN: &[u8] = b"boundmore/1";
@@ -102,6 +102,13 @@ pub enum ClientMsg {
     /// with every door block joined to it. The server answers with block
     /// changes, or a `Notice` saying why not.
     SwingDoor { pos: BlockPos },
+    /// Write (or, with a blank text, unwrite) the sign at `pos` (milestone
+    /// 22 part 4). A first write on a panel joins the panels around it. The
+    /// server answers with `Sign`, or a `Notice` saying why not.
+    WriteSign {
+        pos: BlockPos,
+        text: bm_core::signs::SignText,
+    },
     /// Start (or with `None`, stop) receiving `Station` updates for one
     /// station, e.g. while its screen is open.
     WatchStation { pos: Option<BlockPos> },
@@ -656,6 +663,13 @@ pub enum ServerMsg {
     Air {
         at: u32,
         air: bm_core::atmosphere::Air,
+    },
+    /// A written sign anchored at `anchor` (its lower left panel as read),
+    /// or None when it was unwritten: sent with the anchor's chunk and
+    /// whenever it changes (milestone 22 part 4).
+    Sign {
+        anchor: BlockPos,
+        sign: Option<bm_core::signs::SignView>,
     },
 }
 

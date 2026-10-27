@@ -42,10 +42,13 @@ pub enum FormKind {
     Chair = 5,
     /// A board on a post, or hung on a wall.
     Sign = 6,
+    /// A sign panel: a whole-face plate against one side (milestone 22
+    /// part 4); panels join into one sign.
+    Panel = 7,
 }
 
 impl FormKind {
-    pub const ALL: [FormKind; 7] = [
+    pub const ALL: [FormKind; 8] = [
         Self::Pole,
         Self::Beam,
         Self::Pane,
@@ -53,6 +56,7 @@ impl FormKind {
         Self::Table,
         Self::Chair,
         Self::Sign,
+        Self::Panel,
     ];
 
     fn from_bits(b: u16) -> Option<Self> {
@@ -69,7 +73,7 @@ impl FormKind {
         match self {
             Self::Pole | Self::Beam => 2,
             Self::Plinth | Self::Table => 0,
-            Self::Pane | Self::Chair => 3,
+            Self::Pane | Self::Chair | Self::Panel => 3,
             Self::Sign => 7,
         }
     }
@@ -177,7 +181,23 @@ pub fn placed_shape(def: &BlockDef, mount: Option<Mount>, support: Option<BlockS
                 _ => 1,
             })
         }
-        FormKind::Pane | FormKind::Chair | FormKind::Sign => facing,
+        FormKind::Pane | FormKind::Chair => facing,
+        // Against a wall: hung on it, facing away; else facing the placer
+        // (a sign on its post; a panel on the far side).
+        FormKind::Sign | FormKind::Panel => {
+            let away = match mount {
+                Some(Mount::North) => Some(2),
+                Some(Mount::East) => Some(3),
+                Some(Mount::South) => Some(0),
+                Some(Mount::West) => Some(1),
+                _ => None,
+            };
+            match (kind, away) {
+                (FormKind::Sign, Some(t)) => t | 4,
+                (_, Some(t)) => t,
+                _ => facing,
+            }
+        }
         FormKind::Plinth | FormKind::Table => 0,
     };
     Form::new(kind, def.style, turn).map_or(Shape::FULL, Form::shape)
@@ -232,6 +252,7 @@ fn solid_base(kind: FormKind, style: Style, wall: bool) -> Vec<B> {
             let _ = style;
             vec![bx(1, 6, 7, 15, 16, 9)]
         }
+        FormKind::Panel => vec![bx(0, 0, 14, 16, 16, 16)],
     }
 }
 
@@ -319,6 +340,7 @@ fn drawn_base(kind: FormKind, style: Style, wall: bool) -> Vec<B> {
             v
         }
         (FormKind::Sign, _) if wall => vec![bx(1, 3, 14, 15, 13, 16)],
+        (FormKind::Panel, _) => vec![bx(0, 0, 14, 16, 16, 16)],
         (FormKind::Sign, _) => vec![bx(1, 6, 7, 15, 16, 9), bx(7, 0, 7, 9, 6, 9)],
     }
 }

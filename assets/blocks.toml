@@ -5582,3 +5582,233 @@ material = "wood"
 storage = 32
 mine_xp = 2
 build_xp = 12
+
+# Milestone 22 part 4: signs. A standalone sign (`form = "sign"`) and a sign
+# panel (`form = "panel"`) in each material; the text is the server's
+# (`bm_core::signs`).
+
+[[block]]
+name = "wood_sign"
+chisel = "none"
+colourable = true
+color = [166, 120, 74]
+solid = true
+opaque = true
+translucent = false
+breakable = true
+placeable = true
+health = "hard"
+textures = { all = "wood_sign" }
+material = "wood"
+form = "sign"
+style = "plain"
+mine_xp = 2
+build_xp = 12
+
+[[block]]
+name = "wood_sign_panel"
+chisel = "none"
+colourable = true
+color = [166, 120, 74]
+solid = true
+opaque = true
+translucent = false
+breakable = true
+placeable = true
+health = "hard"
+textures = { all = "wood_sign_panel" }
+material = "wood"
+form = "panel"
+style = "plain"
+mine_xp = 2
+build_xp = 12
+
+[[block]]
+name = "stone_sign"
+chisel = "none"
+colourable = true
+color = [150, 150, 146]
+solid = true
+opaque = true
+translucent = false
+breakable = true
+placeable = true
+health = "hard"
+textures = { all = "stone_sign" }
+material = "rock"
+form = "sign"
+style = "plain"
+mine_xp = 2
+build_xp = 12
+
+[[block]]
+name = "stone_sign_panel"
+chisel = "none"
+colourable = true
+color = [150, 150, 146]
+solid = true
+opaque = true
+translucent = false
+breakable = true
+placeable = true
+health = "hard"
+textures = { all = "stone_sign_panel" }
+material = "rock"
+form = "panel"
+style = "plain"
+mine_xp = 2
+build_xp = 12
+
+[[block]]
+name = "metal_sign"
+chisel = "none"
+colourable = false
+color = [150, 154, 160]
+solid = true
+opaque = true
+translucent = false
+breakable = true
+placeable = true
+health = "hard"
+textures = { all = "metal_sign" }
+material = "rock"
+form = "sign"
+style = "plain"
+glow_text = true
+mine_xp = 2
+build_xp = 12
+
+[[block]]
+name = "metal_sign_panel"
+chisel = "none"
+colourable = false
+color = [150, 154, 160]
+solid = true
+opaque = true
+translucent = false
+breakable = true
+placeable = true
+health = "hard"
+textures = { all = "metal_sign_panel" }
+material = "rock"
+form = "panel"
+style = "plain"
+glow_text = true
+mine_xp = 2
+build_xp = 12
+
+[[block]]
+name = "crystal_sign"
+chisel = "none"
+colourable = false
+color = [150, 230, 255]
+solid = true
+opaque = true
+translucent = false
+breakable = true
+placeable = true
+health = "hard"
+textures = { all = "crystal_sign" }
+material = "crystal"
+form = "sign"
+style = "plain"
+glow_text = true
+mine_xp = 2
+build_xp = 12
+
+[[block]]
+name = "crystal_sign_panel"
+chisel = "none"
+colourable = false
+color = [150, 230, 255]
+solid = true
+opaque = true
+translucent = false
+breakable = true
+placeable = true
+health = "hard"
+textures = { all = "crystal_sign_panel" }
+material = "crystal"
+form = "panel"
+style = "plain"
+glow_text = true
+mine_xp = 2
+build_xp = 12
+
+[[block]]
+name = "glass_sign"
+chisel = "none"
+colourable = false
+color = [200, 228, 236]
+solid = true
+opaque = false
+translucent = true
+breakable = true
+placeable = true
+health = "hard"
+opacity = 0.12
+textures = { all = "glass_sign" }
+material = "crystal"
+form = "sign"
+style = "plain"
+mine_xp = 2
+build_xp = 12
+
+[[block]]
+name = "glass_sign_panel"
+chisel = "none"
+colourable = false
+color = [200, 228, 236]
+solid = true
+opaque = false
+translucent = true
+breakable = true
+placeable = true
+health = "hard"
+opacity = 0.12
+textures = { all = "glass_sign_panel" }
+material = "crystal"
+form = "panel"
+style = "plain"
+mine_xp = 2
+build_xp = 12
+
+[[block]]
+name = "glowing_glass_sign"
+chisel = "none"
+colourable = false
+color = [210, 236, 240]
+solid = true
+opaque = false
+translucent = true
+breakable = true
+placeable = true
+health = "hard"
+opacity = 0.12
+textures = { all = "glowing_glass_sign" }
+material = "crystal"
+form = "sign"
+style = "plain"
+glow_text = true
+mine_xp = 2
+build_xp = 12
+
+[[block]]
+name = "glowing_glass_sign_panel"
+chisel = "none"
+colourable = false
+color = [210, 236, 240]
+solid = true
+opaque = false
+translucent = true
+breakable = true
+placeable = true
+health = "hard"
+opacity = 0.12
+textures = { all = "glowing_glass_sign_panel" }
+material = "crystal"
+form = "panel"
+style = "plain"
+glow_text = true
+mine_xp = 2
+build_xp = 12
