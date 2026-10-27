@@ -52,7 +52,7 @@ cargo clippy --workspace --all-targets -- -D warnings
 cargo test --workspace
 ```
 
-Expected test counts (M24 part 2, 2026-10-27): bm-core 257, bm-worldgen 61 (+1 ignored: the tree-shape renderer), bm-mesh 36, bm-protocol 6, bm-server 136 unit + 70 end-to-end, bm-client 197, bm-texgen 33 (796 in all). `a_meteor_falls_fights_and_pays_each_player_once` used to fail now and then ("the fight did not end"); its message showed a guardian pacing in a pit 25 blocks under the player, never counted as stuck, and that was fixed on 2026-10-25 (stuck now means no closer to a player in 8 s). If it fails again, read the positions it prints. CI (`.github/workflows/ci.yml`) runs the same on Linux and builds on Windows.
+Expected test counts (M24 part 2, 2026-10-27): bm-core 257, bm-worldgen 61 (+1 ignored: the tree-shape renderer), bm-mesh 36, bm-protocol 6, bm-server 136 unit + 70 end-to-end, bm-client 199, bm-texgen 33 (798 in all). `a_meteor_falls_fights_and_pays_each_player_once` used to fail now and then ("the fight did not end"); its message showed a guardian pacing in a pit 25 blocks under the player, never counted as stuck, and that was fixed on 2026-10-25 (stuck now means no closer to a player in 8 s). If it fails again, read the positions it prints. CI (`.github/workflows/ci.yml`) runs the same on Linux and builds on Windows.
 
 **Upgrade check (any change to a saved or versioned format):** build the server from `main` in a separate worktree and target dir, let it create a universe (`bots --count 2 --planets 2` to make players), stop it, then open that data dir with the new server and read its log. Unit tests built from the new code missed exactly this once (2026-10-19: chunk format 2 refused every older universe).
 

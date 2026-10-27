@@ -82,3 +82,66 @@ pub fn affordable(offer: &Offer, coin: u64, want: u16) -> u16 {
     let can = (coin / offer.price).min(u16::MAX as u64) as u16;
     want.min(offer.stack.count).min(can)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use bm_core::{BlockPos, BlockRegistry, ColourPalette, Inventory, ItemRegistry, RecipeBook};
+    use bm_protocol::ShopKind;
+
+    fn items() -> Items {
+        let blocks = BlockRegistry::builtin();
+        let reg = ItemRegistry::builtin(&blocks);
+        let book = RecipeBook::builtin(&reg);
+        Items::new(
+            reg.defs().to_vec(),
+            book.recipes,
+            Inventory::default(),
+            ColourPalette::builtin(),
+            &blocks,
+        )
+        .unwrap()
+    }
+
+    fn view(kind: ShopKind, slots: Vec<Option<ItemStack>>, prices: Vec<u64>) -> ShopView {
+        ShopView {
+            pos: BlockPos::new(1, 2, 3),
+            kind,
+            owner: "Alice".into(),
+            mine: false,
+            slots,
+            prices,
+            till: 100,
+            fee_percent: 2,
+            closed: false,
+        }
+    }
+
+    #[test]
+    fn a_stand_offers_only_priced_stock_and_coin_limits_a_purchase() {
+        let i = items();
+        let stone = i.registry.id("stone").unwrap();
+        let v = view(
+            ShopKind::Stand,
+            vec![Some(ItemStack::new(stone, 10)), Some(ItemStack::new(stone, 5)), None],
+            vec![50, 0, 9],
+        );
+        let o = offers(&v, &i);
+        assert_eq!(o.len(), 1, "unpriced and empty slots are not for sale");
+        assert_eq!((o[0].slot, o[0].price, o[0].stack.count), (0, 50, 10));
+        assert_eq!(affordable(&o[0], 120, 10), 2, "120 coin buys two");
+        assert_eq!(affordable(&o[0], 10_000, 99), 10, "no more than there is");
+    }
+
+    #[test]
+    fn a_basket_wants_what_it_holds_and_finds_it_in_the_pack() {
+        let mut i = items();
+        let stone = i.registry.id("stone").unwrap();
+        let v = view(ShopKind::Basket, vec![Some(ItemStack::new(stone, 1))], vec![10]);
+        assert_eq!(wants(&v, &i)[0].have, None, "none carried");
+        i.inventory.slots[4] = Some(ItemStack::new(stone, 7));
+        let w = wants(&v, &i);
+        assert_eq!((w[0].slot, w[0].price, w[0].have), (0, 10, Some((4, 7))));
+        assert!(is_shop("shop_stand") && is_shop("request_basket") && !is_shop("storage_chest"));
+    }
+}
