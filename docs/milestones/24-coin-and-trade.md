@@ -15,7 +15,7 @@
 ## Decided (Nathan, 2026-10-27)
 
 - **Coin comes from feats, as Boundless, and from footfall, as Boundless did** (Decision 2). Footfall in Boundless paid only beacons inside a named settlement, at a base set by the settlement's rank (Outpost 20 coin at 10,000 prestige, Hamlet 30, Village 40, ...), once per visitor a day; so it needs prestige and settlements, and comes as part 4 after the shops.
-- **The sink is a small sales fee** on shop stand sales, burnt (Decision 3): 2% (**guess**, Measure).
+- **The sink is a small sales fee** on stand and basket sales, paid by the seller and burnt (Decision 3). Built at 2% as recommended; **but research since found Boundless's own tax was 10%**, and the Merchant epic (Boundless's Tax Epic) cut it by a quarter (`research/coin-and-trade.md`). Nathan to choose 2% or Boundless's 10% (one constant).
 - **Shops are found physically only**, as in Boundless: no directory (Decision 4). Part 3 below is dropped.
 - **A new character starts with 500 coin** (Decision 5).
 - Still open, built with the recommended default until he says otherwise (both cheap to change): the currency is called **coin** (Decision 1), and there is **no direct trade window**, stands only (Decision 6).
@@ -30,6 +30,10 @@ These shape what players invest in, so they are his (`CLAUDE.md`, "Stop and ask 
 4. **Finding shops.** Purely physical as in Boundless, or a directory? Recommended, from the forum research: a directory at warp shrines that says *which* shops sell or buy an item and where (planet and place), sorted by price, but the purchase still happens at the stand in person.
 5. **Starting coin.** Does a new character start with any (for example 500, enough to buy a few starter goods)?
 6. **Trading between two players directly** (a trade window), or only through stands as Boundless? Recommended: stands only for now (Boundless never had a trade window; dropping items works for gifts).
+
+## Feats (part 1)
+
+Boundless's feat list (`research/coin-and-trade.md`), each a counter with five thresholds paying 100, 280, 860, 2,560 and 7,700 coin, kept where Boundmore has the system and in Boundmore's own names: builder (blocks placed, wood, rock and soil placed, chiselled, plots), combat (creatures defeated, each kind, by bomb, by sling), crafter (by hand, each station, unique recipes), explorer (sprinted, swum, climbed, travelled, worlds and regions discovered), gatherer (trunks, foliage, plants, fungi, soil, boulders), miner (rock, coal, metal ore, relics, fossils, gems, unique items), core (level, feats done, meteor hearts, skill points spent), trader (stand and basket sales, coin spent, tax paid). Left out until their systems exist: objectives, beacon fuel, settlements and prestige (part 4), warps, creeping. XP per feat tier: not on the wiki (**guess**: the tier's coin as XP).
 
 ## The plan once decided
 
