@@ -26,6 +26,7 @@ pub mod noise;
 pub mod overlay;
 pub mod preview;
 pub mod sheet;
+pub mod signs;
 pub mod spark;
 pub mod stations;
 pub mod tex;

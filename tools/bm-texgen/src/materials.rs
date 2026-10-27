@@ -2121,6 +2121,7 @@ pub fn paint_named(name: &str, variant: u32) -> Option<Tex> {
                 .or_else(|| crate::building::paint(other))
                 .or_else(|| crate::doors::paint(other))
                 .or_else(|| crate::furnishings::paint(other))
+                .or_else(|| crate::signs::paint(other))
             {
                 return Some(t);
             }
