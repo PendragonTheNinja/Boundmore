@@ -35,6 +35,21 @@ impl Game {
         }
     }
 
+    /// Tells each player whose Lifesaving brew just stood them back up (it
+    /// is used inside `PlayerState::take`, wherever the blow came from).
+    pub(super) fn lifesaving_notices(&mut self) {
+        let mut saved = Vec::new();
+        for (id, p) in &mut self.players {
+            if p.revive_seen > 1 && p.state.revive == 0 {
+                saved.push(*id);
+            }
+            p.revive_seen = p.state.revive;
+        }
+        for id in saved {
+            self.notice(id, "Your Lifesaving Brew saved you");
+        }
+    }
+
     /// Soothing and Taunting brews (milestone 23 part 2): 10000 threat taken
     /// from, or added to, every live creature within [`BREW_THREAT_RANGE`]
     /// that is already fighting (Boundless's calming and aggravating brews

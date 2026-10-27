@@ -255,6 +255,9 @@ struct Player {
     character_dirty: bool,
     /// The light-source epic shines now (not in daylight under open sky).
     inner_light: bool,
+    /// Lifesaving ticks left at the last tick (milestone 23 part 2): a drop
+    /// from more than one to none means it saved them.
+    revive_seen: u32,
     /// Creatures this player has been told of (milestone 13), as last told.
     known: HashMap<u32, CreatureView>,
     /// The creatures the next snapshots carry, nearest first.
@@ -901,6 +904,7 @@ impl Game {
         self.stats.creature_time += took;
         self.stats.creature_worst = self.stats.creature_worst.max(took);
         self.stats.creature_ticks += 1;
+        self.lifesaving_notices();
         self.step_portals();
         self.step_stations();
         if self.tick % farm::FARM_EVERY == 0 {
@@ -1317,6 +1321,7 @@ impl Game {
                 effects,
                 character_dirty: false,
                 inner_light: false,
+                revive_seen: state.revive,
                 known: HashMap::new(),
                 in_view: Vec::new(),
                 near_creatures: Vec::new(),

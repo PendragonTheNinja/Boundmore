@@ -4688,6 +4688,7 @@ async fn brews_are_kept_and_lifesaving_stands_you_up_from_a_killing_blow() {
     };
     assert!(!saved.down, "back on their feet");
     assert_eq!(saved.health(), saved.max_health() * REVIVE_HEALTH_PERCENT / 100);
+    alice.notice("Your Lifesaving Brew saved you").await;
     alice.settle().await;
     assert_eq!(alice.hits_on(Target::Player(me))[0], 100, "a killing blow");
     assert_eq!(alice.defeated, None, "never defeated");
