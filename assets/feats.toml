@@ -1,0 +1,411 @@
+# Feats (milestone 24): Boundless's list and thresholds (docs/research/coin-and-trade.md)
+# in Boundmore's names. Each tier pays 100, 280, 860, 2560 and 7700 coin
+# (`feats::TIER_COIN`). `counts` is the counter the server keeps.
+
+[[feat]]
+id = "level"
+name = "Seasoned"
+text = "Reach level {n}"
+group = "core"
+counts = "level"
+tiers = [9, 19, 29, 39, 49]
+
+[[feat]]
+id = "feats"
+name = "Achiever"
+text = "Reach {n} feat tiers"
+group = "core"
+counts = "feats_done"
+tiers = [10, 50, 150, 300, 340]
+
+[[feat]]
+id = "hearts"
+name = "Star Hunter"
+text = "Loot {n} meteor hearts"
+group = "core"
+counts = "hearts"
+tiers = [10, 100, 250, 500, 1000]
+
+[[feat]]
+id = "skill_points"
+name = "Well Trained"
+text = "Spend {n} skill points"
+group = "core"
+counts = "skill_points"
+tiers = [25, 100, 200, 500, 1000]
+
+[[feat]]
+id = "placed"
+name = "Builder"
+text = "Place {n} blocks"
+group = "builder"
+counts = "placed"
+tiers = [250, 2500, 10000, 100000, 1000000]
+
+[[feat]]
+id = "placed_wood"
+name = "Carpenter"
+text = "Place {n} wooden blocks"
+group = "builder"
+counts = "placed:wood"
+tiers = [100, 1000, 10000, 100000, 1000000]
+
+[[feat]]
+id = "placed_rock"
+name = "Mason"
+text = "Place {n} rock blocks"
+group = "builder"
+counts = "placed:rock"
+tiers = [100, 1000, 10000, 100000, 1000000]
+
+[[feat]]
+id = "placed_soil"
+name = "Gardener"
+text = "Place {n} soil blocks"
+group = "builder"
+counts = "placed:soil"
+tiers = [100, 1000, 10000, 100000, 1000000]
+
+[[feat]]
+id = "chiselled"
+name = "Sculptor"
+text = "Chisel {n} blocks"
+group = "builder"
+counts = "chiselled"
+tiers = [50, 500, 5000, 10000, 100000]
+
+[[feat]]
+id = "plots"
+name = "Landholder"
+text = "Claim {n} plots"
+group = "builder"
+counts = "plots"
+tiers = [10, 100, 500, 2000, 5000]
+
+[[feat]]
+id = "kills"
+name = "Hunter"
+text = "Defeat {n} creatures"
+group = "combat"
+counts = "kill"
+tiers = [100, 1000, 10000, 100000, 500000]
+
+[[feat]]
+id = "kill_grazer"
+name = "Horn Breaker"
+text = "Defeat {n} grazers"
+group = "combat"
+counts = "kill:grazer"
+tiers = [20, 100, 500, 5000, 50000]
+
+[[feat]]
+id = "kill_pelter"
+name = "Pelter Bane"
+text = "Defeat {n} pelters"
+group = "combat"
+counts = "kill:pelter"
+tiers = [20, 100, 500, 5000, 50000]
+
+[[feat]]
+id = "kill_dasher"
+name = "Dasher Chaser"
+text = "Defeat {n} dashers"
+group = "combat"
+counts = "kill:dasher"
+tiers = [20, 100, 500, 5000, 50000]
+
+[[feat]]
+id = "kill_popper"
+name = "Popper Popper"
+text = "Defeat {n} poppers"
+group = "combat"
+counts = "kill:popper"
+tiers = [20, 100, 500, 5000, 50000]
+
+[[feat]]
+id = "kill_drifter"
+name = "Drifter Downer"
+text = "Defeat {n} drifters"
+group = "combat"
+counts = "kill:drifter"
+tiers = [20, 100, 500, 5000, 50000]
+
+[[feat]]
+id = "kill_bomb"
+name = "Demolisher"
+text = "Defeat {n} creatures with bombs"
+group = "combat"
+counts = "kill:bomb"
+tiers = [50, 200, 1000, 10000, 100000]
+
+[[feat]]
+id = "kill_sling"
+name = "Sharp Eye"
+text = "Defeat {n} creatures with a sling"
+group = "combat"
+counts = "kill:sling"
+tiers = [50, 200, 1000, 10000, 100000]
+
+[[feat]]
+id = "craft_hand"
+name = "Handy"
+text = "Craft {n} recipes by hand"
+group = "crafter"
+counts = "craft:hand"
+tiers = [100, 1000, 10000, 100000, 1000000]
+
+[[feat]]
+id = "craft_table"
+name = "Table Worker"
+text = "Make {n} recipes at a crafting table"
+group = "crafter"
+counts = "craft:crafting_table"
+tiers = [100, 500, 5000, 50000, 500000]
+
+[[feat]]
+id = "craft_furnace"
+name = "Smelter"
+text = "Make {n} recipes in a furnace"
+group = "crafter"
+counts = "craft:furnace"
+tiers = [100, 500, 1000, 10000, 100000]
+
+[[feat]]
+id = "craft_workbench"
+name = "Bench Hand"
+text = "Make {n} recipes at a workbench"
+group = "crafter"
+counts = "craft:workbench"
+tiers = [100, 500, 1000, 10000, 100000]
+
+[[feat]]
+id = "craft_extractor"
+name = "Extractor"
+text = "Make {n} recipes in an extractor"
+group = "crafter"
+counts = "craft:extractor"
+tiers = [100, 500, 1000, 10000, 100000]
+
+[[feat]]
+id = "craft_mixer"
+name = "Mixer"
+text = "Make {n} recipes in a mixer"
+group = "crafter"
+counts = "craft:mixer"
+tiers = [100, 500, 1000, 10000, 100000]
+
+[[feat]]
+id = "craft_compactor"
+name = "Compressor"
+text = "Make {n} recipes in a compactor"
+group = "crafter"
+counts = "craft:compactor"
+tiers = [100, 500, 1000, 10000, 100000]
+
+[[feat]]
+id = "craft_refinery"
+name = "Refiner"
+text = "Make {n} recipes in a refinery"
+group = "crafter"
+counts = "craft:refinery"
+tiers = [100, 500, 1000, 10000, 100000]
+
+[[feat]]
+id = "recipes"
+name = "Many Hands"
+text = "Craft {n} different recipes"
+group = "crafter"
+counts = "recipes"
+tiers = [20, 50, 100, 200, 500]
+
+[[feat]]
+id = "sprinted"
+name = "Sprinter"
+text = "Sprint {n} blocks"
+group = "explorer"
+counts = "sprinted"
+tiers = [1000, 10000, 100000, 1000000, 10000000]
+
+[[feat]]
+id = "swum"
+name = "Swimmer"
+text = "Swim {n} blocks"
+group = "explorer"
+counts = "swum"
+tiers = [1000, 10000, 100000, 1000000, 10000000]
+
+[[feat]]
+id = "climbed"
+name = "Climber"
+text = "Climb {n} blocks"
+group = "explorer"
+counts = "climbed"
+tiers = [1000, 10000, 100000, 1000000, 2000000]
+
+[[feat]]
+id = "travelled"
+name = "Wanderer"
+text = "Travel {n} blocks"
+group = "explorer"
+counts = "travelled"
+tiers = [10000, 100000, 1000000, 10000000, 100000000]
+
+[[feat]]
+id = "worlds"
+name = "Star Charter"
+text = "Visit {n} worlds"
+group = "explorer"
+counts = "worlds"
+tiers = [10, 25, 50, 75, 100]
+
+[[feat]]
+id = "regions"
+name = "Mapmaker"
+text = "Discover {n} regions"
+group = "explorer"
+counts = "regions"
+tiers = [10, 50, 100, 500, 1000]
+
+[[feat]]
+id = "gather_trunk"
+name = "Woodcutter"
+text = "Gather {n} trunks"
+group = "gatherer"
+counts = "gather:trunk"
+tiers = [50, 500, 5000, 50000, 500000]
+
+[[feat]]
+id = "gather_foliage"
+name = "Leaf Picker"
+text = "Gather {n} leaves"
+group = "gatherer"
+counts = "gather:foliage"
+tiers = [50, 500, 5000, 50000, 500000]
+
+[[feat]]
+id = "gather_plant"
+name = "Forager"
+text = "Gather {n} plants"
+group = "gatherer"
+counts = "gather:plant"
+tiers = [50, 500, 5000, 50000, 500000]
+
+[[feat]]
+id = "gather_fungus"
+name = "Mushroom Picker"
+text = "Gather {n} fungi"
+group = "gatherer"
+counts = "gather:fungus"
+tiers = [50, 500, 5000, 50000, 500000]
+
+[[feat]]
+id = "gather_soil"
+name = "Digger"
+text = "Gather {n} soil blocks"
+group = "gatherer"
+counts = "gather:soil"
+tiers = [50, 500, 5000, 50000, 500000]
+
+[[feat]]
+id = "gather_boulder"
+name = "Stone Picker"
+text = "Gather {n} boulders"
+group = "gatherer"
+counts = "gather:boulder"
+tiers = [50, 500, 5000, 50000, 500000]
+
+[[feat]]
+id = "mine_rock"
+name = "Quarrier"
+text = "Mine {n} rock"
+group = "miner"
+counts = "mine:rock"
+tiers = [100, 500, 5000, 50000, 500000]
+
+[[feat]]
+id = "mine_coal"
+name = "Collier"
+text = "Mine {n} coal"
+group = "miner"
+counts = "mine:coal"
+tiers = [100, 1000, 10000, 100000, 1000000]
+
+[[feat]]
+id = "mine_ore"
+name = "Prospector"
+text = "Mine {n} metal ore"
+group = "miner"
+counts = "mine:ore"
+tiers = [100, 1000, 10000, 100000, 1000000]
+
+[[feat]]
+id = "mine_relic"
+name = "Relic Seeker"
+text = "Mine {n} relics"
+group = "miner"
+counts = "mine:relic"
+tiers = [100, 1000, 10000, 100000, 1000000]
+
+[[feat]]
+id = "mine_fossil"
+name = "Fossil Finder"
+text = "Mine {n} fossils"
+group = "miner"
+counts = "mine:fossil"
+tiers = [100, 1000, 10000, 100000, 1000000]
+
+[[feat]]
+id = "mine_crystal"
+name = "Crystal Cutter"
+text = "Mine {n} glow crystal"
+group = "miner"
+counts = "mine:crystal"
+tiers = [100, 1000, 10000, 100000, 1000000]
+
+[[feat]]
+id = "mine_gem"
+name = "Gem Finder"
+text = "Mine {n} gems"
+group = "miner"
+counts = "mine:gem"
+tiers = [100, 1000, 10000, 100000, 1000000]
+
+[[feat]]
+id = "mined_kinds"
+name = "Collector"
+text = "Mine {n} different things"
+group = "miner"
+counts = "mined_kinds"
+tiers = [30, 100, 200, 300, 500]
+
+[[feat]]
+id = "sold"
+name = "Shopkeeper"
+text = "Sell {n} times from your shop stands"
+group = "trader"
+counts = "sold"
+tiers = [100, 1000, 10000, 100000, 1000000]
+
+[[feat]]
+id = "basket_sold"
+name = "Supplier"
+text = "Sell {n} times to request baskets"
+group = "trader"
+counts = "basket_sold"
+tiers = [100, 1000, 10000, 100000, 1000000]
+
+[[feat]]
+id = "spent"
+name = "Big Spender"
+text = "Spend {n} coin at shops"
+group = "trader"
+counts = "spent"
+tiers = [1000, 10000, 100000, 1000000, 10000000]
+
+[[feat]]
+id = "tax"
+name = "Fair Dealer"
+text = "Pay {n} coin in sales fees"
+group = "trader"
+counts = "tax"
+tiers = [1000, 10000, 100000, 1000000, 10000000]

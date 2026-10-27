@@ -15,6 +15,7 @@ pub mod crops;
 pub mod doors;
 pub mod energy;
 pub mod far;
+pub mod feats;
 pub mod food;
 pub mod forge;
 pub mod forms;

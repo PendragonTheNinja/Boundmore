@@ -50,6 +50,6 @@ Guilds, mail, sovereign worlds, a premium currency (Boundless's cubits), NPC tra
 
 - [x] Research from the wiki and the existing research files (2026-10-27)
 - [x] Nathan's answers to Decisions 2 to 5 (2026-10-27); 1 and 6 built with the defaults
-- [ ] Part 1, coin and feats
+- [ ] Part 1, coin and feats. Done: `bm_core::feats` (feats as data with a counter key and five thresholds, the ledger of coin, counters and tiers paid, 500 starting coin) and `assets/feats.toml` (51 feats from Boundless's list). Next: the server keeps a ledger per account (a new `player_ledger` table), counts each key at its event, pays coin and XP with a notice, sends coin and feats to the client; the inventory shows coin; a feats window.
 - [ ] Part 2, plinths, shop stands, request baskets
 - [ ] Part 4, footfall (with prestige and settlements)
