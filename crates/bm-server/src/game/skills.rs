@@ -143,6 +143,11 @@ impl Game {
         let tree = &self.skills;
         let Some(p) = self.players.get_mut(&id) else { return };
         let mut c = p.character.clone();
+        // Skill points a learn spends (milestone 24 feats).
+        let spends = match &action {
+            SkillAction::Learn(skill) => tree.get(skill).map_or(0, |d| d.cost as u64),
+            _ => 0,
+        };
         let result = match &action {
             SkillAction::Learn(skill) => c.learn(tree, skill),
             SkillAction::Cleanse(skill) => c.cleanse(skill),
@@ -170,6 +175,7 @@ impl Game {
                     character: p.character.clone(),
                     at,
                 });
+                self.count(id, "skill_points", spends);
             }
             Err(e) => self.skill_refused(id, at, e.to_string()),
         }

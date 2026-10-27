@@ -401,7 +401,7 @@ impl Game {
             match (hit, what.from) {
                 (Some(Target::Creature(cid)), Shooter::Player { id, at, .. }) => {
                     let crit = creature_crit(what.crit_chance, id, at, cid);
-                    self.player_hits_creature(pi, id, cid, what.damage, crit, what.crit_effect, None);
+                    self.player_hits_creature(pi, id, cid, what.damage, crit, what.crit_effect, None, Some("sling"));
                 }
                 (Some(Target::Player(pid)), Shooter::Creature(cid)) => {
                     self.creature_hits_player(pi, cid, pid, what.damage, DamageKind::Kinetic);
@@ -457,7 +457,7 @@ impl Game {
             }
         }
         let crit = creature_crit(tool.crit_chance, id, at, cid);
-        self.player_hits_creature(pi, id, cid, tool.damage, crit, tool.crit_effect, element);
+        self.player_hits_creature(pi, id, cid, tool.damage, crit, tool.crit_effect, element, None);
         // A hammer stuns a popper.
         if tool.class == Some(ToolClass::Hammer) {
             let tick = self.tick;
@@ -480,6 +480,8 @@ impl Game {
         crit: bool,
         crit_effect: f32,
         strike: Option<bm_core::creatures::Essence>,
+        // "sling" or "bomb": the weapon, for the kill's feat (milestone 24).
+        weapon: Option<&'static str>,
     ) {
         let tick = self.tick;
         let curl = roll(&mut self.rng);
@@ -506,12 +508,25 @@ impl Game {
                 crit,
             });
         }
-        self.hurt_creature(pi, cid, Some(id), amount, true);
+        self.hurt_creature_with(pi, cid, Some(id), amount, true, weapon);
     }
 
     /// Takes `amount` of a creature's health; `by` (a player) gains threat
     /// and, if `provoked`, its anger. At 0 it dies.
     pub(super) fn hurt_creature(&mut self, pi: usize, cid: u32, by: Option<u32>, amount: u32, provoked: bool) {
+        self.hurt_creature_with(pi, cid, by, amount, provoked, None);
+    }
+
+    /// `hurt_creature`, naming the weapon that struck (for feats).
+    fn hurt_creature_with(
+        &mut self,
+        pi: usize,
+        cid: u32,
+        by: Option<u32>,
+        amount: u32,
+        provoked: bool,
+        weapon: Option<&'static str>,
+    ) {
         let threat = by
             .and_then(|id| self.players.get(&id))
             .map_or(1.0, |p| p.effects.threat());
@@ -532,6 +547,10 @@ impl Game {
         }
         if c.damage >= c.max_health(def) {
             self.kill(pi, cid);
+            // The killing blow's weapon (milestone 24 feats).
+            if let (Some(id), Some(w)) = (by, weapon) {
+                self.count(id, &format!("kill:{w}"), 1);
+            }
         }
     }
 

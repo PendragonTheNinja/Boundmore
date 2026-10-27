@@ -4760,6 +4760,9 @@ async fn a_sling_kills_a_creature_for_xp_and_bone_and_bone_makes_glue() {
     let dead = alice.creature_until(id, |v| v.dead).await;
     assert_eq!(dead.damage, 1500);
     alice.until_xp(60).await;
+    // Feats (milestone 24): a kill, of its kind, by a sling.
+    let l = ledger_until(&mut alice, |l| l.count("kill") == 1).await;
+    assert_eq!((l.count("kill:sling"), l.count("kill:bomb")), (1, 0));
     alice.settle().await;
     assert_eq!(alice.inv.get(0).unwrap().wear, 5, "one durability a shot");
 
