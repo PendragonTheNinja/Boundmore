@@ -500,10 +500,7 @@ pub fn food_lines(f: &bm_core::food::FoodStats) -> Vec<String> {
     use bm_core::brew::Brew;
     if f.brew != Brew::None {
         // A brew (milestone 23 part 2).
-        let mut lines = vec![
-            "Left click drinks one".to_string(),
-            format!("{}", f.brew.describe(f.rank)),
-        ];
+        let mut lines = vec!["Left click drinks one".to_string(), f.brew.describe(f.rank)];
         lines.push(match f.brew {
             b if b.instant() => "Works at once; keeps your brew".into(),
             Brew::Lifesaving => "Kept beside your other brew".into(),
