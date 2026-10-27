@@ -113,6 +113,9 @@ pub struct PlayerInput {
     pub fire: bool,
     /// Rope: 1 reels in, -1 pays out. Larger values are clamped.
     pub reel: i8,
+    /// Swim down (milestone 23; Boundless's creep key). Also flies down in
+    /// creative mode.
+    pub descend: bool,
 }
 
 impl PlayerInput {
@@ -258,6 +261,9 @@ pub struct PlayerState {
     /// Ticks until lava can burn again (`combat::LAVA_TICKS` after each
     /// burn). Never saved.
     pub lava_wait: u16,
+    /// The eyes are in a liquid this tick (milestone 23): the air bar runs
+    /// down. Set at the start of each step; never saved.
+    pub submerged: bool,
 }
 
 /// What skills change about moving and energy (`skills::Effects::body`).
@@ -306,6 +312,10 @@ pub const DOUBLE_JUMP_FRACTION: f64 = 0.7;
 pub const SLIPPERY_GRIP: f64 = 0.15;
 /// Leaden's pull down in water, as a multiple of the usual (**guess**).
 pub const LEADEN_SINK: f64 = 3.0;
+/// How fast a swimmer gathers or loses speed up and down, blocks a second
+/// squared: from still to full swim speed in about a quarter second
+/// (**guess**).
+pub const SWIM_VERTICAL_ACCEL: f64 = 15.6;
 /// Bouncing: a landing faster than this (blocks a second) springs back with
 /// this share of its speed (**guesses**).
 pub const BOUNCE_MIN: f64 = 6.0;
@@ -480,6 +490,7 @@ pub fn step(
     s.beat = (s.beat + 1) % crate::combat::REGEN_PERIOD_TICKS;
     s.heal_tick(s.beat == 0);
     s.food_tick(s.beat == 0);
+    s.submerged = world.liquid(BlockPos::containing(s.pos.x, s.pos.y + cfg.eye_height, s.pos.z));
     s.air_tick(s.beat == 0);
     s.quirk_tick(s.beat == 0);
     let hooked = s.anchor().is_some();
@@ -567,18 +578,24 @@ pub fn step(
     if in_water && input.jump && against_wall {
         s.vel.y = cfg.water_exit_velocity;
     } else if in_water {
-        // Leaden: sinks, and swimming up barely helps (**guess**).
-        let sink = if q.has(crate::forge::Quirks::LEADEN) {
-            LEADEN_SINK
-        } else {
-            1.0
-        };
-        s.vel.y -= cfg.gravity * cfg.water_gravity_scale * sink * dt;
-        if input.jump && sink == 1.0 {
-            s.vel.y += cfg.gravity * 0.6 * dt;
-        }
         let drag = 1.0 / (1.0 + cfg.water_drag * dt);
-        s.vel.y *= drag;
+        if q.has(crate::forge::Quirks::LEADEN) {
+            // Leaden: sinks, and swimming up does nothing (**guess**).
+            s.vel.y -= cfg.gravity * cfg.water_gravity_scale * LEADEN_SINK * dt;
+            s.vel.y *= drag;
+        } else {
+            // Space swims up, descend swims down, and with neither the
+            // swimmer slows to a stop where they are: neutral buoyancy, so a
+            // head above the water floats there (milestone 23; Boundless
+            // sank slowly, its most disliked swimming rule).
+            let target = match (input.jump, input.descend) {
+                (true, false) => swim,
+                (false, true) => -swim,
+                _ => 0.0,
+            };
+            s.vel.y *= drag;
+            s.vel.y += (target - s.vel.y).clamp(-SWIM_VERTICAL_ACCEL * dt, SWIM_VERTICAL_ACCEL * dt);
+        }
         s.vel.y = s.vel.y.clamp(-swim, swim);
     } else {
         // Jumpy: jumps now and then by itself, and gives a double jump
@@ -619,14 +636,17 @@ pub fn step(
             }
         }
     }
-    // Creative flight: straight where the player looks (Space rises),
-    // no gravity and no drift.
+    // Creative flight: straight where the player looks (Space rises,
+    // descend sinks), no gravity and no drift.
     let flying = s.body.creative && !s.down && s.hook.is_none();
     if flying {
         let look = look_dir(input.yaw, input.pitch);
         let mut dir = look * f + right * r;
         if input.jump {
             dir.y += 1.0;
+        }
+        if input.descend {
+            dir.y -= 1.0;
         }
         let l = dir.length();
         let fast = if input.sprint { CREATIVE_FLY_FAST } else { CREATIVE_FLY };
@@ -1596,6 +1616,167 @@ mod tests {
             &w,
         );
         assert!(s.pos.y > 8.0, "{}", s.pos.y);
+    }
+
+    /// Milestone 23: descend swims down at swim speed, and with no key a
+    /// swimmer keeps their depth (neutral buoyancy).
+    #[test]
+    fn swimmers_dive_on_descend_and_hold_their_depth_without_keys() {
+        let mut w = world();
+        w.floor = 0;
+        w.water_below = 40;
+        let at = || PlayerState {
+            pos: DVec3::new(5.5, 30.0, 5.5),
+            ..Default::default()
+        };
+        let mut dive = at();
+        let down = PlayerInput {
+            descend: true,
+            ..Default::default()
+        };
+        run(&mut dive, down, 60, &w);
+        let swim = MoveConfig::default().swim_speed;
+        assert!(dive.pos.y < 30.0 - swim * 0.8, "dived to {}", dive.pos.y);
+        assert!((dive.vel.y + swim).abs() < 1e-6, "at swim speed: {}", dive.vel.y);
+        // Let go: it slows to a stop within half a second and stays.
+        run(&mut dive, PlayerInput::default(), 30, &w);
+        let held = dive.pos.y;
+        run(&mut dive, PlayerInput::default(), 600, &w);
+        assert!(
+            (dive.pos.y - held).abs() < 1e-6,
+            "drifted from {held} to {}",
+            dive.pos.y
+        );
+        // Both keys cancel.
+        let mut both = at();
+        run(
+            &mut both,
+            PlayerInput {
+                jump: true,
+                descend: true,
+                ..Default::default()
+            },
+            120,
+            &w,
+        );
+        assert!((both.pos.y - 30.0).abs() < 1e-6, "{}", both.pos.y);
+    }
+
+    /// A swimmer who comes up and lets go floats with their head out of the
+    /// water instead of sinking (Boundless's players held Space for minutes).
+    #[test]
+    fn swimmers_float_at_the_surface_with_their_head_out() {
+        let mut w = world();
+        w.floor = 0;
+        w.water_below = 20;
+        let cfg = MoveConfig::default();
+        let mut s = PlayerState {
+            pos: DVec3::new(5.5, 12.0, 5.5),
+            ..Default::default()
+        };
+        let up = PlayerInput {
+            jump: true,
+            ..Default::default()
+        };
+        run(&mut s, up, 240, &w);
+        run(&mut s, PlayerInput::default(), 1200, &w);
+        let eyes = s.pos.y + cfg.eye_height;
+        assert!(eyes > 20.0, "eyes under the surface at {eyes}");
+        assert!(
+            s.pos.y + cfg.height * 0.4 < 20.0,
+            "chest out of the water at {}",
+            s.pos.y
+        );
+        assert!(!s.submerged, "breathing");
+        assert_eq!(s.air_used, 0);
+    }
+
+    #[test]
+    fn creative_flight_descends() {
+        let w = world();
+        let mut s = PlayerState {
+            pos: DVec3::new(5.5, 40.0, 5.5),
+            ..Default::default()
+        };
+        s.body.creative = true;
+        run(
+            &mut s,
+            PlayerInput {
+                descend: true,
+                ..Default::default()
+            },
+            60,
+            &w,
+        );
+        assert!((s.pos.y - (40.0 - CREATIVE_FLY)).abs() < 0.3, "{}", s.pos.y);
+    }
+
+    /// Breath (milestone 23): 30 s with the eyes under, then 10% of max
+    /// health every 5 s; at the surface the bar fills again.
+    #[test]
+    fn a_held_breath_runs_out_and_then_the_swimmer_drowns() {
+        use crate::atmosphere::{AIR_TICKS, DROWN_PERCENT};
+        let mut w = world();
+        w.floor = 0;
+        w.water_below = 40;
+        let mut s = PlayerState {
+            pos: DVec3::new(5.5, 20.0, 5.5),
+            ..Default::default()
+        };
+        run(&mut s, PlayerInput::default(), u32::from(AIR_TICKS) - 1, &w);
+        assert!(s.submerged);
+        assert_eq!(s.air_used, AIR_TICKS - 1, "a tick of air a tick");
+        assert_eq!(s.hurt, 0, "not yet");
+        assert!(!s.drowning());
+        run(&mut s, PlayerInput::default(), 1, &w);
+        assert!(s.drowning());
+        // Every regen beat from here takes its share.
+        let (beats, from) = (4, s.hurt);
+        run(
+            &mut s,
+            PlayerInput::default(),
+            u32::from(crate::combat::REGEN_PERIOD_TICKS) * beats,
+            &w,
+        );
+        let hit = s.max_health() * DROWN_PERCENT / 100;
+        assert_eq!(s.hurt - from, hit * beats, "four beats of drowning");
+        // Up into the air: the bar refills and the hurt stops.
+        s.pos.y = 45.0;
+        s.vel = DVec3::ZERO;
+        let hurt = s.hurt;
+        run(&mut s, PlayerInput::default(), 600, &w);
+        assert_eq!(s.air_used, 0, "breathing again");
+        assert!(s.hurt <= hurt);
+        assert!(!s.drowning());
+    }
+
+    /// Leaden (Boundless's That Sinking Feeling, +50% breath) uses air at
+    /// half the rate under water and breathes back in at half the rate.
+    #[test]
+    fn leaden_halves_the_air_used_under_water_and_the_refill() {
+        use crate::atmosphere::AIR_REFILL;
+        use crate::forge::Quirks;
+        let mut w = world();
+        w.floor = 0;
+        w.water_below = 40;
+        let at = |q| PlayerState {
+            pos: DVec3::new(5.5, 1.0, 5.5),
+            quirks: Quirks(q),
+            ..Default::default()
+        };
+        let (mut plain, mut lead) = (at(0), at(Quirks::LEADEN));
+        run(&mut plain, PlayerInput::default(), 600, &w);
+        run(&mut lead, PlayerInput::default(), 600, &w);
+        assert_eq!(plain.air_used, 600);
+        assert_eq!(lead.air_used, 300, "half the air");
+        for s in [&mut plain, &mut lead] {
+            s.pos.y = 45.0;
+            s.vel = DVec3::ZERO;
+        }
+        run(&mut plain, PlayerInput::default(), 10, &w);
+        run(&mut lead, PlayerInput::default(), 10, &w);
+        assert_eq!(plain.air_used, 600 - 10 * AIR_REFILL);
+        assert_eq!(lead.air_used, 300 - 10 * AIR_REFILL / 2, "half the refill");
     }
 
     #[test]

@@ -502,7 +502,8 @@ pub struct Hud<'a> {
 pub struct AirView {
     /// 0 to 1.
     pub left: f32,
-    /// "Acid air: 2 short", "Choking", or "Air" while it comes back.
+    /// "Acid air: 2 short", "Choking", "Breath" under water, "Drowning", or
+    /// "Air" while it comes back.
     pub text: String,
     /// Short of protection (drawn in warning colours).
     pub short: bool,
@@ -515,7 +516,9 @@ pub fn air_view(s: &bm_core::PlayerState) -> Option<AirView> {
     if short == 0 && left >= 1.0 {
         return None;
     }
-    let text = if s.choking() {
+    let text = if s.drowning() {
+        "Drowning".to_string()
+    } else if s.choking() {
         format!("Choking: {} short", short)
     } else if short > 0 {
         let line = s.air.line.name();
@@ -525,13 +528,16 @@ pub fn air_view(s: &bm_core::PlayerState) -> Option<AirView> {
             .map(|f| f.to_uppercase().chain(c).collect::<String>())
             .unwrap_or_default();
         format!("{line}: {short} short of {}", s.air.line.ward())
+    } else if s.submerged {
+        // Holding a breath under water (milestone 23).
+        "Breath".to_string()
     } else {
         "Air".to_string()
     };
     Some(AirView {
         left,
         text,
-        short: short > 0,
+        short: short > 0 || s.drowning(),
     })
 }
 
@@ -2575,6 +2581,17 @@ mod tests {
             ("Air", false, 0.0),
             "safe, coming back"
         );
+        // Under water (milestone 23): a breath held, then drowning.
+        let mut swimmer = bm_core::PlayerState {
+            submerged: true,
+            air_used: 1,
+            ..Default::default()
+        };
+        let v = air_view(&swimmer).unwrap();
+        assert_eq!((v.text.as_str(), v.short), ("Breath", false));
+        swimmer.air_used = AIR_TICKS;
+        let v = air_view(&swimmer).unwrap();
+        assert_eq!((v.text.as_str(), v.short, v.left), ("Drowning", true, 0.0));
         assert_eq!(
             planet_line("Rustland", 4, Air::of(AirLine::Charged, 4)),
             "Rustland, tier 4, charged air (protection 1)"

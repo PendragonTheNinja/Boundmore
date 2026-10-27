@@ -289,6 +289,18 @@ Boundless's live tree and tables exactly (Nathan, 2026-10-20), in Boundmore's na
 | Elemental creatures | 10% of spawns on a tier 5 world, 23% on tier 6 (50% by tier 8); x2 health, x1.5 armour and damage, twice the drops (their element's shards among them), +50% XP; may be exotic too | 10% to 50% a developer's (forum check 3); the tier slope an inference (Measure 7); the rest Boundless's data |
 | Resistance | physical 40%; the element table (0.8 itself, 0.6 and 0.3 neighbours, -0.3 opposite: double damage) | Vansten's table (tuning 3.3.3) |
 
+## Water (M23, `docs/milestones/23-water-and-brews.md`, `bm-core/src/atmosphere.rs`)
+
+| Number | Value | Source |
+|---|---|---|
+| Breath under water | 30 s, the atmosphere's air bar (one bar, as in Boundless) | **guess** (Measure 1; not published anywhere, `research/brews-and-breath.md`) |
+| Breath refill | the atmosphere's: empty to full in about 8 s | **guess** |
+| Drowning | 10% of max health every 5 s once the bar is empty | a share of max health is Boundless's (t/17849); the rate a **guess** (Measure 2) |
+| Leaden (That Sinking Feeling) | half the air used under water, half the refill | +50% breath Release 209; slower refill players (t/44095); halving the drain is an inference from the air brew stacking to zero (t/52526) |
+| Swimming up and down | Space up, X down, both at swim speed; full speed in about a quarter second | Boundless's C dive was "very slow" (players); ours is a **guess** (Measure 4) |
+| Neutral buoyancy | with no key a swimmer keeps their depth and floats with the head out | **departs from Boundless** (which sank slowly; its most disliked swimming rule, t/14997); Measure 3 |
+| Swim speed and Agility | not linked yet | players say Agility did raise swim speed in Boundless (`research/brews-and-breath.md`, correcting tuning 1.6); open |
+
 ## Living worlds (M19, `docs/milestones/19-living-worlds.md`, `bm-worldgen/src/biomes.rs`)
 
 | Value | Now | Source, or guess |

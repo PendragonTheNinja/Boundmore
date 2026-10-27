@@ -1763,6 +1763,8 @@ impl App {
             slot: self.session.as_ref().map_or(0, |s| s.selected as u8),
             fire: false,
             reel: k(KeyCode::KeyR) as i8 - k(KeyCode::KeyF) as i8,
+            // Swim down (Boundless's creep key was C, Boundmore's crafting).
+            descend: k(KeyCode::KeyX),
         }
     }
 

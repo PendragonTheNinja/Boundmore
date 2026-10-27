@@ -115,6 +115,10 @@ pub const AIR_REFILL: u16 = 4;
 /// matter how many points you have"; forum check 1). The rate is a
 /// **guess** (Measure 2).
 pub const CHOKE_PERCENT: u32 = 5;
+/// Drowning takes this percent of max health every 5 s (milestone 23;
+/// Boundless's drowning was a share of max health, t/17849; the rate is a
+/// **guess**, Measure 2).
+pub const DROWN_PERCENT: u32 = 10;
 /// Fog closes to this many blocks when the air is gone (**guess**).
 pub const FOG_AT_EMPTY: f32 = 30.0;
 
@@ -138,26 +142,55 @@ impl PlayerState {
         self.air_used >= AIR_TICKS && self.shortfall() > 0 && !self.down
     }
 
+    /// Out of air with the eyes under a liquid (milestone 23).
+    pub fn drowning(&self) -> bool {
+        self.air_used >= AIR_TICKS && self.submerged && !self.down
+    }
+
+    /// How many times the air used under water is halved: Leaden (Boundless's
+    /// That Sinking Feeling, +50% breath) once. Two halvings use none, as
+    /// Boundless's quirk with its air brew did.
+    pub fn breath_halvings(&self) -> u8 {
+        u8::from(self.quirks.has(crate::forge::Quirks::LEADEN))
+    }
+
     /// Air left, 0 to 1 (for the bar and the fog).
     pub fn air_left(&self) -> f32 {
         f32::from(AIR_TICKS.saturating_sub(self.air_used)) / f32::from(AIR_TICKS)
     }
 
-    /// One tick of air: it is used while short and comes back while not;
-    /// once it is all used every regen beat takes health. A player who is down
-    /// keeps what air they had.
+    /// One tick of air: it is used while short of protection or with the
+    /// eyes under a liquid, and comes back otherwise; once it is all used
+    /// every regen beat takes health. A player who is down keeps what air
+    /// they had.
     pub(crate) fn air_tick(&mut self, period: bool) {
         if self.down {
             return;
         }
-        let short = self.shortfall();
-        if short == 0 {
-            self.air_used = self.air_used.saturating_sub(AIR_REFILL);
+        let short = self.shortfall() > 0;
+        let leaden = self.quirks.has(crate::forge::Quirks::LEADEN);
+        if !short && !self.submerged {
+            // Leaden breathes back in at half the rate (Boundless: "much
+            // much much longer to breathe in").
+            let refill = if leaden { AIR_REFILL / 2 } else { AIR_REFILL };
+            self.air_used = self.air_used.saturating_sub(refill);
             return;
         }
-        self.air_used = (self.air_used + 1).min(AIR_TICKS);
+        // Bad air takes a tick of air a tick whatever the swimmer carries;
+        // under water each halving skips every other tick of the step clock,
+        // which both sides count alike.
+        let uses = short
+            || match self.breath_halvings() {
+                0 => true,
+                1 => self.clock % 2 == 0,
+                _ => false,
+            };
+        if uses {
+            self.air_used = (self.air_used + 1).min(AIR_TICKS);
+        }
         if self.air_used >= AIR_TICKS && period {
-            let d = (self.max_health() * CHOKE_PERCENT / 100).max(1);
+            let percent = if self.submerged { DROWN_PERCENT } else { CHOKE_PERCENT };
+            let d = (self.max_health() * percent / 100).max(1);
             self.take(d);
         }
     }
@@ -192,7 +225,8 @@ impl PlayerState {
 /// toward [`FOG_AT_EMPTY`] as the air runs out while short (Boundless: the
 /// fog rolls in right up to you).
 pub fn fog_end(normal: f32, s: &PlayerState) -> f32 {
-    if s.shortfall() == 0 && s.air_used == 0 {
+    // Only bad air brings the fog in; breath held under water does not.
+    if s.shortfall() == 0 {
         return normal;
     }
     let left = s.air_left();

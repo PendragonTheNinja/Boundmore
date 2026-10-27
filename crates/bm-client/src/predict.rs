@@ -649,6 +649,49 @@ mod tests {
         assert_eq!(p.state, truth[239]);
     }
 
+    /// Milestone 23: a dive (down, hold, up, float) with the breath running
+    /// down under water predicts with no correction.
+    #[test]
+    fn a_dive_and_a_held_breath_predict_with_no_correction() {
+        struct Lake;
+        impl PhysicsWorld for Lake {
+            fn solid(&self, p: BlockPos) -> bool {
+                p.y < 2
+            }
+            fn liquid(&self, p: BlockPos) -> bool {
+                p.y < 24 && !self.solid(p)
+            }
+        }
+        let cfg = MoveConfig::default();
+        let dive = |i: u32| PlayerInput {
+            forward: (i % 200 < 100) as i8,
+            descend: (60..180).contains(&i),
+            jump: (300..420).contains(&i),
+            yaw: (i * 120) as u16,
+            ..Default::default()
+        };
+        let inputs: Vec<PlayerInput> = (1..=600).map(dive).collect();
+        let mut s = spawn();
+        let truth: Vec<PlayerState> = inputs
+            .iter()
+            .map(|i| {
+                movement::step(&mut s, i, &cfg, None, shape(), &Lake);
+                s
+            })
+            .collect();
+        assert!(truth[250].submerged && truth[250].air_used > 0, "holding a breath");
+        let mut p = Predictor::new(spawn());
+        for (i, input) in inputs.iter().enumerate() {
+            p.tick(*input, None, Default::default(), &cfg, shape(), &Lake);
+            if i >= 5 && i % 3 == 0 {
+                let ack = i as u32 - 4;
+                p.reconcile(i as u64, ack, truth[ack as usize - 1], &cfg, shape(), &Lake);
+            }
+        }
+        assert_eq!(p.corrections, 0);
+        assert_eq!(p.state, truth[599]);
+    }
+
     #[test]
     fn quirks_in_hand_predict_with_no_correction() {
         // A Jumpy, Sprinter item held for inputs 30 to 150 (milestone 17):

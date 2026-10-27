@@ -24,7 +24,7 @@ The game opens on a login screen: pick a name and password and press **Create ac
 
 Controls:
 - Click to capture the mouse; Esc releases it or closes a menu.
-- WASD to move, Space to jump (and to swim up; push against a shore with Space held to climb out), Shift to sprint.
+- WASD to move, Space to jump (and to swim up; push against a shore with Space held to climb out), X to swim down, Shift to sprint. Let go of both in water and you stay where you are, or float at the surface; the air bar runs while your head is under, and when it is empty you drown.
 - **Hold** the left button to break a block; it goes into your inventory. Right click places the selected block. 1 to 0 or the mouse wheel pick a hotbar slot.
 - **I** (or Tab) opens the inventory: drag to move, right drag or Shift drag to split, drop on Throw away to discard.
 - **C** opens crafting: things you make by hand, or, looking at a workbench or furnace, what it makes. Stations keep working while you are away; collect from them later.
@@ -41,7 +41,7 @@ Controls:
 - **Enter** or **T** opens chat. `/l`, `/p` and `/u` switch between local (nearby), planet and universe; `/w name text` whispers and `/r text` replies. Enter sends, Esc closes.
 - F11 for fullscreen.
 
-**Creative mode (for testing).** Start the server with `cargo run --release -p bm-server -- --creative` (or put `creative = true` in `server.toml`). In game, **F8** (or `/creative` in chat) switches it on and off: you fly where you look (Space rises, Shift flies fast), any block breaks with one swing of anything, and health, energy, hunger and air stay full. `/give item count` puts items in your pack (`/give iron_ingot 50`, `/give basalt 200`; names as in `assets/items.toml` and `assets/blocks.toml`, or as shown in game), `/xp amount` adds XP. On a server started without `--creative` all of this is refused.
+**Creative mode (for testing).** Start the server with `cargo run --release -p bm-server -- --creative` (or put `creative = true` in `server.toml`). In game, **F8** (or `/creative` in chat) switches it on and off: you fly where you look (Space rises, X sinks, Shift flies fast), any block breaks with one swing of anything, and health, energy, hunger and air stay full. `/give item count` puts items in your pack (`/give iron_ingot 50`, `/give basalt 200`; names as in `assets/items.toml` and `assets/blocks.toml`, or as shown in game), `/xp amount` adds XP. On a server started without `--creative` all of this is refused.
 
 **Far views.** The land is drawn out to 1024 blocks: past 320 blocks in 2-block cells, past 640 in 4-block cells, as Boundless drew its distant terrain. On the first visit to a planet the server builds the horizon in the background (a minute or two; the title bar's "far" count climbs) and saves it, so later visits are quick. `far_radius = 0` in `server.toml` (or `--far 0`) turns it off; `--far 16` halves it.
 
