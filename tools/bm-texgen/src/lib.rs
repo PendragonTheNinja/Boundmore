@@ -6,6 +6,7 @@
 //! in-context preview. Deterministic: the same build writes the same bytes.
 //! The look is set by `docs/art-direction.md`.
 
+pub mod brews;
 pub mod building;
 pub mod canvas;
 pub mod color;

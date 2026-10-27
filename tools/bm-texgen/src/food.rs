@@ -389,6 +389,11 @@ fn grains(salt: u32, p: P) -> f32 {
 
 /// A wooden bucket with two iron bands; `top` the colour of what is in it.
 fn bucket(top: Option<u32>) -> Tex {
+    bucket_icon(top).finish()
+}
+
+/// The bucket, unfinished, so others can draw over it (`brews`).
+pub(crate) fn bucket_icon(top: Option<u32>) -> Icon {
     let wood = plank_ramp();
     let iron = steel_ramp();
     let mut icon = Icon::new();
@@ -430,7 +435,7 @@ fn bucket(top: Option<u32>) -> Tex {
         let (u, v) = ((p.0 - 16.0) / 11.0, (p.1 - 9.0) / 7.5);
         (v < 0.0 && (u.hypot(v) - 1.0).abs() < 0.09).then(|| iron.pick(0.7, x, y))
     });
-    icon.finish()
+    icon
 }
 
 /// Three nails, crossed.
