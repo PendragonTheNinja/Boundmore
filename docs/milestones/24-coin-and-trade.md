@@ -1,6 +1,6 @@
 # Milestone 24: Coin and Trade
 
-*Spec drafted 2026-10-27; **waiting on Nathan's decisions** (below) before any code.* Nathan, 2026-10-27: "Merge to main and at least start on the next milestone." Every system left on the roadmap shapes the economy (`CLAUDE.md`: shops, settlements, guilds, mail, sovereign worlds), and this is the one the others stand on: Boundless was "built and traded on by its players", and the first sale from your own shop stand was one of the hooks players named (`research/boundless-forum-feedback.md`, #11). Boundmore has no money yet (marks come only from levelling, M12), so this milestone starts with coin itself.
+*Spec drafted 2026-10-27; Nathan answered Decisions 2 to 5 the same day (see Decided).* Nathan, 2026-10-27: "Merge to main and at least start on the next milestone." Every system left on the roadmap shapes the economy (`CLAUDE.md`: shops, settlements, guilds, mail, sovereign worlds), and this is the one the others stand on: Boundless was "built and traded on by its players", and the first sale from your own shop stand was one of the hooks players named (`research/boundless-forum-feedback.md`, #11). Boundmore has no money yet (marks come only from levelling, M12), so this milestone starts with coin itself.
 
 ## What Boundless did (wiki pages for Coin, Feat, Shop Stand, Request Basket, Plinth, Footfall; `research/boundless-mechanics.md` "Shops and trading")
 
@@ -12,7 +12,15 @@
 - Prices could be set for similar items at once; a price-search API (Release 242) let players build price tools.
 - **What players disliked:** finding anything could take "2 hours through countless hubs and malls" (#2003). They asked for a shop directory, while others feared a global index would kill hunting for deals and the footfall shops earned.
 
-## Decisions for Nathan
+## Decided (Nathan, 2026-10-27)
+
+- **Coin comes from feats, as Boundless, and from footfall, as Boundless did** (Decision 2). Footfall in Boundless paid only beacons inside a named settlement, at a base set by the settlement's rank (Outpost 20 coin at 10,000 prestige, Hamlet 30, Village 40, ...), once per visitor a day; so it needs prestige and settlements, and comes as part 4 after the shops.
+- **The sink is a small sales fee** on shop stand sales, burnt (Decision 3): 2% (**guess**, Measure).
+- **Shops are found physically only**, as in Boundless: no directory (Decision 4). Part 3 below is dropped.
+- **A new character starts with 500 coin** (Decision 5).
+- Still open, built with the recommended default until he says otherwise (both cheap to change): the currency is called **coin** (Decision 1), and there is **no direct trade window**, stands only (Decision 6).
+
+## Decisions for Nathan (as asked)
 
 These shape what players invest in, so they are his (`CLAUDE.md`, "Stop and ask first"):
 
@@ -27,14 +35,17 @@ These shape what players invest in, so they are his (`CLAUDE.md`, "Stop and ask 
 
 - **Part 1, coin and feats:** coin on the character (saved; a new table or a save version), feats with their rewards and a feats window, coin shown in the inventory.
 - **Part 2, plinths, shop stands and request baskets:** Boundless's recipes; a stand's window for its owner (fill, price each item, take the coin) and for buyers (see, pay, take); a basket's window (set the wanted item and colour from one put in, price, charge with coin; sellers fill and are paid); stands on a claim belong to the claim's owner; every trade on the server in one save batch so coin and items can never be duplicated or lost.
-- **Part 3, the directory** (if Decision 4 says so): shrine window search by item.
+- ~~Part 3, the directory~~: dropped (Decision 4).
+- **Part 4, footfall:** prestige on claims, settlements of touching claims and their ranks, footfall coin collected at the claim. Specced in its own section before it is built.
 
 ## Non-goals
 
-Footfall and settlements, guilds, mail, sovereign worlds, a premium currency (Boundless's cubits), NPC traders.
+Guilds, mail, sovereign worlds, a premium currency (Boundless's cubits), NPC traders.
 
 ## Status
 
 - [x] Research from the wiki and the existing research files (2026-10-27)
-- [ ] **Nathan's answers to Decisions 1 to 6**
-- [ ] Part 1, Part 2, Part 3
+- [x] Nathan's answers to Decisions 2 to 5 (2026-10-27); 1 and 6 built with the defaults
+- [ ] Part 1, coin and feats
+- [ ] Part 2, plinths, shop stands, request baskets
+- [ ] Part 4, footfall (with prestige and settlements)
