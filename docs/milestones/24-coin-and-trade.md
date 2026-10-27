@@ -35,6 +35,18 @@ These shape what players invest in, so they are his (`CLAUDE.md`, "Stop and ask 
 
 Boundless's feat list (`research/coin-and-trade.md`), each a counter with five thresholds paying 100, 280, 860, 2,560 and 7,700 coin, kept where Boundmore has the system and in Boundmore's own names: builder (blocks placed, wood, rock and soil placed, chiselled, plots), combat (creatures defeated, each kind, by bomb, by sling), crafter (by hand, each station, unique recipes), explorer (sprinted, swum, climbed, travelled, worlds and regions discovered), gatherer (trunks, foliage, plants, fungi, soil, boulders), miner (rock, coal, metal ore, relics, fossils, gems, unique items), core (level, feats done, meteor hearts, skill points spent), trader (stand and basket sales, coin spent, tax paid). Left out until their systems exist: objectives, beacon fuel, settlements and prestige (part 4), warps, creeping. XP per feat tier: not on the wiki (**guess**: the tier's coin as XP).
 
+## Part 2: shop stands and request baskets
+
+From Boundless (`research/coin-and-trade.md`) where known; the rest decided here (cheap to change, nothing players invest in is shaped by it beyond what Nathan decided):
+
+7. **Two blocks, each a 16-slot storage block** (Boundless's slot count: players' reports, **guess**-level, Measure): the shop stand and the request basket, made at the refinery from 2 storage blocks of any kind, a plinth and 2 cotton cloth (7 min 30 s, spark 200, wear 150, Decoration Crafting 2 and 3; Boundless's recipe). **They may only be placed inside your own claim**, so only their owner can open them as storage (the claim already keeps everyone else out).
+8. **The owner** opens one with E as a storage block (the window they know) and sets **a price per slot** in coin a piece (0: not for sale or not wanted). Each holds a **till** of coin.
+9. **A shop stand sells:** anyone else who opens it sees each priced slot (item, colour, count, price) and buys any number from a slot: they pay the price times the number; the **sales fee** (2% for now, rounded up, Decision 3) is burnt; the rest goes into the till. The owner takes the till out into their own coin.
+10. **A request basket buys:** each slot holding one or more of an item, with a price, asks for more of exactly that item and colour. The owner charges the till with coin. Anyone else who opens it sells into a slot from their pack: paid the price a piece from the till (as far as the till and the slot's stack room go), less the fee. The owner takes the bought items out as storage.
+11. **One save batch** carries the pack, the coin (the ledger table) and the stand (a new `planet_shops` table of prices and till, beside its slots in `planet_storage`), so a trade is never half saved.
+12. **A stand or basket with stock, items or coin in its till cannot be broken.** When a claim lapses, its contents go to the owner's reclaim as storage does, and the till back into the owner's coin.
+13. **Feats:** the owner's sales and fees (`sold`, `basket_sold`, `tax`) and the buyer's coin spent (`spent`) count, the owner's even while they are away.
+
 ## The plan once decided
 
 - **Part 1, coin and feats:** coin on the character (saved; a new table or a save version), feats with their rewards and a feats window, coin shown in the inventory.
@@ -54,5 +66,6 @@ Guilds, mail, sovereign worlds, a premium currency (Boundless's cubits), NPC tra
 - [x] The feats window (J): coin, each group's feats with tier and progress (`menus::feats`, 2026-10-27).
 - [ ] Part 1, left: kills by bomb and by sling, skill points spent (counters exist, not yet counted).
 - Upgrade check (2026-10-27): a universe made by `main` (protocol 42, two bots on two planets) opened with no warnings; its players logged back in and were given new ledgers (500 coin).
-- [ ] Part 2, plinths, shop stands, request baskets
+- [x] Part 2 specced (2026-10-27)
+- [ ] Part 2, shop stands and request baskets (plinths exist since M22)
 - [ ] Part 4, footfall (with prestige and settlements)

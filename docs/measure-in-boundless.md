@@ -108,6 +108,7 @@ Mostly reading item tooltips (the wiki's copies of these were broken or out of d
 - [ ] **K1.** Poles, beams and panes: how thick are they (in sixteenths of a block, or "about a third of a block")? Do beams meeting a pole look joined? Do poles show caps at their ends? (Ours: pole 6/16, beam 8/16, pane 2/16.)
 - [ ] **K2.** Do chairs face the player who placed them? Can you walk through panes or tables?
 - [ ] **K3.** Signs: how long can the further ("additional") text be? Can a standalone sign stand on a floor, and how is it turned?
+- [ ] **K5.** How many slots does a shop stand have, and a request basket? (Ours: 16 each.)
 - [ ] **K4.** Machines: when you break a damaged machine and place it again, does it keep its wear?
 
 ## L. Worlds, by eye (no numbers needed)
