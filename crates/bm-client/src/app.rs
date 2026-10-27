@@ -171,6 +171,11 @@ struct Journey {
 }
 
 /// Everything that exists once the server has welcomed us.
+/// The feats (milestone 24), the same file the server reads.
+static FEAT_BOOK: std::sync::LazyLock<bm_core::feats::FeatBook> = std::sync::LazyLock::new(|| {
+    bm_core::feats::FeatBook::parse(include_str!("../../../assets/feats.toml")).expect("assets/feats.toml")
+});
+
 struct Session {
     /// The planet we are on: everything in `world`, `claims` and `remotes`
     /// belongs to it.
@@ -2560,6 +2565,7 @@ impl App {
                         &mut actions,
                     );
                 }
+                Some(Menu::Feats) => menus::feats(&ctx, &FEAT_BOOK, s.ledger.as_ref(), &mut actions),
                 Some(Menu::Skills) => {
                     let wait = s.progress.switch_wait(s.server_tick(local));
                     crate::skill_screen::skills(
@@ -3607,6 +3613,8 @@ impl ApplicationHandler for App {
                     }
                     KeyCode::KeyI | KeyCode::Tab => self.toggle(Menu::Inventory),
                     KeyCode::KeyK => self.toggle(Menu::Skills),
+                    // Feats and coin (milestone 24).
+                    KeyCode::KeyJ => self.toggle(Menu::Feats),
                     KeyCode::KeyC => {
                         let m = self.crafting_menu();
                         self.toggle(m);

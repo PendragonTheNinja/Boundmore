@@ -66,6 +66,8 @@ pub enum Menu {
     Skills,
     /// The sign at this block (milestone 22 part 4).
     Sign(BlockPos),
+    /// Feats and coin (milestone 24).
+    Feats,
 }
 
 #[derive(Default)]
@@ -565,6 +567,65 @@ const FOOD_BAD: Color32 = Color32::from_rgb(230, 120, 96);
 const CREATIVE_TAG: Color32 = Color32::from_rgb(140, 200, 255);
 /// Coin in the inventory (milestone 24).
 const COIN: Color32 = Color32::from_rgb(240, 200, 90);
+
+/// One feat's line in the feats window: name, tier reached (0 to 5), and
+/// what is next ("Place 2500 blocks: 312 so far"), or "Complete".
+pub fn feat_line(def: &bm_core::feats::FeatDef, ledger: &bm_core::feats::Ledger) -> (String, u8, String) {
+    let done = ledger.paid.get(&def.id).copied().unwrap_or(0);
+    let count = ledger.count(&def.counts);
+    let next = if done >= 5 {
+        "Complete".to_string()
+    } else {
+        format!("{}: {} so far", def.task(done), count)
+    };
+    (def.name.clone(), done, next)
+}
+
+/// The feats window (milestone 24): coin, then each group's feats with
+/// their tier and progress.
+pub fn feats(
+    ctx: &egui::Context,
+    book: &bm_core::feats::FeatBook,
+    ledger: Option<&bm_core::feats::Ledger>,
+    actions: &mut Vec<UiAction>,
+) {
+    let mut open = true;
+    window("Feats").open(&mut open).show(ctx, |ui| {
+        let Some(l) = ledger else {
+            ui.label(egui::RichText::new("Waiting for the server").color(MUTED));
+            return;
+        };
+        ui.label(egui::RichText::new(coin_text(l.coin)).color(COIN));
+        ui.label(
+            egui::RichText::new("Each feat pays coin and XP at five tiers: 100, 280, 860, 2,560 and 7,700 coin.")
+                .color(MUTED)
+                .small(),
+        );
+        egui::ScrollArea::vertical().max_height(420.0).show(ui, |ui| {
+            let mut group = "";
+            for f in &book.feats {
+                if f.group != group {
+                    group = &f.group;
+                    ui.add_space(6.0);
+                    heading(ui, &bm_core::items::title_case(group));
+                }
+                let (name, done, next) = feat_line(f, l);
+                ui.horizontal(|ui| {
+                    let tier = if done == 0 {
+                        String::new()
+                    } else {
+                        format!(" {}", crate::items::roman(done))
+                    };
+                    ui.label(egui::RichText::new(format!("{name}{tier}")).color(if done > 0 { COIN } else { TEXT }));
+                    ui.label(egui::RichText::new(next).color(MUTED).small());
+                });
+            }
+        });
+    });
+    if !open {
+        actions.push(UiAction::CloseMenu);
+    }
+}
 
 /// "1,250 coin".
 pub fn coin_text(c: u64) -> String {
@@ -2644,6 +2705,22 @@ mod tests {
             "Rustland, tier 4, charged air (protection 1)"
         );
         assert_eq!(planet_line("Arid", 2, Air::default()), "Arid, tier 2");
+    }
+
+    #[test]
+    fn a_feat_line_shows_its_tier_and_what_is_next() {
+        let book = bm_core::feats::FeatBook::parse(include_str!("../../../assets/feats.toml")).unwrap();
+        let f = book.get("placed").unwrap();
+        let mut l = bm_core::feats::Ledger::default();
+        assert_eq!(
+            feat_line(f, &l),
+            ("Builder".into(), 0, "Place 250 blocks: 0 so far".into())
+        );
+        l.add(&book, "placed", 300);
+        assert_eq!(feat_line(f, &l).1, 1);
+        assert_eq!(feat_line(f, &l).2, "Place 2500 blocks: 300 so far");
+        l.add(&book, "placed", 2_000_000);
+        assert_eq!(feat_line(f, &l).2, "Complete");
     }
 
     #[test]
