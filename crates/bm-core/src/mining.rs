@@ -132,7 +132,7 @@ pub fn skilled_tool_keen(tool: &ToolStats, effects: &Effects, keen: f32) -> Tool
     let damage = (tool.damage as f64 * effects.damage_multiplier(tool.class) - 1e-9).ceil();
     ToolStats {
         damage: damage.max(0.0) as u32,
-        action_speed: tool.action_speed + effects.action_speed_bonus(tool.class) as f32,
+        action_speed: effects.action_speed(tool.action_speed, effects.action_speed_bonus(tool.class)),
         crit_chance: (tool.crit_chance + effects.crit_bonus() as f32 * keen).min(1.0),
         ..*tool
     }

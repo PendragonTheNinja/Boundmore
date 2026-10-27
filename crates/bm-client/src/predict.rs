@@ -609,6 +609,45 @@ mod tests {
         assert_eq!(p.state, truth[239]);
     }
 
+    /// Milestone 23 part 2: a Swift brew drunk at input 120 speeds the run
+    /// on both sides alike.
+    #[test]
+    fn a_swift_brew_predicts_with_no_correction() {
+        let (cfg, w) = (MoveConfig::default(), Floor(10));
+        let swift = FoodStats {
+            brew: bm_core::brew::Brew::Swift,
+            rank: 5,
+            ..Default::default()
+        };
+        let inputs: Vec<PlayerInput> = (1..=240).map(walk).collect();
+        let mut s = spawn();
+        let truth: Vec<PlayerState> = inputs
+            .iter()
+            .enumerate()
+            .map(|(i, input)| {
+                movement::step(&mut s, input, &cfg, None, shape(), &w);
+                if i as u32 + 1 == 120 {
+                    s.eat(&swift).unwrap();
+                }
+                s
+            })
+            .collect();
+        assert!(truth[239].brew_run_bonus() > 0.0, "drunk");
+        let mut p = Predictor::new(spawn());
+        for (i, input) in inputs.iter().enumerate() {
+            let seq = p.tick(*input, None, Default::default(), &cfg, shape(), &w);
+            if seq == 122 {
+                p.eat(120, swift, &cfg, shape(), &w);
+            }
+            if i >= 5 && i % 3 == 0 {
+                let ack = i as u32 - 4;
+                p.reconcile(i as u64, ack, truth[ack as usize - 1], &cfg, shape(), &w);
+            }
+        }
+        assert_eq!(p.corrections, 0);
+        assert_eq!(p.state, truth[239]);
+    }
+
     #[test]
     fn a_planets_air_changing_lands_where_the_server_sets_it() {
         // Milestone 21: a wandering world's air thickens after input 100;

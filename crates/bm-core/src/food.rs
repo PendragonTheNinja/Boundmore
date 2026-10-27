@@ -213,13 +213,19 @@ pub struct FoodStats {
     /// Raw meat: sickness.
     pub sick: bool,
     pub buff: Buff,
+    /// The buff's rank, or the brew's grade.
     pub rank: u8,
     /// How long the buff lasts.
     pub minutes: u16,
+    /// A brew (milestone 23 part 2): drunk, never with a food buff.
+    pub brew: crate::brew::Brew,
 }
 
 impl FoodStats {
     pub fn valid(&self) -> bool {
+        if self.brew != crate::brew::Brew::None {
+            return self.buff == Buff::None && self.brew.grades().contains(&self.rank);
+        }
         match self.buff {
             Buff::None => true,
             b => self.rank >= 1 && self.rank <= b.max_rank() && self.minutes > 0 && self.minutes <= 240,
@@ -291,7 +297,7 @@ impl PlayerState {
         if self.chew > 0 {
             return Err(Refusal::Chewing);
         }
-        if self.hunger == 0 && food.buff == Buff::None {
+        if self.hunger == 0 && food.buff == Buff::None && food.brew == crate::brew::Brew::None {
             return Err(Refusal::Full);
         }
         Ok(())
@@ -302,7 +308,7 @@ impl PlayerState {
     pub fn eat(&mut self, food: &FoodStats) -> Result<(), Refusal> {
         self.can_eat(food)?;
         self.hunger = self.hunger.saturating_sub(food.hunger as u32 * HUNGER_SCALE);
-        if food.buff != Buff::None {
+        if food.buff != Buff::None && food.brew == crate::brew::Brew::None {
             self.buff = FoodBuff {
                 kind: food.buff,
                 rank: food.rank,
@@ -312,6 +318,7 @@ impl PlayerState {
         if food.sick {
             self.sick = SICK_TICKS;
         }
+        self.drink(food.brew, food.rank);
         self.chew = EAT_TICKS;
         self.clamp_to_maxima();
         Ok(())

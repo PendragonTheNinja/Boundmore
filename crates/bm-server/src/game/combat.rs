@@ -165,7 +165,7 @@ impl Game {
         // Many Shots: several pellets a trigger, each a share of the damage,
         // fanned out sideways; one energy and one wear for them all.
         let (shots, share) = many_shots(stack.map_or(0, |s| s.forge.level(TraitId::ManyShots)));
-        let effects = p.effects;
+        let effects = p.effects.brewed(&p.state);
         let sling = effects.skilled_sling(&sling);
         let rewind = rewind_for(p.pending.len());
         let pi = p.planet;
@@ -434,7 +434,7 @@ impl Game {
         let Some(tool) = swing_tool_of(&self.items, p.inventory.get(slot as usize), &held) else {
             return tracing::debug!("#{id} struck with no tool in slot {slot}");
         };
-        let effects = p.effects;
+        let effects = p.effects.brewed(&p.state);
         // A gem tool strikes with its gem's element (milestone 18 part 3),
         // an astral one with its ore's pair (milestone 21).
         let element = p

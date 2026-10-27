@@ -1,6 +1,11 @@
 //! Eating and buckets (milestone 16, `docs/milestones/16-food.md`).
 
 use super::*;
+use bm_core::brew::{self, Brew};
+
+/// How near a creature must be for Soothing and Taunting to reach it, blocks
+/// (**guess**).
+pub(super) const BREW_THREAT_RANGE: f64 = 32.0;
 
 impl Game {
     /// Eats one of the food in hotbar `slot` right after input `at`, as the
@@ -25,6 +30,37 @@ impl Game {
         let before = p.inventory.clone();
         p.inventory.take_one(slot as usize);
         send_slots(p, &before);
+        if matches!(food.brew, Brew::Soothing | Brew::Taunting) {
+            self.brew_threat(id, food.brew);
+        }
+    }
+
+    /// Soothing and Taunting brews (milestone 23 part 2): 10000 threat taken
+    /// from, or added to, every live creature within [`BREW_THREAT_RANGE`]
+    /// that is already fighting (Boundless's calming and aggravating brews
+    /// moved the drinker's threat rating). Soothed below nothing, a creature
+    /// forgets the drinker.
+    pub(super) fn brew_threat(&mut self, id: u32, brew: Brew) {
+        let Some(p) = self.players.get(&id) else { return };
+        let (pi, at) = (p.planet, p.state.pos);
+        let shape = self.planets[pi].world.shape;
+        for c in self.herds[pi]
+            .list
+            .iter_mut()
+            .filter(|c| c.alive() && !c.threat.is_empty())
+        {
+            if shape.delta(at, c.state.pos).length() > BREW_THREAT_RANGE {
+                continue;
+            }
+            if brew == Brew::Taunting {
+                c.add_threat(id, brew::THREAT);
+            } else if let Some(t) = c.threat.iter_mut().find(|(p, _)| *p == id) {
+                t.1 -= brew::THREAT;
+                if t.1 <= 0.0 {
+                    c.forget(id);
+                }
+            }
+        }
     }
 
     /// Fills one empty bucket from hotbar `slot` at the water block `pos`.

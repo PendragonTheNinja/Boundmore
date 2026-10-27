@@ -148,10 +148,10 @@ impl PlayerState {
     }
 
     /// How many times the air used under water is halved: Leaden (Boundless's
-    /// That Sinking Feeling, +50% breath) once. Two halvings use none, as
-    /// Boundless's quirk with its air brew did.
+    /// That Sinking Feeling, +50% breath) once, the Deepwater brew once. Two
+    /// halvings use none, as Boundless's quirk with its air brew did.
     pub fn breath_halvings(&self) -> u8 {
-        u8::from(self.quirks.has(crate::forge::Quirks::LEADEN))
+        u8::from(self.quirks.has(crate::forge::Quirks::LEADEN)) + u8::from(self.deepwater())
     }
 
     /// Air left, 0 to 1 (for the bar and the fog).

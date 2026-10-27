@@ -1595,7 +1595,7 @@ impl Game {
                     protected: p.character.level() < PROTECTED_BELOW_LEVEL,
                     // Loud (a forged quirk) on what they hold: noticed from
                     // further away.
-                    noticed_at: p.effects.noticed_at()
+                    noticed_at: p.effects.brewed(&p.state).noticed_at()
                         * p.inventory
                             .get(p.last_input.slot as usize)
                             .filter(|_| (p.last_input.slot as usize) < bm_core::HOTBAR_SLOTS)

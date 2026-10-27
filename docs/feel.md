@@ -301,6 +301,21 @@ Boundless's live tree and tables exactly (Nathan, 2026-10-20), in Boundmore's na
 | Neutral buoyancy | with no key a swimmer keeps their depth and floats with the head out | **departs from Boundless** (which sank slowly; its most disliked swimming rule, t/14997); Measure 3 |
 | Swim speed and Agility | not linked yet | players say Agility did raise swim speed in Boundless (`research/brews-and-breath.md`, correcting tuning 1.6); open |
 
+## Brews (M23 part 2, `bm-core/src/brew.rs`)
+
+| Number | Value | Source |
+|---|---|---|
+| Timed brews | 10 min (Swift, Brawn, Hushed, Glowing, Lifesaving); Mending and Steady 60 s; Deepwater 20 min | Release 199; the wiki; Halloween brews |
+| Healing | instant 750 to 12000; Mending 75 to 1200 every 5 s; x(100 + 10 an Insight rank)% | wiki and Release 199 (Mending an inference, `research/brews-and-breath.md` A.2) |
+| Energy | instant 600 to 9600; Steady 30 to 900 a second | wiki; Release 223 |
+| Swift | +0.5 to 2 m/s run and sprint, action speed x1.2 to x2 | wiki item texts (sprint part medium) |
+| Brawn | +10% to +50% damage in Power's share | wiki |
+| Hushed | 30 / 40 / 55% nearer (II to IV) | III Boundless's; II and IV inferred |
+| Glowing | light 10 / 11 / 12 (II to IV) | **guess** (Boundless 6 to 12 m) |
+| Soothing, Taunting | 10000 threat, creatures within 32 blocks already fighting | the threat Boundless's; the range a **guess** |
+| Lifesaving | back up at 25% health with half the energy spent | **guess** (Boundless: "a health and energy deficit") |
+| Deepwater recipe | grade I flask, 3 rice, a float sac, a bucket of water | **guess** (Boundless's Kraken took event orbs) |
+
 ## Living worlds (M19, `docs/milestones/19-living-worlds.md`, `bm-worldgen/src/biomes.rs`)
 
 | Value | Now | Source, or guess |

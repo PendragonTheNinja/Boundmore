@@ -191,6 +191,10 @@ pub enum Effect {
     /// Milestone 16: cooking levels (+1 a rank; the epics +1 each).
     FoodCrafting,
     FoodCraftingEpic,
+    /// Milestone 23 part 2: brewing levels (+1 a rank; Master Brewer +1;
+    /// Provisioner adds to cooking and brewing).
+    BrewCrafting,
+    BrewCraftingEpic,
     /// Milestone 16 part 2: the sowing level (+1 a rank) and its epic (+2,
     /// more yield, stronger fertiliser).
     Farming,
@@ -583,6 +587,13 @@ pub struct Effects {
     pub decoration_crafting: u8,
     /// Milestone 16.
     pub food_crafting: u8,
+    /// Milestone 23 part 2.
+    pub brew_crafting: u8,
+    /// What the brew in effect adds (`Effects::brewed`): damage and action
+    /// speed as fractions more, and how much nearer creatures notice you.
+    pub brew_damage: f64,
+    pub brew_speed: f64,
+    pub brew_hush: f64,
     /// The Farming (crop sowing) level and the Farming Epic.
     pub farming: u8,
     pub farming_epic: bool,
@@ -671,9 +682,12 @@ impl Effects {
                 Effect::BombMastery => e.bomb_mastery += r,
                 Effect::SpannerMastery => e.spanner_mastery += r,
                 Effect::BombEpic => e.bomb_epic |= on,
-                Effect::FoodCrafting | Effect::FoodCraftingEpic | Effect::ConsumableCraftingEpic => {
-                    e.food_crafting += r
+                Effect::FoodCrafting | Effect::FoodCraftingEpic => e.food_crafting += r,
+                Effect::ConsumableCraftingEpic => {
+                    e.food_crafting += r;
+                    e.brew_crafting += r;
                 }
+                Effect::BrewCrafting | Effect::BrewCraftingEpic => e.brew_crafting += r,
                 Effect::Farming => e.farming += r,
                 Effect::FarmingEpic => {
                     e.farming += 2 * r;
@@ -722,7 +736,9 @@ impl Effects {
     /// with the tool's epic.
     pub fn damage_multiplier(&self, class: Option<crate::items::ToolClass>) -> f64 {
         use crate::items::ToolClass;
-        let power = 0.05 * self.power * if self.damage_epic { 3.0 } else { 1.0 };
+        // Brawn brews add to Power's share, so the damage epic triples them
+        // too (Boundless, research A.4).
+        let power = (0.05 * self.power + self.brew_damage) * if self.damage_epic { 3.0 } else { 1.0 };
         let (mastery, epic) = match class {
             None => (0, false),
             Some(ToolClass::Hammer) => (self.mastery[0], self.hammer_epic),
@@ -748,6 +764,21 @@ impl Effects {
             Some(ToolClass::Tiller) => (0, false),
         };
         2.0 * self.dexterity + 2.0 * mastery as f64 + if epic { 10.0 } else { 0.0 }
+    }
+
+    /// An item's action speed with these skills: its own plus
+    /// `action_speed_bonus`'s points, times a Swift brew's (Boundless's fast
+    /// brews multiply the total, tuning 2.5).
+    pub fn action_speed(&self, base: f32, bonus: f64) -> f32 {
+        ((base as f64 + bonus) * (1.0 + self.brew_speed)) as f32
+    }
+
+    /// These effects with what the brew in `s` adds (milestone 23 part 2).
+    pub fn brewed(mut self, s: &crate::movement::PlayerState) -> Effects {
+        self.brew_damage = s.brew_damage();
+        self.brew_speed = s.brew_action_speed();
+        self.brew_hush = 1.0 - s.brew_noticed_at();
+        self
     }
 
     /// Crit chance added: 0.2 x agility / 9 [tuning 2.3].
@@ -829,6 +860,7 @@ impl Effects {
             falling_armour: self.defence().falling_armour as u16,
             mending: self.health_regen_epic,
             wards: self.wards.map(crate::atmosphere::ward_points),
+            heal_bonus: (10.0 * self.insight).round().clamp(0.0, u16::MAX as f64) as u16,
             // Creative mode is the server's switch, not a skill: whoever
             // sets the body from the skills keeps the player's own.
             creative: false,
@@ -859,12 +891,12 @@ impl Effects {
     /// Sharpshot), action speed + 2 a dexterity level + 2 a rank + 10 with
     /// Sharpshot, crit chance plus agility's.
     pub fn skilled_sling(&self, l: &crate::items::SlingStats) -> crate::items::SlingStats {
-        let power = 0.05 * self.power * if self.damage_epic { 3.0 } else { 1.0 };
+        let power = (0.05 * self.power + self.brew_damage) * if self.damage_epic { 3.0 } else { 1.0 };
         let mult = 1.0 + power + 0.05 * self.sling_mastery as f64 + if self.sling_epic { 0.25 } else { 0.0 };
         let speed = 2.0 * self.dexterity + 2.0 * self.sling_mastery as f64 + if self.sling_epic { 10.0 } else { 0.0 };
         crate::items::SlingStats {
             damage: (l.damage as f64 * mult - 1e-9).ceil().max(0.0) as u32,
-            action_speed: l.action_speed + speed as f32,
+            action_speed: self.action_speed(l.action_speed, speed),
             crit_chance: (l.crit_chance + self.crit_bonus() as f32).min(1.0),
             ..*l
         }
@@ -873,12 +905,12 @@ impl Effects {
     /// A bag of bombs with these skills, as `skilled_sling` with Bomb Skill
     /// (+5% damage, +2 action speed a rank) and Blaster (+25%, +10).
     pub fn skilled_bomb(&self, b: &crate::items::BombStats) -> crate::items::BombStats {
-        let power = 0.05 * self.power * if self.damage_epic { 3.0 } else { 1.0 };
+        let power = (0.05 * self.power + self.brew_damage) * if self.damage_epic { 3.0 } else { 1.0 };
         let mult = 1.0 + power + 0.05 * self.bomb_mastery as f64 + if self.bomb_epic { 0.25 } else { 0.0 };
         let speed = 2.0 * self.dexterity + 2.0 * self.bomb_mastery as f64 + if self.bomb_epic { 10.0 } else { 0.0 };
         crate::items::BombStats {
             damage: (b.damage as f64 * mult - 1e-9).ceil().max(0.0) as u32,
-            action_speed: b.action_speed + speed as f32,
+            action_speed: self.action_speed(b.action_speed, speed),
             crit_chance: (b.crit_chance + self.crit_bonus() as f32).min(1.0),
             ..*b
         }
@@ -887,7 +919,7 @@ impl Effects {
     /// How far creatures notice you, as a multiple of their range: half
     /// with Quiet Step (+50% stealth, tuning 5.4a).
     pub fn noticed_at(&self) -> f64 {
-        if self.stealth_epic { 0.5 } else { 1.0 }
+        (if self.stealth_epic { 0.5 } else { 1.0 }) * (1.0 - self.brew_hush)
     }
 
     /// Threat you make, as a multiple: twice with Lure (+100%).
@@ -904,6 +936,7 @@ impl Effects {
             "decoration_crafting" => self.decoration_crafting,
             "weapon_crafting" => self.weapon_crafting,
             "food_crafting" => self.food_crafting,
+            "brew_crafting" => self.brew_crafting,
             "ingredient_crafting" => self.ingredient_crafting,
             _ => 0,
         }

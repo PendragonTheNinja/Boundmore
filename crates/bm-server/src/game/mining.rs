@@ -193,7 +193,7 @@ impl Game {
         ) {
             return self.swing_refused(id, seq, pos, "out of reach".into());
         }
-        let effects = p.effects;
+        let effects = p.effects.brewed(&p.state);
         // The tool is what our copy of the slot holds. A bare hand breaks
         // nothing (Nathan, 2026-10-20: as in Boundless).
         let stack = p.inventory.get(slot as usize);
@@ -325,7 +325,7 @@ impl Game {
     ) {
         let Some(p) = self.players.get(&id) else { return };
         let pi = p.planet;
-        let effects = p.effects;
+        let effects = p.effects.brewed(&p.state);
         if let Some(c) = self.planets[pi].claims.at_block(canon)
             && c.owner != p.account
         {

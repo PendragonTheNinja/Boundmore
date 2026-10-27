@@ -607,7 +607,8 @@ impl Session {
         // A bare hand breaks nothing (Nathan, 2026-10-20: as in Boundless).
         // The tool through its traits (milestone 17), as the server reads it.
         let tool = self.items.tool_of(self.items.slot(slot).as_ref(), held)?;
-        let effects = *self.progress.effects();
+        // With the brew in effect (milestone 23 part 2), as the server reads it.
+        let effects = self.progress.effects().brewed(&self.me.state);
         // Skills quicken the cadence (Deftness, mastery, the tool's epic).
         self.swinger
             .swung(at, swing_ticks(skilled_tool(&tool, &effects).action_speed));
@@ -844,7 +845,8 @@ impl Session {
         // A torch, or a Glowing tool (milestone 17).
         let held = self.items.held_light_of(self.items.slot(self.selected).as_ref());
         // The light-source epic lights around us like a held torch.
-        let mine = crate::skills::carried_light(held, self.progress.effects());
+        // A Glowing brew lights around us too (milestone 23 part 2).
+        let mine = crate::skills::carried_light(held, self.progress.effects()).max(self.me.state.brew_light());
         let forward = camera.forward();
         let right = forward.cross(DVec3::Y).normalize_or_zero();
         let hand = camera.eye + right * 0.3 - DVec3::Y * 0.35 + forward * 0.4;
@@ -2031,7 +2033,7 @@ impl App {
         // the hand stone strikes a living creature in reach; a body in reach
         // is looted once a press. Slings, strikes and swings share one
         // cooldown (`swinger`), as on the server.
-        let effects = *s.progress.effects();
+        let effects = s.progress.effects().brewed(&s.me.state);
         let sling = s.items.sling_of(held.as_ref(), &held_by);
         let tool = s.items.tool_of(held.as_ref(), &held_by);
         let world = &s.world;

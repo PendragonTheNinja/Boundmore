@@ -224,7 +224,7 @@ impl PlayerState {
         }
         self.calm = 0;
         self.hurt = self.hurt.saturating_add(amount).min(self.max_health());
-        if self.hurt >= self.max_health() {
+        if self.hurt >= self.max_health() && !self.lifesave() {
             self.down = true;
             self.hook = None;
         }

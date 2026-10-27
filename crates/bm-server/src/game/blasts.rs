@@ -63,7 +63,7 @@ impl Game {
         else {
             return tracing::debug!("#{id} threw with no bombs in slot {slot}");
         };
-        let effects = p.effects;
+        let effects = p.effects.brewed(&p.state);
         let bag = effects.skilled_bomb(&bag);
         let rewind = rewind_for(p.pending.len());
         let pi = p.planet;

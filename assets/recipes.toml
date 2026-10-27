@@ -5128,3 +5128,638 @@ spark = 1200
 power = 2000
 xp = 44
 wear = 70
+
+# Milestone 23 part 2: brews (Boundless's recipe data, single craft; thick
+# blood, quick gland and fossil essence stand in for viscous blood, adrenal
+# gland and ancient vital essence). Deepwater replaces the Kraken brew's
+# event-only spooky orbs (a guess).
+
+[[recipe]]
+output = "purified_water"
+inputs = [["water_bucket", 1], ["charcoal", 4], ["gravel", 2]]
+station = "extractor"
+seconds = 60.0
+spark = 100
+xp = 10
+wear = 7
+
+[[recipe]]
+output = "fortified_water"
+inputs = [["purified_water", 1], ["shimmering_orb", 1]]
+station = "mixer"
+seconds = 120.0
+spark = 200
+power = 1500
+xp = 18
+wear = 21
+
+[[recipe]]
+output = "fortified_milk"
+inputs = [["purified_milk", 1], ["shimmering_orb", 1]]
+station = "mixer"
+seconds = 120.0
+spark = 200
+power = 1500
+xp = 18
+wear = 21
+
+[[recipe]]
+output = "sulphur_oil"
+inputs = [["sulphur", 2], ["clay", 1], ["tallow", 2]]
+station = "mixer"
+seconds = 30.0
+xp = 6
+wear = 11
+skill = { name = "brew_crafting", level = 1 }
+
+[[recipe]]
+output = "saltpetre_oil"
+inputs = [["saltpetre", 2], ["clay", 1], ["tallow", 2]]
+station = "mixer"
+seconds = 60.0
+spark = 200
+xp = 14
+wear = 15
+skill = { name = "brew_crafting", level = 1 }
+
+[[recipe]]
+output = "olivine_oil"
+inputs = [["olivine", 2], ["clay", 1], ["tallow", 2]]
+station = "mixer"
+seconds = 90.0
+spark = 400
+power = 1500
+xp = 20
+wear = 18
+skill = { name = "brew_crafting", level = 1 }
+
+[[recipe]]
+output = "brew_flask_1"
+count = 4
+inputs = [["clay", 2], ["fossil_essence", 1], ["any_base_metal", 1]]
+station = "workbench"
+seconds = 30.0
+xp = 7
+wear = 6
+skill = { name = "brew_crafting", level = 1 }
+
+[[recipe]]
+output = "brew_flask_2"
+count = 4
+inputs = [["clay", 2], ["fossil_essence", 1], ["any_base_metal", 2]]
+station = "workbench"
+seconds = 60.0
+spark = 100
+xp = 8
+wear = 7
+skill = { name = "brew_crafting", level = 2 }
+
+[[recipe]]
+output = "brew_flask_3"
+count = 4
+inputs = [["clay", 2], ["fossil_essence", 2], ["any_base_alloy", 1]]
+station = "workbench"
+seconds = 90.0
+spark = 200
+power = 500
+xp = 12
+wear = 9
+skill = { name = "brew_crafting", level = 3 }
+
+[[recipe]]
+output = "brew_flask_4"
+count = 4
+inputs = [["clay", 2], ["fossil_essence", 4], ["any_base_alloy", 2]]
+station = "workbench"
+seconds = 120.0
+spark = 400
+power = 1000
+xp = 16
+wear = 11
+skill = { name = "brew_crafting", level = 4 }
+
+[[recipe]]
+output = "brew_flask_5"
+count = 4
+inputs = [["clay", 2], ["fossil_essence", 10], ["titanium_alloy", 1]]
+station = "workbench"
+seconds = 240.0
+spark = 800
+power = 2000
+xp = 25
+wear = 17
+skill = { name = "brew_crafting", level = 5 }
+
+[[recipe]]
+output = "restoring_brew_1"
+count = 4
+inputs = [["brew_flask_1", 4], ["water_bucket", 1], ["bark", 1], ["sulphur_oil", 1], ["pulsating_orb", 1]]
+station = "mixer"
+seconds = 60.0
+xp = 5
+wear = 15
+skill = { name = "brew_crafting", level = 1 }
+
+[[recipe]]
+output = "restoring_brew_2"
+count = 4
+inputs = [["brew_flask_2", 4], ["water_bucket", 1], ["bark", 2], ["sulphur_oil", 2], ["pulsating_orb", 1]]
+station = "mixer"
+seconds = 120.0
+spark = 100
+xp = 10
+wear = 21
+skill = { name = "brew_crafting", level = 2 }
+
+[[recipe]]
+output = "restoring_brew_3"
+count = 4
+inputs = [["brew_flask_3", 4], ["purified_water", 1], ["bark", 5], ["sulphur_oil", 3], ["pulsating_orb", 2]]
+station = "mixer"
+seconds = 180.0
+spark = 200
+power = 500
+xp = 15
+wear = 28
+skill = { name = "brew_crafting", level = 3 }
+
+[[recipe]]
+output = "restoring_brew_4"
+count = 4
+inputs = [["brew_flask_4", 4], ["purified_water", 1], ["bark", 8], ["sulphur_oil", 4], ["pulsating_orb", 2]]
+station = "mixer"
+seconds = 300.0
+spark = 400
+power = 1000
+xp = 20
+wear = 40
+skill = { name = "brew_crafting", level = 4 }
+
+[[recipe]]
+output = "restoring_brew_5"
+count = 4
+inputs = [["brew_flask_5", 4], ["fortified_water", 1], ["bark", 12], ["sulphur_oil", 6], ["pulsating_orb", 3]]
+station = "mixer"
+seconds = 600.0
+spark = 800
+power = 2000
+xp = 30
+wear = 75
+skill = { name = "brew_crafting", level = 5 }
+
+[[recipe]]
+output = "mending_brew_1"
+count = 4
+inputs = [["brew_flask_1", 4], ["water_bucket", 1], ["bark", 1], ["sulphur_oil", 1]]
+station = "mixer"
+seconds = 60.0
+xp = 5
+wear = 15
+skill = { name = "brew_crafting", level = 1 }
+
+[[recipe]]
+output = "mending_brew_2"
+count = 4
+inputs = [["brew_flask_2", 4], ["water_bucket", 1], ["bark", 2], ["sulphur_oil", 2]]
+station = "mixer"
+seconds = 120.0
+spark = 100
+xp = 10
+wear = 21
+skill = { name = "brew_crafting", level = 2 }
+
+[[recipe]]
+output = "mending_brew_3"
+count = 4
+inputs = [["brew_flask_3", 4], ["purified_water", 1], ["bark", 5], ["sulphur_oil", 3]]
+station = "mixer"
+seconds = 180.0
+spark = 200
+power = 500
+xp = 15
+wear = 28
+skill = { name = "brew_crafting", level = 3 }
+
+[[recipe]]
+output = "mending_brew_4"
+count = 4
+inputs = [["brew_flask_4", 4], ["purified_water", 1], ["bark", 8], ["sulphur_oil", 4]]
+station = "mixer"
+seconds = 300.0
+spark = 400
+power = 1000
+xp = 20
+wear = 40
+skill = { name = "brew_crafting", level = 4 }
+
+[[recipe]]
+output = "mending_brew_5"
+count = 4
+inputs = [["brew_flask_5", 4], ["fortified_water", 1], ["bark", 12], ["sulphur_oil", 6]]
+station = "mixer"
+seconds = 600.0
+spark = 800
+power = 2000
+xp = 30
+wear = 75
+skill = { name = "brew_crafting", level = 5 }
+
+[[recipe]]
+output = "rousing_brew_1"
+count = 4
+inputs = [["brew_flask_1", 4], ["milk_bucket", 1], ["fleshy_leaf", 1], ["sulphur_oil", 1], ["pulsating_orb", 1]]
+station = "mixer"
+seconds = 60.0
+xp = 5
+wear = 15
+skill = { name = "brew_crafting", level = 1 }
+
+[[recipe]]
+output = "rousing_brew_2"
+count = 4
+inputs = [["brew_flask_2", 4], ["milk_bucket", 1], ["fleshy_leaf", 2], ["sulphur_oil", 2], ["pulsating_orb", 1]]
+station = "mixer"
+seconds = 120.0
+spark = 100
+xp = 10
+wear = 21
+skill = { name = "brew_crafting", level = 2 }
+
+[[recipe]]
+output = "rousing_brew_3"
+count = 4
+inputs = [["brew_flask_3", 4], ["purified_milk", 1], ["fleshy_leaf", 5], ["sulphur_oil", 3], ["pulsating_orb", 2]]
+station = "mixer"
+seconds = 180.0
+spark = 200
+power = 500
+xp = 15
+wear = 28
+skill = { name = "brew_crafting", level = 3 }
+
+[[recipe]]
+output = "rousing_brew_4"
+count = 4
+inputs = [["brew_flask_4", 4], ["purified_milk", 1], ["fleshy_leaf", 8], ["sulphur_oil", 4], ["pulsating_orb", 2]]
+station = "mixer"
+seconds = 300.0
+spark = 400
+power = 1000
+xp = 20
+wear = 40
+skill = { name = "brew_crafting", level = 4 }
+
+[[recipe]]
+output = "rousing_brew_5"
+count = 4
+inputs = [["brew_flask_5", 4], ["fortified_milk", 1], ["fleshy_leaf", 12], ["sulphur_oil", 6], ["pulsating_orb", 3]]
+station = "mixer"
+seconds = 600.0
+spark = 800
+power = 2000
+xp = 30
+wear = 75
+skill = { name = "brew_crafting", level = 5 }
+
+[[recipe]]
+output = "steady_brew_1"
+count = 4
+inputs = [["brew_flask_1", 4], ["milk_bucket", 1], ["fleshy_leaf", 1], ["sulphur_oil", 1]]
+station = "mixer"
+seconds = 60.0
+xp = 5
+wear = 15
+skill = { name = "brew_crafting", level = 1 }
+
+[[recipe]]
+output = "steady_brew_2"
+count = 4
+inputs = [["brew_flask_2", 4], ["milk_bucket", 1], ["fleshy_leaf", 2], ["sulphur_oil", 2]]
+station = "mixer"
+seconds = 120.0
+spark = 100
+xp = 10
+wear = 21
+skill = { name = "brew_crafting", level = 2 }
+
+[[recipe]]
+output = "steady_brew_3"
+count = 4
+inputs = [["brew_flask_3", 4], ["purified_milk", 1], ["fleshy_leaf", 5], ["sulphur_oil", 3]]
+station = "mixer"
+seconds = 180.0
+spark = 200
+power = 500
+xp = 15
+wear = 28
+skill = { name = "brew_crafting", level = 3 }
+
+[[recipe]]
+output = "steady_brew_4"
+count = 4
+inputs = [["brew_flask_4", 4], ["purified_milk", 1], ["fleshy_leaf", 8], ["sulphur_oil", 4]]
+station = "mixer"
+seconds = 300.0
+spark = 400
+power = 1000
+xp = 20
+wear = 40
+skill = { name = "brew_crafting", level = 4 }
+
+[[recipe]]
+output = "steady_brew_5"
+count = 4
+inputs = [["brew_flask_5", 4], ["fortified_milk", 1], ["fleshy_leaf", 12], ["sulphur_oil", 6]]
+station = "mixer"
+seconds = 600.0
+spark = 800
+power = 2000
+xp = 30
+wear = 75
+skill = { name = "brew_crafting", level = 5 }
+
+[[recipe]]
+output = "swift_brew_1"
+count = 4
+inputs = [["brew_flask_1", 4], ["purified_water", 1], ["quick_gland", 1], ["saltpetre_oil", 1], ["syrup", 1]]
+station = "mixer"
+seconds = 60.0
+xp = 5
+wear = 15
+skill = { name = "brew_crafting", level = 1 }
+
+[[recipe]]
+output = "swift_brew_2"
+count = 4
+inputs = [["brew_flask_2", 4], ["purified_water", 1], ["quick_gland", 2], ["saltpetre_oil", 1], ["syrup", 2]]
+station = "mixer"
+seconds = 120.0
+spark = 100
+xp = 10
+wear = 21
+skill = { name = "brew_crafting", level = 2 }
+
+[[recipe]]
+output = "swift_brew_3"
+count = 4
+inputs = [["brew_flask_3", 4], ["purified_water", 1], ["quick_gland", 3], ["saltpetre_oil", 2], ["syrup", 2]]
+station = "mixer"
+seconds = 180.0
+spark = 200
+power = 500
+xp = 15
+wear = 28
+skill = { name = "brew_crafting", level = 3 }
+
+[[recipe]]
+output = "swift_brew_4"
+count = 4
+inputs = [["brew_flask_4", 4], ["fortified_water", 1], ["quick_gland", 4], ["saltpetre_oil", 3], ["syrup", 3]]
+station = "mixer"
+seconds = 300.0
+spark = 400
+power = 1000
+xp = 20
+wear = 40
+skill = { name = "brew_crafting", level = 4 }
+
+[[recipe]]
+output = "swift_brew_5"
+count = 4
+inputs = [["brew_flask_5", 4], ["fortified_water", 1], ["quick_gland", 5], ["saltpetre_oil", 4], ["syrup", 4]]
+station = "mixer"
+seconds = 600.0
+spark = 800
+power = 2000
+xp = 30
+wear = 75
+skill = { name = "brew_crafting", level = 5 }
+
+[[recipe]]
+output = "brawn_brew_1"
+count = 4
+inputs = [["brew_flask_1", 4], ["purified_water", 1], ["thick_blood", 1], ["saltpetre_oil", 1], ["syrup", 1]]
+station = "mixer"
+seconds = 60.0
+xp = 5
+wear = 15
+skill = { name = "brew_crafting", level = 1 }
+
+[[recipe]]
+output = "brawn_brew_2"
+count = 4
+inputs = [["brew_flask_2", 4], ["purified_water", 1], ["thick_blood", 2], ["saltpetre_oil", 2], ["syrup", 1]]
+station = "mixer"
+seconds = 120.0
+spark = 100
+xp = 10
+wear = 21
+skill = { name = "brew_crafting", level = 2 }
+
+[[recipe]]
+output = "brawn_brew_3"
+count = 4
+inputs = [["brew_flask_3", 4], ["purified_water", 1], ["thick_blood", 5], ["saltpetre_oil", 3], ["syrup", 2]]
+station = "mixer"
+seconds = 180.0
+spark = 200
+power = 500
+xp = 15
+wear = 28
+skill = { name = "brew_crafting", level = 3 }
+
+[[recipe]]
+output = "brawn_brew_4"
+count = 4
+inputs = [["brew_flask_4", 4], ["fortified_water", 1], ["thick_blood", 8], ["saltpetre_oil", 4], ["syrup", 2]]
+station = "mixer"
+seconds = 300.0
+spark = 400
+power = 1000
+xp = 20
+wear = 40
+skill = { name = "brew_crafting", level = 4 }
+
+[[recipe]]
+output = "brawn_brew_5"
+count = 4
+inputs = [["brew_flask_5", 4], ["fortified_water", 1], ["thick_blood", 12], ["saltpetre_oil", 6], ["syrup", 3]]
+station = "mixer"
+seconds = 600.0
+spark = 800
+power = 2000
+xp = 30
+wear = 75
+skill = { name = "brew_crafting", level = 5 }
+
+[[recipe]]
+output = "clearing_brew_1"
+count = 4
+inputs = [["brew_flask_1", 4], ["water_bucket", 1], ["fresh_blood", 1], ["olivine_oil", 1]]
+station = "mixer"
+seconds = 60.0
+xp = 5
+wear = 15
+skill = { name = "brew_crafting", level = 1 }
+
+[[recipe]]
+output = "clearing_brew_2"
+count = 4
+inputs = [["brew_flask_2", 4], ["water_bucket", 1], ["fresh_blood", 2], ["olivine_oil", 2]]
+station = "mixer"
+seconds = 120.0
+spark = 100
+xp = 10
+wear = 21
+skill = { name = "brew_crafting", level = 2 }
+
+[[recipe]]
+output = "clearing_brew_3"
+count = 4
+inputs = [["brew_flask_3", 4], ["purified_water", 1], ["fresh_blood", 5], ["olivine_oil", 3]]
+station = "mixer"
+seconds = 180.0
+spark = 200
+power = 500
+xp = 15
+wear = 28
+skill = { name = "brew_crafting", level = 3 }
+
+[[recipe]]
+output = "clearing_brew_4"
+count = 4
+inputs = [["brew_flask_4", 4], ["purified_water", 1], ["fresh_blood", 8], ["olivine_oil", 4]]
+station = "mixer"
+seconds = 300.0
+spark = 400
+power = 1000
+xp = 20
+wear = 40
+skill = { name = "brew_crafting", level = 4 }
+
+[[recipe]]
+output = "clearing_brew_5"
+count = 4
+inputs = [["brew_flask_5", 4], ["fortified_water", 1], ["fresh_blood", 12], ["olivine_oil", 6]]
+station = "mixer"
+seconds = 600.0
+spark = 800
+power = 2000
+xp = 30
+wear = 75
+skill = { name = "brew_crafting", level = 5 }
+
+[[recipe]]
+output = "hushed_brew_2"
+count = 4
+inputs = [["brew_flask_2", 4], ["milk_bucket", 1], ["petal", 2], ["saltpetre_oil", 2]]
+station = "mixer"
+seconds = 60.0
+spark = 100
+xp = 6
+wear = 15
+skill = { name = "brew_crafting", level = 2 }
+
+[[recipe]]
+output = "hushed_brew_3"
+count = 4
+inputs = [["brew_flask_3", 4], ["purified_milk", 1], ["petal", 5], ["saltpetre_oil", 3]]
+station = "mixer"
+seconds = 180.0
+spark = 200
+power = 500
+xp = 12
+wear = 28
+skill = { name = "brew_crafting", level = 3 }
+
+[[recipe]]
+output = "hushed_brew_4"
+count = 4
+inputs = [["brew_flask_4", 4], ["fortified_milk", 1], ["petal", 6], ["saltpetre_oil", 4]]
+station = "mixer"
+seconds = 600.0
+spark = 400
+power = 2000
+xp = 34
+wear = 75
+skill = { name = "brew_crafting", level = 4 }
+
+[[recipe]]
+output = "glowing_brew_2"
+count = 4
+inputs = [["brew_flask_2", 4], ["water_bucket", 1], ["glowing_lamella", 2], ["saltpetre_oil", 2]]
+station = "mixer"
+seconds = 60.0
+spark = 100
+xp = 6
+wear = 15
+skill = { name = "brew_crafting", level = 2 }
+
+[[recipe]]
+output = "glowing_brew_3"
+count = 4
+inputs = [["brew_flask_3", 4], ["purified_water", 1], ["glowing_lamella", 4], ["saltpetre_oil", 3]]
+station = "mixer"
+seconds = 180.0
+spark = 200
+power = 500
+xp = 12
+wear = 28
+skill = { name = "brew_crafting", level = 3 }
+
+[[recipe]]
+output = "glowing_brew_4"
+count = 4
+inputs = [["brew_flask_4", 4], ["fortified_water", 1], ["glowing_lamella", 5], ["saltpetre_oil", 4]]
+station = "mixer"
+seconds = 600.0
+spark = 400
+power = 2000
+xp = 34
+wear = 75
+skill = { name = "brew_crafting", level = 4 }
+
+[[recipe]]
+output = "soothing_brew"
+count = 4
+inputs = [["brew_flask_5", 4], ["purified_water", 1], ["petal", 8], ["olivine_oil", 3], ["syrup", 3]]
+station = "mixer"
+seconds = 600.0
+spark = 800
+power = 2000
+xp = 34
+wear = 75
+skill = { name = "brew_crafting", level = 5 }
+
+[[recipe]]
+output = "taunting_brew"
+count = 4
+inputs = [["brew_flask_5", 4], ["purified_water", 1], ["petal", 8], ["sulphur_oil", 3], ["syrup", 3]]
+station = "mixer"
+seconds = 600.0
+spark = 800
+power = 2000
+xp = 34
+wear = 75
+skill = { name = "brew_crafting", level = 5 }
+
+[[recipe]]
+output = "lifesaving_brew"
+count = 4
+inputs = [["brew_flask_3", 4], ["purified_water", 1], ["sulphur_oil", 3], ["syrup", 3], ["vital_orb", 1]]
+station = "mixer"
+seconds = 600.0
+spark = 800
+power = 2000
+xp = 32
+wear = 75
+skill = { name = "brew_crafting", level = 4 }
+
+[[recipe]]
+output = "deepwater_brew"
+inputs = [["brew_flask_1", 1], ["rice_grain", 3], ["float_sac", 1], ["water_bucket", 1]]
+station = "mixer"
+seconds = 60.0
+xp = 14
+wear = 15
+

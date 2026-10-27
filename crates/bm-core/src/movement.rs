@@ -264,6 +264,10 @@ pub struct PlayerState {
     /// The eyes are in a liquid this tick (milestone 23): the air bar runs
     /// down. Set at the start of each step; never saved.
     pub submerged: bool,
+    /// The timed brew (milestone 23 part 2, `brew`). Saved.
+    pub brew: crate::brew::BrewBuff,
+    /// Ticks of Lifesaving left (its own slot). Saved.
+    pub revive: u32,
 }
 
 /// What skills change about moving and energy (`skills::Effects::body`).
@@ -291,6 +295,8 @@ pub struct Body {
     /// Protection points against each air line (acid, charged, burning)
     /// from the ward skills (milestone 18).
     pub wards: [u8; 3],
+    /// Percent more healing from brews: 10 an Insight rank (milestone 23).
+    pub heal_bonus: u16,
     /// Creative mode (a testing aid, allowed only on servers started with
     /// `--creative`): flies where the player looks, takes no harm, never
     /// tires, hungers or runs out of air.
@@ -490,6 +496,7 @@ pub fn step(
     s.beat = (s.beat + 1) % crate::combat::REGEN_PERIOD_TICKS;
     s.heal_tick(s.beat == 0);
     s.food_tick(s.beat == 0);
+    s.brew_tick();
     s.submerged = world.liquid(BlockPos::containing(s.pos.x, s.pos.y + cfg.eye_height, s.pos.z));
     s.air_tick(s.beat == 0);
     s.quirk_tick(s.beat == 0);
@@ -520,8 +527,9 @@ pub fn step(
         });
     }
     let q = s.quirks;
-    let walk = cfg.walk_speed + s.body.run_bonus;
-    let sprint = cfg.sprint_speed + s.body.sprint_bonus;
+    // Swift brews add to running and sprinting alike (milestone 23).
+    let walk = cfg.walk_speed + s.body.run_bonus + s.brew_run_bonus();
+    let sprint = cfg.sprint_speed + s.body.sprint_bonus + s.brew_run_bonus();
     // Sprinter: walking and running 25% slower, the sprint's bonus 50%
     // bigger (Release 209).
     let (walk, sprint) = if q.has(crate::forge::Quirks::SPRINTER) {

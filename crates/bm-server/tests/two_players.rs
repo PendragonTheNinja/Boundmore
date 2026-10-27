@@ -4635,6 +4635,66 @@ async fn a_defeated_player_owes_xp_and_returns_on_safe_ground_at_half_health() {
     server.stop();
 }
 
+/// Milestone 23 part 2: a Swift brew is kept across a restart, and a
+/// Lifesaving brew stands a player straight back up from a killing blow with
+/// no defeat and no XP owed.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn brews_are_kept_and_lifesaving_stands_you_up_from_a_killing_blow() {
+    use bm_core::brew::{Brew, REVIVE_HEALTH_PERCENT};
+    let dir = tempfile::tempdir().unwrap();
+    seed_hurt(
+        dir.path(),
+        "Alice",
+        &[
+            (0, "stone_sling", 1, 0),
+            (1, "swift_brew_2", 1, 0),
+            (2, "lifesaving_brew", 1, 0),
+        ],
+        at_level(10, 0),
+        550,
+    );
+    let left = {
+        let server = bm_server::start(creature_config(dir.path(), &[("charger", 6.0)])).unwrap();
+        let mut alice = TestClient::login(&server, "Alice").await;
+        let s = eat(&mut alice, 1).await;
+        assert_eq!((s.brew.kind, s.brew.grade), (Brew::Swift, 2));
+        alice.settle().await;
+        assert_eq!(alice.count("swift_brew_2"), 0, "drunk");
+        drop(alice);
+        server.stop();
+        s.brew.left
+    };
+    let server = bm_server::start(creature_config(dir.path(), &[("charger", 6.0)])).unwrap();
+    let mut alice = TestClient::login(&server, "Alice").await;
+    let s = alice.welcome.spawn;
+    assert_eq!(s.brew.kind, Brew::Swift, "kept across the restart");
+    assert!(s.brew.left > 0 && s.brew.left <= left);
+    let me = alice.welcome.player_id;
+    let feet = alice.feet();
+    alice.wait_for_chunk(feet.chunk()).await;
+    let id = alice.creature_of("charger").await;
+
+    let s = eat(&mut alice, 2).await;
+    assert!(s.revive > 0, "Lifesaving in its own slot");
+    assert_eq!(s.brew.kind, Brew::Swift, "the Swift brew stays");
+    // 50 health left; the charger hits for 100.
+    alice.shoot(0, 0, bm_core::movement::PITCH_LIMIT).await;
+    alice.creature_until(id, |v| v.angry).await;
+    let saved = loop {
+        let s = snapshot_after(&mut alice).await;
+        if s.revive == 0 {
+            break s;
+        }
+    };
+    assert!(!saved.down, "back on their feet");
+    assert_eq!(saved.health(), saved.max_health() * REVIVE_HEALTH_PERCENT / 100);
+    alice.settle().await;
+    assert_eq!(alice.hits_on(Target::Player(me))[0], 100, "a killing blow");
+    assert_eq!(alice.defeated, None, "never defeated");
+    assert_eq!(alice.count("lifesaving_brew"), 0);
+    server.stop();
+}
+
 /// Milestone 13, the agreed rules: a shot costs the sling's energy at its
 /// input and one durability; one sooner than the cadence, or too tired,
 /// fires nothing and wears nothing; others nearby are told the shot flies

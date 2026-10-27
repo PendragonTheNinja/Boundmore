@@ -24,7 +24,7 @@ The game opens on a login screen: pick a name and password and press **Create ac
 
 Controls:
 - Click to capture the mouse; Esc releases it or closes a menu.
-- WASD to move, Space to jump (and to swim up; push against a shore with Space held to climb out), X to swim down, Shift to sprint. Let go of both in water and you stay where you are, or float at the surface; the air bar runs while your head is under, and when it is empty you drown.
+- WASD to move, Space to jump (and to swim up; push against a shore with Space held to climb out), X to swim down, Shift to sprint. Let go of both in water and you stay where you are, or float at the surface; the air bar runs while your head is under, and when it is empty you drown. Brews (made in the mixer) are drunk like food: left click.
 - **Hold** the left button to break a block; it goes into your inventory. Right click places the selected block. 1 to 0 or the mouse wheel pick a hotbar slot.
 - **I** (or Tab) opens the inventory: drag to move, right drag or Shift drag to split, drop on Throw away to discard.
 - **C** opens crafting: things you make by hand, or, looking at a workbench or furnace, what it makes. Stations keep working while you are away; collect from them later.

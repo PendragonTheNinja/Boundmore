@@ -1989,3 +1989,273 @@ name = "wax"
 
 [[item]]
 name = "pipe"
+
+# Milestone 23 part 2: brews, their flasks, oils and liquids (Boundless's
+# recipe data; docs/milestones/23-water-and-brews.md). Grades are I to V.
+
+[[item]]
+name = "purified_water"
+display = "Purified Water"
+
+[[item]]
+name = "fortified_water"
+display = "Fortified Water"
+
+[[item]]
+name = "fortified_milk"
+display = "Fortified Milk"
+
+[[item]]
+name = "sulphur_oil"
+
+[[item]]
+name = "saltpetre_oil"
+
+[[item]]
+name = "olivine_oil"
+
+[[item]]
+name = "brew_flask_1"
+display = "Brew Flask I"
+
+[[item]]
+name = "brew_flask_2"
+display = "Brew Flask II"
+
+[[item]]
+name = "brew_flask_3"
+display = "Brew Flask III"
+
+[[item]]
+name = "brew_flask_4"
+display = "Brew Flask IV"
+
+[[item]]
+name = "brew_flask_5"
+display = "Brew Flask V"
+
+[[item]]
+name = "restoring_brew_1"
+display = "Restoring Brew I"
+food = { brew = "restoring", rank = 1 }
+
+[[item]]
+name = "restoring_brew_2"
+display = "Restoring Brew II"
+food = { brew = "restoring", rank = 2 }
+
+[[item]]
+name = "restoring_brew_3"
+display = "Restoring Brew III"
+food = { brew = "restoring", rank = 3 }
+
+[[item]]
+name = "restoring_brew_4"
+display = "Restoring Brew IV"
+food = { brew = "restoring", rank = 4 }
+
+[[item]]
+name = "restoring_brew_5"
+display = "Restoring Brew V"
+food = { brew = "restoring", rank = 5 }
+
+[[item]]
+name = "mending_brew_1"
+display = "Mending Brew I"
+food = { brew = "mending", rank = 1 }
+
+[[item]]
+name = "mending_brew_2"
+display = "Mending Brew II"
+food = { brew = "mending", rank = 2 }
+
+[[item]]
+name = "mending_brew_3"
+display = "Mending Brew III"
+food = { brew = "mending", rank = 3 }
+
+[[item]]
+name = "mending_brew_4"
+display = "Mending Brew IV"
+food = { brew = "mending", rank = 4 }
+
+[[item]]
+name = "mending_brew_5"
+display = "Mending Brew V"
+food = { brew = "mending", rank = 5 }
+
+[[item]]
+name = "rousing_brew_1"
+display = "Rousing Brew I"
+food = { brew = "rousing", rank = 1 }
+
+[[item]]
+name = "rousing_brew_2"
+display = "Rousing Brew II"
+food = { brew = "rousing", rank = 2 }
+
+[[item]]
+name = "rousing_brew_3"
+display = "Rousing Brew III"
+food = { brew = "rousing", rank = 3 }
+
+[[item]]
+name = "rousing_brew_4"
+display = "Rousing Brew IV"
+food = { brew = "rousing", rank = 4 }
+
+[[item]]
+name = "rousing_brew_5"
+display = "Rousing Brew V"
+food = { brew = "rousing", rank = 5 }
+
+[[item]]
+name = "steady_brew_1"
+display = "Steady Brew I"
+food = { brew = "steady", rank = 1 }
+
+[[item]]
+name = "steady_brew_2"
+display = "Steady Brew II"
+food = { brew = "steady", rank = 2 }
+
+[[item]]
+name = "steady_brew_3"
+display = "Steady Brew III"
+food = { brew = "steady", rank = 3 }
+
+[[item]]
+name = "steady_brew_4"
+display = "Steady Brew IV"
+food = { brew = "steady", rank = 4 }
+
+[[item]]
+name = "steady_brew_5"
+display = "Steady Brew V"
+food = { brew = "steady", rank = 5 }
+
+[[item]]
+name = "swift_brew_1"
+display = "Swift Brew I"
+food = { brew = "swift", rank = 1 }
+
+[[item]]
+name = "swift_brew_2"
+display = "Swift Brew II"
+food = { brew = "swift", rank = 2 }
+
+[[item]]
+name = "swift_brew_3"
+display = "Swift Brew III"
+food = { brew = "swift", rank = 3 }
+
+[[item]]
+name = "swift_brew_4"
+display = "Swift Brew IV"
+food = { brew = "swift", rank = 4 }
+
+[[item]]
+name = "swift_brew_5"
+display = "Swift Brew V"
+food = { brew = "swift", rank = 5 }
+
+[[item]]
+name = "brawn_brew_1"
+display = "Brawn Brew I"
+food = { brew = "brawn", rank = 1 }
+
+[[item]]
+name = "brawn_brew_2"
+display = "Brawn Brew II"
+food = { brew = "brawn", rank = 2 }
+
+[[item]]
+name = "brawn_brew_3"
+display = "Brawn Brew III"
+food = { brew = "brawn", rank = 3 }
+
+[[item]]
+name = "brawn_brew_4"
+display = "Brawn Brew IV"
+food = { brew = "brawn", rank = 4 }
+
+[[item]]
+name = "brawn_brew_5"
+display = "Brawn Brew V"
+food = { brew = "brawn", rank = 5 }
+
+[[item]]
+name = "clearing_brew_1"
+display = "Clearing Brew I"
+food = { brew = "clearing", rank = 1 }
+
+[[item]]
+name = "clearing_brew_2"
+display = "Clearing Brew II"
+food = { brew = "clearing", rank = 2 }
+
+[[item]]
+name = "clearing_brew_3"
+display = "Clearing Brew III"
+food = { brew = "clearing", rank = 3 }
+
+[[item]]
+name = "clearing_brew_4"
+display = "Clearing Brew IV"
+food = { brew = "clearing", rank = 4 }
+
+[[item]]
+name = "clearing_brew_5"
+display = "Clearing Brew V"
+food = { brew = "clearing", rank = 5 }
+
+[[item]]
+name = "hushed_brew_2"
+display = "Hushed Brew II"
+food = { brew = "hushed", rank = 2 }
+
+[[item]]
+name = "hushed_brew_3"
+display = "Hushed Brew III"
+food = { brew = "hushed", rank = 3 }
+
+[[item]]
+name = "hushed_brew_4"
+display = "Hushed Brew IV"
+food = { brew = "hushed", rank = 4 }
+
+[[item]]
+name = "glowing_brew_2"
+display = "Glowing Brew II"
+food = { brew = "glowing", rank = 2 }
+
+[[item]]
+name = "glowing_brew_3"
+display = "Glowing Brew III"
+food = { brew = "glowing", rank = 3 }
+
+[[item]]
+name = "glowing_brew_4"
+display = "Glowing Brew IV"
+food = { brew = "glowing", rank = 4 }
+
+[[item]]
+name = "soothing_brew"
+display = "Soothing Brew"
+food = { brew = "soothing", rank = 5 }
+
+[[item]]
+name = "taunting_brew"
+display = "Taunting Brew"
+food = { brew = "taunting", rank = 5 }
+
+[[item]]
+name = "lifesaving_brew"
+display = "Lifesaving Brew"
+food = { brew = "lifesaving", rank = 1 }
+
+[[item]]
+name = "deepwater_brew"
+display = "Deepwater Brew"
+food = { brew = "deepwater", rank = 1 }
+

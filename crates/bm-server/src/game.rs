@@ -22,7 +22,7 @@ use crate::planet::Planet;
 use crate::portals::{PortalRules, Portals};
 use crate::reclaim::Reclaims;
 use crate::storage::move_stack;
-use crate::store::{PlayerData, SavedFood, Store, WriteBatch, load_slots, save_slots};
+use crate::store::{PlayerData, SavedBrews, SavedFood, Store, WriteBatch, load_slots, save_slots};
 
 mod blasts;
 mod combat;
@@ -1122,6 +1122,9 @@ impl Game {
         }
         // Told after the welcome: the wandering world they were on has gone.
         let mut came_back: Option<String> = None;
+        // Brews come from their own table (milestone 23 part 2); a departed
+        // player carries theirs in the state.
+        let mut brews = None;
         let (planet, saved, mut inventory, character, hurt, food, air_used) = match self.departed.remove(&account) {
             Some(d) => (
                 d.planet,
@@ -1142,6 +1145,13 @@ impl Game {
                         None => data.state.map(PlayerState::from),
                     };
                     came_back = why;
+                    brews = Some(match self.store.brews(&account) {
+                        Ok(b) => b,
+                        Err(e) => {
+                            tracing::warn!("loading {name}'s brews: {e:#}; they start without");
+                            SavedBrews::default()
+                        }
+                    });
                     (
                         pi,
                         state,
@@ -1206,6 +1216,10 @@ impl Game {
             down: false,
             ..state
         };
+        if let Some(b) = brews {
+            state.brew = b.brew;
+            state.revive = b.revive;
+        }
         if state.hurt >= state.max_health() {
             let back = (state.max_health() as f64 * combat::RETURN_HEALTH_SHARE).round() as u32;
             state.hurt = state.max_health() - back.max(1);
@@ -3177,6 +3191,16 @@ impl Game {
                 skies.push((self.planets[pi].id, sky.saved()));
             }
         }
+        let brews = self
+            .players
+            .values()
+            .map(|p| (p.account.clone(), SavedBrews::from(&p.state)))
+            .chain(
+                self.departed
+                    .iter()
+                    .map(|(a, d)| (a.clone(), SavedBrews::from(&d.state))),
+            )
+            .collect();
         let discoveries = self
             .discoveries_dirty
             .drain()
@@ -3196,6 +3220,7 @@ impl Game {
             next_portal,
             skies,
             discoveries,
+            brews,
             clock: Some(self.tick),
             forget_planets: std::mem::take(&mut self.forget_planets),
             done,

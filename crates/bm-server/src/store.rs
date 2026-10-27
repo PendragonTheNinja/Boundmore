@@ -70,6 +70,9 @@ const CROPS: TableDefinition<&[u8], &[u8]> = TableDefinition::new("planet_crops"
 /// Written signs by anchor (milestone 22 part 4; `crate::signs::SavedSign`,
 /// versioned within). A new table: older universes have none.
 const SIGNS: TableDefinition<&[u8], &[u8]> = TableDefinition::new("planet_signs");
+/// Each account's brews (milestone 23 part 2): account -> [`SavedBrews`].
+/// A new table: older universes have none, and a missing row is no brew.
+const BREWS: TableDefinition<&str, &[u8]> = TableDefinition::new("player_brews");
 /// Regions each account has discovered (save version 7).
 const DISCOVERIES: TableDefinition<&str, &[u8]> = TableDefinition::new("discoveries");
 /// Far copies of chunks (milestone 20), keyed like `CHUNKS`: a cache made
@@ -394,6 +397,28 @@ pub struct PlayerData {
     /// Air used (milestone 18, save version 12; 0: full), so leaving and
     /// coming back never refills it.
     pub air_used: u16,
+}
+
+/// A character's brews (`PlayerState::brew` and `revive`).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Serialize, Deserialize)]
+pub struct SavedBrews {
+    pub brew: bm_core::brew::BrewBuff,
+    pub revive: u32,
+}
+
+impl From<&PlayerState> for SavedBrews {
+    fn from(s: &PlayerState) -> Self {
+        Self {
+            brew: s.brew,
+            revive: s.revive,
+        }
+    }
+}
+
+impl SavedBrews {
+    pub fn is_empty(&self) -> bool {
+        self.brew.left == 0 && self.revive == 0
+    }
 }
 
 /// A growing crop as saved (`bm_core::crops::Crop`), its kind by name.
@@ -1744,6 +1769,20 @@ impl Store {
         })
     }
 
+    /// An account's brews (none if the table or the row is missing).
+    pub fn brews(&self, key: &str) -> Result<SavedBrews> {
+        let tx = self.db.begin_read()?;
+        let t = match tx.open_table(BREWS) {
+            Ok(t) => t,
+            Err(redb::TableError::TableDoesNotExist(_)) => return Ok(SavedBrews::default()),
+            Err(e) => return Err(e.into()),
+        };
+        Ok(match t.get(key)? {
+            Some(v) => postcard::from_bytes(v.value()).context("brews are corrupt")?,
+            None => SavedBrews::default(),
+        })
+    }
+
     /// The regions an account has discovered, by planet id.
     pub fn discoveries(&self, key: &str) -> Result<Discoveries> {
         let tx = self.db.begin_read()?;
@@ -1857,6 +1896,15 @@ impl Store {
             let mut found = tx.open_table(DISCOVERIES)?;
             for (key, d) in &batch.discoveries {
                 found.insert(key.as_str(), postcard::to_stdvec(d)?.as_slice())?;
+            }
+            drop(found);
+            let mut brews = tx.open_table(BREWS)?;
+            for (key, b) in &batch.brews {
+                if b.is_empty() {
+                    brews.remove(key.as_str())?;
+                } else {
+                    brews.insert(key.as_str(), postcard::to_stdvec(b)?.as_slice())?;
+                }
             }
         }
         // After every table above is closed: a table opens once at a time.
@@ -2323,6 +2371,8 @@ pub struct WriteBatch {
     pub skies: Vec<(u16, SavedSky)>,
     /// Discoveries that changed, by lowercased account name.
     pub discoveries: Vec<(String, Discoveries)>,
+    /// Every saved player's brews (milestone 23 part 2), by account.
+    pub brews: Vec<(String, SavedBrews)>,
     /// The universe clock, so days and station jobs continue across restarts.
     pub clock: Option<u64>,
     /// Departed wanderers (milestone 21): every row under each id is deleted,
@@ -2672,6 +2722,14 @@ mod tests {
             }],
         };
         let found: Discoveries = [(2u16, vec![0u16, 4])].into_iter().collect();
+        let brews = SavedBrews {
+            brew: bm_core::brew::BrewBuff {
+                kind: bm_core::brew::Brew::Swift,
+                grade: 3,
+                left: 1234,
+            },
+            revive: 99,
+        };
         {
             let s = Store::open(&path).unwrap();
             assert_eq!(s.universe(&kinds()).unwrap(), None);
@@ -2732,6 +2790,7 @@ mod tests {
                 next_portal: Some(12),
                 skies: vec![(2, sky.clone())],
                 discoveries: vec![("pendragon".into(), found.clone())],
+                brews: vec![("pendragon".into(), brews), ("nobody".into(), SavedBrews::default())],
                 clock: Some(777),
                 done: Vec::new(),
             })
@@ -2745,6 +2804,8 @@ mod tests {
         assert!(s.signs(3).unwrap().is_empty());
         assert_eq!(s.discoveries("pendragon").unwrap(), found);
         assert!(s.discoveries("nobody").unwrap().is_empty());
+        assert_eq!(s.brews("pendragon").unwrap(), brews, "brews kept (milestone 23 part 2)");
+        assert!(s.brews("nobody").unwrap().is_empty(), "an empty row is not written");
         assert_eq!(
             s.planet(2).unwrap(),
             Some(planet("Emberdune")),

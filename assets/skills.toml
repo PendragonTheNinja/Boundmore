@@ -82,7 +82,7 @@ category = "attributes"
 ranks = 8
 cost = 1
 effect = "insight"
-text = "+10 Intelligence: more boon points in the forge (healing comes later)"
+text = "+10 Intelligence: more boon points in the forge, +10% healing from brews"
 
 [[skill]]
 id = "all_attributes"
@@ -234,8 +234,8 @@ name = "Brewing"
 category = "crafting"
 ranks = 3
 cost = 1
-effect = "later"
-text = "Make brews (comes with brews)"
+effect = "brew_crafting"
+text = "Brew better: grade I at rank 1, II at 2, III at 3"
 
 [[skill]]
 id = "farming"
@@ -489,7 +489,7 @@ category = "epic2"
 ranks = 1
 cost = 5
 effect = "consumable_crafting_epic"
-text = "+1 to Cooking (and Brewing, with brews)"
+text = "+1 to Cooking and Brewing"
 excludes = ["gear_crafting_epic"]
 
 [[skill]]
@@ -683,5 +683,5 @@ name = "Master Brewer"
 category = "epic3"
 ranks = 1
 cost = 5
-effect = "later"
-text = "Comes with brews"
+effect = "brew_crafting_epic"
+text = "+1 to Brewing"

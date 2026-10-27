@@ -511,7 +511,7 @@ impl crate::movement::PlayerState {
         if beat && self.quirks.has(Quirks::DRAINING) {
             let max = self.max_health();
             self.hurt = (self.hurt + DRAINING_PER_BEAT).min(max);
-            if self.hurt >= max {
+            if self.hurt >= max && !self.lifesave() {
                 self.down = true;
                 self.hook = None;
             }

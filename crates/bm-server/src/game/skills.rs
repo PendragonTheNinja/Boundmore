@@ -202,7 +202,8 @@ impl Game {
             .players
             .iter()
             .map(|(id, p)| {
-                if !p.effects.light_epic {
+                // A Glowing brew (milestone 23 part 2) shines like the epic.
+                if !p.effects.light_epic && p.state.brew_light() == 0 {
                     return (*id, false);
                 }
                 let planet = &self.planets[p.planet];

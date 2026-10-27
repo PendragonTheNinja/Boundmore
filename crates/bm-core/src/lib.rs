@@ -4,6 +4,7 @@
 
 pub mod atmosphere;
 pub mod block;
+pub mod brew;
 pub mod chisel;
 pub mod chunk;
 pub mod colours;

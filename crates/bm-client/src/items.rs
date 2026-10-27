@@ -497,6 +497,20 @@ fn hsv_to_rgb(h: f32, s: f32, v: f32) -> [u8; 3] {
 
 /// What eating one does, for its tooltip (milestone 16).
 pub fn food_lines(f: &bm_core::food::FoodStats) -> Vec<String> {
+    use bm_core::brew::Brew;
+    if f.brew != Brew::None {
+        // A brew (milestone 23 part 2).
+        let mut lines = vec![
+            "Left click drinks one".to_string(),
+            format!("{}", f.brew.describe(f.rank)),
+        ];
+        lines.push(match f.brew {
+            b if b.instant() => "Works at once; keeps your brew".into(),
+            Brew::Lifesaving => "Kept beside your other brew".into(),
+            _ => "Replaces any other brew".into(),
+        });
+        return lines;
+    }
     let mut lines = vec!["Left click eats one".to_string()];
     if f.hunger > 0 {
         lines.push(format!("Takes away {} hunger", f.hunger));

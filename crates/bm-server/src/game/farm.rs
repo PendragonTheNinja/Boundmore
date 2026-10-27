@@ -224,7 +224,7 @@ impl Game {
     ) {
         let Some(p) = self.players.get(&id) else { return };
         let pi = p.planet;
-        let effects = p.effects;
+        let effects = p.effects.brewed(&p.state);
         if let Some(c) = self.planets[pi].claims.at_block(canon)
             && c.owner != p.account
         {

@@ -26,7 +26,35 @@ A player dives into a lake for the glowing lamellae on its floor: X takes them d
 
 ## Part 2: brews
 
-*Specced once `docs/research/brews-and-breath.md` is in.* Boundless's brews from its recipe data (mixer; five grades; brew containers at the workbench; restorative, boost, reduction and channelling oils; purified and fortified water and milk), one brew buff beside the food buff, and an air brew.
+From Boundless (`docs/research/brews-and-breath.md`, the game's recipe data for every recipe): brews are made in the **mixer** in five grades from a **brew flask** of the same grade (workbench: clay, fossil essence and metal), a liquid (water or milk for grades 1 and 2, purified for 3 and 4, fortified for 5), an **oil** (mixer: a trace fragment, clay and tallow) and the brew's own ingredient. One **brew buff** is active at a time beside the food buff; drinking a second timed brew replaces the first. Instant brews never touch it, and the reviver has its own slot.
+
+Decided:
+
+7. **The brews** (Boundmore's names; grades shown as I to V; Boundless's numbers; healing is multiplied by (100 + 10 per Insight rank)%, Boundless's (90 + Intelligence) / 100):
+
+   | Brew (Boundless's) | Grades | Effect | Lasts |
+   |---|---|---|---|
+   | Restoring (instant healing) | I to V | 750 / 1500 / 3000 / 6000 / 12000 health at once | instant |
+   | Mending (healing) | I to V | 75 / 150 / 300 / 600 / 1200 health every 5 s (Release 199's "more than instant", an inference in the research) | 60 s |
+   | Rousing (instant recovery) | I to V | 600 / 1200 / 2400 / 4800 / 9600 energy at once | instant |
+   | Steady (recovery) | I to V | 30 / 60 / 120 / 360 / 900 energy a second (Release 223) | 60 s |
+   | Swift (fast) | I to V | run and sprint +0.5 / 0.75 / 1 / 1.5 / 2 blocks a second; action speed x1.2 / 1.4 / 1.6 / 1.8 / 2 | 10 min |
+   | Brawn (strength) | I to V | +10 / 20 / 30 / 40 / 50% damage, added to Power's share (so the damage epic triples it) | 10 min |
+   | Hushed (innocuous) | II to IV (as in the data) | creatures notice you 30 / 40 / 55% nearer (II and IV are inferences; the item texts are broken) | 10 min |
+   | Glowing (luminous) | II to IV | carried light of level 10 / 11 / 12 (Boundless 6 to 12 m; the levels a **guess**) | 10 min |
+   | Clearing (cleansing) | I to V | 500 to 2500 points off sickness, a point a second | instant |
+   | Soothing (calming), Taunting (aggravating) | V | 10000 threat taken from, or added to, every creature near you that knows you | instant |
+   | Lifesaving (reviver) | one | if defeated while it lasts, back on your feet at once with a quarter of your health and half your energy (**guess**), no defeat penalty | 10 min, its own slot |
+   | Deepwater (Kraken) | one | halves the air used under water; with Leaden none at all | 20 min |
+
+8. **Recipes are Boundless's** (single craft: 4 brews, times, spark, power, XP, wear, Brewing level). Boundmore's ingredients stand in by role: thick blood for viscous blood, quick gland for adrenal gland, fossil essence for ancient vital essence. The Kraken brew was a Halloween recipe of spooky orbs; Deepwater takes a grade I flask, 3 rice grain, a float sac and a bucket of water instead (**guess**, no skill needed, as Kraken).
+9. **Brewing levels**: Brewing (3 ranks), Provisioner and Master Brewer (+1 each), as Boundless's Brew Crafting 1 to 5. Insight's text gains "+10% healing".
+10. **Brews are carried in `PlayerState`** (`brew`, `revive`) and stepped in `movement::step`; drinking is eating (`ClientMsg::Eat` at an agreed input), so prediction stays exact. They are saved in a new `player_brews` table (no save version change) and travel with the player.
+11. **Not built**: Rage and Focus brews (their epics are not built), the weather brews (no weather), Zombie Lungs (not in the game's data), Second Chance (needs meteorite ichor), smoothies (their crops are not Boundmore's), Zeal lengthening buffs (food does not yet either), the brew-extending guild machine (no guilds).
+
+Rules (part 2): `bm_core::brew` (kinds, numbers, `PlayerState::drink`), `FoodStats::brew`, `PlayerState::{brew, revive}`, `Effects::brewed`, `Body::heal_bonus`; 3 oils, 3 liquids, 5 flasks, 45 brews in `items.toml`; their recipes; the `player_brews` table; protocol 40.
+
+Acceptance (part 2): every brew does what the table says (unit tests); a second timed brew replaces the first and an instant one leaves it (unit test); Lifesaving stands a defeated player up without the penalty (end to end); a brew survives leaving and coming back (end to end); Swift predicts with no correction (prediction test).
 
 ## Rules (part 1)
 
@@ -52,10 +80,13 @@ A player dives into a lake for the glowing lamellae on its floor: X takes them d
 2. How fast drowning hurts.
 3. Neutral buoyancy: better than Boundless's sinking, or should it sink slowly as Boundless did?
 4. Swim speed up, down and across (3.2 blocks a second).
+5. Brews: do Swift, Brawn and Mending feel like Boundless's at each grade? Is Lifesaving's quarter health right? Is Deepwater's recipe sensible?
 
 ## Status
 
 - [x] Part 1: water (2026-10-27). Breath and drowning on the air bar (`PlayerState::submerged`, `drowning()`, `atmosphere::DROWN_PERCENT`), Leaden's halved drain and refill (`breath_halvings`), X to swim down and to fly down in creative (`PlayerInput::descend`, protocol 39), neutral buoyancy, the Breath and Drowning tags on the bar, fog only for bad air. 5 core tests, 1 prediction test, the air bar test extended; 768 tests. No save change.
 - Research in (`docs/research/brews-and-breath.md`): breath and swim timings are not online anywhere reachable, so they stay on the Measure list; players say Agility raised swim speed in Boundless (open).
-- [ ] Part 2: brews (spec, then build)
+- [x] Part 2 specced (2026-10-27)
+- [x] Part 2: brews built (2026-10-27). `bm_core::brew` (13 kinds, Boundless's numbers, drunk through `PlayerState::eat`, `brew_tick` in the step, Lifesaving inside `take`), `Effects::brewed` for damage, action speed and notice range on the server and in the client's swings, Insight's healing (`Body::heal_bonus`), the Brewing levels, Soothing and Taunting moving creatures' threat (`game/food.rs`), Glowing lighting the drinker for them and for others; 3 liquids, 3 oils, 5 flasks, 45 brews and their recipes; icons (`bm-texgen/src/brews.rs`); the HUD tag and tooltips; the `player_brews` table. Protocol 40; players per snapshot 25 (our own state grew). 10 core tests, a prediction test, an end-to-end test (kept across a restart; Lifesaving from a killing blow), the store round trip; 782 tests.
+- Known limits: Lifesaving says nothing when it saves you (the HUD tag just goes); the Glowing level is a guess; Deepwater's recipe is a guess.
 - [ ] Nathan's play-test

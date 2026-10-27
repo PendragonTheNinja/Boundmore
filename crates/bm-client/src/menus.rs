@@ -563,6 +563,8 @@ const FOOD_BUFF: Color32 = Color32::from_rgb(150, 220, 140);
 const FOOD_FULL: Color32 = Color32::from_rgb(196, 230, 150);
 const FOOD_BAD: Color32 = Color32::from_rgb(230, 120, 96);
 const CREATIVE_TAG: Color32 = Color32::from_rgb(140, 200, 255);
+/// A brew's tag on the HUD (milestone 23 part 2).
+const BREW_TAG: Color32 = Color32::from_rgb(196, 160, 255);
 
 /// What food is doing, for the HUD (milestone 16): the buff ("Sated I
 /// 9:41"), then Full, Sick or Starving.
@@ -585,6 +587,25 @@ pub fn food_tags(s: &bm_core::PlayerState) -> Vec<(String, Color32)> {
             ),
             FOOD_BUFF,
         ));
+    }
+    // Brews (milestone 23 part 2): the timed one, then Lifesaving.
+    let clock = |ticks: u32| {
+        let secs = ticks / bm_core::TICK_HZ;
+        format!("{}:{:02}", secs / 60, secs % 60)
+    };
+    if s.brew.left > 0 && s.brew.kind != bm_core::brew::Brew::None {
+        let grade = if s.brew.kind.grades().count() > 1 {
+            format!(" {}", crate::items::roman(s.brew.grade))
+        } else {
+            String::new()
+        };
+        tags.push((
+            format!("{}{grade} {}", s.brew.kind.name(), clock(s.brew.left)),
+            BREW_TAG,
+        ));
+    }
+    if s.revive > 0 {
+        tags.push((format!("Lifesaving {}", clock(s.revive)), BREW_TAG));
     }
     if s.starving() {
         tags.push(("Starving: eat something".into(), FOOD_BAD));
