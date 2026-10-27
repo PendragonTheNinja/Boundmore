@@ -3122,6 +3122,22 @@ impl App {
                 }
                 self.open_menu(Menu::Inventory);
             }
+            // Milestone 22 part 4: written signs on a wall.
+            "signs" => {
+                if let Some(Link::Demo(d)) = &mut self.link {
+                    d.show_signs();
+                }
+                if let Some(s) = &mut self.session {
+                    s.me.teleport(bm_core::PlayerState {
+                        pos: DVec3::from_array(crate::demo::SHAPES_VIEW),
+                        vel: DVec3::ZERO,
+                        on_ground: true,
+                        hook: None,
+                        ..Default::default()
+                    });
+                }
+                (self.yaw, self.pitch) = (0.0, -0.2);
+            }
             // Milestone 22: doors, trapdoors and furnishings in daylight.
             "furnishings" => {
                 if let Some(Link::Demo(d)) = &mut self.link {

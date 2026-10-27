@@ -779,6 +779,85 @@ impl Demo {
         self.events.extend(chunks.into_iter().map(NetEvent::Msg));
     }
 
+    /// Signs (milestone 22 part 4) on a stone wall ahead of the spawn post
+    /// (`SHAPES_VIEW`): a three by two panel sign in coloured text, a stone
+    /// and a glowing metal sign hung on the wall, and a wood sign on its
+    /// post in front.
+    pub fn show_signs(&mut self) {
+        use bm_core::forms::{Form, FormKind, Style};
+        use bm_core::signs::{Align, SignText, SignView};
+        let b = |n: &str| self.blocks.id(n).expect("builtin block");
+        let form = |kind, turn| Form::new(kind, Style::Plain, turn).unwrap().shape();
+        let stone = BlockState::plain(b("stone"));
+        let mut put = Vec::new();
+        for x in 122..136 {
+            for y in 44..48 {
+                put.push((BlockPos::new(x, y, 120), stone));
+            }
+        }
+        let at = |name: &str, shape| BlockState {
+            id: b(name),
+            colour: Colour::NATURAL,
+            shape,
+        };
+        for x in 124..127 {
+            for y in 44..46 {
+                put.push((
+                    BlockPos::new(x, y, 121),
+                    at("wood_sign_panel", form(FormKind::Panel, 2)),
+                ));
+            }
+        }
+        put.push((BlockPos::new(128, 45, 121), at("stone_sign", form(FormKind::Sign, 6))));
+        put.push((BlockPos::new(130, 45, 121), at("metal_sign", form(FormKind::Sign, 6))));
+        put.push((BlockPos::new(129, 44, 124), at("wood_sign", form(FormKind::Sign, 2))));
+        for y in 44..46 {
+            put.push((BlockPos::new(128, y, 130), stone));
+        }
+        let planet = &mut self.planets[0];
+        planet.flat = true;
+        planet.edits.clear();
+        planet.edits.extend(put);
+        let chunks = self.chunks_around_spawn();
+        self.events.extend(chunks.into_iter().map(NetEvent::Msg));
+        let sign = |text: &str, align, across, up| SignView {
+            text: SignText {
+                text: text.into(),
+                more: String::new(),
+                align,
+                italic: false,
+            },
+            across,
+            up,
+        };
+        let signs = [
+            (
+                BlockPos::new(124, 44, 121),
+                sign(
+                    ":#a22:Mira's Forge\n:#222:Tools mended :#264:while you wait",
+                    Align::Centre,
+                    3,
+                    2,
+                ),
+            ),
+            (BlockPos::new(128, 45, 121), sign("North gate", Align::Centre, 1, 1)),
+            (
+                BlockPos::new(130, 45, 121),
+                sign("Portal hall\nthis way", Align::Left, 1, 1),
+            ),
+            (
+                BlockPos::new(129, 44, 124),
+                sign("Welcome to\nHearthmoor", Align::Centre, 1, 1),
+            ),
+        ];
+        for (anchor, view) in signs {
+            self.events.push_back(NetEvent::Msg(ServerMsg::Sign {
+                anchor,
+                sign: Some(view),
+            }));
+        }
+    }
+
     /// Turns the first planet into a showroom for chisel cuts (ADR-0008):
     /// level ground and, ahead of the spawn, a row per family (round,
     /// bevel, slope, square, nearest first) of the same

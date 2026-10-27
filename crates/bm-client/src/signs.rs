@@ -14,6 +14,10 @@ use std::collections::HashMap;
 /// Signs further than this are not drawn (blocks).
 pub const DRAW_DISTANCE: f64 = 32.0;
 
+/// The largest text drawn, in layout points (a full block is laid out at
+/// most 128 points across).
+const MAX_FONT: f32 = 48.0;
+
 /// The written signs we hold, by anchor.
 #[derive(Default)]
 pub struct Signs {
@@ -182,12 +186,14 @@ pub fn draw(painter: &egui::Painter, signs: &Signs, v: &DrawView) {
         let (Some(a), Some(b)) = (project(centre), project(centre + DVec3::from_array(face.right))) else {
             continue;
         };
-        let per_block = ((a - b).length()).clamp(8.0, 512.0);
+        // Capped, so close signs magnify a modest layout rather than ask
+        // the font atlas for huge glyphs.
+        let per_block = ((a - b).length()).clamp(8.0, 128.0);
         let scale = 2f32.powi(per_block.log2().round() as i32);
         let def = v.world.registry.get(state.id);
-        let colour = ink_colour(v, state, def, base, face.normal);
+        let (colour, dim) = ink_colour(v, state, def, base, face.normal);
         let (w, h) = ((face.width as f32) * scale, (face.height as f32) * scale);
-        let Some(galley) = fit(ctx, &view.text, colour, v.colours, w, h) else {
+        let Some(galley) = fit(ctx, &view.text, colour, dim, v.colours, w, h) else {
             continue;
         };
         let x = match view.text.align {
@@ -197,14 +203,10 @@ pub fn draw(painter: &egui::Painter, signs: &Signs, v: &DrawView) {
         };
         let y = ((h - galley.size().y) / 2.0).max(0.0);
         let mut mesh = Mesh::default();
-        let mut tess = ctx.fonts(|f| {
-            Tessellator::new(
-                ctx.pixels_per_point(),
-                Default::default(),
-                f.font_image_size(),
-                Vec::new(),
-            )
-        });
+        // Never ask the context anything inside its fonts lock.
+        let ppp = ctx.pixels_per_point();
+        let font_size = ctx.fonts(|f| f.font_image_size());
+        let mut tess = Tessellator::new(ppp, Default::default(), font_size, Vec::new());
         tess.tessellate_shape(Shape::galley(pos2(x, y), galley, colour), &mut mesh);
         // Canvas points to the sign's plane, then to the screen.
         let mut ok = true;
@@ -227,6 +229,7 @@ fn fit(
     ctx: &egui::Context,
     text: &SignText,
     colour: Color32,
+    dim: f32,
     palette: &ColourPalette,
     w: f32,
     h: f32,
@@ -234,17 +237,18 @@ fn fit(
     if text.text.trim().is_empty() || w < 4.0 || h < 4.0 {
         return None;
     }
-    let mut size = (h * 0.9).min(w * 0.5);
-    loop {
+    let layout = |size: f32, wrap: Option<f32>| {
         let mut job = LayoutJob::default();
-        job.wrap.max_width = w;
+        if let Some(w) = wrap {
+            job.wrap.max_width = w;
+        }
         job.halign = match text.align {
             Align::Left => egui::Align::LEFT,
             Align::Centre => egui::Align::Center,
             Align::Right => egui::Align::RIGHT,
         };
         for (ink, run) in runs(&text.text) {
-            let c = ink.map_or(colour, |i| ink_rgb(i, palette, colour));
+            let c = ink.map_or(colour, |i| dimmed(ink_rgb(i, palette, colour), dim));
             job.append(
                 &run,
                 0.0,
@@ -256,13 +260,31 @@ fn fit(
                 },
             );
         }
-        let galley = ctx.fonts_mut(|f| f.layout_job(job));
-        let fits = galley.size().y <= h && galley.size().x <= w + 0.5;
-        if fits || size <= 3.0 {
+        ctx.fonts_mut(|f| f.layout_job(job))
+    };
+    // The lines as written, scaled to fit: words are never broken while
+    // the text stays at least an eighth of the sign's height.
+    const PROBE: f32 = 24.0;
+    let probe = layout(PROBE, None);
+    let (gw, gh) = (probe.size().x.max(1.0), probe.size().y.max(1.0));
+    let size = (PROBE * (w / gw).min(h / gh) * 0.96).min(MAX_FONT);
+    if size >= h / 8.0 {
+        return Some(layout(size, None));
+    }
+    // A long line: wrap it to the width, as large as fits.
+    let mut size = (h / 3.0).min(MAX_FONT);
+    loop {
+        let galley = layout(size, Some(w));
+        if (galley.size().y <= h && galley.size().x <= w + 0.5) || size <= 3.0 {
             return Some(galley);
         }
         size *= 0.85;
     }
+}
+
+fn dimmed(c: Color32, k: f32) -> Color32 {
+    let f = |v: u8| (v as f32 * k) as u8;
+    Color32::from_rgb(f(c.r()), f(c.g()), f(c.b()))
 }
 
 fn ink_rgb(ink: Ink, palette: &ColourPalette, fallback: Color32) -> Color32 {
@@ -275,14 +297,15 @@ fn ink_rgb(ink: Ink, palette: &ColourPalette, fallback: Color32) -> Color32 {
 }
 
 /// The sign's own ink: light on dark signs and glowing ones, dark on light
-/// ones; dimmed as the sign is lit unless it glows.
+/// ones; and how lit the sign is (0.25 to 1; 1 when it glows), which dims
+/// coloured text too.
 fn ink_colour(
     v: &DrawView,
     state: bm_core::BlockState,
     def: &bm_core::BlockDef,
     base: DVec3,
     normal: [f64; 3],
-) -> Color32 {
+) -> (Color32, f32) {
     let tint = v
         .colours
         .get(state.colour)
@@ -290,7 +313,7 @@ fn ink_colour(
         .map_or(def.color, |c| c.rgb);
     let luma = (0.299 * tint[0] as f32 + 0.587 * tint[1] as f32 + 0.114 * tint[2] as f32) / 255.0;
     if def.glow_text {
-        return Color32::from_rgb(255, 244, 214);
+        return (Color32::from_rgb(255, 244, 214), 1.0);
     }
     let ink = if luma < 0.45 { 236 } else { 28 };
     let front = base + DVec3::new(0.5, 0.5, 0.5) + DVec3::from_array(normal) * 0.6;
@@ -298,7 +321,7 @@ fn ink_colour(
     let lit = (l.sky() as f32 / 15.0 * v.sky_light).max(l.block() as f32 / 15.0);
     let k = 0.25 + 0.75 * lit.clamp(0.0, 1.0);
     let c = (ink as f32 * k) as u8;
-    Color32::from_rgb(c, c, (c as f32 * 0.97) as u8)
+    (Color32::from_rgb(c, c, (c as f32 * 0.97) as u8), k)
 }
 
 /// Whether something solid and whole stands between the eye and a point.
