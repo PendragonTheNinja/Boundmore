@@ -70,7 +70,7 @@ Drive it with `xdotool` (`windowfocus --sync`, then plain `keydown`/`click`, not
 
 ## Starting a session (do this first, every time)
 
-1. `git -C <clone> fetch origin && git -C <clone> status`; work from `origin/main`. If what Nathan describes is not on `main`, ask before building on a guess. Milestones 1 to 24 and creative mode are on `main` (M24 merged at Nathan's request on 2026-10-28). Branches named in older handoffs below are history; everything is on `main` now.
+1. `git -C <clone> fetch origin && git -C <clone> status`; work from `origin/main`. If what Nathan describes is not on `main`, ask before building on a guess. Milestones 1 to 24 and creative mode are on `main` (M24 merged at Nathan's request on 2026-10-28). **Milestone 25 (friends, claim rights, guilds, guild buffs) and the small M24 and M8 follow-ups of 2026-10-28 are on branch `ccr-525a9f19-d1zgfm`, not yet on `main`**: check that branch out to continue them, and merge it to `main` only when Nathan asks. Other branches named in older handoffs below are history.
 2. Read, in order: this file, `docs/README.md` (the docs index), the milestone spec marked *in progress* in `docs/milestones/`, and its **Status** section, which lists exactly what is done and what is next.
 3. Run the verification commands below and confirm the expected test count before changing anything.
 4. Check CI on the last commit (`https://api.github.com/repos/PendragonTheNinja/Boundmore/actions/runs?per_page=1`); a red `main` is the first job.
