@@ -14,6 +14,7 @@ Start with `../CLAUDE.md` (rules and invariants), then the milestone marked in p
 | `research/boundless-tuning.md` | Boundless's numbers per item and tier (grapples, tools, weapons, creatures, materials, recipes, skills, forging), from community game data, with sources and confidence | Before setting any gameplay number (Boundless first, identity second) |
 | `research/boundless-mechanics.md` | How Boundless's systems worked (chisels, grapples, portals and warps, colours, reclaim, machines, forging...), from the forum and wiki, with sources and confidence | Before designing any system that copies a Boundless mechanic |
 | `research/exoworlds.md` | Boundless's exoworlds from the player archive of 419 of them (rhythm, stays, tiers, hosts) and the release notes | Touching wandering worlds or tier 7 |
+| `research/guilds-and-permissions.md` | Boundless's friends, beacon permissions (Builder, Worker, Engineer) and guilds (ranks, aligned and controlled beacons, endeavour, buffs) | Touching claims' rights, guilds or messages |
 | `proposals/*.md` | Designs waiting on Nathan's decision, with recommendations (skills and progression) | Before building the system they cover |
 | `media/` | Screenshots per milestone | Releases, comparisons |
 
