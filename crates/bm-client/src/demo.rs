@@ -1078,6 +1078,72 @@ impl Demo {
         self.events.extend(chunks.into_iter().map(NetEvent::Msg));
     }
 
+    /// Milestone 26: the torch hall lit in colour. Gem torches on the walls,
+    /// a row of lume in six colours along the floor, a lume lantern at the
+    /// far end, an amethyst torch in hand; no white light anywhere.
+    pub fn show_lights(&mut self) {
+        let b = |n: &str| BlockState::plain(self.blocks.id(n).expect("builtin block"));
+        let paint = |n: &str, c: &str| {
+            BlockState::coloured(
+                self.blocks.id(n).expect("builtin block"),
+                self.colours.id(c).expect("palette colour"),
+            )
+        };
+        let stone = b("stone");
+        let (x0, x1, z0, z1, top) = TORCH_HALL;
+        let mut put = Vec::new();
+        for x in x0 - 1..=x1 + 1 {
+            for z in z0 - 1..=z1 + 1 {
+                for y in GROUND..=top + 1 {
+                    let inside = (x0..=x1).contains(&x) && (z0..=z1).contains(&z) && y > GROUND && y <= top;
+                    put.push((BlockPos::new(x, y, z), if inside { BlockState::AIR } else { stone }));
+                }
+            }
+        }
+        let y = GROUND + 1;
+        // Gem torches along both walls, one colour each.
+        for (i, gem) in ["ruby", "topaz", "emerald"].into_iter().enumerate() {
+            put.push((
+                BlockPos::new(x1, y + 1, 124 - 5 * i as i64),
+                b(&format!("{gem}_torch_east")),
+            ));
+        }
+        for (i, gem) in ["sapphire", "amethyst", "diamond"].into_iter().enumerate() {
+            put.push((
+                BlockPos::new(x0, y + 1, 124 - 5 * i as i64),
+                b(&format!("{gem}_torch_west")),
+            ));
+        }
+        // Lume in the floor down the middle, light colours and dark.
+        for (i, c) in [
+            "Bright Crimson",
+            "Bright Gold",
+            "Bright Lime",
+            "Bright Teal",
+            "Bright Cobalt",
+            "Bright Orchid",
+            "Dark Orchid",
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            put.push((BlockPos::new(128, GROUND, 125 - 3 * i as i64), paint("glow_crystal", c)));
+        }
+        put.push((BlockPos::new(128, y, z0), paint("crystal_lantern", "Bright Sky")));
+        let planet = &mut self.planets[0];
+        planet.flat = true;
+        planet.edits.clear();
+        planet.edits.extend(put);
+        let before = self.inv.clone();
+        self.inv.slots[9] = Some(ItemStack::new(
+            self.items.id("amethyst_torch").expect("builtin item"),
+            2,
+        ));
+        self.slots_since(&before);
+        let chunks = self.chunks_around_spawn();
+        self.events.extend(chunks.into_iter().map(NetEvent::Msg));
+    }
+
     /// Milestone 16 part 2: a field of every crop at every stage on tilled
     /// soil (rice by a row of water), a tiller and seeds in hand.
     pub fn show_farm(&mut self) {

@@ -47,4 +47,5 @@ Coloured glass or water filtering light; crops growing by light (ADR-0010: crops
 - [x] Part 2 (2026-10-28): light colours for every emitter (guesses by eye); the six gem torches (30 blocks: floor and four walls each) and the crystal lantern with Boundless's recipes; their textures and icons (`tools/bm-texgen/src/lights.rs`).
 - Cost (`light_bench`, release, against the base commit): lighting a column 1.18 ms (was 0.83, 1.4x); a block edit 20 us on average (was 12, 1.7x: each emitter now spreads three channels); dense light 64 KB a chunk (was 32). Meshing unchanged.
 - [x] Renamed in game (Nathan, 2026-10-28, "Lume for now"): the glow crystal family is shown as lume (`BlockDef::display`, `display_name`; 27 blocks; the mining feat "Lume Cutter"). Internal names and saves are unchanged. Protocol 53.
-- [ ] Screenshots, test counts
+- [x] Screenshot (2026-10-28): `docs/media/m26-lights.jpg` (`--demo-ui lights`: the torch hall with six gem torches, seven lume colours down the floor, a lume lantern and an amethyst torch in hand). Test counts in CLAUDE.md.
+- [ ] Nathan's play-test; Measure F4 and F5

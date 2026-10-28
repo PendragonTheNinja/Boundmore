@@ -3528,6 +3528,15 @@ impl App {
                 }
                 (self.yaw, self.pitch) = (0.4, -0.05);
             }
+            "lights" => {
+                if let Some(Link::Demo(d)) = &mut self.link {
+                    d.show_lights();
+                }
+                if let Some(s) = &mut self.session {
+                    s.selected = 9;
+                }
+                (self.yaw, self.pitch) = (0.0, -0.18);
+            }
             "torches" => {
                 if let Some(Link::Demo(d)) = &mut self.link {
                     d.show_torches();
