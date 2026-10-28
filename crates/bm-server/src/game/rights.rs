@@ -22,6 +22,13 @@ impl Game {
         if c.owner == account {
             return Ok(());
         }
+        let in_guild = self.guild_rights_on(c.id, account) != 0;
+        if !in_guild && !self.social.are_friends(&c.owner, account) {
+            return Err(ClaimError::OwnedBy(c.owner_name.clone()).into());
+        }
+        if rights::allows(self.guild_rights_on(c.id, account), act) {
+            return Ok(());
+        }
         if !self.social.are_friends(&c.owner, account) {
             return Err(ClaimError::OwnedBy(c.owner_name.clone()).into());
         }
@@ -59,7 +66,7 @@ impl Game {
     /// Whether `account` holds any right on `claim` (a visitor who does
     /// pays no footfall there).
     pub(super) fn holds_rights(&self, claim: u32, account: &str) -> bool {
-        self.social.rights(claim, account) != 0
+        self.social.rights(claim, account) != 0 || self.guild_rights_on(claim, account) != 0
     }
 
     /// A claim as players see it, with who holds rights there.
@@ -70,6 +77,10 @@ impl Game {
             .holders(c.id)
             .map(|h| h.values().map(|(name, r)| (name.clone(), *r)).collect())
             .unwrap_or_default();
+        v.guild = self
+            .guilds
+            .alignment(c.id)
+            .and_then(|a| self.guilds.get(a.guild).map(|g| (g.id, g.tag.clone(), a.controlled)));
         v
     }
 
@@ -194,7 +205,7 @@ impl Game {
     }
 
     /// Everyone on the claim's planet sees who now holds rights there.
-    fn claim_rights_changed(&mut self, claim: u32) {
+    pub(super) fn claim_rights_changed(&mut self, claim: u32) {
         if let Some(pi) = self.planets.iter().position(|p| p.claims.get(claim).is_some()) {
             self.broadcast_claim(pi, claim);
         }

@@ -436,6 +436,7 @@ impl Demo {
                 stone: BlockPos::new(126, 44, 131),
                 plots: own,
                 rights: vec![("Wren".into(), bm_core::rights::BUILDER | bm_core::rights::WORKER)],
+                guild: Some((1, "LANT".into(), false)),
             },
             ClaimView {
                 id: 2,
@@ -443,6 +444,7 @@ impl Demo {
                 stone: BlockPos::new(150, 44, 118),
                 plots: theirs,
                 rights: Vec::new(),
+                guild: Some((1, "LANT".into(), false)),
             },
         ];
         let mut chest = vec![None; 20];

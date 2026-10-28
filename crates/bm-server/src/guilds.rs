@@ -3,6 +3,7 @@
 //! by a guild, and what changed since the last save. The rules of one guild
 //! are `bm_core::guilds`.
 
+use bm_core::BlockPos;
 use bm_core::guilds::{Guild, MAX_EACH};
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeSet, HashMap};
@@ -24,9 +25,14 @@ pub struct Guilds {
     next_id: u32,
     primary: HashMap<String, u32>,
     claims: HashMap<u32, Alignment>,
+    /// Guild controls set to a guild, by planet id and block.
+    controls: HashMap<(u16, BlockPos), u32>,
     dirty: BTreeSet<u32>,
+    controls_dirty: BTreeSet<(u16, BlockPos)>,
     primary_dirty: BTreeSet<String>,
     claims_dirty: BTreeSet<u32>,
+    /// Counts every change to which claims are given to guilds.
+    generation: u64,
 }
 
 /// What changed since the last save (None deletes).
@@ -34,11 +40,18 @@ pub struct GuildsDirty {
     pub guilds: Vec<(u32, Option<Guild>)>,
     pub primary: Vec<(String, Option<u32>)>,
     pub claims: Vec<(u32, Option<Alignment>)>,
+    pub controls: Vec<(u16, BlockPos, Option<u32>)>,
     pub next_id: u32,
 }
 
 impl Guilds {
-    pub fn load(guilds: Vec<Guild>, primary: Vec<(String, u32)>, claims: Vec<(u32, Alignment)>, next_id: u32) -> Self {
+    pub fn load(
+        guilds: Vec<Guild>,
+        primary: Vec<(String, u32)>,
+        claims: Vec<(u32, Alignment)>,
+        controls: Vec<(u16, BlockPos, u32)>,
+        next_id: u32,
+    ) -> Self {
         let mut g = Guilds {
             next_id: next_id.max(1),
             ..Default::default()
@@ -52,6 +65,11 @@ impl Guilds {
         g.claims = claims
             .into_iter()
             .filter(|(_, a)| g.by_id.contains_key(&a.guild))
+            .collect();
+        g.controls = controls
+            .into_iter()
+            .filter(|(_, _, id)| g.by_id.contains_key(id))
+            .map(|(p, b, id)| ((p, b), id))
             .collect();
         g
     }
@@ -142,7 +160,29 @@ impl Guilds {
         for c in &claims {
             self.align(*c, None);
         }
+        let controls: Vec<(u16, BlockPos)> = self
+            .controls
+            .iter()
+            .filter(|(_, g)| **g == id)
+            .map(|(k, _)| *k)
+            .collect();
+        for (p, b) in controls {
+            self.set_control(p, b, None);
+        }
         claims
+    }
+
+    /// The guild a control is set to.
+    pub fn control(&self, planet: u16, at: BlockPos) -> Option<u32> {
+        self.controls.get(&(planet, at)).copied()
+    }
+
+    pub fn set_control(&mut self, planet: u16, at: BlockPos, id: Option<u32>) {
+        match id {
+            Some(id) => self.controls.insert((planet, at), id),
+            None => self.controls.remove(&(planet, at)),
+        };
+        self.controls_dirty.insert((planet, at));
     }
 
     /// When `account` joins `id`: their first guild becomes their primary.
@@ -162,11 +202,23 @@ impl Guilds {
             None => self.claims.remove(&claim),
         };
         self.claims_dirty.insert(claim);
+        self.generation += 1;
+    }
+
+    pub fn generation(&self) -> u64 {
+        self.generation
     }
 
     /// The claims given to a guild.
     pub fn claims_of(&self, id: u32) -> impl Iterator<Item = u32> + '_ {
         self.claims.iter().filter(move |(_, a)| a.guild == id).map(|(c, _)| *c)
+    }
+
+    pub fn is_dirty(&self) -> bool {
+        !(self.dirty.is_empty()
+            && self.primary_dirty.is_empty()
+            && self.claims_dirty.is_empty()
+            && self.controls_dirty.is_empty())
     }
 
     pub fn take_dirty(&mut self) -> GuildsDirty {
@@ -186,6 +238,10 @@ impl Guilds {
                 .into_iter()
                 .map(|c| (c, self.claims.get(&c).copied()))
                 .collect(),
+            controls: std::mem::take(&mut self.controls_dirty)
+                .into_iter()
+                .map(|(p, b)| (p, b, self.controls.get(&(p, b)).copied()))
+                .collect(),
             next_id: self.next_id,
         }
     }
@@ -197,7 +253,7 @@ mod tests {
 
     #[test]
     fn founding_joining_and_ending_keep_primaries_and_claims_right() {
-        let mut gs = Guilds::load(Vec::new(), Vec::new(), Vec::new(), 1);
+        let mut gs = Guilds::load(Vec::new(), Vec::new(), Vec::new(), Vec::new(), 1);
         let a = gs.found("Lanternwrights", "LANT", "ada", "Ada", 0);
         let b = gs.found("Tidecallers", "TIDE", "ada", "Ada", 0);
         assert!(gs.name_taken("lanternwrights"));
@@ -210,12 +266,16 @@ mod tests {
                 controlled: false,
             }),
         );
+        let spot = BlockPos::new(1, 2, 3);
+        gs.set_control(0, spot, Some(b));
+        assert_eq!(gs.control(0, spot), Some(b));
         // Leaving the primary moves it to another.
         gs.change(a, |g| g.members.remove("ada"));
         gs.after_leaving("ada", a);
         assert_eq!(gs.primary("ada"), Some(b));
         assert_eq!(gs.end(b), vec![7]);
         assert_eq!(gs.alignment(7), None);
+        assert_eq!(gs.control(0, spot), None, "its controls go blank");
         assert!(!gs.name_taken("Tidecallers"));
         let d = gs.take_dirty();
         assert_eq!(d.next_id, 3);

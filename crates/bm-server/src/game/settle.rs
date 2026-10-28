@@ -70,6 +70,9 @@ impl Game {
     pub(super) fn claim_forgotten(&mut self, claim: u32) {
         self.tallies.forget(claim);
         self.social.forget_claim(claim);
+        if self.guilds.alignment(claim).is_some() {
+            self.guilds.align(claim, None);
+        }
         if self.footfall.remove(&claim).is_some() {
             self.footfall_dirty.insert(claim);
         }
@@ -92,7 +95,7 @@ impl Game {
         for pi in 0..self.planets.len() {
             let claims = &self.planets[pi].claims;
             let seen = (
-                self.tallies.generation(),
+                self.tallies.generation() + self.guilds.generation(),
                 claims.all().count(),
                 claims.all().map(|c| c.plots.len()).sum::<usize>(),
             );
@@ -134,6 +137,7 @@ impl Game {
                 owner_name: &c.owner_name,
                 plots: &c.plots,
                 prestige: of(c.id),
+                guild: self.guilds.alignment(c.id).map(|a| a.guild),
             })
             .collect();
         let mut prestige = prestige;
@@ -173,6 +177,7 @@ impl Game {
         self.settlement_names
             .get(&s.key)
             .cloned()
+            .or_else(|| s.guild.and_then(|g| self.guilds.get(g)).map(|g| g.name.clone()))
             .unwrap_or_else(|| format!("{}'s {}", s.warden_name, s.rank.name()))
     }
 
@@ -238,7 +243,13 @@ impl Game {
         else {
             return self.notice(id, "This claim is not part of a settlement yet");
         };
-        if s.warden != account {
+        // A guild's settlement is named by its Director and Executives.
+        let leader = s
+            .guild
+            .and_then(|g| self.guilds.get(g))
+            .and_then(|g| g.member(&account))
+            .is_some_and(|m| m.rank >= bm_core::guilds::Rank::Executive);
+        if s.warden != account && !leader {
             return self.notice(id, &format!("Only its warden, {}, can name it", s.warden_name));
         }
         // Any name a claim of it held goes; the key holds the new one.

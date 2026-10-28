@@ -75,6 +75,9 @@ pub struct ClaimPlots<'a> {
     pub owner_name: &'a str,
     pub plots: &'a BTreeSet<PlotPos>,
     pub prestige: u64,
+    /// The guild it is given to (milestone 25 part 2): claims join only
+    /// claims of the same guild, or none.
+    pub guild: Option<u32>,
 }
 
 /// One settlement.
@@ -93,6 +96,9 @@ pub struct Settlement {
     pub key: u32,
     /// The planet's top settlement.
     pub capital: bool,
+    /// A guild's settlement: its claims are all that guild's, and it is a
+    /// settlement whatever its prestige (Boundless's rule).
+    pub guild: Option<u32>,
 }
 
 /// Plot columns count as roads below this many among a column and its
@@ -159,10 +165,16 @@ pub fn find(claims: &[ClaimPlots], shape: PlanetShape) -> Vec<Settlement> {
                 near.extend(o.iter().copied());
             }
         }
-        for w in near.windows(2) {
-            let (a, b) = (root(&mut parent, w[0]), root(&mut parent, w[1]));
-            if a != b {
-                parent[a] = b;
+        // Join claims of the same guild (or of none) only.
+        for &i in here {
+            for &j in &near {
+                if claims[i].guild != claims[j].guild {
+                    continue;
+                }
+                let (a, b) = (root(&mut parent, i), root(&mut parent, j));
+                if a != b {
+                    parent[a] = b;
+                }
             }
         }
     }
@@ -176,7 +188,11 @@ pub fn find(claims: &[ClaimPlots], shape: PlanetShape) -> Vec<Settlement> {
         .into_values()
         .filter_map(|members| {
             let prestige: u64 = members.iter().map(|&i| claims[i].prestige).sum();
-            let rank = Rank::of(prestige)?;
+            let guild = claims[members[0]].guild;
+            let rank = match guild {
+                Some(_) => Rank::of(prestige).unwrap_or(Rank::Outpost),
+                None => Rank::of(prestige)?,
+            };
             let mut by_owner: BTreeMap<&str, u64> = BTreeMap::new();
             for &i in &members {
                 *by_owner.entry(claims[i].owner).or_insert(0) += claims[i].prestige;
@@ -202,6 +218,7 @@ pub fn find(claims: &[ClaimPlots], shape: PlanetShape) -> Vec<Settlement> {
                 warden_name: claims[top].owner_name.to_string(),
                 key: claims[top].id,
                 capital: false,
+                guild,
             })
         })
         .collect();
@@ -241,6 +258,7 @@ mod tests {
             owner_name: owner,
             plots,
             prestige,
+            guild: None,
         }
     }
 
@@ -293,5 +311,24 @@ mod tests {
         let s = find(&[claim(1, "alice", &a, 6_000), claim(2, "bob", &b, 6_000)], shape());
         assert_eq!(s.len(), 1);
         assert_eq!(s[0].claims, vec![1, 2]);
+    }
+
+    #[test]
+    fn a_guilds_claims_are_one_settlement_apart_from_others() {
+        let (a, b, c) = (block(0, 0, 3, 3), block(3, 0, 3, 3), block(6, 0, 3, 3));
+        let mut ca = claim(1, "alice", &a, 3_000);
+        let mut cb = claim(2, "bob", &b, 2_000);
+        let cc = claim(3, "carol", &c, 40_000);
+        ca.guild = Some(9);
+        cb.guild = Some(9);
+        let s = find(&[ca, cb, cc], shape());
+        assert_eq!(s.len(), 2, "{s:?}");
+        let g = s.iter().find(|s| s.guild == Some(9)).unwrap();
+        assert_eq!(
+            (g.claims.clone(), g.rank),
+            (vec![1, 2], Rank::Outpost),
+            "under 10,000 but a settlement"
+        );
+        assert!(s.iter().any(|s| s.claims == vec![3] && s.guild.is_none()));
     }
 }

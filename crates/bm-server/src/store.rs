@@ -94,6 +94,15 @@ const FRIENDS: TableDefinition<&str, &[u8]> = TableDefinition::new("player_frien
 /// Rights friends hold on each claim (milestone 25): claim id ->
 /// `crate::social::SavedRights`. A new table.
 const RIGHTS: TableDefinition<u32, &[u8]> = TableDefinition::new("claim_rights");
+/// Guilds by id (milestone 25 part 2): `bm_core::guilds::Guild`. The next
+/// id is in `META` under "next_guild". A new table.
+const GUILDS: TableDefinition<u32, &[u8]> = TableDefinition::new("guilds");
+/// Each account's primary guild.
+const GUILD_PRIMARY: TableDefinition<&str, u32> = TableDefinition::new("guild_primary");
+/// Claims given to a guild: claim id -> `crate::guilds::Alignment`.
+const CLAIM_GUILD: TableDefinition<u32, &[u8]> = TableDefinition::new("claim_guild");
+/// Guild controls set to a guild, keyed like `STORAGE` -> guild id.
+const GUILD_CONTROLS: TableDefinition<&[u8], u32> = TableDefinition::new("guild_controls");
 /// Regions each account has discovered (save version 7).
 const DISCOVERIES: TableDefinition<&str, &[u8]> = TableDefinition::new("discoveries");
 /// Far copies of chunks (milestone 20), keyed like `CHUNKS`: a cache made
@@ -1887,6 +1896,64 @@ impl Store {
         Ok(out)
     }
 
+    /// Every guild, primary, alignment and control, and the next guild id
+    /// (all empty in a universe from before milestone 25 part 2). A corrupt
+    /// guild or alignment is reported and skipped.
+    pub fn guilds(&self) -> Result<SavedGuilds> {
+        let tx = self.db.begin_read()?;
+        let mut out = SavedGuilds {
+            next_id: 1,
+            ..Default::default()
+        };
+        macro_rules! table {
+            ($t:expr) => {
+                match tx.open_table($t) {
+                    Ok(t) => Some(t),
+                    Err(redb::TableError::TableDoesNotExist(_)) => None,
+                    Err(e) => return Err(e.into()),
+                }
+            };
+        }
+        if let Some(t) = table!(GUILDS) {
+            for row in t.iter()? {
+                let (k, v) = row?;
+                match postcard::from_bytes(v.value()) {
+                    Ok(g) => out.guilds.push(g),
+                    Err(e) => tracing::error!("guild {} is corrupt ({e}); skipped", k.value()),
+                }
+            }
+        }
+        if let Some(t) = table!(GUILD_PRIMARY) {
+            for row in t.iter()? {
+                let (k, v) = row?;
+                out.primary.push((k.value().to_string(), v.value()));
+            }
+        }
+        if let Some(t) = table!(CLAIM_GUILD) {
+            for row in t.iter()? {
+                let (k, v) = row?;
+                match postcard::from_bytes(v.value()) {
+                    Ok(a) => out.claims.push((k.value(), a)),
+                    Err(e) => tracing::error!("claim {}'s guild is corrupt ({e}); skipped", k.value()),
+                }
+            }
+        }
+        if let Some(t) = table!(GUILD_CONTROLS) {
+            for row in t.iter()? {
+                let (k, v) = row?;
+                let key = k.value();
+                if let (Some(pos), Some(planet)) = (block_from_key(key), key.get(0..2)) {
+                    out.controls
+                        .push((u16::from_be_bytes([planet[0], planet[1]]), pos, v.value()));
+                }
+            }
+        }
+        if let Some(v) = tx.open_table(META)?.get("next_guild")? {
+            out.next_id = postcard::from_bytes(v.value()).context("next guild id is corrupt")?;
+        }
+        Ok(out)
+    }
+
     /// Every settlement name by its key claim.
     pub fn settlement_names(&self) -> Result<Vec<(u32, String)>> {
         let tx = self.db.begin_read()?;
@@ -2100,6 +2167,43 @@ impl Store {
                 };
             }
             drop(rights);
+            if let Some(g) = &batch.guilds {
+                let mut t = tx.open_table(GUILDS)?;
+                for (id, guild) in &g.guilds {
+                    match guild {
+                        Some(guild) => t.insert(*id, postcard::to_stdvec(guild)?.as_slice())?,
+                        None => t.remove(*id)?,
+                    };
+                }
+                drop(t);
+                let mut t = tx.open_table(GUILD_PRIMARY)?;
+                for (key, id) in &g.primary {
+                    match id {
+                        Some(id) => t.insert(key.as_str(), *id)?,
+                        None => t.remove(key.as_str())?,
+                    };
+                }
+                drop(t);
+                let mut t = tx.open_table(CLAIM_GUILD)?;
+                for (claim, a) in &g.claims {
+                    match a {
+                        Some(a) => t.insert(*claim, postcard::to_stdvec(a)?.as_slice())?,
+                        None => t.remove(*claim)?,
+                    };
+                }
+                drop(t);
+                let mut t = tx.open_table(GUILD_CONTROLS)?;
+                for (planet, pos, id) in &g.controls {
+                    let key = block_key(*planet, *pos);
+                    match id {
+                        Some(id) => t.insert(key.as_slice(), *id)?,
+                        None => t.remove(key.as_slice())?,
+                    };
+                }
+                drop(t);
+                tx.open_table(META)?
+                    .insert("next_guild", postcard::to_stdvec(&g.next_id)?.as_slice())?;
+            }
             let mut ledgers = tx.open_table(LEDGER)?;
             for (key, l) in &batch.ledgers {
                 ledgers.insert(key.as_str(), postcard::to_stdvec(l)?.as_slice())?;
@@ -2550,6 +2654,16 @@ fn upgrade_2_to_3(tx: &WriteTransaction, meta: &v2::PlanetMeta, kinds: &PlanetKi
     Ok(report)
 }
 
+/// Everything about guilds as saved (milestone 25 part 2).
+#[derive(Default)]
+pub struct SavedGuilds {
+    pub guilds: Vec<bm_core::guilds::Guild>,
+    pub primary: Vec<(String, u32)>,
+    pub claims: Vec<(u32, crate::guilds::Alignment)>,
+    pub controls: Vec<(u16, BlockPos, u32)>,
+    pub next_id: u32,
+}
+
 /// Who was paid footfall at a claim and when (unix seconds), kept for the
 /// days footfall looks back over (milestone 24 part 4).
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -2602,6 +2716,8 @@ pub struct WriteBatch {
     pub friends: Vec<(String, Option<crate::social::SavedFriends>)>,
     /// Claim rights that changed; None deletes.
     pub rights: Vec<(u32, Option<crate::social::SavedRights>)>,
+    /// Guild changes (milestone 25 part 2), when there are any.
+    pub guilds: Option<crate::guilds::GuildsDirty>,
     /// The universe clock, so days and station jobs continue across restarts.
     pub clock: Option<u64>,
     /// Departed wanderers (milestone 21): every row under each id is deleted,
@@ -2635,6 +2751,7 @@ impl WriteBatch {
             && self.footfall.is_empty()
             && self.friends.is_empty()
             && self.rights.is_empty()
+            && self.guilds.is_none()
             && self.forget_planets.is_empty()
     }
 }
@@ -2966,6 +3083,7 @@ mod tests {
         let mut tally = bm_core::prestige::Tally::default();
         tally.placed("polished_aurorite");
         tally.chiselled(3);
+        let guild = bm_core::guilds::Guild::found(4, "Lanternwrights", "LANT", "pendragon", "Pendragon", 9);
         let mut friends = crate::social::SavedFriends::default();
         friends.friends.insert("wren".into(), "Wren".into());
         friends.asked_by.insert("bob".into(), "Bob".into());
@@ -3058,6 +3176,19 @@ mod tests {
                 footfall: vec![(7, Some(footfall.clone()))],
                 friends: vec![("pendragon".into(), Some(friends.clone())), ("nobody".into(), None)],
                 rights: vec![(7, Some(rights.clone()))],
+                guilds: Some(crate::guilds::GuildsDirty {
+                    guilds: vec![(4, Some(guild.clone()))],
+                    primary: vec![("pendragon".into(), Some(4))],
+                    claims: vec![(
+                        7,
+                        Some(crate::guilds::Alignment {
+                            guild: 4,
+                            controlled: true,
+                        }),
+                    )],
+                    controls: vec![(2, spot, Some(4))],
+                    next_id: 5,
+                }),
                 clock: Some(777),
                 done: Vec::new(),
             })
@@ -3095,6 +3226,18 @@ mod tests {
             "friends kept (milestone 25)"
         );
         assert_eq!(s.rights().unwrap(), vec![(7, rights)]);
+        let g = s.guilds().unwrap();
+        assert_eq!(
+            (g.guilds, g.primary, g.claims.len(), g.controls, g.next_id),
+            (
+                vec![guild],
+                vec![("pendragon".to_string(), 4)],
+                1,
+                vec![(2, spot, 4)],
+                5
+            ),
+            "guilds kept (milestone 25 part 2)"
+        );
         assert_eq!(
             s.ledger("nobody").unwrap().coin,
             bm_core::feats::STARTING_COIN,

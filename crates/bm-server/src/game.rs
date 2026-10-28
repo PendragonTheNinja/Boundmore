@@ -34,6 +34,7 @@ mod farm;
 mod feats;
 mod food;
 mod forge;
+mod guild;
 mod meteors;
 mod mining;
 mod portal;
@@ -242,6 +243,8 @@ struct Player {
     /// The other player's claim this one stood in at the last footfall
     /// check (milestone 24 part 4): stepping into a new one is a visit.
     in_claim: Option<u32>,
+    /// The guild control whose window is open (milestone 25 part 2).
+    guild_control: Option<BlockPos>,
     chat: ChatLimit,
     /// Edits and swings tagged with an input up to this one came from before
     /// the last travel (see `TRAVEL_GUARD_INPUTS`).
@@ -444,6 +447,10 @@ pub struct Game {
     tallies: crate::settlements::Tallies,
     /// Friends and the rights they hold on claims (milestone 25).
     social: crate::social::Social,
+    /// Guilds, primaries, claims given to guilds and guild controls
+    /// (milestone 25 part 2).
+    guilds: crate::guilds::Guilds,
+    guild_control: BlockId,
     settlements: Vec<settle::Found>,
     /// Per planet: the tallies' generation, claim count and plot count when
     /// its settlements were last found.
@@ -695,6 +702,15 @@ impl Game {
         let reclaims = Reclaims::load(store.reclaims()?, &items);
         let tallies = crate::settlements::Tallies::load(store.tallies()?);
         let social = crate::social::Social::load(store.friends()?, store.rights()?);
+        let saved_guilds = store.guilds()?;
+        let guilds = crate::guilds::Guilds::load(
+            saved_guilds.guilds,
+            saved_guilds.primary,
+            saved_guilds.claims,
+            saved_guilds.controls,
+            saved_guilds.next_id,
+        );
+        let guild_control = registry.id("guild_control")?;
         let settlement_names: HashMap<u32, String> = store.settlement_names()?.into_iter().collect();
         let footfall: HashMap<u32, crate::store::SavedFootfall> = store.footfall()?.into_iter().collect();
         let last_seen = claim_owners_last_seen(&store, &planets, planets[start].id);
@@ -796,6 +812,8 @@ impl Game {
             ledgers_unsent: HashSet::new(),
             tallies,
             social,
+            guilds,
+            guild_control,
             settlements: Vec::new(),
             settle_seen: Vec::new(),
             settlement_names,
@@ -976,6 +994,7 @@ impl Game {
         if self.tick % STORAGE_CHECK_EVERY == 0 {
             self.check_open_storage();
             self.check_open_shops();
+            self.check_open_controls();
             self.check_open_portals();
             self.update_inner_light();
         }
@@ -1096,6 +1115,8 @@ impl Game {
                 ClientMsg::Command { text } => self.command(id, &text),
                 ClientMsg::Friend { name, action } => self.friend(id, &name, action),
                 ClientMsg::SetRights { claim, friend, rights } => self.set_rights(id, claim, &friend, rights),
+                ClientMsg::OpenGuildControl { pos } => self.open_guild_control(id, pos),
+                ClientMsg::Guild(action) => self.guild_action(id, action),
                 ClientMsg::Eat { at, slot } => self.queue(id, at, Queued::Eat { at, slot }),
                 ClientMsg::FillBucket { slot, pos } => self.fill_bucket(id, slot, pos),
                 ClientMsg::LookCrop { pos } => self.look_crop(id, pos),
@@ -1413,6 +1434,7 @@ impl Game {
                 storage: None,
                 shop: None,
                 in_claim: None,
+                guild_control: None,
                 chat: ChatLimit::new(self.tick),
                 travel_guard: None,
                 portal: None,
@@ -1450,7 +1472,10 @@ impl Game {
         self.arrived_in_sky(id);
         self.send_settlements(id);
         self.send_friends(id);
-        self.tell_friends_of(&self.players[&id].account.clone());
+        self.send_guilds(id);
+        let account = self.players[&id].account.clone();
+        self.tell_friends_of(&account);
+        self.tell_guilds_of(&account);
         self.tell_tokens(id);
         self.server_line(planet, arrived);
         if let Some(text) = came_back {
@@ -1490,6 +1515,7 @@ impl Game {
         self.server_line(planet, format!("{} left", p.name));
         self.left_planet(planet);
         self.tell_friends_of(&account);
+        self.tell_guilds_of(&account);
     }
 
     /// A player has gone from `planet` (left the server or travelled).
@@ -2438,6 +2464,10 @@ impl Game {
                 }
                 if let Some(kind) = self.crops.sown_as(block) {
                     Self::sowing_allowed(&self.crops, kind, world, canon, p.effects.farming)?;
+                }
+                // A guild control only on the placer's own claim (milestone 25).
+                if block == self.guild_control && planet.claims.at_block(canon).is_none_or(|c| c.owner != p.account) {
+                    return Err(Refusal::Told("A guild control goes on your own claim".into()));
                 }
                 // Trading blocks only on the placer's own claim (milestone 24
                 // part 2): the claim is what keeps their stock theirs.
@@ -3450,6 +3480,7 @@ impl Game {
             footfall: settle.footfall,
             friends,
             rights,
+            guilds: self.guilds.is_dirty().then(|| self.guilds.take_dirty()),
             clock: Some(self.tick),
             forget_planets: std::mem::take(&mut self.forget_planets),
             done,

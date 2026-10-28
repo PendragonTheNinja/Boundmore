@@ -484,6 +484,9 @@ impl Game {
         if storage_gone {
             self.close_storage_at(pi, canon);
         }
+        if old == self.guild_control {
+            self.control_broken(pi, canon);
+        }
         // Checked to have an empty tank.
         if old == self.portal_conduit
             && let Some(pid) = self.portals.at(self.planets[pi].id, canon)

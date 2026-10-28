@@ -25,7 +25,7 @@ use glam::DVec3;
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
 
 /// Bump on any change to a message below. Client and server must match.
-pub const PROTOCOL_VERSION: u32 = 48;
+pub const PROTOCOL_VERSION: u32 = 49;
 
 /// QUIC application protocol name; also refuses non-Boundmore peers early.
 pub const ALPN: &[u8] = b"boundmore/1";
@@ -152,6 +152,12 @@ pub enum ClientMsg {
     /// Give a friend these rights (`bm_core::rights`) on one of our claims;
     /// 0 takes them all. Answered with the claim's `Claim`.
     SetRights { claim: u32, friend: String, rights: u8 },
+    /// Open (Some) or close (None) the guild control within reach
+    /// (milestone 25 part 2): answered with `GuildControl`.
+    OpenGuildControl { pos: Option<BlockPos> },
+    /// Do something in a guild. Answered with `Guilds`, and a notice when
+    /// refused.
+    Guild(GuildAction),
     /// Move up to `count` between the inventory and the open storage block,
     /// or within either: same rules as `MoveItems` (merge, split, whole-stack
     /// swap). The server answers with `Slots` and/or `Storage`.
@@ -404,6 +410,9 @@ pub struct ClaimView {
     /// Friends holding rights there (milestone 25), by name as shown, with
     /// their `bm_core::rights` bits.
     pub rights: Vec<(String, u8)>,
+    /// The guild it is given to (milestone 25 part 2): (id, tag,
+    /// controlled).
+    pub guild: Option<(u32, String, bool)>,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -563,6 +572,10 @@ pub enum ServerMsg {
     /// This player's friends and requests (milestone 25), on joining and on
     /// every change.
     Friends(FriendsView),
+    /// Our guilds (milestone 25 part 2), on joining and on every change.
+    Guilds(GuildsView),
+    /// The open guild control, on open and on change; `closed` when gone.
+    GuildControl(GuildControlView),
     /// The settlements of the player's planet and each claim's prestige
     /// there (milestone 24 part 4), sent on arrival and when they change.
     Settlements {
@@ -860,6 +873,119 @@ pub struct ShotView {
     pub kind: ShotKind,
     /// What a homing bolt turns toward.
     pub homing: Option<Target>,
+}
+
+/// What a guild window asks (milestone 25 part 2). Members are named as
+/// shown; the server finds their accounts.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub enum GuildAction {
+    /// Found a guild at the open control (on our own claim).
+    Found {
+        pos: BlockPos,
+        name: String,
+        tag: String,
+    },
+    /// Set the open control (on our own claim) to one of our guilds, or
+    /// blank.
+    SetControl {
+        pos: BlockPos,
+        guild: Option<u32>,
+    },
+    /// Ask to join the guild of the open control.
+    Ask {
+        guild: u32,
+    },
+    Accept {
+        guild: u32,
+        who: String,
+    },
+    Decline {
+        guild: u32,
+        who: String,
+    },
+    Leave {
+        guild: u32,
+    },
+    Remove {
+        guild: u32,
+        who: String,
+    },
+    SetRank {
+        guild: u32,
+        who: String,
+        rank: bm_core::guilds::Rank,
+    },
+    /// Claim rights (`bm_core::rights`) and powers (`bm_core::guilds`).
+    SetRights {
+        guild: u32,
+        who: String,
+        rights: u8,
+        powers: u8,
+    },
+    Donate {
+        guild: u32,
+        coin: u64,
+    },
+    Pay {
+        guild: u32,
+        to: String,
+        coin: u64,
+    },
+    SetPrimary {
+        guild: u32,
+    },
+    /// Give one of our claims to a guild we are in (aligned, or controlled
+    /// by it), or take it back (None).
+    Align {
+        claim: u32,
+        guild: Option<u32>,
+        controlled: bool,
+    },
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct MemberView {
+    pub name: String,
+    pub rank: bm_core::guilds::Rank,
+    pub rights: u8,
+    pub powers: u8,
+    pub online: bool,
+}
+
+/// One of our guilds in full.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct GuildView {
+    pub id: u32,
+    pub name: String,
+    pub tag: String,
+    pub coin: u64,
+    pub members: Vec<MemberView>,
+    /// Waiting to join (shown to those with the Membership power).
+    pub asked: Vec<String>,
+    /// The log, newest last (Controllers and up): (unix seconds, text).
+    pub log: Vec<(u64, String)>,
+    /// Claims given to it, with whether controlled.
+    pub claims: Vec<(u32, bool)>,
+}
+
+/// Our guilds and which is primary (milestone 25 part 2).
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct GuildsView {
+    pub guilds: Vec<GuildView>,
+    pub primary: Option<u32>,
+}
+
+/// A guild control as its window shows it.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct GuildControlView {
+    pub pos: BlockPos,
+    /// The guild it is set to: (id, name, tag, members).
+    pub guild: Option<(u32, String, String, u32)>,
+    /// It stands on our own claim (we may found a guild or set it).
+    pub mine: bool,
+    /// We have asked to join its guild.
+    pub asked: bool,
+    pub closed: bool,
 }
 
 /// What to do about a friend (milestone 25).
@@ -1357,6 +1483,7 @@ mod tests {
                 plots: vec![PlotPos::new(0, 0, 0); 64],
                 // As many friends with rights as a claim may hold.
                 rights: vec![("A player with a long name".into(), 15); 50],
+                guild: Some((9, "LANTS".into(), true)),
             }],
             plot_allowance: 64,
             creatures: bm_core::creatures::CreatureKinds::builtin().defs().to_vec(),

@@ -1011,6 +1011,8 @@ pub fn paint(name: &str) -> Option<Tex> {
         "shop_stand_side" => return Some(shop_stand_side()),
         "request_basket_top" => return Some(request_basket_top()),
         "request_basket_side" => return Some(request_basket_side()),
+        "guild_control_top" => return Some(guild_control_top()),
+        "guild_control_side" => return Some(guild_control_side()),
         _ => {}
     }
     for (suffix, beam) in [("_pole", false), ("_beam", true)] {
@@ -1238,6 +1240,77 @@ fn request_basket_top() -> Tex {
             let f = (fx - fy).abs();
             let fold = ridge(f, 0.0, 3.0) * 0.5 - ridge((fx + fy - 32.0).abs(), 0.0, 2.0) * 0.3;
             Some((0.3 + 0.2 * rise(d, 1.5) + fold, -0.05))
+        },
+    )
+}
+
+/// A guild control's side (milestone 25 part 2): a carved wooden lectern,
+/// a gold shield with a banner bar on its front.
+fn guild_control_side() -> Tex {
+    let design = |fx: f32, fy: f32| -> Px {
+        // The shield: flat top, rounded to a point below.
+        let (dx, dy) = (fx - 16.0, fy - 14.0);
+        let inside_shield = dy > -6.0 && dy < 8.0 && dx.abs() < 5.5 - (dy.max(1.0) - 1.0) * 0.75;
+        if inside_shield {
+            let edge = (5.5 - (dy.max(1.0) - 1.0) * 0.75 - dx.abs()).min(dy + 6.0);
+            let bar = (dy + 1.0).abs() < 1.0;
+            return Px {
+                h: 1.1 + 0.3 * rise(edge, 1.0) + if bar { 0.25 } else { 0.0 },
+                part: Part::Inlay,
+            };
+        }
+        if let Some(p) = rim(Mat::Wood, fx, fy, 3.0, true) {
+            return p;
+        }
+        // A plinth band low on the lectern.
+        if (24.0..26.5).contains(&fy) {
+            return toned(0.9 + 0.3 * rise(26.5 - fy, 1.0), 31, true, -0.04);
+        }
+        let (k, a, b) = board(fx, 3.0, 29.0, 3);
+        if k > 0 && a < 1.0 {
+            return gap(0.1);
+        }
+        toned(0.45 + 0.35 * rise(a.min(b) - 0.5, 1.2), 10 + k, false, -0.12)
+    };
+    render("guild_control_side", Mat::Wood, false, design)
+}
+
+/// A guild control's top: an open book on the lectern's slope, its pages
+/// written, a ribbon down the middle.
+fn guild_control_top() -> Tex {
+    let design = |fx: f32, fy: f32| -> Px {
+        if let Some(p) = rim(Mat::Wood, fx, fy, 3.0, true) {
+            return p;
+        }
+        toned(0.5, 12, true, -0.15)
+    };
+    let tex = render("guild_control_top", Mat::Wood, false, design);
+    let paper = Ramp::from_hex(&[0x6e5a3c, 0x9e8a64, 0xcdbb92, 0xe8dab6, 0xf6eed6]);
+    let ink = Ramp::from_hex(&[0x2a1e16, 0x3e2c20, 0x55402e, 0x6a5038, 0x7e6244]);
+    let leather = Ramp::from_hex(&[0x2c0e10, 0x4a181a, 0x6e2424, 0x8e3430, 0xb0503e]);
+    overlay(
+        tex,
+        move |fx, fy| {
+            let cover = inside((fx, fy), 6.0, 7.0, 26.0, 25.0) < 1.2;
+            let ribbon = (fx - 16.0).abs() < 0.7 && fy > 15.0;
+            let line =
+                (fy - 10.5).rem_euclid(2.5) < 0.8 && fy < 22.5 && (fx - 16.0).abs() > 2.0 && (fx - 16.0).abs() < 8.0;
+            if cover || ribbon {
+                leather.clone()
+            } else if line {
+                ink.clone()
+            } else {
+                paper.clone()
+            }
+        },
+        |fx, fy| {
+            let d = inside((fx, fy), 6.0, 7.0, 26.0, 25.0);
+            if d <= 0.0 {
+                return None;
+            }
+            // Each page curls up from the spine.
+            let curl = ((fx - 16.0).abs() / 10.0).min(1.0);
+            Some((0.3 + 0.35 * curl + 0.2 * rise(d, 1.0), 0.0))
         },
     )
 }

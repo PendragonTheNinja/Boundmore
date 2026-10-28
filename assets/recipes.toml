@@ -5791,3 +5791,12 @@ spark = 200
 xp = 35
 wear = 150
 skill = { name = "decoration_crafting", level = 3 }
+
+# Milestone 25 part 2: the guild control (Boundless's recipe).
+[[recipe]]
+output = "guild_control"
+inputs = [["any_stones", 1], ["any_base_metal", 3], ["relic_fragment", 2], ["relic_component", 6]]
+station = "workbench"
+seconds = 300.0
+xp = 60
+wear = 21

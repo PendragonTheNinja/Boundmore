@@ -71,6 +71,8 @@ pub enum Menu {
     /// Friends, requests, and friends' rights on the claim we stand in
     /// (milestone 25).
     Friends,
+    /// Guilds (milestone 25 part 2): at a guild control (Some), or ours (G).
+    Guild(Option<BlockPos>),
     /// Someone else's shop stand or request basket at this block (milestone
     /// 24 part 2).
     Shop(BlockPos),
@@ -748,6 +750,328 @@ pub fn friends(
             "Stand in a claim of yours to give friends rights there."
         };
         ui.label(egui::RichText::new(note).color(MUTED).small());
+    });
+    if !open {
+        actions.push(UiAction::CloseMenu);
+    }
+}
+
+/// What is being typed in the guild window (milestone 25 part 2).
+#[derive(Default)]
+pub struct GuildForm {
+    pub name: String,
+    pub tag: String,
+    pub coin: String,
+    pub pay_to: String,
+    /// The guild shown, when we are in several.
+    pub tab: Option<u32>,
+}
+
+/// The guild window (milestone 25 part 2). At a guild control (`control`):
+/// found a guild there or set it to one of ours, ask to join its guild, or
+/// run it. With G (no control): our guilds, the primary one, coin,
+/// leaving, and giving the claim we stand in (`my_claim`) to a guild.
+pub fn guild(
+    ctx: &egui::Context,
+    control: Option<&bm_protocol::GuildControlView>,
+    view: &bm_protocol::GuildsView,
+    my_claim: Option<&bm_protocol::ClaimView>,
+    me: &str,
+    form: &mut GuildForm,
+    actions: &mut Vec<UiAction>,
+) {
+    use bm_core::guilds::{MEMBERSHIP, POWERS, Rank};
+    use bm_protocol::GuildAction as A;
+    let mut open = true;
+    let send = |a: A| UiAction::Send(ClientMsg::Guild(a));
+    window("Guild").open(&mut open).show(ctx, |ui| {
+        // At a control: what it is set to.
+        let mut run = None;
+        if let Some(c) = control {
+            match &c.guild {
+                None if c.mine => {
+                    heading(ui, "Found a guild");
+                    ui.horizontal(|ui| {
+                        ui.add(
+                            egui::TextEdit::singleline(&mut form.name)
+                                .hint_text("Name")
+                                .desired_width(160.0),
+                        );
+                        ui.add(
+                            egui::TextEdit::singleline(&mut form.tag)
+                                .hint_text("Tag")
+                                .desired_width(56.0),
+                        );
+                        let ready = !form.name.trim().is_empty() && !form.tag.trim().is_empty();
+                        if ui.add_enabled(ready, egui::Button::new("Found")).clicked() {
+                            actions.push(send(A::Found {
+                                pos: c.pos,
+                                name: form.name.trim().to_string(),
+                                tag: form.tag.trim().to_string(),
+                            }));
+                        }
+                    });
+                    ui.label(
+                        egui::RichText::new("A name up to 20 characters, a tag up to 5 letters.")
+                            .color(MUTED)
+                            .small(),
+                    );
+                    if !view.guilds.is_empty() {
+                        ui.add_space(4.0);
+                        ui.label(egui::RichText::new("Or set this control to one of your guilds:").color(TEXT));
+                        ui.horizontal_wrapped(|ui| {
+                            for g in &view.guilds {
+                                if ui.button(format!("{} [{}]", g.name, g.tag)).clicked() {
+                                    actions.push(send(A::SetControl {
+                                        pos: c.pos,
+                                        guild: Some(g.id),
+                                    }));
+                                }
+                            }
+                        });
+                    }
+                }
+                None => {
+                    ui.label(egui::RichText::new("This guild control belongs to no guild yet.").color(MUTED));
+                }
+                Some((id, name, tag, members)) => {
+                    heading(ui, &format!("{name} [{tag}]"));
+                    ui.label(egui::RichText::new(format!("{members} members")).color(MUTED).small());
+                    if view.guilds.iter().any(|g| g.id == *id) {
+                        run = Some(*id);
+                    } else if c.asked {
+                        ui.label(egui::RichText::new("You have asked to join.").color(MUTED));
+                    } else if ui.button("Ask to join").clicked() {
+                        actions.push(send(A::Ask { guild: *id }));
+                    }
+                    if c.mine && ui.small_button("Blank this control").clicked() {
+                        actions.push(send(A::SetControl {
+                            pos: c.pos,
+                            guild: None,
+                        }));
+                    }
+                }
+            }
+            ui.add_space(6.0);
+        }
+        if control.is_some() && run.is_none() {
+            return;
+        }
+        if view.guilds.is_empty() {
+            ui.label(egui::RichText::new("You are in no guild. Found or join one at a guild control.").color(MUTED));
+            return;
+        }
+        // Without a control: tabs for our guilds.
+        let shown = run
+            .or(form.tab.filter(|t| view.guilds.iter().any(|g| g.id == *t)))
+            .unwrap_or(view.guilds[0].id);
+        if run.is_none() {
+            ui.horizontal_wrapped(|ui| {
+                for g in &view.guilds {
+                    let star = if view.primary == Some(g.id) { " *" } else { "" };
+                    if ui
+                        .selectable_label(g.id == shown, format!("{} [{}]{star}", g.name, g.tag))
+                        .clicked()
+                    {
+                        form.tab = Some(g.id);
+                    }
+                }
+            });
+        }
+        let Some(g) = view.guilds.iter().find(|g| g.id == shown) else {
+            return;
+        };
+        let my = g.members.iter().find(|m| m.name == me);
+        let my_rank = my.map_or(Rank::Operative, |m| m.rank);
+        let my_powers = my.map_or(0, |m| m.powers);
+        ui.horizontal(|ui| {
+            ui.label(egui::RichText::new(coin_text(g.coin)).color(COIN));
+            ui.add(
+                egui::TextEdit::singleline(&mut form.coin)
+                    .hint_text("coin")
+                    .desired_width(70.0),
+            );
+            let amount = form.coin.trim().parse::<u64>().ok().filter(|n| *n > 0);
+            if ui.add_enabled(amount.is_some(), egui::Button::new("Donate")).clicked() {
+                actions.push(send(A::Donate {
+                    guild: g.id,
+                    coin: amount.unwrap_or(0),
+                }));
+                form.coin.clear();
+            }
+            if run.is_some() && my_powers & bm_core::guilds::COIN != 0 {
+                ui.add(
+                    egui::TextEdit::singleline(&mut form.pay_to)
+                        .hint_text("to member")
+                        .desired_width(90.0),
+                );
+                let ready = amount.is_some() && !form.pay_to.trim().is_empty();
+                if ui.add_enabled(ready, egui::Button::new("Pay")).clicked() {
+                    actions.push(send(A::Pay {
+                        guild: g.id,
+                        to: form.pay_to.trim().to_string(),
+                        coin: amount.unwrap_or(0),
+                    }));
+                    form.coin.clear();
+                }
+            }
+        });
+        if run.is_none() {
+            ui.horizontal(|ui| {
+                if view.primary != Some(g.id) && ui.button("Make primary").clicked() {
+                    actions.push(send(A::SetPrimary { guild: g.id }));
+                }
+                if ui.button("Leave").clicked() {
+                    actions.push(send(A::Leave { guild: g.id }));
+                }
+            });
+            if let Some(c) = my_claim {
+                let here = c.guild.as_ref().filter(|x| x.0 == g.id);
+                ui.horizontal(|ui| {
+                    ui.label(egui::RichText::new("The claim you stand in:").color(TEXT));
+                    match here {
+                        Some(x) => {
+                            ui.label(egui::RichText::new(if x.2 { "run by the guild" } else { "aligned" }).color(COIN));
+                            if ui.button("Take back").clicked() {
+                                actions.push(send(A::Align {
+                                    claim: c.id,
+                                    guild: None,
+                                    controlled: false,
+                                }));
+                            }
+                        }
+                        None => {
+                            for (label, controlled) in [("Align", false), ("Let the guild run it", true)] {
+                                if ui.button(label).clicked() {
+                                    actions.push(send(A::Align {
+                                        claim: c.id,
+                                        guild: Some(g.id),
+                                        controlled,
+                                    }));
+                                }
+                            }
+                        }
+                    }
+                });
+            }
+        }
+        if run.is_some() && !g.asked.is_empty() && my_powers & MEMBERSHIP != 0 {
+            heading(ui, "Asking to join");
+            for who in &g.asked {
+                ui.horizontal(|ui| {
+                    ui.label(egui::RichText::new(who).color(TEXT));
+                    if ui.button("Accept").clicked() {
+                        actions.push(send(A::Accept {
+                            guild: g.id,
+                            who: who.clone(),
+                        }));
+                    }
+                    if ui.button("Decline").clicked() {
+                        actions.push(send(A::Decline {
+                            guild: g.id,
+                            who: who.clone(),
+                        }));
+                    }
+                });
+            }
+        }
+        heading(ui, "Members");
+        egui::ScrollArea::vertical()
+            .max_height(300.0)
+            .id_salt("guild-members")
+            .show(ui, |ui| {
+                for m in &g.members {
+                    // Changed only from above, and an Executive only below Executive.
+                    let over = run.is_some() && my_rank >= Rank::Executive && m.rank < my_rank;
+                    ui.horizontal(|ui| {
+                        let (rect, _) = ui.allocate_exact_size(vec2(10.0, 10.0), egui::Sense::hover());
+                        if m.online {
+                            ui.painter()
+                                .circle_filled(rect.center(), 4.0, Color32::from_rgb(120, 210, 110));
+                        } else {
+                            ui.painter()
+                                .circle_stroke(rect.center(), 3.5, egui::Stroke::new(1.2, MUTED));
+                        }
+                        ui.label(egui::RichText::new(&m.name).color(TEXT));
+                        if over {
+                            egui::ComboBox::from_id_salt(("rank", &m.name))
+                                .selected_text(m.rank.name())
+                                .show_ui(ui, |ui| {
+                                    for r in Rank::ALL {
+                                        if (r < my_rank || my_rank == Rank::Director)
+                                            && ui.selectable_label(r == m.rank, r.name()).clicked()
+                                            && r != m.rank
+                                        {
+                                            actions.push(send(A::SetRank {
+                                                guild: g.id,
+                                                who: m.name.clone(),
+                                                rank: r,
+                                            }));
+                                        }
+                                    }
+                                });
+                            if ui.small_button("Remove").clicked() {
+                                actions.push(send(A::Remove {
+                                    guild: g.id,
+                                    who: m.name.clone(),
+                                }));
+                            }
+                        } else {
+                            ui.label(egui::RichText::new(m.rank.name()).color(MUTED).small());
+                        }
+                    });
+                    if over && m.rank < Rank::Executive {
+                        ui.horizontal(|ui| {
+                            ui.add_space(22.0);
+                            for (bit, label) in bm_core::rights::NAMED {
+                                let mut on = m.rights & bit != 0;
+                                if ui.checkbox(&mut on, label).changed() {
+                                    let rights = if on { m.rights | bit } else { m.rights & !bit };
+                                    actions.push(send(A::SetRights {
+                                        guild: g.id,
+                                        who: m.name.clone(),
+                                        rights,
+                                        powers: m.powers,
+                                    }));
+                                }
+                            }
+                            if m.rank == Rank::Controller {
+                                for (bit, label) in POWERS {
+                                    let mut on = m.powers & bit != 0;
+                                    if ui.checkbox(&mut on, label).changed() {
+                                        let powers = if on { m.powers | bit } else { m.powers & !bit };
+                                        actions.push(send(A::SetRights {
+                                            guild: g.id,
+                                            who: m.name.clone(),
+                                            rights: m.rights,
+                                            powers,
+                                        }));
+                                    }
+                                }
+                            }
+                        });
+                    }
+                }
+            });
+        if !g.log.is_empty() {
+            egui::CollapsingHeader::new("Log").show(ui, |ui| {
+                egui::ScrollArea::vertical()
+                    .max_height(160.0)
+                    .id_salt("guild-log")
+                    .show(ui, |ui| {
+                        for (_, text) in g.log.iter().rev() {
+                            ui.label(egui::RichText::new(text).color(MUTED).small());
+                        }
+                    });
+            });
+        }
+        if run.is_none() {
+            ui.label(
+                egui::RichText::new("Run the guild (members, ranks, payouts) at one of its guild controls.")
+                    .color(MUTED)
+                    .small(),
+            );
+        }
     });
     if !open {
         actions.push(UiAction::CloseMenu);

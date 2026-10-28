@@ -6147,6 +6147,23 @@ glow_text = true
 mine_xp = 2
 build_xp = 12
 
+# Milestone 25 part 2: the guild control, where a guild is founded, joined
+# and run from (Boundless's prestige rank 5 and build XP 8).
+[[block]]
+name = "guild_control"
+prestige = 5
+color = [120, 84, 60]
+solid = true
+opaque = true
+translucent = false
+breakable = true
+placeable = true
+health = "hard"
+textures = { top = "guild_control_top", side = "guild_control_side", bottom = "stone_plinth" }
+material = "wood"
+mine_xp = 2
+build_xp = 8
+
 # Milestone 24 part 2: trade. Each is a 16-slot storage block (Boundless's
 # count, players' reports), placed only inside its owner's claim.
 

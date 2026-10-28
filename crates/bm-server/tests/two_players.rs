@@ -3843,6 +3843,137 @@ async fn friends_build_on_a_claim_only_with_the_right_given() {
     server.stop();
 }
 
+/// Waits for a `Guilds` message that `pred` accepts.
+async fn guilds_until(c: &mut TestClient, pred: impl Fn(&bm_protocol::GuildsView) -> bool) -> bm_protocol::GuildsView {
+    match c.until(|m| matches!(m, ServerMsg::Guilds(g) if pred(g))).await {
+        ServerMsg::Guilds(g) => g,
+        _ => unreachable!(),
+    }
+}
+
+/// Milestone 25 part 2: Alice founds a guild at a guild control on her
+/// claim; Bob asks to join there and she accepts; her claim, aligned to the
+/// guild, is a settlement named for it; Bob builds there once the guild
+/// gives him Builder; he donates coin; leaving, he can build no more.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn a_guild_is_founded_joined_and_builds_on_its_claims() {
+    use bm_core::feats::STARTING_COIN;
+    use bm_core::guilds::Rank;
+    use bm_core::rights::BUILDER;
+    use bm_protocol::GuildAction as A;
+    let dir = tempfile::tempdir().unwrap();
+    seed(
+        dir.path(),
+        "Alice",
+        &[(5, "claim_stone", 1, 0), (0, "guild_control", 1, 0)],
+    );
+    seed(dir.path(), "Bob", &[(0, "stone", 10, 0)]);
+    let server = bm_server::start(config(dir.path())).unwrap();
+    let mut alice = TestClient::login(&server, "Alice").await;
+    let mut bob = TestClient::login(&server, "Bob").await;
+    let feet = alice.feet();
+    alice.wait_for_chunk(feet.chunk()).await;
+    bob.wait_for_chunk(feet.chunk()).await;
+    let shape = alice.shape();
+    let half = bm_core::PLOT_SIZE / 2;
+    let side = |v: i64| {
+        if v.rem_euclid(bm_core::PLOT_SIZE) < half { 1 } else { -1 }
+    };
+    let control = feet.offset(side(feet.x), 0, 0);
+    let spot = feet.offset(0, 0, side(feet.z));
+    let air = alice.block("air");
+    for (seq, p) in [(20, control), (21, spot)] {
+        assert_eq!(PlotPos::of(p, shape), PlotPos::of(feet, shape));
+        if alice.block_at(p) != air {
+            assert!(alice.dig(seq, p).await.0);
+        }
+    }
+    assert!(!place(&mut alice, 1, control, 0, None).await.0, "not on a claim");
+    alice.notice("A guild control goes on your own claim").await;
+    assert!(alice.dig(2, feet).await.0);
+    assert!(place(&mut alice, 3, feet, 5, None).await.0);
+    if alice.claim.is_none() {
+        alice.until(|m| matches!(m, ServerMsg::Claim(_))).await;
+    }
+    let claim = alice.claim.as_ref().unwrap().id;
+    assert!(place(&mut alice, 4, control, 0, None).await.0);
+
+    // Founding.
+    alice.send(ClientMsg::OpenGuildControl { pos: Some(control) }).await;
+    alice
+        .until(|m| matches!(m, ServerMsg::GuildControl(v) if v.mine && v.guild.is_none()))
+        .await;
+    alice
+        .send(ClientMsg::Guild(A::Found {
+            pos: control,
+            name: "Lanternwrights".into(),
+            tag: "LANT".into(),
+        }))
+        .await;
+    let g = guilds_until(&mut alice, |g| !g.guilds.is_empty()).await;
+    let gid = g.guilds[0].id;
+    assert_eq!(g.primary, Some(gid));
+    assert_eq!(g.guilds[0].members[0].rank, Rank::Director);
+    // Bob asks at the control; Alice accepts there.
+    bob.send(ClientMsg::OpenGuildControl { pos: Some(control) }).await;
+    bob.until(|m| matches!(m, ServerMsg::GuildControl(v) if v.guild.as_ref().is_some_and(|g| g.0 == gid)))
+        .await;
+    bob.send(ClientMsg::Guild(A::Ask { guild: gid })).await;
+    guilds_until(&mut alice, |g| g.guilds[0].asked == vec!["Bob".to_string()]).await;
+    alice
+        .send(ClientMsg::Guild(A::Accept {
+            guild: gid,
+            who: "Bob".into(),
+        }))
+        .await;
+    bob.notice("You joined Lanternwrights").await;
+    // Aligned: a settlement named for the guild, whatever its prestige.
+    alice
+        .send(ClientMsg::Guild(A::Align {
+            claim,
+            guild: Some(gid),
+            controlled: false,
+        }))
+        .await;
+    settlements_until(&mut bob, |s, _| s.first().is_some_and(|s| s.name == "Lanternwrights")).await;
+    // A member without Builder: refused; given it, builds.
+    assert!(!place(&mut bob, 1, spot, 0, None).await.0);
+    alice
+        .send(ClientMsg::Guild(A::SetRights {
+            guild: gid,
+            who: "Bob".into(),
+            rights: BUILDER,
+            powers: 0,
+        }))
+        .await;
+    guilds_until(&mut bob, |g| {
+        g.guilds[0]
+            .members
+            .iter()
+            .any(|m| m.name == "Bob" && m.rights == BUILDER)
+    })
+    .await;
+    assert!(place(&mut bob, 2, spot, 0, None).await.0, "a guild builder builds");
+    // Coin to the guild.
+    bob.send(ClientMsg::Guild(A::Donate { guild: gid, coin: 100 })).await;
+    let g = guilds_until(&mut alice, |g| g.guilds[0].coin == 100).await;
+    assert!(g.guilds[0].log.iter().any(|(_, t)| t == "Bob gave 100 coin"));
+    let l = ledger_until(&mut bob, |l| l.coin < STARTING_COIN).await;
+    assert_eq!(l.coin, STARTING_COIN - 100);
+    // Bob cannot run the guild away from a control, and leaves.
+    bob.send(ClientMsg::OpenGuildControl { pos: None }).await;
+    bob.send(ClientMsg::Guild(A::Remove {
+        guild: gid,
+        who: "Alice".into(),
+    }))
+    .await;
+    bob.notice("Run the guild at one of its guild controls").await;
+    bob.send(ClientMsg::Guild(A::Leave { guild: gid })).await;
+    guilds_until(&mut bob, |g| g.guilds.is_empty()).await;
+    assert!(!bob.dig(5, spot).await.0, "no longer a member");
+    server.stop();
+}
+
 /// An item catalogue with a tool no recipe makes: an area tool for every
 /// block (forging, which gives areas in Boundless, does not exist yet).
 fn area_items(dir: &Path) -> std::path::PathBuf {

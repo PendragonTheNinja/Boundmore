@@ -188,6 +188,8 @@ struct Session {
     ledger: Option<bm_core::feats::Ledger>,
     /// Friends and requests (milestone 25).
     friends: bm_protocol::FriendsView,
+    /// Our guilds (milestone 25 part 2).
+    guilds: bm_protocol::GuildsView,
     account: String,
     /// Ours, from the welcome: critical hits and random areas hash it.
     player_id: u32,
@@ -377,6 +379,7 @@ impl Session {
             craft_colours: HashMap::new(),
             ledger: None,
             friends: Default::default(),
+            guilds: Default::default(),
         })
     }
 
@@ -753,6 +756,13 @@ impl Session {
     }
 
     /// The sign aimed at for E, if any (milestone 22 part 4).
+    /// The guild control aimed at for E (milestone 25 part 2).
+    fn aiming_at_guild_control(&self) -> Option<BlockPos> {
+        let hit = self.target?;
+        let block = self.world.block(hit.block)?;
+        (self.world.registry.get(block).name == "guild_control").then_some(hit.block)
+    }
+
     fn aiming_at_sign(&self) -> Option<BlockPos> {
         let hit = self.use_target?;
         let s = self.world.state(hit.block)?;
@@ -1007,6 +1017,9 @@ pub struct App {
     shop_prices: HashMap<u8, String>,
     /// The name being typed in the friends window.
     friend_name: String,
+    /// The open guild control, and what is typed in the guild window.
+    guild_control_view: Option<bm_protocol::GuildControlView>,
+    guild_form: menus::GuildForm,
     /// The warp shrine window's open tab.
     shrine_tab: ShrineTab,
     /// The skill screen's chosen category and reset question.
@@ -1079,6 +1092,8 @@ impl App {
             shop_view: None,
             shop_prices: HashMap::new(),
             friend_name: String::new(),
+            guild_control_view: None,
+            guild_form: Default::default(),
             shrine_tab: ShrineTab::Worlds,
             skill_ui: SkillUi::default(),
             forge_ui: ForgeUi::default(),
@@ -1243,6 +1258,10 @@ impl App {
             self.send(ClientMsg::OpenPortal { pos: None });
             self.portal_view = None;
         }
+        if let Some(Menu::Guild(Some(_))) = self.menu {
+            self.send(ClientMsg::OpenGuildControl { pos: None });
+            self.guild_control_view = None;
+        }
         let was_open = self.menu.take().is_some();
         self.drag = None;
         if was_open && regrab && self.session.is_some() && !self.chat.open {
@@ -1315,7 +1334,7 @@ impl App {
             return;
         }
         if let Some(c) = s.claims.at(PlotPos::of(pos, s.world.shape))
-            && !crate::claims::may(c, &s.account, bm_core::rights::Act::Work)
+            && !crate::claims::may(c, &s.account, &s.guilds, bm_core::rights::Act::Work)
         {
             let text = format!("This land belongs to {}", c.owner);
             self.notices.push(text, now);
@@ -1334,7 +1353,7 @@ impl App {
         let writable = s
             .claims
             .at(PlotPos::of(pos, s.world.shape))
-            .is_none_or(|c| crate::claims::may(c, &s.account, bm_core::rights::Act::Build));
+            .is_none_or(|c| crate::claims::may(c, &s.account, &s.guilds, bm_core::rights::Act::Build));
         let anchor = s.signs.sign_at(&s.world, pos);
         let text = anchor
             .and_then(|a| s.signs.get(a))
@@ -1651,6 +1670,17 @@ impl App {
             ServerMsg::Travel(t) => return self.travel(*t),
             ServerMsg::Storage(view) => return self.storage_update(view),
             ServerMsg::Shop(view) => return self.shop_update(view),
+            ServerMsg::GuildControl(view) => {
+                if view.closed {
+                    if self.menu == Some(Menu::Guild(Some(view.pos))) {
+                        self.guild_control_view = None;
+                        self.close_menu(true);
+                    }
+                } else if self.menu == Some(Menu::Guild(Some(view.pos))) {
+                    self.guild_control_view = Some(view);
+                }
+                return;
+            }
             ServerMsg::Portal(view) => return self.portal_update(Some(view)),
             ServerMsg::PortalClosed { id } => return self.portal_closed(id),
             ServerMsg::Defeated { debt, by } => {
@@ -1731,6 +1761,7 @@ impl App {
             ServerMsg::Character { character, at } => s.character(character, at),
             ServerMsg::Ledger(l) => s.ledger = Some(l),
             ServerMsg::Friends(f) => s.friends = f,
+            ServerMsg::Guilds(g) => s.guilds = g,
             ServerMsg::BlockHealth { pos, damage } => s.block_health(pos, damage),
             ServerMsg::EditResult { seq, pos, block, .. } => s.edit_result(seq, pos, block),
             ServerMsg::PlayerJoined { id, name } => s.remotes.joined(id, name),
@@ -1802,6 +1833,7 @@ impl App {
             | ServerMsg::Portal(_)
             | ServerMsg::PortalClosed { .. }
             | ServerMsg::Shop(_)
+            | ServerMsg::GuildControl(_)
             | ServerMsg::Defeated { .. }
             | ServerMsg::Teleport { .. } => {}
         }
@@ -2416,6 +2448,8 @@ impl App {
         let shop_view = self.shop_view.as_ref();
         let shop_prices = &mut self.shop_prices;
         let friend_name = &mut self.friend_name;
+        let guild_form = &mut self.guild_form;
+        let guild_control_view = self.guild_control_view.as_ref();
         let notices = self.notices.visible(now);
         let menu = self.menu;
         let login = &mut self.login;
@@ -2659,6 +2693,13 @@ impl App {
                     }
                 }
                 Some(Menu::Feats) => menus::feats(&ctx, &FEAT_BOOK, s.ledger.as_ref(), &mut actions),
+                Some(Menu::Guild(at)) => {
+                    let feet = s.me.state.pos;
+                    let here = PlotPos::of(BlockPos::containing(feet.x, feet.y, feet.z), s.world.shape);
+                    let mine = s.claims.at(here).filter(|c| c.owner == s.account);
+                    let control = guild_control_view.filter(|v| Some(v.pos) == at);
+                    menus::guild(&ctx, control, &s.guilds, mine, &s.account, guild_form, &mut actions);
+                }
                 Some(Menu::Friends) => {
                     let feet = s.me.state.pos;
                     let here = PlotPos::of(BlockPos::containing(feet.x, feet.y, feet.z), s.world.shape);
@@ -3775,6 +3816,8 @@ impl ApplicationHandler for App {
                     KeyCode::KeyJ => self.toggle(Menu::Feats),
                     // Friends and rights (milestone 25).
                     KeyCode::KeyO => self.toggle(Menu::Friends),
+                    // Our guilds (milestone 25 part 2).
+                    KeyCode::KeyG => self.toggle(Menu::Guild(None)),
                     KeyCode::KeyC => {
                         let m = self.crafting_menu();
                         self.toggle(m);
@@ -3795,6 +3838,10 @@ impl ApplicationHandler for App {
                                 self.open_portal(pos);
                             } else if let Some(pos) = s.aiming_at_heart() {
                                 self.send(ClientMsg::LootHeart { pos });
+                            } else if let Some(pos) = s.aiming_at_guild_control() {
+                                let pos = s.world.shape.wrap_block(pos);
+                                self.open_menu(Menu::Guild(Some(pos)));
+                                self.send(ClientMsg::OpenGuildControl { pos: Some(pos) });
                             } else if let Some(pos) = s.aiming_at_sign() {
                                 self.open_sign(pos);
                             } else if let Some(pos) = s.aiming_at_door() {

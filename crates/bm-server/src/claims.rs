@@ -33,6 +33,7 @@ impl Claim {
             plots: self.plots.iter().copied().collect(),
             // Filled in by the game, which keeps the rights.
             rights: Vec::new(),
+            guild: None,
         }
     }
 }

@@ -8,11 +8,18 @@ use std::collections::{HashMap, HashSet};
 
 /// Whether `account` (as shown) may do `act` on claim `c`: its owner, or a
 /// friend the owner gave the right (the server rules it too).
-pub fn may(c: &ClaimView, account: &str, act: bm_core::rights::Act) -> bool {
+pub fn may(c: &ClaimView, account: &str, guilds: &bm_protocol::GuildsView, act: bm_core::rights::Act) -> bool {
+    let allows = |r: u8| bm_core::rights::allows(r, act);
     c.owner == account
-        || c.rights
-            .iter()
-            .any(|(n, r)| n == account && bm_core::rights::allows(*r, act))
+        || c.rights.iter().any(|(n, r)| n == account && allows(*r))
+        || c.guild.as_ref().is_some_and(|(g, _, _)| {
+            guilds
+                .guilds
+                .iter()
+                .filter(|v| v.id == *g)
+                .flat_map(|v| v.members.iter())
+                .any(|m| m.name == account && allows(m.rights))
+        })
 }
 
 #[derive(Default)]
@@ -239,6 +246,7 @@ mod tests {
             stone: BlockPos::new(0, 16, 0),
             plots: vec![PlotPos::new(0, 2, 0), PlotPos::new(-1, 2, 0)],
             rights: Vec::new(),
+            guild: None,
         };
         let mut c = Claims::new(s, vec![mine.clone()]);
         assert_eq!(
