@@ -109,6 +109,8 @@ Mostly reading item tooltips (the wiki's copies of these were broken or out of d
 - [ ] **K2.** Do chairs face the player who placed them? Can you walk through panes or tables?
 - [ ] **K3.** Signs: how long can the further ("additional") text be? Can a standalone sign stand on a floor, and how is it turned?
 - [ ] **K5.** How many slots does a shop stand have, and a request basket? (Ours: 16 each.)
+- [ ] **K6.** At a busy settlement's beacon, the footfall it paid in a day against how many visitors came (the claim's footfall screen, if shown): how much less does each visit pay as visitors grow? (Ours: full to 5 a day, 70% to 20, 50% to 50, 30% past that.)
+- [ ] **K7.** Prestige: place 100 of one block on an empty plot and read the prestige; then 100 more of the same, then 100 of a second kind; then chisel 20 of them into one shape and 20 into another. Write each reading and the blocks used (a natural rock, a refined rock and a crafted block would be ideal). (Ours: `docs/feel.md`, Coin and trade.)
 - [ ] **K4.** Machines: when you break a damaged machine and place it again, does it keep its wear?
 
 ## L. Worlds, by eye (no numbers needed)

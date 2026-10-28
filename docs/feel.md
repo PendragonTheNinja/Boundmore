@@ -326,6 +326,13 @@ Boundless's live tree and tables exactly (Nathan, 2026-10-20), in Boundmore's na
 | Starting coin | 500 | Nathan, 2026-10-27 |
 | Sales fee | 10% of each stand or basket sale, paid by the seller, burnt; 7.5% with the Merchant epic | Boundless's tax and Tax Epic; Nathan, 2026-10-28 |
 | Stand and basket slots | 16 | players' reports (**guess**-level, measure K5) |
+| Prestige a block | 2 + 2^(rank/3): rank 1 about 3, rank 12 18, rank 24 258, rank 26 408 | **guess** (Boundless's formula was secret; ranks are its data; Nathan chose "Boundless-like", 2026-10-28) |
+| Repeats of one kind | the first 200 in full, then 20 times the square root of the rest | **guess** |
+| Variety and chisel bonuses | +100 a kind with 20 or more; +50 a chisel shape; +1 a chiselled block, up to 1,000 | **guess** |
+| Settlement ranks | Outpost 10,000, Hamlet 50,000, Village 250,000, Town 1,250,000, City 6,500,000, Great City 32,000,000 prestige | Boundless |
+| Footfall a visit | 20, 30, 40, 60, 80, 100 coin by rank, doubled when fresh; 20% a day since the last pay for 1 to 4 days; nothing within a day | Boundless (players' measurements) |
+| Busy claims | 100% up to 5 visitors a day, 70% to 20, 50% to 50, 30% beyond | **guess** (players saw 120 become about 84; measure K6) |
+| Footfall needs | 10,000 prestige on the claim itself | Boundless (Release 211) |
 
 ## Living worlds (M19, `docs/milestones/19-living-worlds.md`, `bm-worldgen/src/biomes.rs`)
 
