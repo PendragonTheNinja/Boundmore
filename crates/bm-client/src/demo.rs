@@ -546,6 +546,47 @@ impl Demo {
                 ],
                 asked_by: vec!["Tamsin".into()],
             })));
+        // A guild (milestone 25 part 2).
+        {
+            use bm_core::guilds::Rank;
+            use bm_core::rights::{ALL, BUILDER, FARMHAND, WORKER};
+            let member = |name: &str, rank, rights, powers, online| bm_protocol::MemberView {
+                name: name.into(),
+                rank,
+                rights,
+                powers,
+                online,
+            };
+            self.events
+                .push_back(NetEvent::Msg(ServerMsg::Guilds(bm_protocol::GuildsView {
+                    guilds: vec![bm_protocol::GuildView {
+                        id: 1,
+                        name: "Lanternwrights".into(),
+                        tag: "LANT".into(),
+                        coin: 12_480,
+                        members: vec![
+                            member(&self.account, Rank::Director, ALL, bm_core::guilds::ALL_POWERS, true),
+                            member("Wren", Rank::Executive, ALL, bm_core::guilds::ALL_POWERS, true),
+                            member(
+                                "Halloran",
+                                Rank::Controller,
+                                BUILDER | WORKER,
+                                bm_core::guilds::COIN,
+                                false,
+                            ),
+                            member("Tamsin", Rank::Operative, FARMHAND, 0, true),
+                        ],
+                        asked: vec!["Odile".into()],
+                        log: vec![
+                            (0, format!("{} founded Lanternwrights", self.account)),
+                            (1, "Wren gave 2500 coin".into()),
+                            (2, format!("{} let Tamsin join", self.account)),
+                        ],
+                        claims: vec![(1, false), (2, false)],
+                    }],
+                    primary: Some(1),
+                })));
+        }
         // The two claims make a settlement (milestone 24 part 4).
         self.events.push_back(NetEvent::Msg(ServerMsg::Settlements {
             settlements: vec![bm_protocol::SettlementView {

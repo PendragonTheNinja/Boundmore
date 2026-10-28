@@ -3927,6 +3927,10 @@ async fn a_guild_is_founded_joined_and_builds_on_its_claims() {
         }))
         .await;
     bob.notice("You joined Lanternwrights").await;
+    // Guild chat reaches members, under the guild's tag.
+    alice.say(Channel::Guild(String::new()), "welcome").await;
+    let l = bob.heard(|l| l.text == "welcome").await;
+    assert_eq!((l.channel, l.from.as_str()), (Channel::Guild("LANT".into()), "Alice"));
     // Aligned: a settlement named for the guild, whatever its prestige.
     alice
         .send(ClientMsg::Guild(A::Align {
@@ -3971,6 +3975,48 @@ async fn a_guild_is_founded_joined_and_builds_on_its_claims() {
     bob.send(ClientMsg::Guild(A::Leave { guild: gid })).await;
     guilds_until(&mut bob, |g| g.guilds.is_empty()).await;
     assert!(!bob.dig(5, spot).await.0, "no longer a member");
+    server.stop();
+}
+
+/// Milestone 25: a whisper to a friend who is away waits for them and
+/// arrives when they next play; a stranger who is away is not written to.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn a_friend_away_gets_a_message_when_they_next_play() {
+    use bm_protocol::FriendAction;
+    let dir = tempfile::tempdir().unwrap();
+    seed(dir.path(), "Alice", &[]);
+    seed(dir.path(), "Bob", &[]);
+    seed(dir.path(), "Cara", &[]);
+    let server = bm_server::start(config(dir.path())).unwrap();
+    let mut alice = TestClient::login(&server, "Alice").await;
+    let mut bob = TestClient::login(&server, "Bob").await;
+    alice
+        .send(ClientMsg::Friend {
+            name: "Bob".into(),
+            action: FriendAction::Ask,
+        })
+        .await;
+    bob.notice("Alice asks to be your friend (O for friends)").await;
+    bob.send(ClientMsg::Friend {
+        name: "Alice".into(),
+        action: FriendAction::Accept,
+    })
+    .await;
+    alice.notice("You and Bob are friends").await;
+    drop(bob);
+    alice
+        .until(
+            |m| matches!(m, ServerMsg::Friends(f) if f.friends.iter().any(|f| f.name == "Bob" && f.planet.is_none())),
+        )
+        .await;
+    alice.say(Channel::Whisper("Bob".into()), "see you later").await;
+    alice.notice("Bob is away: they will get it when they next play").await;
+    alice.say(Channel::Whisper("Cara".into()), "hello?").await;
+    alice.notice("Nobody called Cara is here").await;
+    let mut bob = TestClient::login(&server, "Bob").await;
+    let l = bob.heard(|l| l.text == "see you later").await;
+    assert_eq!(l.from, "Alice");
+    bob.notice("1 message while you were away").await;
     server.stop();
 }
 

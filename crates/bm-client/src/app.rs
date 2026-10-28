@@ -3110,7 +3110,7 @@ impl App {
             "inventory" => self.open_menu(Menu::Inventory),
             // Milestone 24: someone's shop stand and request basket, as a
             // customer sees them, with coin to spend; and the feats.
-            "shop" | "basket" | "feats" | "friends" => {
+            "shop" | "basket" | "feats" | "friends" | "guild" => {
                 let Some(s) = &mut self.session else { return };
                 let id = |n: &str| s.items.registry.id(n).ok();
                 let mut ledger = bm_core::feats::Ledger {
@@ -3153,6 +3153,9 @@ impl App {
                     } else if screen == "friends" {
                         self.shop_view = None;
                         self.open_menu(Menu::Friends);
+                    } else if screen == "guild" {
+                        self.shop_view = None;
+                        self.open_menu(Menu::Guild(None));
                     } else {
                         self.menu = Some(Menu::Shop(pos));
                         self.set_grab(false);

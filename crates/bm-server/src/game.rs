@@ -68,6 +68,9 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 /// The nearest players each player is told about (several snapshot datagrams).
+/// Most messages kept for one account while it is away (milestone 25;
+/// **guess**).
+const MAIL_KEEP: usize = 50;
 const MAX_SEEN_PLAYERS: usize = 160;
 /// Snapshots go out every this many ticks (20 Hz).
 const SNAPSHOT_EVERY: u64 = 3;
@@ -451,6 +454,9 @@ pub struct Game {
     /// (milestone 25 part 2).
     guilds: crate::guilds::Guilds,
     guild_control: BlockId,
+    /// Messages waiting for accounts that were away, and which changed.
+    mail: HashMap<String, Vec<ChatLine>>,
+    mail_dirty: HashSet<String>,
     settlements: Vec<settle::Found>,
     /// Per planet: the tallies' generation, claim count and plot count when
     /// its settlements were last found.
@@ -711,6 +717,7 @@ impl Game {
             saved_guilds.next_id,
         );
         let guild_control = registry.id("guild_control")?;
+        let mail: HashMap<String, Vec<ChatLine>> = store.mail()?.into_iter().collect();
         let settlement_names: HashMap<u32, String> = store.settlement_names()?.into_iter().collect();
         let footfall: HashMap<u32, crate::store::SavedFootfall> = store.footfall()?.into_iter().collect();
         let last_seen = claim_owners_last_seen(&store, &planets, planets[start].id);
@@ -814,6 +821,8 @@ impl Game {
             social,
             guilds,
             guild_control,
+            mail,
+            mail_dirty: HashSet::new(),
             settlements: Vec::new(),
             settle_seen: Vec::new(),
             settlement_names,
@@ -1473,6 +1482,7 @@ impl Game {
         self.send_settlements(id);
         self.send_friends(id);
         self.send_guilds(id);
+        self.deliver_mail(id);
         let account = self.players[&id].account.clone();
         self.tell_friends_of(&account);
         self.tell_guilds_of(&account);
@@ -3047,6 +3057,16 @@ impl Game {
                 }
                 self.send_line(line, |_| true);
             }
+            Channel::Guild(_) => {
+                let account = self.players[&id].account.clone();
+                let Some(g) = self.guilds.primary(&account).and_then(|g| self.guilds.get(g)) else {
+                    return self.notice(id, "You are in no guild");
+                };
+                tracing::info!("chat guild {} {from}: {}", g.name, line.text);
+                line.channel = Channel::Guild(g.tag.clone());
+                let members: HashSet<String> = g.members.keys().cloned().collect();
+                self.send_line(line, |o| members.contains(&o.account));
+            }
             Channel::Whisper(to) => {
                 let key = to.trim().to_lowercase();
                 let Some(target) = self.players.values().find(|o| o.account == key).map(|o| o.name.clone()) else {
@@ -3055,6 +3075,17 @@ impl Game {
                         .chars()
                         .take(MAX_NAME_LEN)
                         .collect();
+                    // A friend or guildmate who is away gets it later.
+                    let sender = self.players[&id].account.clone();
+                    let close = self.social.are_friends(&sender, &key)
+                        || self
+                            .guilds
+                            .of(&sender)
+                            .iter()
+                            .any(|g| self.guilds.get(*g).is_some_and(|g| g.members.contains_key(&key)));
+                    if close {
+                        return self.keep_message(id, &key, &shown, line);
+                    }
                     return self.notice(id, &format!("Nobody called {shown} is here"));
                 };
                 // Whispered text is private: only that it happened is logged.
@@ -3065,6 +3096,41 @@ impl Game {
                 self.send_line(line, |o| o.account == key || o.account == sender);
             }
         }
+    }
+
+    /// Keeps a whisper for `to` (away) until they next play.
+    fn keep_message(&mut self, id: u32, to: &str, shown: &str, mut line: ChatLine) {
+        let waiting = self.mail.entry(to.to_string()).or_default();
+        if waiting.len() >= MAIL_KEEP {
+            return self.notice(id, &format!("{shown} has too many messages waiting"));
+        }
+        line.channel = Channel::Whisper(shown.to_string());
+        waiting.push(line.clone());
+        self.mail_dirty.insert(to.to_string());
+        tracing::info!("{} left a message for {to}", line.from);
+        if let Some(p) = self.players.get(&id) {
+            p.out.send(&ServerMsg::Chat { lines: vec![line] });
+        }
+        self.notice(id, &format!("{shown} is away: they will get it when they next play"));
+    }
+
+    /// Messages kept while this player was away, delivered on joining.
+    fn deliver_mail(&mut self, id: u32) {
+        let Some(account) = self.players.get(&id).map(|p| p.account.clone()) else {
+            return;
+        };
+        let Some(lines) = self.mail.remove(&account).filter(|l| !l.is_empty()) else {
+            return;
+        };
+        self.mail_dirty.insert(account);
+        let n = lines.len();
+        if let Some(p) = self.players.get(&id) {
+            p.out.send(&ServerMsg::Chat { lines });
+        }
+        self.notice(
+            id,
+            &format!("{n} message{} while you were away", if n == 1 { "" } else { "s" }),
+        );
     }
 
     /// Takes reclaimed items into the inventory, as many as fit, at a warp
@@ -3481,6 +3547,14 @@ impl Game {
             friends,
             rights,
             guilds: self.guilds.is_dirty().then(|| self.guilds.take_dirty()),
+            mail: self
+                .mail_dirty
+                .drain()
+                .map(|a| {
+                    let m = self.mail.get(&a).filter(|m| !m.is_empty()).cloned();
+                    (a, m)
+                })
+                .collect(),
             clock: Some(self.tick),
             forget_planets: std::mem::take(&mut self.forget_planets),
             done,

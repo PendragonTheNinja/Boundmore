@@ -117,3 +117,9 @@ Mostly reading item tooltips (the wiki's copies of these were broken or out of d
 
 - [ ] **L1.** How many blocks across does a biome usually run? How wide are rivers, and how often do you meet one?
 - [ ] **L2.** On a tier 7 exoworld: roughly how many seams of each lucent ore (pyrelith rarest, gloamite commonest?).
+
+## M. Guilds (at a guild's helix machines; any guild with helixes will do)
+
+- [ ] **M1.** Each helix's buff at each of its tiers: hover the buff and write its text. The ones we lack: Lava Protection, Defeat Insurance, Spark and Wear, Gatherer Healing, Home Healing, Hammer Versatility, Weapon Augment Durability, Building Safety, Bonus Consumables, Brew Extension. (Ours: Builder's Buff and Grapple and Run from the wiki; the rest not yet built.)
+- [ ] **M2.** The guild screen: is there a limit on members, and on requests waiting? How long is the guild log? (Ours: 500 members, 100 requests, 200 log entries, all guesses.)
+- [ ] **M3.** The friends list: how many friends can you have? (Ours: 200, a guess.)

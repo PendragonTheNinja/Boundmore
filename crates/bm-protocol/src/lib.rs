@@ -25,7 +25,7 @@ use glam::DVec3;
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
 
 /// Bump on any change to a message below. Client and server must match.
-pub const PROTOCOL_VERSION: u32 = 49;
+pub const PROTOCOL_VERSION: u32 = 50;
 
 /// QUIC application protocol name; also refuses non-Boundmore peers early.
 pub const ALPN: &[u8] = b"boundmore/1";
@@ -295,8 +295,12 @@ pub enum Channel {
     Planet,
     /// Everyone on the server.
     Universe,
-    /// One player, by name (the sender gets a copy).
+    /// One player, by name (the sender gets a copy). A friend or guildmate
+    /// who is away gets it when they next play (milestone 25).
     Whisper(String),
+    /// The sender's primary guild (milestone 25 part 2), by its tag as the
+    /// server fills it in (what a client sends is ignored).
+    Guild(String),
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]

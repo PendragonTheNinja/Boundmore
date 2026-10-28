@@ -26,9 +26,10 @@ const LOCAL: Color32 = Color32::from_rgb(242, 240, 234);
 const PLANET: Color32 = Color32::from_rgb(132, 220, 120);
 const UNIVERSE: Color32 = GOLD;
 const WHISPER: Color32 = Color32::from_rgb(198, 150, 255);
+const GUILD: Color32 = Color32::from_rgb(110, 200, 220);
 const SERVER: Color32 = Color32::from_rgb(160, 156, 150);
 
-pub const HELP: &str = "Commands: /l local, /p planet, /u universe, /w name text to whisper, /r text to reply, /friend name and /unfriend name (O for friends), /settlement name to name the settlement you are warden of. \
+pub const HELP: &str = "Commands: /l local, /p planet, /u universe, /g guild, /w name text to whisper, /r text to reply, /friend name and /unfriend name (O for friends, G for guilds), /settlement name to name the settlement you are warden of. \
                         Testing (servers started with --creative): /creative or F8, /give item count, /xp amount.";
 
 /// What a line typed into the box asks for.
@@ -72,6 +73,7 @@ pub fn parse(input: &str, default: &Channel, last_whisperer: Option<&str>) -> Ty
         "l" | "local" => Channel::Local,
         "p" | "planet" => Channel::Planet,
         "u" | "universe" => Channel::Universe,
+        "g" | "guild" => Channel::Guild(String::new()),
         "w" | "whisper" | "msg" => {
             let Some((name, text)) = split_name(rest) else {
                 return Typed::Local("Whisper with /w name text.".into());
@@ -133,6 +135,8 @@ pub fn channel_label(c: &Channel) -> String {
         Channel::Planet => "Planet".into(),
         Channel::Universe => "Universe".into(),
         Channel::Whisper(name) => format!("To {name}"),
+        Channel::Guild(tag) if tag.is_empty() => "Guild".into(),
+        Channel::Guild(tag) => format!("[{tag}]"),
     }
 }
 
@@ -142,6 +146,7 @@ pub fn channel_colour(c: &Channel) -> Color32 {
         Channel::Planet => PLANET,
         Channel::Universe => UNIVERSE,
         Channel::Whisper(_) => WHISPER,
+        Channel::Guild(_) => GUILD,
     }
 }
 
@@ -396,6 +401,11 @@ fn line_label(ui: &mut Ui, line: &ChatLine, me: &str, alpha: f32) {
             Channel::Whisper(_) => {
                 part(&line.from, true, false, colour);
                 part(" whispers: ", false, false, colour);
+            }
+            Channel::Guild(tag) => {
+                part(&format!("[{tag}] "), false, false, colour);
+                part(&line.from, true, false, colour);
+                part(": ", false, false, colour);
             }
             _ => {
                 part(&line.from, true, false, colour);

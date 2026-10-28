@@ -103,6 +103,9 @@ const GUILD_PRIMARY: TableDefinition<&str, u32> = TableDefinition::new("guild_pr
 const CLAIM_GUILD: TableDefinition<u32, &[u8]> = TableDefinition::new("claim_guild");
 /// Guild controls set to a guild, keyed like `STORAGE` -> guild id.
 const GUILD_CONTROLS: TableDefinition<&[u8], u32> = TableDefinition::new("guild_controls");
+/// Messages waiting for an account that was away (milestone 25 part 2):
+/// account -> `Vec<bm_protocol::ChatLine>`. A new table.
+const MAIL: TableDefinition<&str, &[u8]> = TableDefinition::new("player_mail");
 /// Regions each account has discovered (save version 7).
 const DISCOVERIES: TableDefinition<&str, &[u8]> = TableDefinition::new("discoveries");
 /// Far copies of chunks (milestone 20), keyed like `CHUNKS`: a cache made
@@ -1954,6 +1957,25 @@ impl Store {
         Ok(out)
     }
 
+    /// Every waiting message, by account (none if the table is missing).
+    pub fn mail(&self) -> Result<Vec<(String, Vec<bm_protocol::ChatLine>)>> {
+        let tx = self.db.begin_read()?;
+        let t = match tx.open_table(MAIL) {
+            Ok(t) => t,
+            Err(redb::TableError::TableDoesNotExist(_)) => return Ok(Vec::new()),
+            Err(e) => return Err(e.into()),
+        };
+        let mut out = Vec::new();
+        for row in t.iter()? {
+            let (k, v) = row?;
+            match postcard::from_bytes(v.value()) {
+                Ok(m) => out.push((k.value().to_string(), m)),
+                Err(e) => tracing::error!("messages for `{}` are corrupt ({e}); skipped", k.value()),
+            }
+        }
+        Ok(out)
+    }
+
     /// Every settlement name by its key claim.
     pub fn settlement_names(&self) -> Result<Vec<(u32, String)>> {
         let tx = self.db.begin_read()?;
@@ -2204,6 +2226,14 @@ impl Store {
                 tx.open_table(META)?
                     .insert("next_guild", postcard::to_stdvec(&g.next_id)?.as_slice())?;
             }
+            let mut mail = tx.open_table(MAIL)?;
+            for (key, m) in &batch.mail {
+                match m {
+                    Some(m) => mail.insert(key.as_str(), postcard::to_stdvec(m)?.as_slice())?,
+                    None => mail.remove(key.as_str())?,
+                };
+            }
+            drop(mail);
             let mut ledgers = tx.open_table(LEDGER)?;
             for (key, l) in &batch.ledgers {
                 ledgers.insert(key.as_str(), postcard::to_stdvec(l)?.as_slice())?;
@@ -2718,6 +2748,8 @@ pub struct WriteBatch {
     pub rights: Vec<(u32, Option<crate::social::SavedRights>)>,
     /// Guild changes (milestone 25 part 2), when there are any.
     pub guilds: Option<crate::guilds::GuildsDirty>,
+    /// Waiting messages that changed, by account; None deletes.
+    pub mail: Vec<(String, Option<Vec<bm_protocol::ChatLine>>)>,
     /// The universe clock, so days and station jobs continue across restarts.
     pub clock: Option<u64>,
     /// Departed wanderers (milestone 21): every row under each id is deleted,
@@ -2752,6 +2784,7 @@ impl WriteBatch {
             && self.friends.is_empty()
             && self.rights.is_empty()
             && self.guilds.is_none()
+            && self.mail.is_empty()
             && self.forget_planets.is_empty()
     }
 }
@@ -3083,6 +3116,12 @@ mod tests {
         let mut tally = bm_core::prestige::Tally::default();
         tally.placed("polished_aurorite");
         tally.chiselled(3);
+        let letter = bm_protocol::ChatLine {
+            channel: bm_protocol::Channel::Whisper("Pendragon".into()),
+            from: "Wren".into(),
+            text: "see you later".into(),
+            time: 1_700_000_000,
+        };
         let guild = bm_core::guilds::Guild::found(4, "Lanternwrights", "LANT", "pendragon", "Pendragon", 9);
         let mut friends = crate::social::SavedFriends::default();
         friends.friends.insert("wren".into(), "Wren".into());
@@ -3189,6 +3228,10 @@ mod tests {
                     controls: vec![(2, spot, Some(4))],
                     next_id: 5,
                 }),
+                mail: vec![
+                    ("pendragon".into(), Some(vec![letter.clone()])),
+                    ("nobody".into(), None),
+                ],
                 clock: Some(777),
                 done: Vec::new(),
             })
@@ -3237,6 +3280,11 @@ mod tests {
                 5
             ),
             "guilds kept (milestone 25 part 2)"
+        );
+        assert_eq!(
+            s.mail().unwrap(),
+            vec![("pendragon".to_string(), vec![letter])],
+            "messages kept"
         );
         assert_eq!(
             s.ledger("nobody").unwrap().coin,

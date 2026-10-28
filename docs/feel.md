@@ -342,6 +342,12 @@ Boundless's live tree and tables exactly (Nathan, 2026-10-20), in Boundmore's na
 | Most friends | 200 | **guess** |
 | Requests waiting | 50 | **guess** |
 | Friends with rights on one claim | 50 | **guess** (bounds the welcome) |
+| Guilds a character may be in | 5 | Boundless |
+| Guild name, tag | 20 characters, 5 letters | Boundless |
+| Members of one guild | 500 | **guess** |
+| Requests waiting at a guild | 100 | **guess** |
+| Guild log | the last 200 entries | **guess** |
+| Messages kept for someone away | 50 | **guess** |
 
 ## Living worlds (M19, `docs/milestones/19-living-worlds.md`, `bm-worldgen/src/biomes.rs`)
 
