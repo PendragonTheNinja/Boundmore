@@ -1734,6 +1734,7 @@ impl App {
             }
             ServerMsg::Claim(c) => s.claims.upsert(c),
             ServerMsg::ClaimRemoved { id } => s.claims.remove(id),
+            ServerMsg::Settlements { settlements, prestige } => s.claims.set_settlements(settlements, prestige),
             ServerMsg::Notice { text } => self.notices.push(text, now),
             ServerMsg::Universe { planets } => s.universe = planets,
             ServerMsg::Chat { lines } => self.chat.receive(lines, now),
@@ -2425,6 +2426,10 @@ impl App {
             let feet = s.me.state.pos;
             let here = PlotPos::of(BlockPos::containing(feet.x, feet.y, feet.z), shape);
             let owner = s.claims.at(here).map(|c| (c.owner.clone(), c.owner == s.account));
+            let settlement = s
+                .claims
+                .at(here)
+                .and_then(|c| menus::claim_line(s.claims.prestige(c.id), s.claims.settlement_of(c.id)));
             let claim_help = claim_mode.then(|| {
                 format!(
                     "Left click a plot next to your claim to add it. Right click one of yours to give it up.\n\
@@ -2454,6 +2459,7 @@ impl App {
                     selected: s.selected,
                     notices: notices.clone(),
                     owner,
+                    settlement,
                     claim_mode: claim_help,
                     aim_hint,
                     crop: s

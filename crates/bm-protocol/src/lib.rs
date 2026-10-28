@@ -25,7 +25,7 @@ use glam::DVec3;
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
 
 /// Bump on any change to a message below. Client and server must match.
-pub const PROTOCOL_VERSION: u32 = 45;
+pub const PROTOCOL_VERSION: u32 = 46;
 
 /// QUIC application protocol name; also refuses non-Boundmore peers early.
 pub const ALPN: &[u8] = b"boundmore/1";
@@ -548,6 +548,13 @@ pub enum ServerMsg {
     /// A shop stand or request basket as its window shows it (milestone 24
     /// part 2); `closed` when it is gone or out of reach.
     Shop(ShopView),
+    /// The settlements of the player's planet and each claim's prestige
+    /// there (milestone 24 part 4), sent on arrival and when they change.
+    Settlements {
+        settlements: Vec<SettlementView>,
+        /// (claim id, prestige) for every claim with any.
+        prestige: Vec<(u32, u64)>,
+    },
     /// Chat lines, oldest first: one as it is said, or the recent history of
     /// the universe channel on joining.
     Chat {
@@ -858,6 +865,21 @@ pub enum ShopAction {
 pub enum ShopKind {
     Stand,
     Basket,
+}
+
+/// One settlement as players see it.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct SettlementView {
+    /// Its name: the warden's choice, or "<warden>'s <rank>".
+    pub name: String,
+    /// Its rank's name ("Outpost" to "Great City").
+    pub rank: String,
+    pub prestige: u64,
+    /// The warden's name as shown.
+    pub warden: String,
+    /// The planet's top settlement.
+    pub capital: bool,
+    pub claims: Vec<u32>,
 }
 
 /// A shop stand or request basket as its window shows it.

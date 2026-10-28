@@ -37,6 +37,7 @@ mod forge;
 mod meteors;
 mod mining;
 mod portal;
+mod settle;
 mod shops;
 mod signs;
 mod skills;
@@ -237,6 +238,9 @@ struct Player {
     storage: Option<BlockPos>,
     /// The shop stand or basket whose window is open (milestone 24 part 2).
     shop: Option<BlockPos>,
+    /// The other player's claim this one stood in at the last footfall
+    /// check (milestone 24 part 4): stepping into a new one is a visit.
+    in_claim: Option<u32>,
     chat: ChatLimit,
     /// Edits and swings tagged with an input up to this one came from before
     /// the last travel (see `TRAVEL_GUARD_INPUTS`).
@@ -433,6 +437,18 @@ pub struct Game {
     ledgers: HashMap<String, bm_core::feats::Ledger>,
     ledgers_dirty: HashSet<String>,
     ledgers_unsent: HashSet<u32>,
+    /// Prestige (milestone 24 part 4): every claim's tally; each planet's
+    /// settlements and claim prestige as last found; settlement names by
+    /// key claim; footfall paid by claim; and what changed since the save.
+    tallies: crate::settlements::Tallies,
+    settlements: Vec<settle::Found>,
+    /// Per planet: the tallies' generation, claim count and plot count when
+    /// its settlements were last found.
+    settle_seen: Vec<Option<(u64, usize, usize)>>,
+    settlement_names: HashMap<u32, String>,
+    names_dirty: BTreeSet<u32>,
+    footfall: HashMap<u32, crate::store::SavedFootfall>,
+    footfall_dirty: BTreeSet<u32>,
     next_meteor: u32,
     meteor_loot: bm_core::meteors::MeteorLoot,
     meteor_shell_id: BlockId,
@@ -674,6 +690,9 @@ impl Game {
         });
         let portal_rules = cfg.portal_rules();
         let reclaims = Reclaims::load(store.reclaims()?, &items);
+        let tallies = crate::settlements::Tallies::load(store.tallies()?);
+        let settlement_names: HashMap<u32, String> = store.settlement_names()?.into_iter().collect();
+        let footfall: HashMap<u32, crate::store::SavedFootfall> = store.footfall()?.into_iter().collect();
         let last_seen = claim_owners_last_seen(&store, &planets, planets[start].id);
         let planet_count = planets.len();
         let planets_permanent = planets.iter().take_while(|p| p.exo.is_none()).count();
@@ -771,6 +790,13 @@ impl Game {
             ledgers: HashMap::new(),
             ledgers_dirty: HashSet::new(),
             ledgers_unsent: HashSet::new(),
+            tallies,
+            settlements: Vec::new(),
+            settle_seen: Vec::new(),
+            settlement_names,
+            names_dirty: BTreeSet::new(),
+            footfall,
+            footfall_dirty: BTreeSet::new(),
             next_meteor,
             meteor_loot: bm_core::meteors::MeteorLoot::builtin(),
             meteor_shell_id,
@@ -947,6 +973,10 @@ impl Game {
             self.check_open_shops();
             self.check_open_portals();
             self.update_inner_light();
+        }
+        if self.tick % settle::FOOTFALL_EVERY == 0 {
+            self.step_settlements(self.tick % settle::SETTLE_EVERY == 0);
+            self.step_footfall();
         }
         if self.tick % skills::CHARACTER_EVERY == 0 {
             self.send_dirty_characters();
@@ -1371,6 +1401,7 @@ impl Game {
                 watching: None,
                 storage: None,
                 shop: None,
+                in_claim: None,
                 chat: ChatLimit::new(self.tick),
                 travel_guard: None,
                 portal: None,
@@ -1406,6 +1437,7 @@ impl Game {
             self.discoveries.insert(key, found);
         }
         self.arrived_in_sky(id);
+        self.send_settlements(id);
         self.tell_tokens(id);
         self.server_line(planet, arrived);
         if let Some(text) = came_back {
@@ -2164,6 +2196,11 @@ impl Game {
             self.generator_placed(pi, canon);
         }
         self.add_xp(id, build_xp);
+        // Prestige (milestone 24 part 4): the claim it is in counts it.
+        match accepted.effect {
+            Effect::Placed { .. } => self.prestige_placed(pi, canon, new.id),
+            Effect::Chiselled { .. } => self.prestige_chiselled(pi, canon, new.shape.0),
+        }
         // Feats (milestone 24): blocks placed, by material; chiselled; plots.
         match accepted.effect {
             Effect::Placed { .. } => {
@@ -2625,6 +2662,7 @@ impl Game {
             self.notice(id, &text);
         }
         self.arrived_in_sky(id);
+        self.send_settlements(id);
     }
 
     /// The storage block at `pos` and its slots, if this player may use it
@@ -3183,6 +3221,7 @@ impl Game {
         };
         planet.claims.remove_by_stone(claim.stone);
         let name = planet.name.clone();
+        self.claim_forgotten(claim.id);
         for o in self.players.values().filter(|o| o.planet == pi) {
             o.out.send(&ServerMsg::ClaimRemoved { id: claim.id });
         }
@@ -3341,6 +3380,7 @@ impl Game {
             .drain()
             .filter_map(|a| self.discoveries.get(&a).map(|d| (a, d.clone())))
             .collect();
+        let settle = self.take_settle_dirty();
         let batch = WriteBatch {
             chunks,
             far,
@@ -3358,6 +3398,9 @@ impl Game {
             brews,
             ledgers,
             shops,
+            tallies: settle.tallies,
+            settlement_names: settle.names,
+            footfall: settle.footfall,
             clock: Some(self.tick),
             forget_planets: std::mem::take(&mut self.forget_planets),
             done,

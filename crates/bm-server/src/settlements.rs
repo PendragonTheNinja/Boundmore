@@ -20,6 +20,8 @@ use std::collections::{BTreeMap, BTreeSet, HashMap};
 pub struct Tallies {
     map: HashMap<u32, Tally>,
     dirty: BTreeSet<u32>,
+    /// Counts every change, so a caller can tell something changed.
+    generation: u64,
 }
 
 impl Tallies {
@@ -27,7 +29,12 @@ impl Tallies {
         Tallies {
             map: saved.into_iter().collect(),
             dirty: BTreeSet::new(),
+            generation: 0,
         }
+    }
+
+    pub fn generation(&self) -> u64 {
+        self.generation
     }
 
     pub fn get(&self, claim: u32) -> Option<&Tally> {
@@ -42,12 +49,14 @@ impl Tallies {
             self.map.remove(&claim);
         }
         self.dirty.insert(claim);
+        self.generation += 1;
     }
 
     /// A claim is gone.
     pub fn forget(&mut self, claim: u32) {
         if self.map.remove(&claim).is_some() {
             self.dirty.insert(claim);
+            self.generation += 1;
         }
     }
 
@@ -160,11 +169,7 @@ pub fn find(claims: &[ClaimPlots], shape: PlanetShape) -> Vec<Settlement> {
     let mut groups: BTreeMap<usize, Vec<usize>> = BTreeMap::new();
     for (i, &joins) in joined.iter().enumerate() {
         // A claim all of road joins nothing, but stands alone.
-        let r = if joins {
-            root(&mut parent, i)
-        } else {
-            i + claims.len()
-        };
+        let r = if joins { root(&mut parent, i) } else { i + claims.len() };
         groups.entry(r).or_default().push(i);
     }
     let mut out: Vec<Settlement> = groups

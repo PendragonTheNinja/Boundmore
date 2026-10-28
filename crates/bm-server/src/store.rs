@@ -80,6 +80,14 @@ const SHOPS: TableDefinition<&[u8], &[u8]> = TableDefinition::new("planet_shops"
 /// `bm_core::feats::Ledger`. A new table: a character with no row has a new
 /// character's ledger (the starting coin).
 const LEDGER: TableDefinition<&str, &[u8]> = TableDefinition::new("player_ledger");
+/// Each claim's prestige tally (milestone 24 part 4): claim id ->
+/// `bm_core::prestige::Tally`. A new table: a claim with no row has none.
+const PRESTIGE: TableDefinition<u32, &[u8]> = TableDefinition::new("claim_prestige");
+/// Settlement names by their key claim (milestone 24 part 4).
+const SETTLEMENT_NAMES: TableDefinition<u32, &str> = TableDefinition::new("settlement_names");
+/// Footfall paid at each claim (milestone 24 part 4): claim id ->
+/// [`SavedFootfall`].
+const FOOTFALL: TableDefinition<u32, &[u8]> = TableDefinition::new("claim_footfall");
 /// Regions each account has discovered (save version 7).
 const DISCOVERIES: TableDefinition<&str, &[u8]> = TableDefinition::new("discoveries");
 /// Far copies of chunks (milestone 20), keyed like `CHUNKS`: a cache made
@@ -1813,6 +1821,61 @@ impl Store {
         })
     }
 
+    /// Every claim's prestige tally (none if the table is missing). A
+    /// corrupt row is reported and skipped (left on disk untouched).
+    pub fn tallies(&self) -> Result<Vec<(u32, bm_core::prestige::Tally)>> {
+        let tx = self.db.begin_read()?;
+        let t = match tx.open_table(PRESTIGE) {
+            Ok(t) => t,
+            Err(redb::TableError::TableDoesNotExist(_)) => return Ok(Vec::new()),
+            Err(e) => return Err(e.into()),
+        };
+        let mut out = Vec::new();
+        for row in t.iter()? {
+            let (k, v) = row?;
+            match postcard::from_bytes(v.value()) {
+                Ok(tally) => out.push((k.value(), tally)),
+                Err(e) => tracing::error!("claim {}'s prestige is corrupt ({e}); skipped", k.value()),
+            }
+        }
+        Ok(out)
+    }
+
+    /// Every settlement name by its key claim.
+    pub fn settlement_names(&self) -> Result<Vec<(u32, String)>> {
+        let tx = self.db.begin_read()?;
+        let t = match tx.open_table(SETTLEMENT_NAMES) {
+            Ok(t) => t,
+            Err(redb::TableError::TableDoesNotExist(_)) => return Ok(Vec::new()),
+            Err(e) => return Err(e.into()),
+        };
+        let mut out = Vec::new();
+        for row in t.iter()? {
+            let (k, v) = row?;
+            out.push((k.value(), v.value().to_string()));
+        }
+        Ok(out)
+    }
+
+    /// Footfall paid at every claim. A corrupt row is reported and skipped.
+    pub fn footfall(&self) -> Result<Vec<(u32, SavedFootfall)>> {
+        let tx = self.db.begin_read()?;
+        let t = match tx.open_table(FOOTFALL) {
+            Ok(t) => t,
+            Err(redb::TableError::TableDoesNotExist(_)) => return Ok(Vec::new()),
+            Err(e) => return Err(e.into()),
+        };
+        let mut out = Vec::new();
+        for row in t.iter()? {
+            let (k, v) = row?;
+            match postcard::from_bytes(v.value()) {
+                Ok(f) => out.push((k.value(), f)),
+                Err(e) => tracing::error!("claim {}'s footfall is corrupt ({e}); skipped", k.value()),
+            }
+        }
+        Ok(out)
+    }
+
     /// An account's brews (none if the table or the row is missing).
     pub fn brews(&self, key: &str) -> Result<SavedBrews> {
         let tx = self.db.begin_read()?;
@@ -1951,6 +2014,30 @@ impl Store {
                 };
             }
             drop(shops);
+            let mut prestige = tx.open_table(PRESTIGE)?;
+            for (id, t) in &batch.tallies {
+                match t {
+                    Some(t) => prestige.insert(*id, postcard::to_stdvec(t)?.as_slice())?,
+                    None => prestige.remove(*id)?,
+                };
+            }
+            drop(prestige);
+            let mut names = tx.open_table(SETTLEMENT_NAMES)?;
+            for (id, n) in &batch.settlement_names {
+                match n {
+                    Some(n) => names.insert(*id, n.as_str())?,
+                    None => names.remove(*id)?,
+                };
+            }
+            drop(names);
+            let mut footfall = tx.open_table(FOOTFALL)?;
+            for (id, f) in &batch.footfall {
+                match f {
+                    Some(f) => footfall.insert(*id, postcard::to_stdvec(f)?.as_slice())?,
+                    None => footfall.remove(*id)?,
+                };
+            }
+            drop(footfall);
             let mut ledgers = tx.open_table(LEDGER)?;
             for (key, l) in &batch.ledgers {
                 ledgers.insert(key.as_str(), postcard::to_stdvec(l)?.as_slice())?;
@@ -2401,6 +2488,13 @@ fn upgrade_2_to_3(tx: &WriteTransaction, meta: &v2::PlanetMeta, kinds: &PlanetKi
     Ok(report)
 }
 
+/// Who was paid footfall at a claim and when (unix seconds), kept for the
+/// days footfall looks back over (milestone 24 part 4).
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SavedFootfall {
+    pub paid: Vec<(String, u64)>,
+}
+
 #[derive(Default)]
 pub struct WriteBatch {
     /// By planet id.
@@ -2435,6 +2529,13 @@ pub struct WriteBatch {
     pub ledgers: Vec<(String, bm_core::feats::Ledger)>,
     /// Shop records that changed (milestone 24 part 2); None deletes.
     pub shops: Vec<(u16, BlockPos, Option<bm_core::trade::ShopRecord>)>,
+    /// Claim prestige tallies that changed (milestone 24 part 4); None
+    /// deletes.
+    pub tallies: Vec<(u32, Option<bm_core::prestige::Tally>)>,
+    /// Settlement names by key claim that changed; None deletes.
+    pub settlement_names: Vec<(u32, Option<String>)>,
+    /// Footfall records by claim that changed; None deletes.
+    pub footfall: Vec<(u32, Option<SavedFootfall>)>,
     /// The universe clock, so days and station jobs continue across restarts.
     pub clock: Option<u64>,
     /// Departed wanderers (milestone 21): every row under each id is deleted,
@@ -2463,6 +2564,9 @@ impl WriteBatch {
             && self.discoveries.is_empty()
             && self.ledgers.is_empty()
             && self.shops.is_empty()
+            && self.tallies.is_empty()
+            && self.settlement_names.is_empty()
+            && self.footfall.is_empty()
             && self.forget_planets.is_empty()
     }
 }
@@ -2791,6 +2895,12 @@ mod tests {
             counts: [("placed".to_string(), 77)].into_iter().collect(),
             paid: [("placed".to_string(), 1)].into_iter().collect(),
         };
+        let mut tally = bm_core::prestige::Tally::default();
+        tally.placed("polished_aurorite");
+        tally.chiselled(3);
+        let footfall = SavedFootfall {
+            paid: vec![("bob".into(), 1_700_000_000)],
+        };
         let brews = SavedBrews {
             brew: bm_core::brew::BrewBuff {
                 kind: bm_core::brew::Brew::Swift,
@@ -2870,6 +2980,9 @@ mod tests {
                         merchant: true,
                     }),
                 )],
+                tallies: vec![(7, Some(tally.clone())), (8, None)],
+                settlement_names: vec![(7, Some("Riverholm".into()))],
+                footfall: vec![(7, Some(footfall.clone()))],
                 clock: Some(777),
                 done: Vec::new(),
             })
@@ -2898,6 +3011,9 @@ mod tests {
             "a shop kept"
         );
         assert!(s.shops(3).unwrap().is_empty());
+        assert_eq!(s.tallies().unwrap(), vec![(7, tally)], "prestige kept (part 4)");
+        assert_eq!(s.settlement_names().unwrap(), vec![(7, "Riverholm".to_string())]);
+        assert_eq!(s.footfall().unwrap(), vec![(7, footfall)]);
         assert_eq!(
             s.ledger("nobody").unwrap().coin,
             bm_core::feats::STARTING_COIN,

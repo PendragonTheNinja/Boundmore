@@ -28,7 +28,7 @@ const UNIVERSE: Color32 = GOLD;
 const WHISPER: Color32 = Color32::from_rgb(198, 150, 255);
 const SERVER: Color32 = Color32::from_rgb(160, 156, 150);
 
-pub const HELP: &str = "Commands: /l local, /p planet, /u universe, /w name text to whisper, /r text to reply. \
+pub const HELP: &str = "Commands: /l local, /p planet, /u universe, /w name text to whisper, /r text to reply, /settlement name to name the settlement you are warden of. \
                         Testing (servers started with --creative): /creative or F8, /give item count, /xp amount.";
 
 /// What a line typed into the box asks for.
@@ -77,7 +77,7 @@ pub fn parse(input: &str, default: &Channel, last_whisperer: Option<&str>) -> Ty
             return send(Channel::Whisper(name), text);
         }
         "creative" | "c" => return Typed::Creative,
-        "give" | "xp" => return Typed::Command(input.to_string()),
+        "give" | "xp" | "settlement" => return Typed::Command(input.to_string()),
         "r" | "reply" => {
             let Some(name) = last_whisperer else {
                 return Typed::Local("Nobody has whispered to you yet.".into());

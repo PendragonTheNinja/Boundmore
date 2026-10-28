@@ -409,3 +409,11 @@ text = "Pay {n} coin in sales fees"
 group = "trader"
 counts = "tax"
 tiers = [1000, 10000, 100000, 1000000, 10000000]
+
+[[feat]]
+id = "footfall"
+name = "Open Doors"
+text = "Earn {n} coin in footfall"
+group = "trader"
+counts = "footfall"
+tiers = [1000, 10000, 100000, 1000000, 10000000]

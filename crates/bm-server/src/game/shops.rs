@@ -357,7 +357,7 @@ impl Game {
 
     /// Counts toward an absent account's feats (loading its ledger); the
     /// tiers reached are paid when they next join.
-    fn note_away(&mut self, account: &str, counts: &[(&str, u64)]) {
+    pub(super) fn note_away(&mut self, account: &str, counts: &[(&str, u64)]) {
         if !self.ledgers.contains_key(account) {
             match self.store.ledger(account) {
                 Ok(l) => {

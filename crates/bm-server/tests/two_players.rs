@@ -71,6 +71,8 @@ struct TestClient {
     discovered: Vec<(u16, u32, u64)>,
     meteors: HashMap<u32, bm_protocol::MeteorView>,
     life: Option<(u32, Option<u32>)>,
+    /// The latest settlements and claim prestige (milestone 24 part 4).
+    settlements: Option<Settled>,
 }
 
 /// Opens a connection and says hello; the welcome, or the refusal's reason.
@@ -152,6 +154,7 @@ async fn hello(
         discovered: Vec::new(),
         meteors: HashMap::new(),
         life: None,
+        settlements: None,
     })
 }
 
@@ -293,6 +296,9 @@ impl TestClient {
                 self.meteors.remove(id);
             }
             ServerMsg::MeteorLife { life } => self.life = *life,
+            ServerMsg::Settlements { settlements, prestige } => {
+                self.settlements = Some((settlements.clone(), prestige.clone()))
+            }
             // Everything of the old planet goes, as in the game.
             ServerMsg::Travel(t) => {
                 self.chunks.clear();
@@ -3585,6 +3591,149 @@ async fn shop_stands_sell_and_request_baskets_buy() {
     assert_eq!(bob.count("stone"), 6);
     // The stand, still stocked, cannot be broken.
     assert!(!alice.dig(9, stand).await.0);
+    server.stop();
+}
+
+/// A planet's settlements and claim prestige, as told.
+type Settled = (Vec<bm_protocol::SettlementView>, Vec<(u32, u64)>);
+
+/// Waits for a `Settlements` message that `pred` accepts.
+async fn settlements_until(
+    c: &mut TestClient,
+    pred: impl Fn(&[bm_protocol::SettlementView], &[(u32, u64)]) -> bool,
+) -> Settled {
+    if let Some((s, p)) = &c.settlements
+        && pred(s, p)
+    {
+        return (s.clone(), p.clone());
+    }
+    match c
+        .until(|m| matches!(m, ServerMsg::Settlements { settlements, prestige } if pred(settlements, prestige)))
+        .await
+    {
+        ServerMsg::Settlements { settlements, prestige } => (settlements, prestige),
+        _ => unreachable!(),
+    }
+}
+
+/// Milestone 24 part 4: blocks placed in a claim give it prestige (kept
+/// across a restart); a claim with 10,000 is a settlement whose owner is its
+/// warden; a visitor stepping in pays its owner footfall once a day, taken
+/// from no one; only the warden names it; a broken block takes its share
+/// off.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn prestige_makes_a_settlement_that_earns_footfall() {
+    use bm_core::feats::STARTING_COIN;
+    let dir = tempfile::tempdir().unwrap();
+    seed(
+        dir.path(),
+        "Alice",
+        &[(5, "claim_stone", 1, 0), (0, "polished_aurorite", 2, 0)],
+    );
+    let claim;
+    let one = bm_core::prestige::points(26);
+    {
+        let server = bm_server::start(config(dir.path())).unwrap();
+        let mut alice = TestClient::login(&server, "Alice").await;
+        let feet = alice.feet();
+        alice.wait_for_chunk(feet.chunk()).await;
+        let shape = alice.shape();
+        let half = bm_core::PLOT_SIZE / 2;
+        let side = |v: i64| {
+            if v.rem_euclid(bm_core::PLOT_SIZE) < half { 1 } else { -1 }
+        };
+        let spots = [feet.offset(side(feet.x), 0, 0), feet.offset(0, 0, side(feet.z))];
+        let air = alice.block("air");
+        for (seq, p) in [(20, spots[0]), (21, spots[1])] {
+            assert_eq!(PlotPos::of(p, shape), PlotPos::of(feet, shape));
+            if alice.block_at(p) != air {
+                assert!(alice.dig(seq, p).await.0);
+            }
+        }
+        assert!(alice.dig(2, feet).await.0);
+        assert!(place(&mut alice, 3, feet, 5, None).await.0);
+        if alice.claim.is_none() {
+            alice.until(|m| matches!(m, ServerMsg::Claim(_))).await;
+        }
+        claim = alice.claim.as_ref().unwrap().id;
+        assert!(place(&mut alice, 4, spots[0], 0, None).await.0);
+        assert!(place(&mut alice, 5, spots[1], 0, None).await.0);
+        let (found, prestige) = settlements_until(&mut alice, |_, p| {
+            p.iter().any(|&(c, n)| c == claim && n >= (2.0 * one) as u64)
+        })
+        .await;
+        assert!(found.is_empty(), "far from 10,000");
+        assert!(prestige.iter().all(|&(c, _)| c == claim));
+        drop(alice);
+        server.stop();
+    }
+    // A long build later: 40 of them in the claim.
+    {
+        let store = Store::open(&planet_file(dir.path())).unwrap();
+        let mut t = bm_core::prestige::Tally::default();
+        for _ in 0..40 {
+            t.placed("polished_aurorite");
+        }
+        store
+            .write(&WriteBatch {
+                tallies: vec![(claim, Some(t))],
+                ..Default::default()
+            })
+            .unwrap();
+    }
+    seed(dir.path(), "Bob", &[]);
+    let server = bm_server::start(config(dir.path())).unwrap();
+    let mut alice = TestClient::login(&server, "Alice").await;
+    let (found, _) = settlements_until(&mut alice, |s, _| !s.is_empty()).await;
+    assert_eq!(found.len(), 1);
+    let s = &found[0];
+    assert_eq!(
+        (
+            s.name.as_str(),
+            s.rank.as_str(),
+            s.warden.as_str(),
+            s.capital,
+            s.claims.clone()
+        ),
+        ("Alice's Outpost", "Outpost", "Alice", true, vec![claim])
+    );
+    assert!(s.prestige >= (40.0 * one) as u64 + bm_core::prestige::VARIETY_BONUS);
+    // Bob arrives at the spawn, inside Alice's claim: a first visit pays
+    // twice an outpost's 20.
+    let mut bob = TestClient::login(&server, "Bob").await;
+    let l = ledger_until(&mut alice, |l| l.coin > STARTING_COIN).await;
+    assert_eq!(l.coin, STARTING_COIN + 40);
+    assert_eq!(l.count("footfall"), 40);
+    let l = ledger_until(&mut bob, |_| true).await;
+    assert_eq!(l.coin, STARTING_COIN, "footfall is taken from no one");
+    // Only the warden names it.
+    bob.send(ClientMsg::Command {
+        text: "/settlement Bobton".into(),
+    })
+    .await;
+    bob.notice("Only its warden, Alice, can name it").await;
+    alice
+        .send(ClientMsg::Command {
+            text: "/settlement Riverholm".into(),
+        })
+        .await;
+    alice.notice("This settlement is now Riverholm").await;
+    settlements_until(&mut bob, |s, _| s.first().is_some_and(|s| s.name == "Riverholm")).await;
+    // Breaking one of the placed blocks takes its points off.
+    let before = s.prestige;
+    let feet = alice.feet();
+    let half = bm_core::PLOT_SIZE / 2;
+    let x = if feet.x.rem_euclid(bm_core::PLOT_SIZE) < half {
+        1
+    } else {
+        -1
+    };
+    let target = feet.offset(x, 0, 0);
+    alice.wait_for_chunk(target.chunk()).await;
+    assert_eq!(alice.block_at(target), alice.block("polished_aurorite"));
+    assert!(alice.dig(30, target).await.0);
+    settlements_until(&mut alice, |s, _| s.first().is_some_and(|s| s.prestige < before)).await;
+    drop(bob);
     server.stop();
 }
 

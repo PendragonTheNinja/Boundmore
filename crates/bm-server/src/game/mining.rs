@@ -463,8 +463,12 @@ impl Game {
         let claim_removed = if old == self.claim_stone {
             self.planets[pi].claims.remove_by_stone(canon)
         } else {
+            self.prestige_removed(pi, canon, old);
             None
         };
+        if let Some(claim) = claim_removed {
+            self.claim_forgotten(claim);
+        }
         // A machine block going: its machine as it stood.
         let def = self.planets[pi].world.registry.get(old);
         let machine = if def.station.is_some() || def.assembly.is_some() {

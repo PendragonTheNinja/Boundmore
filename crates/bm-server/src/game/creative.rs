@@ -33,6 +33,12 @@ impl Game {
 
     /// A typed command (`ClientMsg::Command`).
     pub(super) fn command(&mut self, id: u32, text: &str) {
+        // Commands for everyone.
+        let mut words = text.trim().trim_start_matches('/').split_whitespace();
+        if words.next().is_some_and(|w| w.eq_ignore_ascii_case("settlement")) {
+            let rest: Vec<&str> = words.collect();
+            return self.name_settlement(id, &rest);
+        }
         if !self.cfg.creative {
             return self.notice(id, CREATIVE_OFF);
         }

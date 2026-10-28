@@ -2,7 +2,7 @@
 //! index from plot to claim, and the outlines claim mode draws.
 
 use bm_core::{PLOT_SIZE, PlanetShape, PlotPos};
-use bm_protocol::ClaimView;
+use bm_protocol::{ClaimView, SettlementView};
 use glam::DVec3;
 use std::collections::{HashMap, HashSet};
 
@@ -11,6 +11,10 @@ pub struct Claims {
     claims: HashMap<u32, ClaimView>,
     by_plot: HashMap<PlotPos, u32>,
     shape: Option<PlanetShape>,
+    /// The planet's settlements and each claim's prestige (milestone 24
+    /// part 4), as last told.
+    settlements: Vec<SettlementView>,
+    prestige: HashMap<u32, u64>,
 }
 
 impl Claims {
@@ -52,6 +56,20 @@ impl Claims {
                 }
             }
         }
+    }
+
+    pub fn set_settlements(&mut self, list: Vec<SettlementView>, prestige: Vec<(u32, u64)>) {
+        self.settlements = list;
+        self.prestige = prestige.into_iter().collect();
+    }
+
+    /// The settlement a claim is part of.
+    pub fn settlement_of(&self, claim: u32) -> Option<&SettlementView> {
+        self.settlements.iter().find(|s| s.claims.contains(&claim))
+    }
+
+    pub fn prestige(&self, claim: u32) -> u64 {
+        self.prestige.get(&claim).copied().unwrap_or(0)
     }
 
     pub fn at(&self, plot: PlotPos) -> Option<&ClaimView> {

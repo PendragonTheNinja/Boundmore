@@ -460,6 +460,8 @@ pub struct Hud<'a> {
     pub notices: Vec<(String, f32)>,
     /// Shown small at the top: whose land this is.
     pub owner: Option<(String, bool)>,
+    /// The claim's settlement and prestige (`claim_line`).
+    pub settlement: Option<String>,
     /// Claim mode's help and allowance, when it is on.
     pub claim_mode: Option<String>,
     /// What a key does to the block aimed at ("E", "travel"), shown under
@@ -809,15 +811,23 @@ pub fn permille_text(p: u64) -> String {
 
 /// "1,250 coin".
 pub fn coin_text(c: u64) -> String {
-    let digits = c.to_string();
-    let mut out = String::new();
-    for (i, ch) in digits.chars().enumerate() {
-        if i > 0 && (digits.len() - i) % 3 == 0 {
-            out.push(',');
-        }
-        out.push(ch);
+    format!("{} coin", grouped(c))
+}
+
+/// The line under a claim's owner (milestone 24 part 4): its settlement
+/// and the claim's prestige, or nothing for a claim with neither.
+pub fn claim_line(prestige: u64, settlement: Option<&bm_protocol::SettlementView>) -> Option<String> {
+    let mine = format!("{} prestige", grouped(prestige));
+    match settlement {
+        Some(s) => Some(format!(
+            "{}, {}{}. This claim: {mine}",
+            s.name,
+            s.rank,
+            if s.capital { ", the capital" } else { "" }
+        )),
+        None if prestige > 0 => Some(mine),
+        None => None,
     }
-    format!("{out} coin")
 }
 
 /// A brew's tag on the HUD (milestone 23 part 2).
@@ -1203,7 +1213,11 @@ pub fn hud(ctx: &egui::Context, h: &Hud) {
         y = 34.0;
     }
     if let Some((text, left)) = h.meteor.as_ref().filter(|_| h.claim_mode.is_none()) {
-        let at = if h.owner.is_some() { y + 30.0 } else { y };
+        let at = match (&h.owner, &h.settlement) {
+            (Some(_), Some(_)) => y + 48.0,
+            (Some(_), None) => y + 30.0,
+            _ => y,
+        };
         top_area("meteor", at).show(ctx, |ui| {
             egui::Frame::new()
                 .fill(Color32::from_black_alpha(140))
@@ -1239,7 +1253,12 @@ pub fn hud(ctx: &egui::Context, h: &Hud) {
                     } else {
                         (format!("{owner}'s claim"), Color32::from_rgb(240, 150, 140))
                     };
-                    ui.label(egui::RichText::new(text).color(colour).size(14.0));
+                    ui.vertical_centered(|ui| {
+                        ui.label(egui::RichText::new(text).color(colour).size(14.0));
+                        if let Some(line) = &h.settlement {
+                            ui.label(egui::RichText::new(line).color(MUTED).size(12.0));
+                        }
+                    });
                 });
         });
     }
@@ -2909,6 +2928,24 @@ mod tests {
         assert_eq!(coin_text(500), "500 coin");
         assert_eq!(coin_text(1250), "1,250 coin");
         assert_eq!(coin_text(7_700_000), "7,700,000 coin");
+    }
+
+    #[test]
+    fn a_claim_line_names_its_settlement_and_prestige() {
+        assert_eq!(claim_line(0, None), None, "nothing built");
+        assert_eq!(claim_line(1500, None).as_deref(), Some("1,500 prestige"));
+        let s = bm_protocol::SettlementView {
+            name: "Riverholm".into(),
+            rank: "Hamlet".into(),
+            prestige: 60_000,
+            warden: "Alice".into(),
+            capital: true,
+            claims: vec![1],
+        };
+        assert_eq!(
+            claim_line(12_400, Some(&s)).as_deref(),
+            Some("Riverholm, Hamlet, the capital. This claim: 12,400 prestige")
+        );
     }
 
     #[test]
