@@ -6164,6 +6164,72 @@ material = "wood"
 mine_xp = 2
 build_xp = 8
 
+# Milestone 25 part 3: helix machines, each starting one guild buff on a
+# claim given to a guild (Boundless's prestige ranks and build XP).
+[[block]]
+name = "builders_helix"
+prestige = 23
+color = [90, 92, 104]
+solid = true
+opaque = true
+translucent = false
+breakable = true
+placeable = true
+health = "hard"
+textures = { top = "helix_top", side = "builders_helix_side", bottom = "helix_top" }
+material = "rock"
+light = 5
+mine_xp = 2
+build_xp = 32
+
+[[block]]
+name = "grapple_run_helix"
+prestige = 24
+color = [90, 92, 104]
+solid = true
+opaque = true
+translucent = false
+breakable = true
+placeable = true
+health = "hard"
+textures = { top = "helix_top", side = "grapple_run_helix_side", bottom = "helix_top" }
+material = "rock"
+light = 5
+mine_xp = 2
+build_xp = 32
+
+[[block]]
+name = "lava_protection_helix"
+prestige = 23
+color = [90, 92, 104]
+solid = true
+opaque = true
+translucent = false
+breakable = true
+placeable = true
+health = "hard"
+textures = { top = "helix_top", side = "lava_protection_helix_side", bottom = "helix_top" }
+material = "rock"
+light = 5
+mine_xp = 2
+build_xp = 32
+
+[[block]]
+name = "defeat_insurance_helix"
+prestige = 26
+color = [90, 92, 104]
+solid = true
+opaque = true
+translucent = false
+breakable = true
+placeable = true
+health = "hard"
+textures = { top = "helix_top", side = "defeat_insurance_helix_side", bottom = "helix_top" }
+material = "rock"
+light = 5
+mine_xp = 2
+build_xp = 32
+
 # Milestone 24 part 2: trade. Each is a 16-slot storage block (Boundless's
 # count, players' reports), placed only inside its owner's claim.
 

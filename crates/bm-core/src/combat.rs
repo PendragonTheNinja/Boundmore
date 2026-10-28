@@ -243,7 +243,10 @@ impl PlayerState {
     pub(crate) fn lava_tick(&mut self, in_lava: bool) {
         self.lava_wait = self.lava_wait.saturating_sub(1);
         if in_lava && self.lava_wait == 0 && !self.down {
-            self.take((self.max_health() * LAVA_PERCENT / 100).max(1));
+            // Lava Protection (a guild buff, milestone 25) takes some off.
+            let burn = (self.max_health() * LAVA_PERCENT / 100).max(1);
+            let kept = 100 - self.body.guild_lava_percent.min(100) as u32;
+            self.take((burn * kept / 100).max(1));
             self.lava_wait = LAVA_TICKS;
         }
     }
@@ -300,6 +303,18 @@ impl PlayerState {
 
 #[cfg(test)]
 mod tests {
+
+    #[test]
+    fn lava_protection_takes_its_share_off_the_burn() {
+        let mut plain = crate::PlayerState::default();
+        plain.lava_tick(true);
+        let mut kept = crate::PlayerState::default();
+        kept.body.guild_lava_percent = 50;
+        kept.lava_tick(true);
+        let full = plain.max_health() * LAVA_PERCENT / 100;
+        assert_eq!((plain.hurt, kept.hurt), (full, full / 2));
+    }
+
     use super::*;
 
     #[test]

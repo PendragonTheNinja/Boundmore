@@ -227,6 +227,8 @@ struct Session {
     selected: usize,
     edit_seq: u32,
     place_cooldown: f64,
+    /// Builder's Buff (a guild buff): percent faster block placing.
+    place_percent: u16,
     target: Option<RayHit>,
     /// What E acts on: as `target`, but portal surfaces (not solid) stop the
     /// ray too. Never used for breaking or placing.
@@ -358,6 +360,7 @@ impl Session {
             selected: 0,
             edit_seq: 0,
             place_cooldown: 0.0,
+            place_percent: 0,
             target: None,
             use_target: None,
             chisel: None,
@@ -508,8 +511,8 @@ impl Session {
     /// `expire`) in prediction, where they differ from what we predicted.
     fn set_bodies(&mut self, bodies: Vec<(u32, bm_core::movement::Body)>) {
         for (at, mut body) in bodies {
-            // Creative mode is the player's switch, not a skill's.
-            body.creative = self.me.body_at(at).map_or(self.me.state.body.creative, |b| b.creative);
+            // Creative mode and guild buffs are not the skills'.
+            body = body.keeping_switches(&self.me.body_at(at).unwrap_or(self.me.state.body));
             if self.me.body_at(at) != Some(body) {
                 self.me
                     .set_body(at, body, &self.movement, self.world.shape, &self.world);
@@ -555,6 +558,23 @@ impl Session {
         self.me
             .set_body(at, body, &self.movement, self.world.shape, &self.world);
         ClientMsg::Creative { at, on }
+    }
+
+    /// `ServerMsg::GuildBody`: what our guilds' buffs add from right after
+    /// input `at` (milestone 25 part 3); prediction follows.
+    fn guild_body(&mut self, at: u32, run: f64, grapple: f64, lava: u16, place: u16) {
+        self.place_percent = place;
+        let body = self.me.body_at(at).unwrap_or(self.me.state.body);
+        let want = bm_core::movement::Body {
+            guild_run_bonus: run,
+            guild_grapple_bonus: grapple,
+            guild_lava_percent: lava,
+            ..body
+        };
+        if want != body {
+            self.me
+                .set_body(at, want, &self.movement, self.world.shape, &self.world);
+        }
     }
 
     /// `ServerMsg::Creative`: whether creative mode holds from right after
@@ -756,6 +776,13 @@ impl Session {
     }
 
     /// The sign aimed at for E, if any (milestone 22 part 4).
+    /// The helix machine aimed at for E (milestone 25 part 3).
+    fn aiming_at_helix(&self) -> Option<BlockPos> {
+        let hit = self.target?;
+        let block = self.world.block(hit.block)?;
+        bm_core::guilds::BuffKind::of_helix(&self.world.registry.get(block).name).map(|_| hit.block)
+    }
+
     /// The guild control aimed at for E (milestone 25 part 2).
     fn aiming_at_guild_control(&self) -> Option<BlockPos> {
         let hit = self.target?;
@@ -1019,6 +1046,8 @@ pub struct App {
     friend_name: String,
     /// The open guild control, and what is typed in the guild window.
     guild_control_view: Option<bm_protocol::GuildControlView>,
+    /// The open helix machine (milestone 25 part 3).
+    helix_view: Option<bm_protocol::HelixView>,
     guild_form: menus::GuildForm,
     /// The warp shrine window's open tab.
     shrine_tab: ShrineTab,
@@ -1093,6 +1122,7 @@ impl App {
             shop_prices: HashMap::new(),
             friend_name: String::new(),
             guild_control_view: None,
+            helix_view: None,
             guild_form: Default::default(),
             shrine_tab: ShrineTab::Worlds,
             skill_ui: SkillUi::default(),
@@ -1257,6 +1287,10 @@ impl App {
         if let Some(Menu::Portal(_)) = self.menu {
             self.send(ClientMsg::OpenPortal { pos: None });
             self.portal_view = None;
+        }
+        if let Some(Menu::Helix(_)) = self.menu {
+            self.send(ClientMsg::OpenHelix { pos: None });
+            self.helix_view = None;
         }
         if let Some(Menu::Guild(Some(_))) = self.menu {
             self.send(ClientMsg::OpenGuildControl { pos: None });
@@ -1670,6 +1704,17 @@ impl App {
             ServerMsg::Travel(t) => return self.travel(*t),
             ServerMsg::Storage(view) => return self.storage_update(view),
             ServerMsg::Shop(view) => return self.shop_update(view),
+            ServerMsg::Helix(view) => {
+                if view.closed {
+                    if self.menu == Some(Menu::Helix(view.pos)) {
+                        self.helix_view = None;
+                        self.close_menu(true);
+                    }
+                } else if self.menu == Some(Menu::Helix(view.pos)) {
+                    self.helix_view = Some(view);
+                }
+                return;
+            }
             ServerMsg::GuildControl(view) => {
                 if view.closed {
                     if self.menu == Some(Menu::Guild(Some(view.pos))) {
@@ -1719,6 +1764,13 @@ impl App {
         match m {
             // Milestone 17: a session of ours ended.
             ServerMsg::Creative { at, on } => s.creative(at, on),
+            ServerMsg::GuildBody {
+                at,
+                run,
+                grapple,
+                lava_percent,
+                place_percent,
+            } => s.guild_body(at, run, grapple, lava_percent, place_percent),
             ServerMsg::Air { at, air } => s.me.set_air(at, air, &s.movement, s.world.shape, &s.world),
             ServerMsg::Forged { outcome, .. } => {
                 let text = crate::forge_screen::outcome_text(&s.items, &outcome);
@@ -1834,6 +1886,7 @@ impl App {
             | ServerMsg::PortalClosed { .. }
             | ServerMsg::Shop(_)
             | ServerMsg::GuildControl(_)
+            | ServerMsg::Helix(_)
             | ServerMsg::Defeated { .. }
             | ServerMsg::Teleport { .. } => {}
         }
@@ -2096,7 +2149,7 @@ impl App {
             if let Some((octants, restore)) = click
                 && s.place_cooldown <= 0.0
             {
-                s.place_cooldown = PLACE_REPEAT;
+                s.place_cooldown = PLACE_REPEAT * 100.0 / (100.0 + s.place_percent as f64);
                 let state = s.world.state(hit.block).unwrap_or(BlockState::AIR);
                 let def = s.world.registry.get(state.id);
                 match bm_core::chisel::apply(def, state, family, precise, advanced, octants, restore) {
@@ -2405,7 +2458,7 @@ impl App {
                         mount,
                     },
                 });
-                s.place_cooldown = PLACE_REPEAT;
+                s.place_cooldown = PLACE_REPEAT * 100.0 / (100.0 + s.place_percent as f64);
             }
         }
 
@@ -2450,6 +2503,10 @@ impl App {
         let friend_name = &mut self.friend_name;
         let guild_form = &mut self.guild_form;
         let guild_control_view = self.guild_control_view.as_ref();
+        let helix_view = self.helix_view.as_ref();
+        let unix_now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map_or(0, |d| d.as_secs());
         let notices = self.notices.visible(now);
         let menu = self.menu;
         let login = &mut self.login;
@@ -2693,6 +2750,9 @@ impl App {
                     }
                 }
                 Some(Menu::Feats) => menus::feats(&ctx, &FEAT_BOOK, s.ledger.as_ref(), &mut actions),
+                Some(Menu::Helix(at)) => {
+                    menus::helix(&ctx, helix_view.filter(|v| v.pos == at), unix_now, &mut actions);
+                }
                 Some(Menu::Guild(at)) => {
                     let feet = s.me.state.pos;
                     let here = PlotPos::of(BlockPos::containing(feet.x, feet.y, feet.z), s.world.shape);
@@ -3841,6 +3901,10 @@ impl ApplicationHandler for App {
                                 self.open_portal(pos);
                             } else if let Some(pos) = s.aiming_at_heart() {
                                 self.send(ClientMsg::LootHeart { pos });
+                            } else if let Some(pos) = s.aiming_at_helix() {
+                                let pos = s.world.shape.wrap_block(pos);
+                                self.open_menu(Menu::Helix(pos));
+                                self.send(ClientMsg::OpenHelix { pos: Some(pos) });
                             } else if let Some(pos) = s.aiming_at_guild_control() {
                                 let pos = s.world.shape.wrap_block(pos);
                                 self.open_menu(Menu::Guild(Some(pos)));

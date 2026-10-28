@@ -6,7 +6,7 @@
 use super::*;
 use crate::guilds::Alignment;
 use bm_core::guilds::{self as rules, NAME_MAX, Rank, TAG_MAX};
-use bm_protocol::{GuildAction, GuildControlView, GuildView, GuildsView, MemberView};
+use bm_protocol::{GuildAction, GuildControlView, GuildView, GuildsView, HelixView, MemberView};
 
 impl Game {
     /// What a member of a claim's guild may do there (none if not a
@@ -55,6 +55,11 @@ impl Game {
                     } else {
                         Vec::new()
                     },
+                    endeavour: g.endeavour,
+                    buffs: g
+                        .active(unix_now())
+                        .map(|b| (b.kind, b.tier, b.until, b.members.contains(account)))
+                        .collect(),
                     claims: {
                         let mut c: Vec<(u32, bool)> = self
                             .guilds
@@ -81,7 +86,7 @@ impl Game {
 
     /// Every member playing hears of a change to guild `gid` (and `also`,
     /// someone no longer in it).
-    fn guild_changed(&self, gid: u32, also: Option<&str>) {
+    pub(super) fn guild_changed(&self, gid: u32, also: Option<&str>) {
         let mut accounts: Vec<String> = self
             .guilds
             .get(gid)
@@ -197,6 +202,159 @@ impl Game {
         if self.guilds.control(planet, canon).is_some() {
             self.guilds.set_control(planet, canon, None);
         }
+    }
+
+    // ------------------------------------------------------------ buffs
+
+    /// Members' views that fell behind (endeavour earned), sent together.
+    pub(super) fn send_unsent_guilds(&mut self) {
+        for gid in std::mem::take(&mut self.guilds_unsent) {
+            self.guild_changed(gid, None);
+        }
+    }
+
+    /// What player `id`'s guilds' buffs add up to now.
+    fn boost_of(&self, account: &str, now: u64) -> rules::Boost {
+        let guilds = self.guilds.of(account);
+        rules::boost(guilds.iter().filter_map(|g| self.guilds.get(*g)), account, now)
+    }
+
+    /// Each player's guild buffs as they start and end: the server's body
+    /// and the client's prediction change from right after their latest
+    /// input, as for a planet's air.
+    pub(super) fn step_guild_buffs(&mut self) {
+        let now = unix_now();
+        let boosts: Vec<(u32, rules::Boost)> = self
+            .players
+            .iter()
+            .map(|(id, p)| (*id, self.boost_of(&p.account, now)))
+            .collect();
+        for (id, b) in boosts {
+            let Some(p) = self.players.get_mut(&id) else { continue };
+            if p.boost == b {
+                continue;
+            }
+            p.boost = b;
+            let (run, grapple) = (b.run_tenths as f64 / 10.0, b.grapple as f64);
+            p.state.body.guild_run_bonus = run;
+            p.state.body.guild_grapple_bonus = grapple;
+            p.state.body.guild_lava_percent = b.lava_percent;
+            p.out.send(&ServerMsg::GuildBody {
+                at: p.last_seq,
+                run,
+                grapple,
+                lava_percent: b.lava_percent,
+                place_percent: b.place_percent,
+            });
+        }
+    }
+
+    /// The guild a block stands for: the guild its claim is given to.
+    fn guild_at(&self, pi: usize, canon: BlockPos) -> Option<u32> {
+        let c = self.planets[pi].claims.at_block(canon)?;
+        self.guilds.alignment(c.id).map(|a| a.guild)
+    }
+
+    fn helix_view(&self, id: u32, pos: BlockPos) -> Result<HelixView, Refusal> {
+        let (canon, block) = self.block_in_reach(id, pos)?;
+        let kind = *self.helixes.get(&block).ok_or("not a helix machine")?;
+        let p = &self.players[&id];
+        let now = unix_now();
+        let g = self.guild_at(p.planet, canon).and_then(|g| self.guilds.get(g));
+        let running = g.and_then(|g| g.active(now).find(|b| b.kind == kind).map(|b| (b.tier, b.until)));
+        let may_start = g
+            .and_then(|g| g.member(&p.account))
+            .is_some_and(|m| m.powers() & rules::BUFFS != 0);
+        Ok(HelixView {
+            pos: canon,
+            kind,
+            guild: g.map(|g| (g.id, g.name.clone(), g.coin, g.endeavour)),
+            running,
+            may_start,
+            closed: false,
+        })
+    }
+
+    fn send_closed_helix(&self, id: u32, pos: BlockPos) {
+        if let Some(p) = self.players.get(&id) {
+            p.out.send(&ServerMsg::Helix(HelixView {
+                pos,
+                kind: rules::BuffKind::Builders,
+                guild: None,
+                running: None,
+                may_start: false,
+                closed: true,
+            }));
+        }
+    }
+
+    pub(super) fn open_helix(&mut self, id: u32, pos: Option<BlockPos>) {
+        let Some(pos) = pos else {
+            if let Some(p) = self.players.get_mut(&id) {
+                p.helix = None;
+            }
+            return;
+        };
+        match self.helix_view(id, pos) {
+            Ok(v) => {
+                let p = self.players.get_mut(&id).expect("checked");
+                p.helix = Some(v.pos);
+                p.out.send(&ServerMsg::Helix(v));
+            }
+            Err(r) => {
+                if let Refusal::Told(text) = &r {
+                    self.notice(id, text);
+                }
+                self.send_closed_helix(id, pos);
+            }
+        }
+    }
+
+    /// Open helix windows see what changed, or close when out of reach.
+    pub(super) fn refresh_helixes(&mut self) {
+        let open: Vec<(u32, BlockPos)> = self
+            .players
+            .iter()
+            .filter_map(|(id, p)| p.helix.map(|s| (*id, s)))
+            .collect();
+        for (id, pos) in open {
+            match self.helix_view(id, pos) {
+                Ok(v) => self.players[&id].out.send(&ServerMsg::Helix(v)),
+                Err(_) => {
+                    if let Some(p) = self.players.get_mut(&id) {
+                        p.helix = None;
+                    }
+                    self.send_closed_helix(id, pos);
+                }
+            }
+        }
+    }
+
+    /// `StartBuff` at the open helix.
+    fn start_buff(&mut self, id: u32, pos: BlockPos, tier: u8, account: &str, now: u64) -> Result<(), String> {
+        let v = self.helix_view(id, pos).map_err(told)?;
+        let Some((gid, ..)) = v.guild else {
+            return Err("A helix works on a claim given to a guild".into());
+        };
+        // Its members: those whose primary guild it is now.
+        let members: std::collections::BTreeSet<String> = self
+            .guilds
+            .get(gid)
+            .map(|g| {
+                g.members
+                    .keys()
+                    .filter(|a| self.guilds.primary(a) == Some(gid))
+                    .cloned()
+                    .collect()
+            })
+            .unwrap_or_default();
+        self.guilds
+            .change(gid, |g| g.start_buff(account, v.kind, tier, members, now))
+            .ok_or("There is no such guild")??;
+        self.guild_changed(gid, None);
+        self.refresh_helixes();
+        self.step_guild_buffs();
+        Ok(())
     }
 
     // ------------------------------------------------------------ actions
@@ -390,6 +548,7 @@ impl Game {
                 }
                 self.guilds.set_primary(&account, Some(guild));
             }
+            GuildAction::StartBuff { pos, tier } => self.start_buff(id, pos, tier, &account, now)?,
             GuildAction::Align {
                 claim,
                 guild,

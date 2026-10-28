@@ -25,7 +25,7 @@ use glam::DVec3;
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
 
 /// Bump on any change to a message below. Client and server must match.
-pub const PROTOCOL_VERSION: u32 = 50;
+pub const PROTOCOL_VERSION: u32 = 51;
 
 /// QUIC application protocol name; also refuses non-Boundmore peers early.
 pub const ALPN: &[u8] = b"boundmore/1";
@@ -155,6 +155,9 @@ pub enum ClientMsg {
     /// Open (Some) or close (None) the guild control within reach
     /// (milestone 25 part 2): answered with `GuildControl`.
     OpenGuildControl { pos: Option<BlockPos> },
+    /// Open (Some) or close (None) the helix machine within reach
+    /// (milestone 25 part 3): answered with `Helix`.
+    OpenHelix { pos: Option<BlockPos> },
     /// Do something in a guild. Answered with `Guilds`, and a notice when
     /// refused.
     Guild(GuildAction),
@@ -578,6 +581,18 @@ pub enum ServerMsg {
     Friends(FriendsView),
     /// Our guilds (milestone 25 part 2), on joining and on every change.
     Guilds(GuildsView),
+    /// What our guilds' buffs add from right after input `at` (milestone 25
+    /// part 3): run speed (blocks a second), grapple length (blocks),
+    /// percent less lava damage, and percent faster block placing.
+    GuildBody {
+        at: u32,
+        run: f64,
+        grapple: f64,
+        lava_percent: u16,
+        place_percent: u16,
+    },
+    /// The open helix machine (milestone 25 part 3); `closed` when gone.
+    Helix(HelixView),
     /// The open guild control, on open and on change; `closed` when gone.
     GuildControl(GuildControlView),
     /// The settlements of the player's planet and each claim's prestige
@@ -945,6 +960,11 @@ pub enum GuildAction {
         guild: Option<u32>,
         controlled: bool,
     },
+    /// Start the open helix machine's buff at `tier` (milestone 25 part 3).
+    StartBuff {
+        pos: BlockPos,
+        tier: u8,
+    },
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -970,6 +990,11 @@ pub struct GuildView {
     pub log: Vec<(u64, String)>,
     /// Claims given to it, with whether controlled.
     pub claims: Vec<(u32, bool)>,
+    /// Endeavour to spend on buffs (milestone 25 part 3).
+    pub endeavour: u64,
+    /// Buffs running: (kind, tier, unix seconds they end, whether we get
+    /// it).
+    pub buffs: Vec<(bm_core::guilds::BuffKind, u8, u64, bool)>,
 }
 
 /// Our guilds and which is primary (milestone 25 part 2).
@@ -977,6 +1002,20 @@ pub struct GuildView {
 pub struct GuildsView {
     pub guilds: Vec<GuildView>,
     pub primary: Option<u32>,
+}
+
+/// A helix machine as its window shows it (milestone 25 part 3).
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct HelixView {
+    pub pos: BlockPos,
+    pub kind: bm_core::guilds::BuffKind,
+    /// The guild whose claim it stands on: (id, name, coin, endeavour).
+    pub guild: Option<(u32, String, u64, u64)>,
+    /// The buff running from it: (tier, unix seconds it ends).
+    pub running: Option<(u8, u64)>,
+    /// We may start a buff (the guild's Buffs power).
+    pub may_start: bool,
+    pub closed: bool,
 }
 
 /// A guild control as its window shows it.
@@ -1330,6 +1369,9 @@ mod tests {
                     heal_bonus: u16::MAX,
                     buff_bonus: 90,
                     creative: true,
+                    guild_run_bonus: 0.6,
+                    guild_grapple_bonus: 25.0,
+                    guild_lava_percent: 75,
                 },
                 jump_held: true,
                 air_jumped: true,

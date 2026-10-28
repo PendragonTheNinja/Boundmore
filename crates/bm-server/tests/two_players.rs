@@ -4020,6 +4020,113 @@ async fn a_friend_away_gets_a_message_when_they_next_play() {
     server.stop();
 }
 
+/// Milestone 25 part 3: a guild with the coin and endeavour starts Grapple
+/// and Run at a helix on its claim; its Director, whose primary guild it
+/// is, runs faster and grapples further from then on (server and client
+/// told at an agreed input), and the guild pays the cost.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn a_helix_starts_a_guild_buff_for_its_primary_members() {
+    use bm_core::guilds::{BuffKind, Guild, TIER_COIN, TIER_ENDEAVOUR};
+    use bm_protocol::GuildAction as A;
+    let dir = tempfile::tempdir().unwrap();
+    seed(
+        dir.path(),
+        "Alice",
+        &[(5, "claim_stone", 1, 0), (0, "grapple_run_helix", 1, 0)],
+    );
+    let claim;
+    let helix;
+    {
+        let server = bm_server::start(config(dir.path())).unwrap();
+        let mut alice = TestClient::login(&server, "Alice").await;
+        let feet = alice.feet();
+        alice.wait_for_chunk(feet.chunk()).await;
+        let half = bm_core::PLOT_SIZE / 2;
+        let x = if feet.x.rem_euclid(bm_core::PLOT_SIZE) < half {
+            1
+        } else {
+            -1
+        };
+        helix = feet.offset(x, 0, 0);
+        if alice.block_at(helix) != alice.block("air") {
+            assert!(alice.dig(20, helix).await.0);
+        }
+        assert!(alice.dig(2, feet).await.0);
+        assert!(place(&mut alice, 3, feet, 5, None).await.0);
+        if alice.claim.is_none() {
+            alice.until(|m| matches!(m, ServerMsg::Claim(_))).await;
+        }
+        claim = alice.claim.as_ref().unwrap().id;
+        drop(alice);
+        server.stop();
+    }
+    // A guild with the means, her claim given to it.
+    {
+        let store = Store::open(&planet_file(dir.path())).unwrap();
+        let mut g = Guild::found(1, "Lanternwrights", "LANT", "alice", "Alice", 0);
+        g.coin = 10_000;
+        g.endeavour = 500;
+        store
+            .write(&WriteBatch {
+                guilds: Some(bm_server::guilds::GuildsDirty {
+                    guilds: vec![(1, Some(g))],
+                    primary: vec![("alice".into(), Some(1))],
+                    claims: vec![(
+                        claim,
+                        Some(bm_server::guilds::Alignment {
+                            guild: 1,
+                            controlled: false,
+                        }),
+                    )],
+                    controls: Vec::new(),
+                    next_id: 2,
+                }),
+                ..Default::default()
+            })
+            .unwrap();
+    }
+    let server = bm_server::start(config(dir.path())).unwrap();
+    let mut alice = TestClient::login(&server, "Alice").await;
+    alice.wait_for_chunk(helix.chunk()).await;
+    assert!(place(&mut alice, 4, helix, 0, None).await.0);
+    alice.send(ClientMsg::OpenHelix { pos: Some(helix) }).await;
+    let v = match alice
+        .until(|m| matches!(m, ServerMsg::Helix(v) if v.pos == helix && !v.closed))
+        .await
+    {
+        ServerMsg::Helix(v) => v,
+        _ => unreachable!(),
+    };
+    assert_eq!((v.kind, v.may_start, v.running), (BuffKind::GrappleRun, true, None));
+    assert_eq!(v.guild.as_ref().map(|g| (g.2, g.3)), Some((10_000, 500)));
+    // Greater costs more than the guild has; Minor it can afford.
+    alice.send(ClientMsg::Guild(A::StartBuff { pos: helix, tier: 3 })).await;
+    alice.notice("The guild does not have the coin for that").await;
+    alice.send(ClientMsg::Guild(A::StartBuff { pos: helix, tier: 1 })).await;
+    let (run, grapple) = match alice.until(|m| matches!(m, ServerMsg::GuildBody { .. })).await {
+        ServerMsg::GuildBody { run, grapple, .. } => (run, grapple),
+        _ => unreachable!(),
+    };
+    assert_eq!((run, grapple), (0.2, 5.0), "Minor Grapple and Run");
+    let g = guilds_until(&mut alice, |g| g.guilds.first().is_some_and(|g| !g.buffs.is_empty())).await;
+    assert_eq!(
+        (g.guilds[0].coin, g.guilds[0].endeavour),
+        (10_000 - TIER_COIN[0], 500 - TIER_ENDEAVOUR[0])
+    );
+    // The server moves her with it (a snapshot from after it started).
+    let mut run = 0.0;
+    for _ in 0..40 {
+        alice.send_inputs(1, PlayerInput::default());
+        tokio::time::sleep(Duration::from_millis(50)).await;
+        run = alice.latest_snapshot().await.2.body.guild_run_bonus;
+        if run > 0.0 {
+            break;
+        }
+    }
+    assert_eq!(run, 0.2, "the server moves her with it");
+    server.stop();
+}
+
 /// An item catalogue with a tool no recipe makes: an area tool for every
 /// block (forging, which gives areas in Boundless, does not exist yet).
 fn area_items(dir: &Path) -> std::path::PathBuf {

@@ -73,6 +73,8 @@ pub enum Menu {
     Friends,
     /// Guilds (milestone 25 part 2): at a guild control (Some), or ours (G).
     Guild(Option<BlockPos>),
+    /// A helix machine at this block (milestone 25 part 3).
+    Helix(BlockPos),
     /// Someone else's shop stand or request basket at this block (milestone
     /// 24 part 2).
     Shop(BlockPos),
@@ -884,6 +886,24 @@ pub fn guild(
         let my = g.members.iter().find(|m| m.name == me);
         let my_rank = my.map_or(Rank::Operative, |m| m.rank);
         let my_powers = my.map_or(0, |m| m.powers);
+        ui.label(
+            egui::RichText::new(format!("{} endeavour", g.endeavour))
+                .color(MUTED)
+                .small(),
+        );
+        for (kind, tier, _, mine) in &g.buffs {
+            let name = bm_core::guilds::TIER_NAMES[*tier as usize - 1];
+            let who = if *mine {
+                ""
+            } else {
+                " (not for you: it was not your primary guild when it started)"
+            };
+            ui.label(
+                egui::RichText::new(format!("{name} {}: {}{who}", kind.name(), kind.describe(*tier)))
+                    .color(TEXT)
+                    .small(),
+            );
+        }
         ui.horizontal(|ui| {
             ui.label(egui::RichText::new(coin_text(g.coin)).color(COIN));
             ui.add(
@@ -1072,6 +1092,93 @@ pub fn guild(
                     .small(),
             );
         }
+    });
+    if !open {
+        actions.push(UiAction::CloseMenu);
+    }
+}
+
+/// "6 days", "5 hours", "40 minutes" left until unix time `until`.
+pub fn time_left(until: u64, now: u64) -> String {
+    let s = until.saturating_sub(now);
+    let (n, unit) = if s >= 2 * 86_400 {
+        (s / 86_400, "day")
+    } else if s >= 2 * 3600 {
+        (s / 3600, "hour")
+    } else {
+        ((s / 60).max(1), "minute")
+    };
+    format!("{n} {unit}{}", if n == 1 { "" } else { "s" })
+}
+
+/// A helix machine (milestone 25 part 3): its buff's three strengths with
+/// their cost, the one running, and a start button for those with the
+/// guild's Buffs power.
+pub fn helix(ctx: &egui::Context, view: Option<&bm_protocol::HelixView>, now: u64, actions: &mut Vec<UiAction>) {
+    use bm_core::guilds::{TIER_COIN, TIER_ENDEAVOUR, TIER_NAMES};
+    let mut open = true;
+    window("Helix").open(&mut open).show(ctx, |ui| {
+        let Some(v) = view else {
+            ui.label(egui::RichText::new("Waiting for the server").color(MUTED));
+            return;
+        };
+        heading(ui, v.kind.name());
+        let Some((gid, name, coin, endeavour)) = &v.guild else {
+            ui.label(
+                egui::RichText::new("A helix works on a claim given to a guild (G, standing in your claim).")
+                    .color(MUTED),
+            );
+            return;
+        };
+        ui.label(egui::RichText::new(format!("{name}: {} and {endeavour} endeavour", coin_text(*coin))).color(COIN));
+        if let Some((tier, until)) = v.running {
+            ui.label(
+                egui::RichText::new(format!(
+                    "{} {} running: {} left. {}.",
+                    TIER_NAMES[tier as usize - 1],
+                    v.kind.name(),
+                    time_left(until, now),
+                    v.kind.describe(tier)
+                ))
+                .color(TEXT),
+            );
+        }
+        ui.add_space(6.0);
+        for tier in v.kind.tiers() {
+            let i = tier as usize - 1;
+            ui.horizontal(|ui| {
+                ui.vertical(|ui| {
+                    ui.label(egui::RichText::new(TIER_NAMES[i]).color(TEXT).strong());
+                    ui.label(egui::RichText::new(v.kind.describe(tier)).color(MUTED).small());
+                    ui.label(
+                        egui::RichText::new(format!(
+                            "{} and {} endeavour, for a week",
+                            coin_text(TIER_COIN[i]),
+                            TIER_ENDEAVOUR[i]
+                        ))
+                        .color(MUTED)
+                        .small(),
+                    );
+                });
+                let can =
+                    v.may_start && v.running.is_none() && *coin >= TIER_COIN[i] && *endeavour >= TIER_ENDEAVOUR[i];
+                if ui.add_enabled(can, egui::Button::new("Start")).clicked() {
+                    actions.push(UiAction::Send(ClientMsg::Guild(bm_protocol::GuildAction::StartBuff {
+                        pos: v.pos,
+                        tier,
+                    })));
+                }
+            });
+            ui.add_space(4.0);
+        }
+        let _ = gid;
+        ui.label(
+            egui::RichText::new(
+                "A buff reaches the members whose primary guild this is when it starts. A guild runs up to 3 at once.",
+            )
+            .color(MUTED)
+            .small(),
+        );
     });
     if !open {
         actions.push(UiAction::CloseMenu);

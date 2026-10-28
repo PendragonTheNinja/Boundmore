@@ -5800,3 +5800,52 @@ station = "workbench"
 seconds = 300.0
 xp = 60
 wear = 21
+
+# Milestone 25 part 3: helix machines (Boundless's recipes: 5 a craft, an
+# hour, 110 wear).
+
+[[recipe]]
+output = "builders_helix"
+count = 5
+inputs = [["relic_fragment", 20], ["milk_gland", 12], ["any_stones", 10], ["refined_iron", 16]]
+station = "workbench"
+seconds = 3600.0
+spark = 1000
+xp = 350
+wear = 110
+skill = { name = "machine_crafting", level = 1 }
+
+[[recipe]]
+output = "grapple_run_helix"
+count = 5
+inputs = [["popper_eye", 16], ["refined_gold_alloy", 16], ["any_stones", 10], ["relic_component", 20]]
+station = "workbench"
+seconds = 3600.0
+spark = 1600
+power = 2000
+xp = 400
+wear = 110
+skill = { name = "machine_crafting", level = 2 }
+
+[[recipe]]
+output = "lava_protection_helix"
+count = 5
+inputs = [["refined_iron", 16], ["relic_fragment", 20], ["volatile_blood", 16], ["any_stones", 10]]
+station = "workbench"
+seconds = 3600.0
+spark = 1000
+xp = 350
+wear = 110
+skill = { name = "machine_crafting", level = 1 }
+
+[[recipe]]
+output = "defeat_insurance_helix"
+count = 5
+inputs = [["refined_titanium_alloy", 3], ["any_stones", 10], ["refined_amethyst", 16], ["relic_core", 20], ["reactive_lamella", 40]]
+station = "workbench"
+seconds = 3600.0
+spark = 2000
+power = 3000
+xp = 500
+wear = 110
+skill = { name = "machine_crafting", level = 3 }

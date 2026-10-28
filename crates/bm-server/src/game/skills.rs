@@ -88,6 +88,15 @@ impl Game {
         let before = p.character.level();
         let gained = p.character.add_xp(xp);
         p.character_dirty = true;
+        // Endeavour for the primary guild (milestone 25 part 3).
+        let account = p.account.clone();
+        if let Some(gid) = self.guilds.primary(&account) {
+            let now = super::unix_now();
+            if self.guilds.change(gid, |g| g.earn(&account, xp, now)).unwrap_or(0) > 0 {
+                self.guilds_unsent.insert(gid);
+            }
+        }
+        let Some(p) = self.players.get_mut(&id) else { return };
         if gained == 0 {
             return;
         }
@@ -160,10 +169,7 @@ impl Game {
             Ok(()) => {
                 p.effects = c.effects(tree);
                 // Creative mode is the player's switch, not a skill's.
-                p.state.body = bm_core::movement::Body {
-                    creative: p.state.body.creative,
-                    ..p.effects.body()
-                };
+                p.state.body = p.effects.body().keeping_switches(&p.state.body);
                 // Less max health (a page without Toughness): never below 1.
                 if !p.state.down {
                     p.state.hurt = p.state.hurt.min(p.state.max_health() - 1);

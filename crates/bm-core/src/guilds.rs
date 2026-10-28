@@ -12,7 +12,7 @@
 
 use crate::rights;
 use serde::{Deserialize, Serialize};
-use std::collections::{BTreeMap, VecDeque};
+use std::collections::{BTreeMap, BTreeSet, VecDeque};
 
 /// Longest guild name and tag (Boundless's).
 pub const NAME_MAX: usize = 20;
@@ -105,6 +105,174 @@ pub struct Guild {
     pub asked: BTreeMap<String, String>,
     pub coin: u64,
     pub log: VecDeque<Entry>,
+    /// Endeavour to spend on buffs (part 3).
+    pub endeavour: u64,
+    /// The week (`week_of`) `xp_week` counts.
+    pub week: u64,
+    /// XP each member earned this week with this guild their primary.
+    pub xp_week: BTreeMap<String, u64>,
+    /// Buffs bought and not yet over.
+    pub buffs: Vec<ActiveBuff>,
+}
+
+// ------------------------------------------------------------- buffs
+
+/// XP a member earns for one endeavour, and the most endeavour one member
+/// gives in a week (Boundless's).
+pub const XP_PER_ENDEAVOUR: u64 = 100;
+pub const ENDEAVOUR_WEEK_CAP: u64 = 500;
+/// A buff lasts a week (Boundless's), in seconds.
+pub const BUFF_SECONDS: u64 = 7 * 86_400;
+/// Buffs a guild may have at once (Boundless's).
+pub const MAX_BUFFS: usize = 3;
+/// Coin and endeavour to start a buff, by tier 1 (Minor) to 5 (Mega)
+/// (Boundless's GuildBuff table).
+pub const TIER_COIN: [u64; 5] = [5_500, 15_000, 40_000, 80_000, 160_000];
+pub const TIER_ENDEAVOUR: [u64; 5] = [400, 700, 1_400, 2_300, 3_600];
+pub const TIER_NAMES: [&str; 5] = ["Minor", "Improved", "Greater", "Super", "Mega"];
+
+/// The week a unix time falls in.
+pub fn week_of(now: u64) -> u64 {
+    now / (7 * 86_400)
+}
+
+/// What a helix machine gives (the first four of Boundless's Release 211).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+pub enum BuffKind {
+    /// Chisel durability and block placing speed.
+    Builders,
+    /// Run speed and grapple length.
+    GrappleRun,
+    /// Less damage from lava.
+    LavaProtection,
+    /// A smaller defeat penalty.
+    DefeatInsurance,
+}
+
+impl BuffKind {
+    pub const ALL: [BuffKind; 4] = [
+        BuffKind::Builders,
+        BuffKind::GrappleRun,
+        BuffKind::LavaProtection,
+        BuffKind::DefeatInsurance,
+    ];
+
+    pub fn name(self) -> &'static str {
+        match self {
+            BuffKind::Builders => "Builder's Buff",
+            BuffKind::GrappleRun => "Grapple and Run",
+            BuffKind::LavaProtection => "Lava Protection",
+            BuffKind::DefeatInsurance => "Defeat Insurance",
+        }
+    }
+
+    /// Its helix machine's block name.
+    pub fn helix(self) -> &'static str {
+        match self {
+            BuffKind::Builders => "builders_helix",
+            BuffKind::GrappleRun => "grapple_run_helix",
+            BuffKind::LavaProtection => "lava_protection_helix",
+            BuffKind::DefeatInsurance => "defeat_insurance_helix",
+        }
+    }
+
+    pub fn of_helix(block: &str) -> Option<BuffKind> {
+        BuffKind::ALL.into_iter().find(|k| k.helix() == block)
+    }
+
+    /// The three tiers it comes at (Boundless's).
+    pub fn tiers(self) -> [u8; 3] {
+        match self {
+            BuffKind::Builders | BuffKind::LavaProtection => [1, 2, 4],
+            BuffKind::GrappleRun => [1, 3, 5],
+            BuffKind::DefeatInsurance => [2, 4, 5],
+        }
+    }
+
+    /// Its strength at `tier`: a percent (Builder's: chisel durability and
+    /// placing speed; Lava: less damage; Defeat: less penalty), or for
+    /// Grapple and Run tenths of a block a second of run speed (and
+    /// [`grapple_bonus`] for the grapple). Builder's and Grapple and Run are
+    /// Boundless's; Lava and Defeat are **guesses** (Measure M1).
+    pub fn strength(self, tier: u8) -> u16 {
+        let i = self.tiers().iter().position(|&t| t == tier).unwrap_or(0);
+        match self {
+            BuffKind::Builders => [15, 30, 50][i],
+            BuffKind::GrappleRun => [2, 4, 6][i],
+            BuffKind::LavaProtection => [25, 50, 75][i],
+            BuffKind::DefeatInsurance => [25, 50, 75][i],
+        }
+    }
+
+    /// What it does at `tier`, for its window.
+    pub fn describe(self, tier: u8) -> String {
+        let s = self.strength(tier);
+        match self {
+            BuffKind::Builders => format!("{s}% more chisel durability and {s}% faster block placing"),
+            BuffKind::GrappleRun => format!(
+                "{:.1} blocks a second faster running and {} blocks more grapple length",
+                s as f64 / 10.0,
+                grapple_bonus(tier)
+            ),
+            BuffKind::LavaProtection => format!("{s}% less damage from lava"),
+            BuffKind::DefeatInsurance => format!("{s}% less XP lost when defeated"),
+        }
+    }
+}
+
+/// Grapple and Run's extra grapple length at `tier`, blocks (Boundless's).
+pub fn grapple_bonus(tier: u8) -> u16 {
+    match tier {
+        1 => 5,
+        3 => 15,
+        5 => 25,
+        _ => 0,
+    }
+}
+
+/// A buff a guild bought: for the members whose primary guild it was then.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ActiveBuff {
+    pub kind: BuffKind,
+    pub tier: u8,
+    /// Unix seconds it ends.
+    pub until: u64,
+    pub members: BTreeSet<String>,
+}
+
+/// What a member's guild buffs add up to.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct Boost {
+    /// Run speed, tenths of a block a second, and grapple length, blocks.
+    pub run_tenths: u16,
+    pub grapple: u16,
+    pub chisel_percent: u16,
+    pub place_percent: u16,
+    pub lava_percent: u16,
+    pub defeat_percent: u16,
+}
+
+/// The boost `account` has from these guilds' buffs at `now`.
+pub fn boost<'a>(guilds: impl IntoIterator<Item = &'a Guild>, account: &str, now: u64) -> Boost {
+    let mut b = Boost::default();
+    for g in guilds {
+        for buff in g.buffs.iter().filter(|x| x.until > now && x.members.contains(account)) {
+            let s = buff.kind.strength(buff.tier);
+            match buff.kind {
+                BuffKind::Builders => {
+                    b.chisel_percent = b.chisel_percent.max(s);
+                    b.place_percent = b.place_percent.max(s);
+                }
+                BuffKind::GrappleRun => {
+                    b.run_tenths = b.run_tenths.max(s);
+                    b.grapple = b.grapple.max(grapple_bonus(buff.tier));
+                }
+                BuffKind::LavaProtection => b.lava_percent = b.lava_percent.max(s),
+                BuffKind::DefeatInsurance => b.defeat_percent = b.defeat_percent.max(s),
+            }
+        }
+    }
+    b
 }
 
 /// Why a guild action was refused, worded for the player.
@@ -128,6 +296,10 @@ impl Guild {
             asked: BTreeMap::new(),
             coin: 0,
             log: VecDeque::new(),
+            endeavour: 0,
+            week: 0,
+            xp_week: BTreeMap::new(),
+            buffs: Vec::new(),
         };
         g.members.insert(
             founder.to_string(),
@@ -300,6 +472,75 @@ impl Guild {
         self.note(now, format!("{name} gave {coin} coin"));
     }
 
+    /// `account`, whose primary guild this is, earned `xp`: endeavour for
+    /// every 100, up to 500 a week from each member. Returns what it gave.
+    pub fn earn(&mut self, account: &str, xp: u64, now: u64) -> u64 {
+        if !self.members.contains_key(account) || xp == 0 {
+            return 0;
+        }
+        let week = week_of(now);
+        if week != self.week {
+            self.week = week;
+            self.xp_week.clear();
+        }
+        let had = self.xp_week.entry(account.to_string()).or_insert(0);
+        let given = |x: u64| (x / XP_PER_ENDEAVOUR).min(ENDEAVOUR_WEEK_CAP);
+        let before = given(*had);
+        *had = had.saturating_add(xp);
+        let gained = given(*had) - before;
+        self.endeavour = self.endeavour.saturating_add(gained);
+        gained
+    }
+
+    /// Buffs not yet over at `now`.
+    pub fn active(&self, now: u64) -> impl Iterator<Item = &ActiveBuff> {
+        self.buffs.iter().filter(move |b| b.until > now)
+    }
+
+    /// `by` starts `kind` at `tier` for `members` (those whose primary
+    /// guild this is now), paying its coin and endeavour.
+    pub fn start_buff(
+        &mut self,
+        by: &str,
+        kind: BuffKind,
+        tier: u8,
+        members: BTreeSet<String>,
+        now: u64,
+    ) -> Result<(), Refused> {
+        self.power(by, BUFFS)?;
+        if !kind.tiers().contains(&tier) {
+            return Err("That buff does not come at that strength");
+        }
+        self.buffs.retain(|b| b.until > now);
+        if self.buffs.iter().any(|b| b.kind == kind) {
+            return Err("That buff is already running");
+        }
+        if self.buffs.len() >= MAX_BUFFS {
+            return Err("A guild can run 3 buffs at once");
+        }
+        let (coin, endeavour) = (TIER_COIN[tier as usize - 1], TIER_ENDEAVOUR[tier as usize - 1]);
+        if self.coin < coin {
+            return Err("The guild does not have the coin for that");
+        }
+        if self.endeavour < endeavour {
+            return Err("The guild does not have the endeavour for that");
+        }
+        self.coin -= coin;
+        self.endeavour -= endeavour;
+        self.buffs.push(ActiveBuff {
+            kind,
+            tier,
+            until: now + BUFF_SECONDS,
+            members,
+        });
+        let by_name = self.name_of(by);
+        self.note(
+            now,
+            format!("{by_name} started {} {}", TIER_NAMES[tier as usize - 1], kind.name()),
+        );
+        Ok(())
+    }
+
     /// `by` pays `coin` to member `to` (the caller credits them).
     pub fn pay(&mut self, by: &str, to: &str, coin: u64, now: u64) -> Result<(), Refused> {
         self.power(by, COIN)?;
@@ -414,5 +655,52 @@ mod tests {
             g.note(i, "x".into());
         }
         assert_eq!(g.log.len(), LOG_KEEP);
+    }
+
+    #[test]
+    fn endeavour_comes_from_xp_up_to_a_weekly_cap() {
+        let mut g = guild();
+        let now = 10 * 7 * 86_400;
+        assert_eq!(g.earn("bo", 250, now), 2);
+        assert_eq!(g.earn("bo", 50, now), 1, "the remainder carries");
+        assert_eq!(g.earn("bo", 1_000_000, now), 497, "500 a week at most");
+        assert_eq!(g.earn("bo", 1_000, now), 0);
+        assert_eq!(g.earn("stranger", 1_000, now), 0);
+        assert_eq!(g.earn("bo", 1_000, now + 7 * 86_400), 10, "a new week");
+        assert_eq!(g.endeavour, 510);
+    }
+
+    #[test]
+    fn buffs_cost_coin_and_endeavour_and_reach_their_members() {
+        let mut g = guild();
+        g.coin = 100_000;
+        g.endeavour = 2_000;
+        let members: BTreeSet<String> = ["ada".to_string(), "bo".to_string()].into();
+        assert_eq!(
+            g.start_buff("bo", BuffKind::GrappleRun, 1, members.clone(), 0),
+            Err("You do not have that power in this guild")
+        );
+        assert!(
+            g.start_buff("ada", BuffKind::GrappleRun, 2, members.clone(), 0)
+                .is_err(),
+            "not a tier it has"
+        );
+        g.start_buff("ada", BuffKind::GrappleRun, 3, members.clone(), 0)
+            .unwrap();
+        assert_eq!((g.coin, g.endeavour), (60_000, 600));
+        assert_eq!(
+            g.start_buff("ada", BuffKind::GrappleRun, 1, members.clone(), 1),
+            Err("That buff is already running")
+        );
+        assert_eq!(
+            g.start_buff("ada", BuffKind::Builders, 2, members.clone(), 1),
+            Err("The guild does not have the endeavour for that")
+        );
+        g.start_buff("ada", BuffKind::Builders, 1, members.clone(), 1).unwrap();
+        let b = boost([&g], "bo", 100);
+        assert_eq!((b.run_tenths, b.grapple, b.place_percent), (4, 15, 15));
+        assert_eq!(boost([&g], "cy", 100), Boost::default(), "not primary when bought");
+        assert_eq!(boost([&g], "bo", BUFF_SECONDS + 1), Boost::default(), "a week later");
+        assert_eq!(BuffKind::of_helix("grapple_run_helix"), Some(BuffKind::GrappleRun));
     }
 }

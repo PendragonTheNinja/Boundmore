@@ -248,6 +248,10 @@ struct Player {
     in_claim: Option<u32>,
     /// The guild control whose window is open (milestone 25 part 2).
     guild_control: Option<BlockPos>,
+    /// The helix machine whose window is open, and what this player's
+    /// guild buffs add up to (milestone 25 part 3).
+    helix: Option<BlockPos>,
+    boost: bm_core::guilds::Boost,
     chat: ChatLimit,
     /// Edits and swings tagged with an input up to this one came from before
     /// the last travel (see `TRAVEL_GUARD_INPUTS`).
@@ -454,6 +458,11 @@ pub struct Game {
     /// (milestone 25 part 2).
     guilds: crate::guilds::Guilds,
     guild_control: BlockId,
+    /// Helix machine blocks and the buff each gives.
+    helixes: HashMap<BlockId, bm_core::guilds::BuffKind>,
+    /// Guilds whose members' views are behind (endeavour earned), sent with
+    /// the characters.
+    guilds_unsent: HashSet<u32>,
     /// Messages waiting for accounts that were away, and which changed.
     mail: HashMap<String, Vec<ChatLine>>,
     mail_dirty: HashSet<String>,
@@ -717,6 +726,10 @@ impl Game {
             saved_guilds.next_id,
         );
         let guild_control = registry.id("guild_control")?;
+        let helixes = bm_core::guilds::BuffKind::ALL
+            .iter()
+            .map(|k| Ok((registry.id(k.helix())?, *k)))
+            .collect::<Result<HashMap<_, _>, bm_core::RegistryError>>()?;
         let mail: HashMap<String, Vec<ChatLine>> = store.mail()?.into_iter().collect();
         let settlement_names: HashMap<u32, String> = store.settlement_names()?.into_iter().collect();
         let footfall: HashMap<u32, crate::store::SavedFootfall> = store.footfall()?.into_iter().collect();
@@ -821,6 +834,8 @@ impl Game {
             social,
             guilds,
             guild_control,
+            helixes,
+            guilds_unsent: HashSet::new(),
             mail,
             mail_dirty: HashSet::new(),
             settlements: Vec::new(),
@@ -1004,6 +1019,7 @@ impl Game {
             self.check_open_storage();
             self.check_open_shops();
             self.check_open_controls();
+            self.refresh_helixes();
             self.check_open_portals();
             self.update_inner_light();
         }
@@ -1015,6 +1031,8 @@ impl Game {
             self.send_dirty_characters();
             self.count_moves();
             self.send_ledgers();
+            self.send_unsent_guilds();
+            self.step_guild_buffs();
         }
         let ids: Vec<u32> = self.players.keys().copied().collect();
         for id in &ids {
@@ -1125,6 +1143,7 @@ impl Game {
                 ClientMsg::Friend { name, action } => self.friend(id, &name, action),
                 ClientMsg::SetRights { claim, friend, rights } => self.set_rights(id, claim, &friend, rights),
                 ClientMsg::OpenGuildControl { pos } => self.open_guild_control(id, pos),
+                ClientMsg::OpenHelix { pos } => self.open_helix(id, pos),
                 ClientMsg::Guild(action) => self.guild_action(id, action),
                 ClientMsg::Eat { at, slot } => self.queue(id, at, Queued::Eat { at, slot }),
                 ClientMsg::FillBucket { slot, pos } => self.fill_bucket(id, slot, pos),
@@ -1444,6 +1463,8 @@ impl Game {
                 shop: None,
                 in_claim: None,
                 guild_control: None,
+                helix: None,
+                boost: Default::default(),
                 chat: ChatLimit::new(self.tick),
                 travel_guard: None,
                 portal: None,
@@ -1547,7 +1568,9 @@ impl Game {
         for id in ids {
             {
                 let p = self.players.get_mut(&id).expect("present");
-                p.edit_tokens = (p.edit_tokens + EDIT_RATE * TICK_DT).min(EDIT_BURST);
+                // Builder's Buff (a guild buff) places faster.
+                let rate = EDIT_RATE * (100.0 + p.boost.place_percent as f64) / 100.0;
+                p.edit_tokens = (p.edit_tokens + rate * TICK_DT).min(EDIT_BURST);
                 p.bank = (p.bank + 1.0).min(INPUT_BANK);
             }
             loop {
@@ -2222,8 +2245,14 @@ impl Game {
                 }
             }
             Effect::Chiselled { slot } => {
-                // The durability epic spares some wear.
-                if mining::roll(&mut self.rng) >= p.state.wear_spared(p.effects.wear_saved()) {
+                // The durability epic spares some wear, and Builder's Buff
+                // (a guild buff) more: chisel durability +N% spares N/(100+N)
+                // of the wear.
+                let buff = p.boost.chisel_percent as f64;
+                let spared_by_buff = buff / (100.0 + buff);
+                if mining::roll(&mut self.rng) >= p.state.wear_spared(p.effects.wear_saved())
+                    && mining::roll(&mut self.rng) >= spared_by_buff
+                {
                     broke = wear_slot(&self.items, &mut p.inventory, slot);
                 }
             }

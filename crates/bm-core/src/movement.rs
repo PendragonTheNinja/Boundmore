@@ -315,10 +315,31 @@ pub struct Body {
     /// Zeal's (de)buff duration modifier, percent: 6 a rank (Boundless's
     /// skill text): buffs last this much longer, debuffs this much shorter.
     pub buff_bonus: u16,
+    /// Guild buffs (milestone 25 part 3), set by the server at an agreed
+    /// input like creative mode: run speed added (blocks a second), grapple
+    /// length added (blocks), and percent less lava damage.
+    pub guild_run_bonus: f64,
+    pub guild_grapple_bonus: f64,
+    pub guild_lava_percent: u16,
     /// Creative mode (a testing aid, allowed only on servers started with
     /// `--creative`): flies where the player looks, takes no harm, never
     /// tires, hungers or runs out of air.
     pub creative: bool,
+}
+
+impl Body {
+    /// This body from the skills, keeping what is not the skills': the
+    /// creative switch and the guild's buffs (both set by the server at an
+    /// agreed input).
+    pub fn keeping_switches(self, from: &Body) -> Body {
+        Body {
+            creative: from.creative,
+            guild_run_bonus: from.guild_run_bonus,
+            guild_grapple_bonus: from.guild_grapple_bonus,
+            guild_lava_percent: from.guild_lava_percent,
+            ..self
+        }
+    }
 }
 
 /// Creative flight, blocks a second (sprint for the fast one).
@@ -464,7 +485,7 @@ pub fn step(
     let mut used = false;
     // Grapple mastery lengthens the rope and speeds the shot.
     let skilled = grapple.map(|g| GrappleSpec {
-        range: g.range + s.body.grapple_range_bonus,
+        range: g.range + s.body.grapple_range_bonus + s.body.guild_grapple_bonus,
         shot_speed: g.shot_speed + s.body.grapple_shot_bonus,
         ..*g
     });
@@ -546,7 +567,7 @@ pub fn step(
     }
     let q = s.quirks;
     // Swift brews add to running and sprinting alike (milestone 23).
-    let walk = cfg.walk_speed + s.body.run_bonus + s.brew_run_bonus();
+    let walk = cfg.walk_speed + s.body.run_bonus + s.body.guild_run_bonus + s.brew_run_bonus();
     let sprint = cfg.sprint_speed + s.body.sprint_bonus + s.brew_run_bonus();
     // Sprinter: walking and running 25% slower, the sprint's bonus 50%
     // bigger (Release 209).

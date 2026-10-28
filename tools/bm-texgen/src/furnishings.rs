@@ -1013,6 +1013,15 @@ pub fn paint(name: &str) -> Option<Tex> {
         "request_basket_side" => return Some(request_basket_side()),
         "guild_control_top" => return Some(guild_control_top()),
         "guild_control_side" => return Some(guild_control_side()),
+        "helix_top" => return Some(helix_top()),
+        "builders_helix_side" => return Some(helix_side(name, [0x5a3a0a, 0x9a6a14, 0xd8a426, 0xf4d060, 0xfff2b0])),
+        "grapple_run_helix_side" => return Some(helix_side(name, [0x0e4a2a, 0x1c7a44, 0x34b060, 0x70e08a, 0xc4ffd0])),
+        "lava_protection_helix_side" => {
+            return Some(helix_side(name, [0x5a1606, 0x9a2c0c, 0xe0561a, 0xff9a40, 0xffe0a0]));
+        }
+        "defeat_insurance_helix_side" => {
+            return Some(helix_side(name, [0x2e1450, 0x4e2884, 0x7a46c4, 0xb486f0, 0xe8d6ff]));
+        }
         _ => {}
     }
     for (suffix, beam) in [("_pole", false), ("_beam", true)] {
@@ -1311,6 +1320,65 @@ fn guild_control_top() -> Tex {
             // Each page curls up from the spine.
             let curl = ((fx - 16.0).abs() / 10.0).min(1.0);
             Some((0.3 + 0.35 * curl + 0.2 * rise(d, 1.0), 0.0))
+        },
+    )
+}
+
+/// A helix machine's casing (milestone 25 part 3): a metal frame round a
+/// dark window.
+fn helix_casing(name: &str) -> Tex {
+    let design = |fx: f32, fy: f32| -> Px {
+        if let Some(p) = rim(Mat::Metal, fx, fy, 4.0, true) {
+            return p;
+        }
+        for (cx, cy) in [(6.5, 6.5), (25.5, 6.5), (6.5, 25.5), (25.5, 25.5)] {
+            if let Some(s) = stud(fx, fy, cx, cy, 1.1) {
+                return fit(1.4 + s * 0.3);
+            }
+        }
+        toned(0.25, 12, false, -0.35)
+    };
+    render(name, Mat::Metal, false, design)
+}
+
+/// A helix machine's side: two glowing strands twisting up the window, in
+/// the colour of its buff.
+fn helix_side(name: &str, glow: [u32; 5]) -> Tex {
+    let tex = helix_casing(name);
+    let ramp = Ramp::from_hex(&glow);
+    overlay(
+        tex,
+        move |_, _| ramp.clone(),
+        |fx, fy| {
+            if inside((fx, fy), 6.0, 5.0, 26.0, 27.0) <= 0.0 {
+                return None;
+            }
+            // Two strands half a turn apart, and rungs between.
+            let phase = fy / 22.0 * TAU * 1.5;
+            let (a, b) = (16.0 + 6.5 * phase.sin(), 16.0 - 6.5 * phase.sin());
+            let front = phase.cos();
+            let d = (fx - a).abs().min((fx - b).abs());
+            let rung = (fy.rem_euclid(3.0) < 0.9) && fx > a.min(b) && fx < a.max(b);
+            if d < 1.3 {
+                Some((0.6 + 0.4 * (1.0 - d / 1.3), 0.15 + 0.15 * front))
+            } else if rung {
+                Some((0.3, -0.15))
+            } else {
+                None
+            }
+        },
+    )
+}
+
+fn helix_top() -> Tex {
+    let tex = helix_casing("helix_top");
+    let ramp = Ramp::from_hex(&[0x3a3a46, 0x5a5a6a, 0x8a8a9c, 0xb8b8c8, 0xe6e6f0]);
+    overlay(
+        tex,
+        move |_, _| ramp.clone(),
+        |fx, fy| {
+            let r = (fx - 16.0).hypot(fy - 16.0);
+            (r < 6.0).then(|| (0.4 + 0.4 * ridge(r, 2.0, 6.0), 0.0))
         },
     )
 }

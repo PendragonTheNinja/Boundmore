@@ -583,6 +583,8 @@ impl Demo {
                             (2, format!("{} let Tamsin join", self.account)),
                         ],
                         claims: vec![(1, false), (2, false)],
+                        endeavour: 1_850,
+                        buffs: vec![(bm_core::guilds::BuffKind::GrappleRun, 3, u64::MAX, true)],
                     }],
                     primary: Some(1),
                 })));

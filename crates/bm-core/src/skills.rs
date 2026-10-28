@@ -867,9 +867,13 @@ impl Effects {
             wards: self.wards.map(crate::atmosphere::ward_points),
             heal_bonus: (10.0 * self.insight).round().clamp(0.0, u16::MAX as f64) as u16,
             buff_bonus: (6.0 * self.zeal).round().clamp(0.0, 90.0) as u16,
-            // Creative mode is the server's switch, not a skill: whoever
-            // sets the body from the skills keeps the player's own.
+            // Creative mode and guild buffs are the server's, not skills:
+            // whoever sets the body from the skills keeps the player's own
+            // (`Body::keeping_switches`).
             creative: false,
+            guild_run_bonus: 0.0,
+            guild_grapple_bonus: 0.0,
+            guild_lava_percent: 0,
         }
     }
 

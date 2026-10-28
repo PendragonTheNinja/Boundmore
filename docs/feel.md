@@ -348,6 +348,12 @@ Boundless's live tree and tables exactly (Nathan, 2026-10-20), in Boundmore's na
 | Requests waiting at a guild | 100 | **guess** |
 | Guild log | the last 200 entries | **guess** |
 | Messages kept for someone away | 50 | **guess** |
+| Endeavour | 1 per 100 XP, 500 a week a member | Boundless |
+| Buff cost by tier (Minor to Mega) | 5,500 / 15,000 / 40,000 / 80,000 / 160,000 coin; 400 / 700 / 1,400 / 2,300 / 3,600 endeavour; a week | Boundless (wiki GuildBuff table) |
+| Builder's Buff | +15 / 30 / 50% chisel durability and placing speed | Boundless |
+| Grapple and Run | +0.2 / 0.4 / 0.6 blocks a second running, +5 / 15 / 25 blocks grapple | Boundless |
+| Lava Protection | 25 / 50 / 75% less lava damage | **guess** (Measure M1) |
+| Defeat Insurance | 25 / 50 / 75% less defeat XP debt | **guess** (Measure M1) |
 
 ## Living worlds (M19, `docs/milestones/19-living-worlds.md`, `bm-worldgen/src/biomes.rs`)
 

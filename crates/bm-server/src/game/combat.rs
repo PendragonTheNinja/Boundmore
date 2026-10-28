@@ -727,7 +727,9 @@ impl Game {
             return;
         }
         p.defeated = true;
-        let debt = defeat_debt(p.character.xp, p.effects.death_epic);
+        // Defeat Insurance (a guild buff, milestone 25) takes some off.
+        let debt =
+            defeat_debt(p.character.xp, p.effects.death_epic) * (100 - p.boost.defeat_percent.min(100) as u64) / 100;
         p.character.debt = p.character.debt.saturating_add(debt);
         tracing::info!("{} was defeated by {by} (XP debt {debt})", p.name);
         p.out.send(&ServerMsg::Defeated { debt, by: by.into() });
