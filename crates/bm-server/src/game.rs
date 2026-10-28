@@ -1040,8 +1040,12 @@ impl Game {
     fn universe(&self) -> Vec<PlanetSummary> {
         self.planets
             .iter()
-            .filter(|p| p.present(self.tick))
-            .map(Planet::summary)
+            .enumerate()
+            .filter(|(_, p)| p.present(self.tick))
+            .map(|(pi, p)| PlanetSummary {
+                capital: self.capital_name(pi),
+                ..p.summary()
+            })
             .collect()
     }
 
@@ -2562,6 +2566,11 @@ impl Game {
     /// forgotten one by one; everything after `Travel` on the stream belongs
     /// to the new planet.
     fn travel(&mut self, id: u32, to: usize, arrival: Option<PlayerState>) {
+        self.travel_facing(id, to, arrival, None);
+    }
+
+    /// `travel`, facing `yaw` on arriving (None keeps the facing).
+    fn travel_facing(&mut self, id: u32, to: usize, arrival: Option<PlayerState>, yaw: Option<f64>) {
         let arrival = arrival.unwrap_or_else(|| self.planets[to].arrival());
         let Some(p) = self.players.get_mut(&id) else { return };
         let from = p.planet;
@@ -2621,6 +2630,7 @@ impl Game {
             spawn: arrival,
             tick: self.tick,
             claims: planet.claims.views(),
+            yaw,
         })));
 
         tracing::info!(

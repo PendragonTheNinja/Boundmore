@@ -1619,6 +1619,9 @@ impl App {
         self.mouse = [false; 2];
         let Some(s) = &mut self.session else { return };
         tracing::info!("travelling to {} ({})", t.planet.name, t.planet.kind);
+        if let Some(yaw) = t.yaw {
+            self.yaw = yaw;
+        }
         s.arrive(t, now, local);
         self.status = format!("on {}", s.planet.name);
         if let Some(r) = &mut self.renderer {
@@ -1655,9 +1658,12 @@ impl App {
                 }
                 return;
             }
-            ServerMsg::Teleport { spawn, tick } => {
+            ServerMsg::Teleport { spawn, tick, yaw } => {
                 if let Some(Menu::Portal(_)) = self.menu {
                     self.close_menu(true);
+                }
+                if let Some(yaw) = yaw {
+                    self.yaw = yaw;
                 }
                 if let Some(s) = &mut self.session {
                     s.teleport(spawn, tick);
@@ -4405,8 +4411,14 @@ mod tests {
             pos: DVec3::new(132.5, 44.0, 123.5),
             ..Default::default()
         };
-        a.handle_msg(ServerMsg::Teleport { spawn: to, tick: 500 });
+        a.yaw = 0.0;
+        a.handle_msg(ServerMsg::Teleport {
+            spawn: to,
+            tick: 500,
+            yaw: Some(1.5),
+        });
         assert_eq!(a.menu, None);
+        assert_eq!(a.yaw, 1.5, "facing out of the portal");
         let s = a.session.as_ref().unwrap();
         assert_eq!(s.me.state, to);
         assert_eq!(s.world.chunk_count(), chunks, "chunks carry on");

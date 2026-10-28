@@ -589,6 +589,7 @@ impl Demo {
             },
             tick: 0,
             claims,
+            yaw: None,
         }))));
         self.events.push_back(NetEvent::Msg(ServerMsg::Universe {
             planets: self.universe(),
@@ -3191,6 +3192,7 @@ impl Demo {
         self.events.push_back(NetEvent::Msg(ServerMsg::Teleport {
             spawn,
             tick: self.fight.tick,
+            yaw: None,
         }));
     }
 }
@@ -3275,6 +3277,7 @@ fn demo_planets(blocks: &BlockRegistry) -> Vec<DemoPlanet> {
                     // (milestone 21), leaving in about four days.
                     host: (i == 3).then_some(0),
                     leaves: (i == 3).then_some(100 * 3600 * 60),
+                    capital: (i == 0).then(|| "Riverholm".to_string()),
                 },
                 edits,
                 flat: false,

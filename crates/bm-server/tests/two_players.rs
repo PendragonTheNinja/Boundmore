@@ -2835,8 +2835,14 @@ async fn walk_through(c: &mut TestClient, yaw: u16) -> (Option<u16>, PlayerState
         while let Ok(m) = c.msgs.try_recv() {
             c.apply(&m);
             let moved = match &m {
-                ServerMsg::Teleport { spawn, .. } => Some((None, *spawn)),
-                ServerMsg::Travel(t) => Some((Some(t.planet.id), t.spawn)),
+                ServerMsg::Teleport { spawn, yaw, .. } => {
+                    assert!(yaw.is_some(), "a portal turns you to face out of it");
+                    Some((None, *spawn))
+                }
+                ServerMsg::Travel(t) => {
+                    assert!(t.yaw.is_some(), "a portal turns you to face out of it");
+                    Some((Some(t.planet.id), t.spawn))
+                }
                 _ => None,
             };
             if let Some(r) = moved {
@@ -3719,6 +3725,13 @@ async fn prestige_makes_a_settlement_that_earns_footfall() {
         .await;
     alice.notice("This settlement is now Riverholm").await;
     settlements_until(&mut bob, |s, _| s.first().is_some_and(|s| s.name == "Riverholm")).await;
+    // The planet list names it as the capital.
+    let here = bob.planet.id;
+    bob.until(|m| {
+        matches!(m, ServerMsg::Universe { planets }
+            if planets.iter().any(|p| p.id == here && p.capital.as_deref() == Some("Riverholm")))
+    })
+    .await;
     // Breaking one of the placed blocks takes its points off.
     let before = s.prestige;
     let feet = alice.feet();

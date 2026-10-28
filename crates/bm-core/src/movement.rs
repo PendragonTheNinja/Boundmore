@@ -146,6 +146,21 @@ pub fn heading(yaw: u16) -> (DVec3, DVec3) {
     (forward, right)
 }
 
+/// The yaw (radians, as `heading` reads it) that faces along `(dx, dz)`.
+pub fn yaw_toward(dx: f64, dz: f64) -> f64 {
+    libm::atan2(dx, -dz).rem_euclid(std::f64::consts::TAU)
+}
+
+#[cfg(test)]
+#[test]
+fn yaw_toward_faces_the_way_heading_goes() {
+    for (dx, dz) in [(1.0, 0.0), (-1.0, 0.0), (0.0, 1.0), (0.0, -1.0)] {
+        let (yaw, _) = PlayerInput::from_angles(yaw_toward(dx, dz), 0.0);
+        let (f, _) = heading(yaw);
+        assert!((f.x - dx).abs() < 1e-3 && (f.z - dz).abs() < 1e-3, "{dx} {dz}: {f:?}");
+    }
+}
+
 /// Full look direction (unit) for yaw and pitch.
 pub fn look_dir(yaw: u16, pitch: i16) -> DVec3 {
     let (f, _) = heading(yaw);

@@ -25,7 +25,7 @@ use glam::DVec3;
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
 
 /// Bump on any change to a message below. Client and server must match.
-pub const PROTOCOL_VERSION: u32 = 46;
+pub const PROTOCOL_VERSION: u32 = 47;
 
 /// QUIC application protocol name; also refuses non-Boundmore peers early.
 pub const ALPN: &[u8] = b"boundmore/1";
@@ -382,6 +382,9 @@ pub struct PlanetSummary {
     pub host: Option<u16>,
     /// When a wandering world leaves (universe tick).
     pub leaves: Option<u64>,
+    /// Its capital, the settlement with the most prestige there (milestone
+    /// 24 part 4), by name.
+    pub capital: Option<String>,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -581,6 +584,9 @@ pub enum ServerMsg {
     Teleport {
         spawn: PlayerState,
         tick: u64,
+        /// The way to face on arriving (radians, `movement::heading`'s
+        /// convention): out of the portal. None keeps the facing.
+        yaw: Option<f64>,
     },
     /// What each portal token this player can see is bound to, by tag: for
     /// tooltips ("2 by 3, Verdance, near 812, 140"). Sent after the welcome
@@ -951,6 +957,8 @@ pub struct Travel {
     pub tick: u64,
     /// Every claim on the new planet.
     pub claims: Vec<ClaimView>,
+    /// The way to face on arriving, as in `ServerMsg::Teleport`.
+    pub yaw: Option<f64>,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -1289,6 +1297,7 @@ mod tests {
                     players: 100,
                     host: Some(3),
                     leaves: Some(u64::MAX),
+                    capital: Some("A settlement with a long name's Great City".into()),
                 })
                 .collect(),
             blocks: blocks.defs().to_vec(),

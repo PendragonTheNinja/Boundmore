@@ -101,8 +101,12 @@ impl Game {
             self.settle_seen[pi] = Some(seen);
             let found = self.find_settlements(pi);
             if found != self.settlements[pi] {
+                let capital = self.capital_name(pi);
                 self.settlements[pi] = found;
                 self.carry_names(pi);
+                if self.capital_name(pi) != capital {
+                    self.universe_dirty = true;
+                }
                 let msg = self.settlements_msg(pi);
                 for p in self.players.values().filter(|p| p.planet == pi) {
                     p.out.send(&msg);
@@ -156,6 +160,12 @@ impl Game {
                 self.names_dirty.insert(to);
             }
         }
+    }
+
+    /// Planet `pi`'s capital's name, if it has one.
+    pub(super) fn capital_name(&self, pi: usize) -> Option<String> {
+        let found = self.settlements.get(pi)?;
+        found.0.iter().find(|s| s.capital).map(|s| self.settlement_name(s))
     }
 
     fn settlement_name(&self, s: &Settlement) -> String {
@@ -239,6 +249,9 @@ impl Game {
         self.settlement_names.insert(s.key, name.to_string());
         self.names_dirty.insert(s.key);
         self.notice(id, &format!("This settlement is now {name}"));
+        if s.capital {
+            self.universe_dirty = true;
+        }
         let msg = self.settlements_msg(pi);
         for p in self.players.values().filter(|p| p.planet == pi) {
             p.out.send(&msg);

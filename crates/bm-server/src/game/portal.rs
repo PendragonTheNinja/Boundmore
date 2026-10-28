@@ -24,7 +24,8 @@ pub(super) struct Trip {
     from: u32,
     to: u32,
     /// Where they may come out, best first.
-    exits: Vec<BlockPos>,
+    /// With the way out of the portal there.
+    exits: Vec<(BlockPos, (i64, i64))>,
     /// Chunks of the far side kept resident for the trip.
     pinned: Vec<ChunkPos>,
     since: u64,
@@ -565,17 +566,17 @@ impl Game {
             let d = here.world.shape.delta(plane, p.state.pos);
             d.x * normals[0].0 as f64 + d.z * normals[0].1 as f64 <= 0.0
         };
-        let mut exits: Vec<BlockPos> = b
+        let mut exits: Vec<(BlockPos, (i64, i64))> = b
             .frame
             .exit_feet()
             .into_iter()
-            .map(|(e, _)| dest.world.shape.wrap_block(e))
+            .map(|(e, dir)| (dest.world.shape.wrap_block(e), dir))
             .collect();
         if !forward && exits.len() >= 2 {
             exits.swap(0, 1);
         }
         let mut pinned = BTreeSet::new();
-        for e in &exits {
+        for (e, _) in &exits {
             for dy in -1..=1 {
                 pinned.insert(dest.world.shape.wrap_chunk(e.offset(0, dy, 0).chunk()));
             }
@@ -651,8 +652,8 @@ impl Game {
             .exits
             .iter()
             .copied()
-            .find(|e| !world.solid(*e) && !world.solid(e.offset(0, 1, 0)) && world.solid(e.offset(0, -1, 0)));
-        let Some(exit) = exit else {
+            .find(|(e, _)| !world.solid(*e) && !world.solid(e.offset(0, 1, 0)) && world.solid(e.offset(0, -1, 0)));
+        let Some((exit, dir)) = exit else {
             return self.cancel_trip(id, Some("The other side of this portal is blocked"));
         };
         let account = self.players[&id].account.clone();
@@ -673,6 +674,8 @@ impl Game {
             // Energy goes with you.
             ..self.players[&id].state
         };
+        // Facing out of the far portal, the way they walked in.
+        let yaw = bm_core::movement::yaw_toward(dir.0 as f64, dir.1 as f64);
         let Some(p) = self.players.get_mut(&id) else { return };
         p.trip = None;
         p.portal_guard = true;
@@ -686,9 +689,13 @@ impl Game {
         );
         if from_planet == to_planet {
             p.state = spawn;
-            p.out.send(&ServerMsg::Teleport { spawn, tick: self.tick });
+            p.out.send(&ServerMsg::Teleport {
+                spawn,
+                tick: self.tick,
+                yaw: Some(yaw),
+            });
         } else {
-            self.travel(id, to_planet, Some(spawn));
+            self.travel_facing(id, to_planet, Some(spawn), Some(yaw));
             if let Some(p) = self.players.get_mut(&id) {
                 p.portal_guard = true;
             }

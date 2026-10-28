@@ -178,6 +178,7 @@ mod tests {
             air: Default::default(),
             host: None,
             leaves: None,
+            capital: None,
             color: [0.5, 0.4, 0.3],
             width_blocks: width,
             players: 0,

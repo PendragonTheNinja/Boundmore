@@ -106,6 +106,7 @@ impl Planet {
             color: self.look.color,
             width_blocks: self.world.shape.width_blocks() as u32,
             players: self.players.min(u16::MAX as usize) as u16,
+            capital: None,
         }
     }
 

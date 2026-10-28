@@ -2732,6 +2732,13 @@ fn worlds_tab(ui: &mut Ui, v: &TravelView, actions: &mut Vec<UiAction>) {
                                     .small(),
                             );
                             ui.label(egui::RichText::new(players_there(p.players)).color(MUTED).small());
+                            if let Some(capital) = &p.capital {
+                                ui.label(
+                                    egui::RichText::new(format!("Capital: {capital}"))
+                                        .color(GOLD_DIM)
+                                        .small(),
+                                );
+                            }
                             if let (Some(host), Some(leaves)) = (p.host, p.leaves) {
                                 let host = host_name(v.planets, host);
                                 ui.label(

@@ -59,5 +59,5 @@ See-through portal windows (a later milestone), portals that load the far side's
 - [x] Art: wayshard vein, conduit, portal surface, wayshard and token icons
 - [x] Integrated: 329 tests, fmt and clippy clean
 - [x] Follow-ups done 2026-10-27 (protocol 41): `ServerMsg::PortalClosed { id }` names the portal it closes, so a late close never shuts a window reopened on another; `PortalView::id` lets the window grey out this portal's own token.
-- [ ] Follow-up: arriving players keep their old facing (state carries no yaw)
+- [x] Follow-up: arriving players face out of the far portal, the way they walked in (`Teleport::yaw`, `Travel::yaw`, `movement::yaw_toward`; protocol 47, 2026-10-28)
 - [ ] Nathan's play-test

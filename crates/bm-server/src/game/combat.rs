@@ -787,6 +787,7 @@ impl Game {
         p.out.send(&ServerMsg::Teleport {
             spawn: s,
             tick: self.tick,
+            yaw: None,
         });
         // Returning gives up a meteor life (Boundless: the sanctum).
         self.meteor_life_lost(id);
