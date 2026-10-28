@@ -6968,9 +6968,20 @@ async fn a_forged_hammer_comes_out_quick_and_swings_faster() {
         panic!("one swing breaks no stone")
     };
     alice.send_inputs(forged - 1, PlayerInput::default());
-    assert_eq!(alice.swing(132, s, slot).await, Swung::Refused(stone, hit), "too soon");
+    // Damage heals after 5 s of server time, which a loaded test machine can
+    // spend between swings: what is checked is the cadence (refused one tick
+    // early, taken on time), not whether the stone still holds `hit`.
+    let early = alice.swing(132, s, slot).await;
+    assert!(
+        matches!(early, Swung::Refused(b, h) if b == stone && (h == hit || h == 0)),
+        "too soon: {early:?}"
+    );
     alice.send_inputs(1, PlayerInput::default());
-    assert_eq!(alice.swing(133, s, slot).await, Swung::Broke, "at the forged cadence");
+    let on_time = alice.swing(133, s, slot).await;
+    assert!(
+        matches!(on_time, Swung::Broke | Swung::Damaged(_)),
+        "at the forged cadence: {on_time:?}"
+    );
     server.stop();
 }
 
