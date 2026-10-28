@@ -814,6 +814,10 @@ pub fn coin_text(c: u64) -> String {
     format!("{} coin", grouped(c))
 }
 
+/// The settlement line's colour: a soft parchment, brighter than `MUTED`
+/// so it reads over the sky.
+const SETTLEMENT_LINE: Color32 = Color32::from_rgb(222, 210, 186);
+
 /// The line under a claim's owner (milestone 24 part 4): its settlement
 /// and the claim's prestige, or nothing for a claim with neither.
 pub fn claim_line(prestige: u64, settlement: Option<&bm_protocol::SettlementView>) -> Option<String> {
@@ -1256,7 +1260,7 @@ pub fn hud(ctx: &egui::Context, h: &Hud) {
                     ui.vertical_centered(|ui| {
                         ui.label(egui::RichText::new(text).color(colour).size(14.0));
                         if let Some(line) = &h.settlement {
-                            ui.label(egui::RichText::new(line).color(MUTED).size(12.0));
+                            ui.label(egui::RichText::new(line).color(SETTLEMENT_LINE).size(12.0));
                         }
                     });
                 });

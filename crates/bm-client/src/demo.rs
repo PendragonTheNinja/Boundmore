@@ -527,6 +527,18 @@ impl Demo {
             creatures: bm_core::creatures::CreatureKinds::builtin().defs().to_vec(),
         };
         self.events.push_back(NetEvent::Connected(Box::new(w)));
+        // The two claims make a settlement (milestone 24 part 4).
+        self.events.push_back(NetEvent::Msg(ServerMsg::Settlements {
+            settlements: vec![bm_protocol::SettlementView {
+                name: "Riverholm".into(),
+                rank: "Hamlet".into(),
+                prestige: 61_250,
+                warden: "Wren".into(),
+                capital: true,
+                claims: vec![1, 2],
+            }],
+            prestige: vec![(1, 18_400), (2, 42_850)],
+        }));
         let chunks = self.chunks_around_spawn();
         self.events.extend(chunks.into_iter().map(NetEvent::Msg));
         // Named regions (milestone 14), as the server names them; the demo's
