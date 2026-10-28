@@ -19,6 +19,7 @@ pub mod feats;
 pub mod food;
 pub mod forge;
 pub mod forms;
+pub mod guilds;
 pub mod inventory;
 pub mod items;
 pub mod light;

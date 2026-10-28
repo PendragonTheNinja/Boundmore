@@ -12,6 +12,7 @@ pub mod far;
 pub mod farm;
 pub mod forging;
 pub mod game;
+pub mod guilds;
 pub mod lapse;
 pub mod machines;
 pub mod net;
