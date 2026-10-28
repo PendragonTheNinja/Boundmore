@@ -158,9 +158,9 @@ pub fn find(claims: &[ClaimPlots], shape: PlanetShape) -> Vec<Settlement> {
         }
     }
     let mut groups: BTreeMap<usize, Vec<usize>> = BTreeMap::new();
-    for i in 0..claims.len() {
+    for (i, &joins) in joined.iter().enumerate() {
         // A claim all of road joins nothing, but stands alone.
-        let r = if joined[i] {
+        let r = if joins {
             root(&mut parent, i)
         } else {
             i + claims.len()
