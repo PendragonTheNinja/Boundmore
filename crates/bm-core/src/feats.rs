@@ -134,14 +134,18 @@ impl Ledger {
     }
 
     /// Sets counter `key` to at least `value` (a level reached, worlds
-    /// known) and pays what that reaches.
+    /// known) and pays what that, or anything counted unpaid, reaches.
     pub fn raise(&mut self, book: &FeatBook, key: &str, value: u64) -> Vec<Reached> {
         let c = self.counts.entry(key.to_string()).or_insert(0);
-        if value <= *c {
-            return Vec::new();
-        }
-        *c = value;
+        *c = (*c).max(value);
         self.settle(book)
+    }
+
+    /// Adds `n` to counter `key` without paying (its owner is away: what it
+    /// reaches is paid by the next `raise` or `add`, on their return).
+    pub fn note(&mut self, key: &str, n: u64) {
+        let c = self.counts.entry(key.to_string()).or_insert(0);
+        *c = c.saturating_add(n);
     }
 
     fn settle(&mut self, book: &FeatBook) -> Vec<Reached> {
@@ -285,10 +289,15 @@ tiers = [2, 4, 6, 8, 10]
         );
         assert_eq!(l.count(FEATS_DONE), 5);
         assert_eq!(l.coin, STARTING_COIN + 100 + 280 + 860 + 100 + 280);
+        // Counted while away: paid on the next settling.
+        l.note("placed", 10);
+        assert_eq!(l.paid["builder"], 3, "not yet");
+        let r = l.raise(&b, "level", 1);
+        assert_eq!((r[0].feat.as_str(), r[0].tier), ("builder", 4), "paid on return");
         // Never twice.
         assert!(l.add(&b, "placed", 0).is_empty());
         assert!(l.raise(&b, "placed", 5).is_empty());
-        assert_eq!(l.paid["builder"], 3);
+        assert_eq!(l.paid["builder"], 4);
         assert!(l.spend(100));
         assert!(!l.spend(u64::MAX));
     }

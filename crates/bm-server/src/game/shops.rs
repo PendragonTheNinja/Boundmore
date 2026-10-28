@@ -250,9 +250,13 @@ impl Game {
         self.ledgers_unsent.insert(id);
         tracing::info!("#{id} bought {n} for {cost} coin at {:?} (fee {fee})", at.canon);
         self.count(id, "spent", cost);
-        if let Some(owner) = self.player_by_account(&at.owner) {
-            self.count(owner, "sold", 1);
-            self.count(owner, "tax", fee);
+        match self.player_by_account(&at.owner) {
+            Some(owner) => {
+                self.count(owner, "sold", 1);
+                self.count(owner, "tax", fee);
+            }
+            // Away: counted now, paid when they next join.
+            None => self.note_away(&at.owner, &[("sold", 1), ("tax", fee)]),
         }
         Ok(())
     }
@@ -331,6 +335,24 @@ impl Game {
                 p.out.send(&Self::closed_shop(pos));
             }
         }
+    }
+
+    /// Counts toward an absent account's feats (loading its ledger); the
+    /// tiers reached are paid when they next join.
+    fn note_away(&mut self, account: &str, counts: &[(&str, u64)]) {
+        if !self.ledgers.contains_key(account) {
+            match self.store.ledger(account) {
+                Ok(l) => {
+                    self.ledgers.insert(account.to_string(), l);
+                }
+                Err(e) => return tracing::error!("counting feats for {account}: {e:#}"),
+            }
+        }
+        let l = self.ledgers.get_mut(account).expect("loaded");
+        for (key, n) in counts {
+            l.note(key, *n);
+        }
+        self.ledgers_dirty.insert(account.to_string());
     }
 
     /// Coin to an account's ledger, loading it if they are away (a lapsed
