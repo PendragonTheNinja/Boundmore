@@ -19,6 +19,9 @@
 #               breaking it takes (bm-core `mining`, tuning 2.2)
 #   opacity     for translucent blocks, how opaque they draw (default 1)
 #   light       light given off, 0-15 (default 0)
+#   light_colour  the colour of that light, sRGB (default white; milestone 26)
+#   light_tint  painted, it lights in its palette colour instead (lume)
+#   display     the name players see, when not the name in title case
 #   textures    { all = "x" } or any of top / side / bottom; names are files in
 #               assets/textures/blocks/ (docs/art-direction.md)
 #   material    rock | soil | wood | plant | crystal: which tools break it faster
@@ -280,6 +283,7 @@ build_xp = 0
 
 [[block]]
 name = "glow_crystal"
+display = "Lume"
 prestige = 3
 colourable = true
 color = [150, 230, 255]
@@ -3221,6 +3225,7 @@ build_xp = 16
 
 [[block]]
 name = "refined_glow_crystal"
+display = "Refined Lume"
 prestige = 5
 chisel = "any"
 colourable = true
@@ -3241,6 +3246,7 @@ build_xp = 16
 
 [[block]]
 name = "faceted_glow_crystal"
+display = "Faceted Lume"
 prestige = 7
 chisel = "any"
 colourable = true
@@ -4264,6 +4270,7 @@ build_xp = 12
 
 [[block]]
 name = "plain_crystal_door"
+display = "Plain Lume Door"
 prestige = 17
 chisel = "none"
 colourable = true
@@ -4283,6 +4290,7 @@ build_xp = 12
 
 [[block]]
 name = "plain_crystal_door_open"
+display = "Plain Lume Door Open"
 prestige = 17
 chisel = "none"
 colourable = true
@@ -4416,6 +4424,7 @@ build_xp = 12
 
 [[block]]
 name = "stylish_crystal_door"
+display = "Stylish Lume Door"
 prestige = 18
 chisel = "none"
 colourable = true
@@ -4435,6 +4444,7 @@ build_xp = 12
 
 [[block]]
 name = "stylish_crystal_door_open"
+display = "Stylish Lume Door Open"
 prestige = 18
 chisel = "none"
 colourable = true
@@ -4568,6 +4578,7 @@ build_xp = 12
 
 [[block]]
 name = "ornate_crystal_door"
+display = "Ornate Lume Door"
 prestige = 20
 chisel = "none"
 colourable = true
@@ -4587,6 +4598,7 @@ build_xp = 12
 
 [[block]]
 name = "ornate_crystal_door_open"
+display = "Ornate Lume Door Open"
 prestige = 20
 chisel = "none"
 colourable = true
@@ -4720,6 +4732,7 @@ build_xp = 12
 
 [[block]]
 name = "plain_crystal_trapdoor"
+display = "Plain Lume Trapdoor"
 prestige = 17
 chisel = "none"
 colourable = true
@@ -4739,6 +4752,7 @@ build_xp = 12
 
 [[block]]
 name = "plain_crystal_trapdoor_open"
+display = "Plain Lume Trapdoor Open"
 prestige = 17
 chisel = "none"
 colourable = true
@@ -4872,6 +4886,7 @@ build_xp = 12
 
 [[block]]
 name = "stylish_crystal_trapdoor"
+display = "Stylish Lume Trapdoor"
 prestige = 18
 chisel = "none"
 colourable = true
@@ -4891,6 +4906,7 @@ build_xp = 12
 
 [[block]]
 name = "stylish_crystal_trapdoor_open"
+display = "Stylish Lume Trapdoor Open"
 prestige = 18
 chisel = "none"
 colourable = true
@@ -5024,6 +5040,7 @@ build_xp = 12
 
 [[block]]
 name = "ornate_crystal_trapdoor"
+display = "Ornate Lume Trapdoor"
 prestige = 20
 chisel = "none"
 colourable = true
@@ -5043,6 +5060,7 @@ build_xp = 12
 
 [[block]]
 name = "ornate_crystal_trapdoor_open"
+display = "Ornate Lume Trapdoor Open"
 prestige = 20
 chisel = "none"
 colourable = true
@@ -5141,6 +5159,7 @@ build_xp = 12
 
 [[block]]
 name = "plain_crystal_pole"
+display = "Plain Lume Pole"
 prestige = 12
 chisel = "none"
 colourable = true
@@ -5220,6 +5239,7 @@ build_xp = 12
 
 [[block]]
 name = "stylish_crystal_pole"
+display = "Stylish Lume Pole"
 prestige = 15
 chisel = "none"
 colourable = true
@@ -5299,6 +5319,7 @@ build_xp = 12
 
 [[block]]
 name = "ornate_crystal_pole"
+display = "Ornate Lume Pole"
 prestige = 16
 chisel = "none"
 colourable = true
@@ -5378,6 +5399,7 @@ build_xp = 12
 
 [[block]]
 name = "plain_crystal_beam"
+display = "Plain Lume Beam"
 prestige = 12
 chisel = "none"
 colourable = true
@@ -5457,6 +5479,7 @@ build_xp = 12
 
 [[block]]
 name = "stylish_crystal_beam"
+display = "Stylish Lume Beam"
 prestige = 15
 chisel = "none"
 colourable = true
@@ -5536,6 +5559,7 @@ build_xp = 12
 
 [[block]]
 name = "ornate_crystal_beam"
+display = "Ornate Lume Beam"
 prestige = 16
 chisel = "none"
 colourable = true
@@ -5837,6 +5861,7 @@ build_xp = 12
 
 [[block]]
 name = "plain_crystal_storage"
+display = "Plain Lume Storage"
 prestige = 8
 chisel = "any"
 colourable = true
@@ -5858,6 +5883,7 @@ build_xp = 12
 
 [[block]]
 name = "stylish_crystal_storage"
+display = "Stylish Lume Storage"
 prestige = 10
 chisel = "any"
 colourable = true
@@ -5879,6 +5905,7 @@ build_xp = 12
 
 [[block]]
 name = "ornate_crystal_storage"
+display = "Ornate Lume Storage"
 prestige = 12
 chisel = "any"
 colourable = true
@@ -6074,6 +6101,7 @@ build_xp = 12
 
 [[block]]
 name = "crystal_sign"
+display = "Lume Sign"
 prestige = 17
 chisel = "none"
 colourable = true
@@ -6094,6 +6122,7 @@ build_xp = 12
 
 [[block]]
 name = "crystal_sign_panel"
+display = "Lume Sign Panel"
 prestige = 17
 chisel = "none"
 colourable = true
@@ -6318,8 +6347,8 @@ build_xp = 16
 
 # Milestone 26: gem torches (Boundless's six), placed on floors and walls
 # like torches, each lighting in its gem's colour (light 14 a guess:
-# brighter than glow crystal, as Boundless's were), and the crystal lantern
-# (Boundless's gleam lantern), lighting in its crystal's colour.
+# brighter than lume (glow crystal), as Boundless's were), and the lume
+# lantern (Boundless's gleam lantern), lighting in its lume's colour.
 
 [[block]]
 name = "amethyst_torch"
@@ -6839,6 +6868,7 @@ drops = "ruby_torch"
 
 [[block]]
 name = "crystal_lantern"
+display = "Lume Lantern"
 prestige = 16
 chisel = "any"
 colourable = true

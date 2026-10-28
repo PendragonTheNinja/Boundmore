@@ -2724,7 +2724,7 @@ impl App {
                         .block(pos)
                         .map(|b| s.world.registry.get(b))
                         .filter(|d| d.storage > 0)
-                        .map(|d| bm_core::items::title_case(&d.name))
+                        .map(|d| d.display_name())
                         .unwrap_or_else(|| "Storage".into());
                     let slots = storage_view.filter(|v| v.pos == pos).map(|v| v.slots.as_slice());
                     menus::storage(

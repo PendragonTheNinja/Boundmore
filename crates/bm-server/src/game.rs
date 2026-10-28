@@ -2532,7 +2532,7 @@ impl Game {
                 {
                     return Err(Refusal::Told(format!(
                         "Only 4 {} blocks can touch",
-                        bm_core::items::title_case(&reg.get(block).name)
+                        reg.get(block).display_name()
                     )));
                 }
                 if reg.get(block).station == Some(Station::SparkGenerator)

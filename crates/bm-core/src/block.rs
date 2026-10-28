@@ -72,6 +72,10 @@ impl BlockId {
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct BlockDef {
     pub name: String,
+    /// The name players see, when it is not the internal name in title case
+    /// (`display_name`; milestone 26: the lume family keeps its saved names).
+    #[serde(default)]
+    pub display: Option<String>,
     /// Side colour, and every face's unless overridden below.
     pub color: [u8; 3],
     #[serde(default)]
@@ -376,6 +380,13 @@ fn full_opacity() -> f32 {
 }
 
 impl BlockDef {
+    /// The name players see.
+    pub fn display_name(&self) -> String {
+        self.display
+            .clone()
+            .unwrap_or_else(|| crate::items::title_case(&self.name))
+    }
+
     /// Whether the block produces geometry at all.
     pub fn renders(&self) -> bool {
         self.opaque || self.translucent || self.mount.is_some()

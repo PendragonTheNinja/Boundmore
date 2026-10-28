@@ -2288,7 +2288,7 @@ pub fn station_name(blocks: &BlockRegistry, station: Station) -> String {
     blocks
         .iter()
         .find(|(_, d)| d.station == Some(station))
-        .map(|(_, d)| bm_core::items::title_case(&d.name))
+        .map(|(_, d)| d.display_name())
         .unwrap_or_else(|| format!("{station:?}"))
 }
 

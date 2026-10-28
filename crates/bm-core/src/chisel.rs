@@ -5,7 +5,6 @@
 //! a player in the way of a fill) are the server's.
 
 use crate::block::{BlockDef, BlockState, Chiselling, Shape};
-use crate::items::title_case;
 use crate::shape::{ShapeFamily, edge_pairs};
 
 /// Why a chisel cannot act: words for the player, or a reason only worth
@@ -35,13 +34,13 @@ pub fn apply(
     if def.hard && !advanced {
         return Err(Refused::Told(format!(
             "{} is too hard: it takes an advanced chisel",
-            title_case(&def.name)
+            def.display_name()
         )));
     }
     if !def.chisel.allows(family) {
         return Err(Refused::Told(match def.chisel {
             Chiselling::Slope => "Natural ground takes only slope chisels".into(),
-            _ => format!("{} cannot be chiselled", title_case(&def.name)),
+            _ => format!("{} cannot be chiselled", def.display_name()),
         }));
     }
     // Precise chisels move one octant, ordinary ones an edge's two.
@@ -54,7 +53,7 @@ pub fn apply(
         return Err(Refused::Quiet("not a cut this chisel makes"));
     }
     if state.shape.is_form() {
-        return Err(Refused::Told(format!("{} cannot be chiselled", title_case(&def.name))));
+        return Err(Refused::Told(format!("{} cannot be chiselled", def.display_name())));
     }
     let cut = if state.shape.is_valid() {
         state.shape

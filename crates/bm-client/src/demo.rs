@@ -2673,7 +2673,7 @@ impl Demo {
         let old = state.id;
         let full_chest = self.here == 0 && self.chests.get(&pos).is_some_and(|c| c.iter().any(Option::is_some));
         if full_chest {
-            let name = bm_core::items::title_case(&self.blocks.get(old).name);
+            let name = self.blocks.get(old).display_name();
             self.notice(&format!("Empty the {name} before breaking it"));
             return self.answer_edit(seq, pos, state, false);
         }

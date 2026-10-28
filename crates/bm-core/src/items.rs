@@ -681,7 +681,7 @@ impl ItemRegistry {
             if b.placeable {
                 defs.push(ItemDef {
                     name: b.name.clone(),
-                    display: title_case(&b.name),
+                    display: b.display_name(),
                     kind: ItemKind::Block(id),
                     stack: 100,
                     icon: None,
@@ -971,6 +971,14 @@ mod tests {
         assert_eq!(i.drop_of(b.id("coal_seam").unwrap()), Some(i.id("coal").unwrap()));
         assert_eq!(i.drop_of(BlockId::AIR), None);
         assert_eq!(i.get(stone_item).unwrap().display, "Stone");
+        // The glow crystal family shows as lume (milestone 26); its saved
+        // names stay.
+        assert_eq!(i.get(i.id("glow_crystal").unwrap()).unwrap().display, "Lume");
+        assert_eq!(
+            b.get(b.id("plain_crystal_door").unwrap()).display_name(),
+            "Plain Lume Door"
+        );
+        assert_eq!(b.get(b.id("crystal_lantern").unwrap()).display_name(), "Lume Lantern");
     }
 
     const HAND: &str = "";

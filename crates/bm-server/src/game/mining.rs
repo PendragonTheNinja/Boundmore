@@ -7,7 +7,6 @@ use super::{Game, Refusal, in_reach, send_slots, swing_tool_of, wear_slot};
 use crate::world::World;
 use bm_core::forge::Held;
 use bm_core::items::ToolClass;
-use bm_core::items::title_case;
 use bm_core::mining::{
     MAX_TIER, aoe_blocks, block_health, bonus_count, is_crit, skilled_tool, skilled_tool_keen, swing_damage,
     swing_ticks,
@@ -150,13 +149,13 @@ impl Game {
         if planet.storage.has_contents(canon) {
             return Err(Refusal::Told(format!(
                 "Empty the {} before breaking it",
-                title_case(&def.name)
+                def.display_name()
             )));
         }
         if planet.shops.till(canon) > 0 {
             return Err(Refusal::Told(format!(
                 "Take the coin from the {} before breaking it",
-                title_case(&def.name)
+                def.display_name()
             )));
         }
         if let Some(pid) = self.portals.at(planet.id, canon)
