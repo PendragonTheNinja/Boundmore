@@ -215,7 +215,7 @@ struct Session {
     remotes: Remotes,
     /// Each remote player's held light (`RemotePlayer::light`), from the
     /// latest snapshot.
-    remote_lights: HashMap<u32, u8>,
+    remote_lights: HashMap<u32, [u8; 3]>,
     items: Items,
     icons: ItemIcons,
     claims: Claims,
@@ -349,7 +349,7 @@ impl Session {
             progress: Progress::new(tree, w.character),
             claims: Claims::new(shape, w.claims),
             signs: crate::signs::Signs::default(),
-            world: ClientWorld::new(shape, registry),
+            world: ClientWorld::new(shape, registry, &w.colours),
             me: Predictor::new(w.spawn),
             remotes: Remotes::default(),
             remote_lights: HashMap::new(),
@@ -394,7 +394,7 @@ impl Session {
         let shape = t.planet.shape;
         let registry = self.world.registry.clone();
         self.far = crate::far::FarWorld::new(shape, registry.flags());
-        self.world = ClientWorld::new(shape, registry);
+        self.world = ClientWorld::new(shape, registry, &self.items.colours);
         self.signs.clear();
         self.claims = Claims::new(shape, t.claims);
         self.remotes = Remotes::default();
@@ -889,21 +889,24 @@ impl Session {
 
     /// Held torches as point lights (`Renderer::set_point_lights`): ours at
     /// the hand (where the rope starts), everyone else's at their hands.
-    fn held_lights(&self, remotes: &[(u32, RemoteSample)], camera: &Camera) -> Vec<(DVec3, u8)> {
-        // A torch, or a Glowing tool (milestone 17).
-        let held = self.items.held_light_of(self.items.slot(self.selected).as_ref());
+    fn held_lights(&self, remotes: &[(u32, RemoteSample)], camera: &Camera) -> Vec<(DVec3, [u8; 3])> {
+        // A torch in its colour, or a Glowing tool (milestone 17).
+        let held = self.items.held_rgb_of(self.items.slot(self.selected).as_ref());
         // The light-source epic lights around us like a held torch.
         // A Glowing brew lights around us too (milestone 23 part 2).
-        let mine = crate::skills::carried_light(held, self.progress.effects()).max(self.me.state.brew_light());
+        let mine = bm_core::light::brighter(
+            crate::skills::carried_light(held, self.progress.effects()),
+            [self.me.state.brew_light(); 3],
+        );
         let forward = camera.forward();
         let right = forward.cross(DVec3::Y).normalize_or_zero();
         let hand = camera.eye + right * 0.3 - DVec3::Y * 0.35 + forward * 0.4;
         let others = remotes.iter().filter_map(|(id, smp)| {
-            let light = self.remote_lights.get(id).copied().unwrap_or(0);
-            (light > 0).then(|| (smp.pos + DVec3::new(0.0, bm_core::movement::ROPE_HEIGHT, 0.0), light))
+            let light = self.remote_lights.get(id).copied().unwrap_or([0; 3]);
+            (light != [0; 3]).then(|| (smp.pos + DVec3::new(0.0, bm_core::movement::ROPE_HEIGHT, 0.0), light))
         });
         std::iter::once((hand, mine))
-            .filter(|l| l.1 > 0)
+            .filter(|l| l.1 != [0; 3])
             .chain(others)
             .collect()
     }
@@ -4109,7 +4112,7 @@ mod tests {
                 yaw: 0,
                 pitch: 0,
                 hook: None,
-                light: 0,
+                light: [0; 3],
             }],
             creatures: Vec::new(),
         }
@@ -4353,8 +4356,9 @@ mod tests {
             forge: bm_core::forge::Forged::from_suffix("glowing2"),
             ..ItemStack::new(hammer, 1)
         };
-        assert_eq!(s.items.held_light_of(Some(&glowing)), bm_core::forge::glow_light(2));
-        assert_eq!(s.items.held_light_of(Some(&ItemStack::new(hammer, 1))), 0);
+        // A Glowing boon lights white.
+        assert_eq!(s.items.held_rgb_of(Some(&glowing)), [bm_core::forge::glow_light(2); 3]);
+        assert_eq!(s.items.held_rgb_of(Some(&ItemStack::new(hammer, 1))), [0; 3]);
     }
 
     #[test]

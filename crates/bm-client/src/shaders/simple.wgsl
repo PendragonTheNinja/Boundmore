@@ -12,8 +12,9 @@ struct BoxIn {
     @location(4) color: vec4<f32>,
     // A unit quaternion (x, y, z, w) turning the box about its centre.
     @location(5) rotation: vec4<f32>,
-    // x: sky light, y: block light (0..1, from the light map where the box
-    // stands), z: brightness, w: glow (0 lit like terrain, 1 shines alone).
+    // x: sky light, y: block light (0..1 white, or from 16 three levels
+    // packed as 16 + r + 16 g + 256 b; `box_block_light`), z: brightness,
+    // w: glow (0 lit like terrain, 1 shines alone).
     @location(6) light: vec4<f32>,
 };
 
@@ -24,6 +25,15 @@ struct BoxOut {
     @location(2) normal: vec3<f32>,
     @location(3) light: vec4<f32>,
 };
+
+// A box's block light per channel, 0..1 (`BoxInstance::light_of`).
+fn box_block_light(y: f32) -> vec3<f32> {
+    if (y < 16.0) {
+        return vec3<f32>(y);
+    }
+    let v = u32(round(y - 16.0));
+    return vec3<f32>(f32(v & 15u), f32((v >> 4u) & 15u), f32((v >> 8u) & 15u)) / 15.0;
+}
 
 fn rotate(q: vec4<f32>, v: vec3<f32>) -> vec3<f32> {
     let t = 2.0 * cross(q.xyz, v);
@@ -48,10 +58,10 @@ fn vs_box(in: BoxIn) -> BoxOut {
 fn fs_box(in: BoxOut) -> @location(0) vec4<f32> {
     let n = normalize(in.normal);
     let sky = light_curve(in.light.x);
-    let block = light_curve(max(in.light.y, point_light(in.rel, n)));
+    let block = light_curve3(max(box_block_light(in.light.y), point_light(in.rel, n)));
     let sun = max(dot(n, g.sun_dir.xyz), 0.0) * g.sun_dir.w;
     let sky_light = sky * g.sun_color.w * (0.82 + 0.18 * sun);
-    let light = max(vec3<f32>(sky_light), BLOCK_TINT * block) + AMBIENT;
+    let light = max(vec3<f32>(sky_light), block) + AMBIENT;
     let lit = in.color * face_shade(n) * light * in.light.z;
     let c = mix(lit, in.color, clamp(in.light.w, 0.0, 1.0));
     let d = length(in.rel);

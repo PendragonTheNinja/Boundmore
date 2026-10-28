@@ -1431,7 +1431,8 @@ pub fn paint_icon(name: &str) -> Option<Tex> {
                 .or_else(|| crate::building::paint_icon(other))
                 .or_else(|| crate::doors::paint_icon(other))
                 .or_else(|| crate::signs::paint_icon(other))
-                .or_else(|| crate::brews::paint_icon(other));
+                .or_else(|| crate::brews::paint_icon(other))
+                .or_else(|| crate::lights::paint_icon(other));
         }
     })
 }

@@ -99,6 +99,14 @@ pub struct BlockDef {
     /// Light the block gives off, 0 (none) to 15.
     #[serde(default)]
     pub light: u8,
+    /// The colour of that light (sRGB; milestone 26). Each channel gives
+    /// off `light x c / 255` (`light::emission`), so dark colours reach less
+    /// far, as in Boundless.
+    #[serde(default = "white")]
+    pub light_colour: [u8; 3],
+    /// Painted, it lights in its palette colour instead (glow crystals).
+    #[serde(default)]
+    pub light_tint: bool,
     /// Texture names per face (`docs/art-direction.md`). Every block that
     /// renders must resolve all three faces.
     #[serde(default)]
@@ -359,6 +367,10 @@ fn full_heat() -> f32 {
     1.0
 }
 
+fn white() -> [u8; 3] {
+    [255; 3]
+}
+
 fn full_opacity() -> f32 {
     1.0
 }
@@ -555,6 +567,8 @@ impl BlockRegistry {
             opaque: self.defs.iter().map(|d| d.opaque).collect(),
             translucent: self.defs.iter().map(|d| d.translucent).collect(),
             light: self.defs.iter().map(|d| d.light).collect(),
+            light_colour: self.defs.iter().map(|d| d.light_colour).collect(),
+            light_tint: self.defs.iter().map(|d| d.light_tint).collect(),
             mount: self.defs.iter().map(|d| d.mount).collect(),
             model: self.defs.iter().map(|d| d.model).collect(),
             soft: self.defs.iter().map(|d| d.health == Health::Soft).collect(),
@@ -571,6 +585,8 @@ pub struct BlockFlags {
     opaque: Vec<bool>,
     translucent: Vec<bool>,
     light: Vec<u8>,
+    light_colour: Vec<[u8; 3]>,
+    light_tint: Vec<bool>,
     mount: Vec<Option<Mount>>,
     model: Vec<Model>,
     soft: Vec<bool>,
@@ -616,6 +632,30 @@ impl BlockFlags {
     #[inline]
     pub fn light(&self, id: BlockId) -> u8 {
         self.light.get(id.0 as usize).copied().unwrap_or(0)
+    }
+
+    /// The colour of the light it gives off (sRGB).
+    #[inline]
+    pub fn light_colour(&self, id: BlockId) -> [u8; 3] {
+        self.light_colour.get(id.0 as usize).copied().unwrap_or([255; 3])
+    }
+
+    /// Painted, it lights in its palette colour.
+    #[inline]
+    pub fn light_tint(&self, id: BlockId) -> bool {
+        self.light_tint.get(id.0 as usize).copied().unwrap_or(false)
+    }
+
+    /// The light a block in this state gives off, per channel (red, green,
+    /// blue), 0 to 15 each: its level in its own colour, or in its palette
+    /// colour when painted and tinted.
+    pub fn emission(&self, s: BlockState, palette: Option<&crate::ColourPalette>) -> [u8; 3] {
+        let level = self.light(s.id);
+        let colour = match palette.and_then(|p| p.get(s.colour)) {
+            Some(c) if self.light_tint(s.id) => c.rgb,
+            _ => self.light_colour(s.id),
+        };
+        crate::light::emission(level, colour)
     }
 
     /// Where a prop attaches (`None` for every block that is not a prop).

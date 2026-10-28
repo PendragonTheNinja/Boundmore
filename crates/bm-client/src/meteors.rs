@@ -186,11 +186,13 @@ impl Sky {
     }
 
     /// Light from meteors: a falling rock glows, an open heart glows.
-    pub fn lights(&self, shape: PlanetShape, eye: DVec3) -> Vec<(DVec3, u8)> {
+    pub fn lights(&self, shape: PlanetShape, eye: DVec3) -> Vec<(DVec3, [u8; 3])> {
+        // The heart's own fiery colour (its block's `light_colour`).
+        let glow = bm_core::light::emission(12, [255, 172, 112]);
         self.meteors
             .values()
             .filter(|m| matches!(m.phase, MeteorPhase::Fighting { .. }))
-            .map(|m| (shape.nearest_lap(eye, site_centre(m)) + DVec3::new(0.0, 2.0, 0.0), 12))
+            .map(|m| (shape.nearest_lap(eye, site_centre(m)) + DVec3::new(0.0, 2.0, 0.0), glow))
             .collect()
     }
 }

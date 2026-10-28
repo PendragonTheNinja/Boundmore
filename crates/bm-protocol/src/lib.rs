@@ -25,7 +25,7 @@ use glam::DVec3;
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
 
 /// Bump on any change to a message below. Client and server must match.
-pub const PROTOCOL_VERSION: u32 = 51;
+pub const PROTOCOL_VERSION: u32 = 52;
 
 /// QUIC application protocol name; also refuses non-Boundmore peers early.
 pub const ALPN: &[u8] = b"boundmore/1";
@@ -1183,8 +1183,9 @@ pub struct RemotePlayer {
     /// Their grapple hook while one is out, from their feet in 1/256 blocks
     /// (a hook never flies further than a grapple's range, well under 128).
     pub hook: Option<[i16; 3]>,
-    /// Light from what they hold in hand (a torch), 0 for none.
-    pub light: u8,
+    /// Light from what they hold in hand (a torch), per channel (red,
+    /// green, blue; milestone 26), 0 for none.
+    pub light: [u8; 3],
 }
 
 impl RemotePlayer {
@@ -1253,8 +1254,9 @@ pub const CREATURES_PER_SNAPSHOT: usize = 40;
 
 /// Remote players per snapshot datagram, keeping each under the ~1200-byte
 /// path MTU QUIC assumes even when every one of them has a grapple out
-/// (25 since milestone 23 put the brews in our own state).
-pub const PLAYERS_PER_SNAPSHOT: usize = 25;
+/// (25 since milestone 23 put the brews in our own state; 23 since
+/// milestone 26 gave held light three channels).
+pub const PLAYERS_PER_SNAPSHOT: usize = 23;
 
 #[derive(Debug, thiserror::Error)]
 pub enum DecodeError {
@@ -1418,7 +1420,7 @@ mod tests {
                     yaw: u16::MAX,
                     pitch: i16::MIN,
                     hook: Some([i16::MIN; 3]),
-                    light: u8::MAX,
+                    light: [u8::MAX; 3],
                 };
                 PLAYERS_PER_SNAPSHOT
             ],

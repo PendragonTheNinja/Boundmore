@@ -23,13 +23,14 @@ pub struct ClientWorld {
 }
 
 impl ClientWorld {
-    pub fn new(shape: PlanetShape, registry: BlockRegistry) -> Self {
+    /// `colours`: the palette painted glow crystals light in (milestone 26).
+    pub fn new(shape: PlanetShape, registry: BlockRegistry, colours: &bm_core::ColourPalette) -> Self {
         Self {
             shape,
             flags: registry.flags(),
             chunks: HashMap::new(),
             pending: HashMap::new(),
-            light: LightMap::new(shape, &registry.flags()),
+            light: LightMap::new(shape, &registry.flags()).with_colours(colours),
             registry,
             mesher: Mesher::new(),
         }
@@ -392,7 +393,7 @@ mod tests {
     fn the_physics_shape_is_the_servers() {
         let reg = BlockRegistry::builtin();
         let stone = reg.id("stone").unwrap();
-        let mut w = ClientWorld::new(PlanetShape::new(4, 1), reg);
+        let mut w = ClientWorld::new(PlanetShape::new(4, 1), reg, &bm_core::ColourPalette::builtin());
         let cut = Shape::new(ShapeFamily::Slope, 0b1100_0000).unwrap();
         let mut c = Chunk::empty();
         c.set_state(
@@ -430,7 +431,7 @@ mod tests {
     fn a_break_the_server_did_not_make_is_undone() {
         let registry = BlockRegistry::builtin();
         let stone = registry.id("stone").unwrap();
-        let mut w = ClientWorld::new(PlanetShape::new(4, 2), registry);
+        let mut w = ClientWorld::new(PlanetShape::new(4, 2), registry, &bm_core::ColourPalette::builtin());
         let mut c = Chunk::empty();
         c.set_state(LocalPos::new(1, 2, 3), BlockState::plain(stone));
         w.insert_chunk(ChunkPos::new(0, 0, 0), c);

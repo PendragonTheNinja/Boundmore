@@ -13,7 +13,7 @@ What a Boundless player expects to find, and where each stands. "Ours" is the Bo
 | Freeform building | Every block editable, huge palette, colours | **Done** for placing and breaking; palette and colours: M2 |
 | Shaped blocks (chisel) | Slopes, bevels, cuts on any block | M7. Decided (Nathan, 2026-10-19): Boundless's square, slope and bevel families on the 2x2x2 corner grid, precise versions as better-tier tools, plus a round family (rounded edges and corners; Nathan: try it and see how it works); lattice frames later; room in the shape encoding for 8 families. Terrain chisels as slopes only |
 | Mining by hand and tool | Swings that deal damage against block health; world tiers add health and armour; the right tool; more ore on harder worlds; AoE from forging | M9 (`milestones/09-mining-and-light.md`): Boundless's numbers exactly (Nathan, 2026-10-20). Energy, skills and forging later |
-| Light and darkness | Dark caves, torches, glowing ores, day and night | **Done** for light, dark and glowing blocks (M2). Torches, placed and held: M9. Gem torches, lanterns and tinted light later |
+| Light and darkness | Dark caves, torches, glowing ores, day and night | **Done** for light, dark and glowing blocks (M2). Torches, placed and held: M9. Coloured light, glow crystals in their worlds' colours, gem torches and the crystal lantern: M26 |
 | Inventory and crafting | Gather, craft at machines that run over time, upgrade with power | **Done** for inventory, hand crafting, workbench and furnace (M3). Boundless's own chain and machines: M11. Power and spark later |
 | Gathering objects | Plants, flowers, boulders and fungi as models on every world; the main source of leaves, flint, food and forge materials | **Built** in M11 (Nathan, 2026-10-20: "the plants are really important"): 20 kinds, placement guessed |
 | Plots and beacons | Claim land so builds are protected; costs upkeep | **Done** for claims (M3). **Changed on purpose:** no fuel; a claim lapses after 6 months without a visit and its contents go back to the owner (the research below) |
@@ -80,6 +80,8 @@ What a Boundless player expects to find, and where each stands. "Ours" is the Bo
 
 **M25: Friends, permissions and guilds** (specced 2026-10-28, waiting on Nathan's decisions, `milestones/25-guilds.md`). A friends list, Boundless's Builder, Worker and Engineer rights on claims, then guilds, messages and guild buffs.
 
+**M26: Coloured light** (built 2026-10-28, `milestones/26-coloured-light.md`). Block light in red, green and blue; glow crystals light in their worlds' colours; gem torches and the crystal lantern.
+
 *After that, still Boundless first (Nathan, 2026-10-19 and 2026-10-20): creatures and combat (bone, tallow and hide, then glue's real recipe), food and hunger, forging. Each gets its own spec and number when it starts.*
 
 **Society.** Shop stands, request baskets, settlements and their ranking, guilds, mail.
@@ -99,6 +101,8 @@ What a Boundless player expects to find, and where each stands. "Ours" is the Bo
 "Eventually we'll need to do another worldgen pass to make planets more interesting overall, and the different tree types, different stone types, et cetera." Boundless's worlds have three rock kinds (igneous, sedimentary, metamorphic) each with its trace ore, three wood and leaf kinds, several soils (silty, clay, peaty), mud, gravel and sand kinds, biomes per world type, cave networks, floating islands, lower seas, and per-type surface features (the official world-builder configs in `monumentalco/boundless.worlds`, CC BY 4.0, hold the shapes: biomes, noise, caves, strata; tuning 4.13.4). It changes generated terrain, so it bumps `GENERATOR_VERSION`, and the server must keep the old generator for planets already made (as it keeps version 2): a spec decides that first.
 
 ## Later art passes
+
+- **Item icons up to the blocks' standard** (Nathan, 2026-10-28): the block textures look much better than the inventory icons. Not now (systems first), but a planned pass: icons drawn with the blocks' painterly ramps and shading at a higher resolution, or replaced by Flow-made icons through the same drop-in pipeline as the textures.
 
 - **Three kinds of rock** (Nathan, 2026-10-22). Boundless has three rock kinds (igneous, sedimentary, metamorphic), on every world, each recoloured per world and each with its own trace ore (tuning 4: sulphur, saltpetre, olivine). For now Boundmore keeps one stone texture; when planet generation grows, that texture becomes **one** of the three, and the other two get their own textures and placement.
 

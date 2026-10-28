@@ -327,11 +327,14 @@ enum Role {
     Soil,
     Sand,
     Frost,
+    Glow,
 }
 
 fn role(block: &str) -> Role {
     let has = |w: &str| block.contains(w);
-    if has("trunk") {
+    if has("glow") {
+        Role::Glow
+    } else if has("trunk") {
         Role::Wood
     } else if has("turf") || has("foliage") || has("frond") || has("leaf") || has("leaves") || has("moss") {
         Role::Growth
@@ -386,6 +389,12 @@ pub fn colour_choices(
             Role::Soil => (vec![b + lean, b, b + 2 * lean], &["Dark", "Dusky", "Muted", "Deep"]),
             Role::Sand => (vec![b, 2, 3, 4], &["Light", "Pale", "Faded", "Soft"]),
             Role::Frost => (vec![b, b + 1], &["Misty", "Pale", "Soft", "Light"]),
+            // Glow crystal anywhere round the circle, always bright: a
+            // wanderer's crystal colours are what players come for.
+            Role::Glow => (
+                vec![b + 8, b + 3, b - 5, b + 11],
+                &["Bright", "Light", "Pale", "Bright", "True"],
+            ),
         };
         let mut names: Vec<String> = Vec::new();
         for _ in 0..6 {

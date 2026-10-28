@@ -836,6 +836,14 @@ impl ItemDef {
     pub fn held_light_of(&self, stack: &ItemStack) -> u8 {
         stack.forge.held_light(self.held_light)
     }
+
+    /// The light held in hand per channel (red, green, blue; milestone 26):
+    /// the item's own in its colour, and a Glowing boon's white light, the
+    /// brighter in each channel.
+    pub fn held_rgb_of(&self, stack: &ItemStack) -> [u8; 3] {
+        let own = crate::light::emission(self.held_light, self.held_colour);
+        crate::light::brighter(own, [stack.forge.held_light(0); 3])
+    }
 }
 
 // ---------------------------------------------------------------- the forger

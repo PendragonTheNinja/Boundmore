@@ -2,8 +2,10 @@
 //!
 //! # Rules
 //!
-//! Every cell holds two levels, 0 to 15: **sky** light and **block** light.
-//! Light is the smallest assignment that satisfies, for every cell:
+//! Every cell holds four levels, 0 to 15: **sky** light and **block** light
+//! in three channels, red, green and blue (milestone 26). Each channel is
+//! independent: light is the smallest assignment that satisfies, for every
+//! cell and channel:
 //!
 //! - an opaque cell holds no sky light, and block light equal to its own
 //!   emission (a glow crystal is lit; light never passes through it);
@@ -43,14 +45,15 @@
 //!
 //! # Storage
 //!
-//! [`ChunkLight`] is one byte per voxel (sky in the high nibble, block light in
-//! the low one), or a single value for a chunk that is uniform (open sky above
+//! [`ChunkLight`] is two bytes per voxel (sky, red, green, blue, a nibble
+//! each, from the high end), or a single value for a chunk that is uniform (open sky above
 //! the terrain, solid dark rock below). Dense arrays are shared behind an `Arc`
 //! and copied on write, so a mesh job can hold a snapshot cheaply while the map
 //! moves on.
 
-use crate::block::BlockFlags;
+use crate::block::{BlockFlags, BlockState};
 use crate::chunk::Chunk;
+use crate::colours::ColourPalette;
 use crate::coords::{BlockPos, CHUNK_SIZE, CHUNK_VOLUME, ChunkPos, LocalPos};
 use crate::planet::PlanetShape;
 use std::collections::{HashMap, HashSet};
@@ -60,26 +63,54 @@ use std::sync::Arc;
 /// The brightest light level.
 pub const MAX_LIGHT: u8 = 15;
 
-/// One cell's light: sky in the high four bits, block light in the low four.
+/// One cell's light: sky, red, green and blue block light, four bits each
+/// from the high end.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, PartialOrd, Ord)]
-pub struct Light(pub u8);
+pub struct Light(pub u16);
 
 impl Light {
     pub const DARK: Light = Light(0);
     /// Sky 15, block 0: what lies above the planet.
-    pub const OPEN_SKY: Light = Light(0xf0);
+    pub const OPEN_SKY: Light = Light(0xf000);
 
+    /// Sky light and white block light.
     pub const fn new(sky: u8, block: u8) -> Self {
-        Light((sky & 15) << 4 | (block & 15))
+        Self::rgb(sky, [block, block, block])
+    }
+
+    /// Sky light and block light per channel (red, green, blue).
+    pub const fn rgb(sky: u8, c: [u8; 3]) -> Self {
+        Light(((sky & 15) as u16) << 12 | ((c[0] & 15) as u16) << 8 | ((c[1] & 15) as u16) << 4 | (c[2] & 15) as u16)
     }
 
     pub const fn sky(self) -> u8 {
-        self.0 >> 4
+        (self.0 >> 12) as u8
     }
 
-    pub const fn block(self) -> u8 {
-        self.0 & 15
+    /// Block light per channel: red, green, blue.
+    pub const fn block_rgb(self) -> [u8; 3] {
+        [(self.0 >> 8 & 15) as u8, (self.0 >> 4 & 15) as u8, (self.0 & 15) as u8]
     }
+
+    /// The brightest channel of block light.
+    pub const fn block(self) -> u8 {
+        let [r, g, b] = self.block_rgb();
+        let m = if r > g { r } else { g };
+        if m > b { m } else { b }
+    }
+}
+
+/// The brighter of two lights in each channel.
+pub fn brighter(a: [u8; 3], b: [u8; 3]) -> [u8; 3] {
+    [a[0].max(b[0]), a[1].max(b[1]), a[2].max(b[2])]
+}
+
+/// What a light of `level` in `colour` (sRGB) gives off per channel:
+/// `level x c / 255`, rounded. White light keeps its level in every channel;
+/// a dark colour reaches less far than a light one, as in Boundless.
+pub fn emission(level: u8, colour: [u8; 3]) -> [u8; 3] {
+    let l = level.min(MAX_LIGHT) as u32;
+    colour.map(|c| ((l * c as u32 + 127) / 255) as u8)
 }
 
 /// The light of one chunk.
@@ -89,11 +120,11 @@ pub struct ChunkLight(Repr);
 #[derive(Clone, Debug)]
 enum Repr {
     Uniform(Light),
-    Dense(Arc<[u8; CHUNK_VOLUME]>),
+    Dense(Arc<[u16; CHUNK_VOLUME]>),
 }
 
-fn filled(v: u8) -> Arc<[u8; CHUNK_VOLUME]> {
-    let b: Box<[u8; CHUNK_VOLUME]> = vec![v; CHUNK_VOLUME]
+fn filled(v: u16) -> Arc<[u16; CHUNK_VOLUME]> {
+    let b: Box<[u16; CHUNK_VOLUME]> = vec![v; CHUNK_VOLUME]
         .into_boxed_slice()
         .try_into()
         .expect("exactly one chunk of cells");
@@ -159,10 +190,10 @@ impl ChunkLight {
 
     /// Heap bytes this chunk's light owns (shared copies count in full).
     pub fn heap_bytes(&self) -> usize {
-        if self.is_dense() { CHUNK_VOLUME } else { 0 }
+        if self.is_dense() { CHUNK_VOLUME * 2 } else { 0 }
     }
 
-    fn dense_mut(&mut self) -> &mut [u8; CHUNK_VOLUME] {
+    fn dense_mut(&mut self) -> &mut [u16; CHUNK_VOLUME] {
         if let Repr::Uniform(l) = self.0 {
             self.0 = Repr::Dense(filled(l.0));
         }
@@ -213,15 +244,20 @@ impl<S: BuildHasher> BlockSource for HashMap<ChunkPos, Chunk, S> {
     }
 }
 
-// Per-id light properties, packed for the inner loops.
-const EMIT: u8 = 0x0f;
-const OPAQUE: u8 = 0x10;
+// Per-cell light properties, packed for the inner loops: emission per
+// channel laid out as in `Light` (sky's nibble always 0), then flags.
+const EMIT: u32 = 0x0fff;
+const OPAQUE: u32 = 1 << 16;
 /// Water: sky light does not fall through it without loss.
-const DIMS: u8 = 0x20;
+const DIMS: u32 = 1 << 17;
+/// Painted, it lights in its colour; its level is in `LEVEL_SHIFT`.
+const TINT: u32 = 1 << 18;
+const LEVEL_SHIFT: u32 = 20;
 
 const SKY: usize = 0;
-const BLOCK: usize = 1;
-const SHIFT: [u32; 2] = [4, 0];
+/// Sky, then red, green and blue block light.
+const CHANNELS: [usize; 4] = [0, 1, 2, 3];
+const SHIFT: [u32; 4] = [12, 8, 4, 0];
 
 /// +X, -X, +Y, -Y, +Z, -Z.
 const DIRS: [(i32, i32, i32); 6] = [(1, 0, 0), (-1, 0, 0), (0, 1, 0), (0, -1, 0), (0, 0, 1), (0, 0, -1)];
@@ -238,13 +274,33 @@ const ALL_NEIGHBOURS: u32 = (1 << 27) - 1;
 const CENTRE: u32 = 1 << 13;
 
 #[inline]
-fn nibble(v: u8, ch: usize) -> u8 {
-    v >> SHIFT[ch] & 15
+fn nibble(v: u16, ch: usize) -> u8 {
+    (v >> SHIFT[ch] & 15) as u8
 }
 
 #[inline]
-fn with_nibble(v: u8, ch: usize, l: u8) -> u8 {
-    (v & !(15 << SHIFT[ch])) | l << SHIFT[ch]
+fn with_nibble(v: u16, ch: usize, l: u8) -> u16 {
+    (v & !(15 << SHIFT[ch])) | (l as u16) << SHIFT[ch]
+}
+
+/// A cell's emission in channel `ch` (0 for sky).
+#[inline]
+fn emit(p: u32, ch: usize) -> u8 {
+    (p >> SHIFT[ch] & 15) as u8
+}
+
+/// Emission bits for a level in a colour.
+fn emit_bits(level: u8, colour: [u8; 3]) -> u32 {
+    let [r, g, b] = emission(level, colour);
+    (r as u32) << 8 | (g as u32) << 4 | b as u32
+}
+
+/// Light properties by block id, and the emission of tinted blocks by
+/// palette colour and level.
+struct Props {
+    by_id: Box<[u32]>,
+    /// `colour << 4 | level`: emission bits.
+    tint: Box<[u32]>,
 }
 
 /// What a cell at level `l` offers its neighbour in direction `dir`.
@@ -259,18 +315,22 @@ fn offer(l: u8, dir: usize, ch: usize) -> u8 {
 
 /// A voxel's light properties: its type's, except that a chiselled block is
 /// never opaque (ADR-0008): light passes through the octants cut away, and
-/// its neighbours draw their faces against it.
+/// its neighbours draw their faces against it; and a painted tinted block
+/// lights in its colour.
 #[inline]
-fn cell_prop(props: &[u8], s: crate::BlockState) -> u8 {
-    let p = props[s.id.0 as usize];
+fn cell_prop(props: &Props, s: BlockState) -> u32 {
+    let mut p = props.by_id[s.id.0 as usize];
+    if p & TINT != 0 && s.colour.0 != 0 {
+        p = (p & !EMIT) | props.tint[(s.colour.0 as usize) << 4 | (p >> LEVEL_SHIFT & 15) as usize];
+    }
     if s.shape.is_full() { p } else { p & !OPAQUE }
 }
 
 /// The level a cell with properties `p` takes from an offer.
 #[inline]
-fn admit(offered: u8, p: u8, ch: usize) -> u8 {
+fn admit(offered: u8, p: u32, ch: usize) -> u8 {
     if p & OPAQUE != 0 {
-        if ch == BLOCK { offered.min(p & EMIT) } else { 0 }
+        if ch != SKY { offered.min(emit(p, ch)) } else { 0 }
     } else if ch == SKY && offered == MAX_LIGHT && p & DIMS != 0 {
         MAX_LIGHT - 1
     } else {
@@ -281,9 +341,9 @@ fn admit(offered: u8, p: u8, ch: usize) -> u8 {
 /// A cell's light from nothing but itself: its emission, or open sky above
 /// the top layer.
 #[inline]
-fn intrinsic(p: u8, ch: usize, i: usize, top_chunk: bool) -> u8 {
-    if ch == BLOCK {
-        p & EMIT
+fn intrinsic(p: u32, ch: usize, i: usize, top_chunk: bool) -> u8 {
+    if ch != SKY {
+        emit(p, ch)
     } else if top_chunk && i >> 10 == 31 && p & OPAQUE == 0 {
         MAX_LIGHT
     } else {
@@ -361,13 +421,13 @@ fn border_mask(i: usize) -> u32 {
 /// uniform or shared chunk cost nothing.
 enum Cells<'a> {
     Lazy(&'a mut ChunkLight),
-    Dense(&'a mut [u8; CHUNK_VOLUME]),
+    Dense(&'a mut [u16; CHUNK_VOLUME]),
     Taken,
 }
 
 impl Cells<'_> {
     #[inline]
-    fn get(&self, i: usize) -> u8 {
+    fn get(&self, i: usize) -> u16 {
         match self {
             Cells::Lazy(l) => l.get_index(i).0,
             Cells::Dense(d) => d[i],
@@ -376,7 +436,7 @@ impl Cells<'_> {
     }
 
     #[inline]
-    fn set(&mut self, i: usize, v: u8) {
+    fn set(&mut self, i: usize, v: u16) {
         if let Cells::Dense(d) = self {
             d[i] = v;
             return;
@@ -406,9 +466,9 @@ struct Slot {
 #[derive(Default)]
 struct Work {
     /// Per channel, per offered level: cell indices (with [`SPREAD`]).
-    add: [[Vec<u16>; 16]; 2],
+    add: [[Vec<u16>; 16]; 4],
     /// Per channel: (cell, level the removed neighbour offered it).
-    rem: [Vec<(u16, u8)>; 2],
+    rem: [Vec<(u16, u8)>; 4],
     in_add: bool,
     in_rem: bool,
     touched: bool,
@@ -426,13 +486,13 @@ struct Event {
     /// Record each cell's value before its first write instead of marking it
     /// changed, because removal followed by refill often restores it.
     logging: bool,
-    log: Vec<(u32, u16, u8)>,
+    log: Vec<(u32, u16, u16)>,
     masks: HashMap<ChunkPos, u32>,
     touched: Vec<u32>,
 }
 
 #[inline]
-fn record(ev: &mut Event, mask: &mut u32, s: u32, i: usize, old: u8) {
+fn record(ev: &mut Event, mask: &mut u32, s: u32, i: usize, old: u16) {
     if ev.logging {
         ev.log.push((s, i as u16, old));
     } else {
@@ -471,7 +531,7 @@ fn push_rem(work: &mut [Work], active: &mut Vec<u32>, s: u32, i: usize, ch: usiz
 /// re-mesh. Take a mesh job's light with [`LightMap::neighborhood`].
 pub struct LightMap {
     shape: PlanetShape,
-    props: Box<[u8]>,
+    props: Props,
     columns: HashMap<(i32, i32), Column>,
     index: HashMap<ChunkPos, u32>,
     slots: Vec<Slot>,
@@ -486,20 +546,29 @@ impl LightMap {
     pub fn new(shape: PlanetShape, flags: &BlockFlags) -> Self {
         // Indexed by any u16 id, so the hot loops need no bounds checks; ids
         // past the catalogue read as air, as `BlockFlags` does.
-        let mut props = vec![0u8; 1 << 16].into_boxed_slice();
+        let mut props = vec![0u32; 1 << 16].into_boxed_slice();
         for (id, p) in props.iter_mut().enumerate().take(flags.len()) {
             let b = crate::BlockId(id as u16);
-            let mut v = flags.light(b).min(MAX_LIGHT);
+            let level = flags.light(b).min(MAX_LIGHT);
+            let mut v = emit_bits(level, flags.light_colour(b));
             if flags.opaque(b) {
                 v |= OPAQUE;
             } else if flags.translucent(b) && !flags.solid(b) {
                 v |= DIMS;
             }
+            if flags.light_tint(b) && level > 0 {
+                v |= TINT | (level as u32) << LEVEL_SHIFT;
+            }
             *p = v;
+        }
+        // Until a palette is given, painted blocks light in their own colour.
+        let mut tint = vec![0u32; 256 * 16].into_boxed_slice();
+        for (k, t) in tint.iter_mut().enumerate() {
+            *t = emit_bits((k & 15) as u8, [255; 3]);
         }
         Self {
             shape,
-            props,
+            props: Props { by_id: props, tint },
             columns: HashMap::new(),
             index: HashMap::new(),
             slots: Vec::new(),
@@ -509,6 +578,35 @@ impl LightMap {
             active_rem: Vec::new(),
             ev: Event::default(),
         }
+    }
+
+    /// Painted tinted blocks (glow crystals) light in their palette colour.
+    /// Call before any chunk is loaded.
+    pub fn with_colours(mut self, palette: &ColourPalette) -> Self {
+        debug_assert!(self.index.is_empty(), "colours are set before any light");
+        for c in 0..256usize {
+            let Some(def) = palette.get(crate::Colour(c as u8)) else {
+                continue;
+            };
+            for level in 0..16usize {
+                self.props.tint[c << 4 | level] = emit_bits(level as u8, def.rgb);
+            }
+        }
+        // Natural (colour 0) keeps the block's own colour (`by_id`).
+        self
+    }
+
+    /// The light a block in state `s` gives off per channel, as this map
+    /// lights it.
+    pub fn emission_of(&self, s: BlockState) -> [u8; 3] {
+        let p = cell_prop(
+            &self.props,
+            BlockState {
+                shape: crate::Shape::FULL,
+                ..s
+            },
+        );
+        [emit(p, 1), emit(p, 2), emit(p, 3)]
     }
 
     pub fn shape(&self) -> PlanetShape {
@@ -597,7 +695,7 @@ impl LightMap {
         }
         // Take back everything the old cell lent, then let the new cell and
         // its neighbours offer what they have.
-        for ch in [SKY, BLOCK] {
+        for ch in CHANNELS {
             let l = nibble(old, ch);
             if l > 1 {
                 for dir in 0..6 {
@@ -614,7 +712,7 @@ impl LightMap {
         let props = blocks
             .chunk(p.chunk())
             .map_or(OPAQUE, |c| cell_prop(&self.props, c.state(p.local())));
-        for ch in [SKY, BLOCK] {
+        for ch in CHANNELS {
             let e = intrinsic(props, ch, i, top_chunk);
             if e > 0 {
                 push_add(&mut self.work, &mut self.active_add, s, i, ch, e, false);
@@ -623,7 +721,7 @@ impl LightMap {
         for dir in 0..6 {
             if let Some((ns, n)) = self.neighbour(s, i, dir) {
                 let l = self.slots[ns as usize].light.get_index(n).0;
-                for ch in [SKY, BLOCK] {
+                for ch in CHANNELS {
                     let v = nibble(l, ch);
                     if v > 1 {
                         push_add(&mut self.work, &mut self.active_add, ns, n, ch, v, true);
@@ -841,13 +939,23 @@ impl LightMap {
             let Some(chunk) = blocks.chunk(self.slots[s as usize].pos) else {
                 continue;
             };
-            if !chunk.palette().iter().any(|b| self.props[b.id.0 as usize] & EMIT != 0) {
+            if !chunk
+                .palette()
+                .iter()
+                .any(|b| self.props.by_id[b.id.0 as usize] & (EMIT | TINT) != 0)
+            {
                 continue;
             }
             for i in 0..CHUNK_VOLUME {
-                let e = cell_prop(&self.props, chunk.state_index(i)) & EMIT;
-                if e > 0 {
-                    cands.push((s, i, BLOCK, e));
+                let p = cell_prop(&self.props, chunk.state_index(i));
+                if p & EMIT == 0 {
+                    continue;
+                }
+                for ch in [1, 2, 3] {
+                    let e = emit(p, ch);
+                    if e > 0 {
+                        cands.push((s, i, ch, e));
+                    }
                 }
             }
         }
@@ -912,12 +1020,11 @@ impl LightMap {
                 let theirs = &self.slots[ns as usize].light;
                 let ours = &self.slots[s as usize].light;
                 if let Some(u) = theirs.uniform_value() {
-                    if u.sky() < 2 && u.block() < 2 {
+                    if CHANNELS.iter().all(|&ch| nibble(u.0, ch) < 2) {
                         continue;
                     }
                     if let Some(v) = ours.uniform_value()
-                        && v.sky() + 1 >= u.sky()
-                        && v.block() + 1 >= u.block()
+                        && CHANNELS.iter().all(|&ch| nibble(v.0, ch) + 1 >= nibble(u.0, ch))
                     {
                         continue;
                     }
@@ -925,7 +1032,7 @@ impl LightMap {
                 for i in face_cells(dir) {
                     let n = step(i, dir).expect_err("face cell");
                     let (a, b) = (theirs.get_index(n).0, ours.get_index(i).0);
-                    for ch in [SKY, BLOCK] {
+                    for ch in CHANNELS {
                         let o = nibble(a, ch);
                         if o >= 2 && o - 1 > nibble(b, ch) {
                             self.work[s as usize].add[ch][o as usize - 1].push(i as u16);
@@ -965,7 +1072,7 @@ impl LightMap {
                 }
                 for i in face_cells(dir) {
                     let a = slot.light.get_index(i).0;
-                    for ch in [SKY, BLOCK] {
+                    for ch in CHANNELS {
                         let l = nibble(a, ch);
                         if l >= 2 {
                             let n = step(i, dir).expect_err("face cell");
@@ -1022,7 +1129,7 @@ impl LightMap {
         let mut cells = Cells::Lazy(&mut self.slots[su].light);
         let mut mask = 0u32;
         loop {
-            for ch in [SKY, BLOCK] {
+            for ch in CHANNELS {
                 for level in (1..16).rev() {
                     while let Some(e) = w.add[ch][level].pop() {
                         let i = (e & IDX) as usize;
@@ -1101,7 +1208,7 @@ impl LightMap {
         let active = &mut self.active_rem;
         let mut cells = Cells::Lazy(&mut self.slots[su].light);
         let mut mask = 0u32;
-        for ch in [SKY, BLOCK] {
+        for ch in CHANNELS {
             while let Some((e, o)) = w.rem[ch].pop() {
                 let i = e as usize;
                 let old = cells.get(i);
@@ -1201,7 +1308,7 @@ impl LightMap {
 mod tests {
     use super::*;
     use crate::shape::ShapeFamily;
-    use crate::{BlockId, BlockRegistry, BlockState, Shape};
+    use crate::{BlockId, BlockRegistry, BlockState, Colour, Shape};
     use rand::seq::SliceRandom;
     use rand::{Rng, SeedableRng, rngs::StdRng};
     use std::collections::VecDeque;
@@ -1214,6 +1321,12 @@ mod tests {
         glow: BlockId,
         water: BlockId,
         glass: BlockId,
+        torch: BlockId,
+    }
+
+    /// A light map as the client makes one: painted crystals in their colour.
+    fn new_map(shape: PlanetShape, flags: &BlockFlags) -> LightMap {
+        LightMap::new(shape, flags).with_colours(&ColourPalette::builtin())
     }
 
     fn setup() -> (BlockRegistry, Ids) {
@@ -1224,6 +1337,7 @@ mod tests {
             glow: r.id("glow_crystal").unwrap(),
             water: r.id("water").unwrap(),
             glass: r.id("glass").unwrap(),
+            torch: r.id("torch").unwrap(),
         };
         (r, ids)
     }
@@ -1275,7 +1389,7 @@ mod tests {
             })
             .collect();
         let w = shape.width_blocks();
-        build(shape, cols, |x, y, z| {
+        let mut world = build(shape, cols, |x, y, z| {
             if glows.contains(&(x, y, z)) {
                 return ids.glow;
             }
@@ -1290,7 +1404,24 @@ mod tests {
             }
             let h = 28 + ((x * 7 + z * 3) % 11) + ((x / 9 + z / 5) % 5);
             if y < h { ids.stone } else { ids.air }
-        })
+        });
+        // Half the crystals painted, some lights torches: colours that mix.
+        let mut glows: Vec<_> = glows.into_iter().collect();
+        glows.sort_unstable();
+        for (k, (x, y, z)) in glows.into_iter().enumerate() {
+            let p = BlockPos::new(x, y, z);
+            let Some(c) = world.get_mut(&p.chunk()) else { continue };
+            let st = match k % 4 {
+                0 | 1 => BlockState {
+                    colour: Colour(rng.random_range(1..=255)),
+                    ..BlockState::plain(ids.glow)
+                },
+                2 => BlockState::plain(ids.torch),
+                _ => continue,
+            };
+            c.set_state(p.local(), st);
+        }
+        world
     }
 
     /// An independent solver for the rules in the module docs: plain
@@ -1309,7 +1440,8 @@ mod tests {
         let mut present = vec![false; n];
         let mut opaque = vec![false; n];
         let mut water = vec![false; n];
-        let mut emit = vec![0u8; n];
+        let palette = ColourPalette::builtin();
+        let mut emit = vec![[0u8; 3]; n];
         for (&pos, chunk) in world {
             if !lit.contains(&(pos.x, pos.z)) {
                 continue;
@@ -1322,11 +1454,11 @@ mod tests {
                 present[k] = true;
                 opaque[k] = flags.opaque(id) && st.shape.is_full();
                 water[k] = !flags.opaque(id) && flags.translucent(id) && !flags.solid(id);
-                emit[k] = flags.light(id);
+                emit[k] = flags.emission(st, Some(&palette));
             }
         }
         let mut out = HashMap::new();
-        let mut levels = [vec![0u8; n], vec![0u8; n]];
+        let mut levels = [vec![0u8; n], vec![0u8; n], vec![0u8; n], vec![0u8; n]];
         for (channel, level) in levels.iter_mut().enumerate() {
             let mut q = VecDeque::new();
             for k in 0..n {
@@ -1334,8 +1466,8 @@ mod tests {
                     continue;
                 }
                 let y = k as i64 / (w * w);
-                let v = if channel == 1 {
-                    emit[k]
+                let v = if channel > 0 {
+                    emit[k][channel - 1]
                 } else if y == h - 1 && !opaque[k] {
                     if water[k] { 14 } else { 15 }
                 } else {
@@ -1377,7 +1509,7 @@ mod tests {
             let light = ChunkLight::from_fn(|i| {
                 let b = pos.block(LocalPos::from_index(i));
                 let k = at(b.x, b.y, b.z);
-                Light::new(levels[0][k], levels[1][k])
+                Light::rgb(levels[0][k], [levels[1][k], levels[2][k], levels[3][k]])
             });
             out.insert(pos, light);
         }
@@ -1453,7 +1585,7 @@ mod tests {
         let shape = PlanetShape::new(4, 2);
         let cols = all_columns(shape);
         let mut world = rough_world(shape, &ids, &cols, 7);
-        let mut map = LightMap::new(shape, &flags);
+        let mut map = new_map(shape, &flags);
         load(&mut map, &world, &sorted_keys(&world));
         assert_matches(&map, &reference(shape, &flags, &world, &cols), &world);
 
@@ -1517,7 +1649,7 @@ mod tests {
             orders.push(o);
         }
         for (k, order) in orders.iter().enumerate() {
-            let mut map = LightMap::new(shape, &flags);
+            let mut map = new_map(shape, &flags);
             for (j, &p) in order.iter().enumerate() {
                 map.chunk_loaded(p, &world);
                 // On the way, light must equal the truth for the columns
@@ -1542,7 +1674,7 @@ mod tests {
         let shape = PlanetShape::new(8, 2);
         let cols: Vec<(i32, i32)> = [7, 0, 1].iter().flat_map(|&x| [3, 4, 5].map(|z| (x, z))).collect();
         let world = rough_world(shape, &ids, &cols, 9);
-        let mut map = LightMap::new(shape, &flags);
+        let mut map = new_map(shape, &flags);
         load(&mut map, &world, &sorted_keys(&world));
 
         // The middle column goes; its neighbours lose what it lent them.
@@ -1593,7 +1725,7 @@ mod tests {
                 ids.stone
             }
         });
-        let mut map = LightMap::new(shape, &flags);
+        let mut map = new_map(shape, &flags);
         load(&mut map, &world, &sorted_keys(&world));
         let at = |x: i64, y: i64| map.light_at(BlockPos::new(x, y, 10));
         assert_eq!(at(w - 1, 10).block(), 12);
@@ -1623,7 +1755,7 @@ mod tests {
                 if cave(x, y, z) || y >= 40 { ids.air } else { ids.stone }
             },
         );
-        let mut map = LightMap::new(shape, &flags);
+        let mut map = new_map(shape, &flags);
         load(&mut map, &world, &sorted_keys(&world));
         for x in 26..40 {
             for y in 10..20 {
@@ -1670,7 +1802,7 @@ mod tests {
                 ids.stone
             }
         });
-        let mut map = LightMap::new(shape, &flags);
+        let mut map = new_map(shape, &flags);
         load(&mut map, &world, &sorted_keys(&world));
         assert_eq!(map.light_at(BlockPos::new(31, 10, 33)), Light::DARK);
         // Cut the top half off the lid: it keeps four octants, but light now
@@ -1712,7 +1844,7 @@ mod tests {
                 ids.stone
             }
         });
-        let mut map = LightMap::new(shape, &flags);
+        let mut map = new_map(shape, &flags);
         load(&mut map, &world, &sorted_keys(&world));
         let check = |map: &LightMap, e: i64| {
             for x in 14..50 {
@@ -1756,7 +1888,7 @@ mod tests {
                 ids.air
             }
         });
-        let mut map = LightMap::new(shape, &flags);
+        let mut map = new_map(shape, &flags);
         load(&mut map, &world, &sorted_keys(&world));
         for y in 20..40 {
             let depth = 40 - y;
@@ -1777,7 +1909,7 @@ mod tests {
                 ids.air
             }
         });
-        let mut map = LightMap::new(shape, &flags);
+        let mut map = new_map(shape, &flags);
         load(&mut map, &world, &sorted_keys(&world));
         assert_eq!(map.light_at(BlockPos::new(10, 63, 10)).sky(), 14);
         assert_eq!(map.light_at(BlockPos::new(10, 50, 10)).sky(), 1);
@@ -1792,7 +1924,7 @@ mod tests {
         let shape = PlanetShape::new(4, 3);
         let cols = all_columns(shape);
         let world = build(shape, &cols, |_, y, _| if y < 40 { ids.stone } else { ids.air });
-        let mut map = LightMap::new(shape, &flags);
+        let mut map = new_map(shape, &flags);
         load(&mut map, &world, &sorted_keys(&world));
         assert_eq!(
             map.get(ChunkPos::new(1, 2, 1)).unwrap().uniform_value(),
@@ -1816,7 +1948,7 @@ mod tests {
             &[(0, 0), (1, 0)],
             |_, y, _| if y < 40 { ids.stone } else { ids.air },
         );
-        let mut map = LightMap::new(shape, &flags);
+        let mut map = new_map(shape, &flags);
         assert!(map.chunk_loaded(ChunkPos::new(0, 1, 0), &world).is_empty());
         assert!(!map.is_lit(ChunkPos::new(0, 1, 0)));
         assert_eq!(map.light_at(BlockPos::new(3, 50, 3)), Light::DARK);

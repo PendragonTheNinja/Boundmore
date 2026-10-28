@@ -251,6 +251,10 @@ pub struct ItemDef {
     /// slot (a torch: its prop's light), 0 for none.
     #[serde(default)]
     pub held_light: u8,
+    /// The colour of that light (sRGB; milestone 26): a torch's is its
+    /// block's light colour.
+    #[serde(default = "white")]
+    pub held_colour: [u8; 3],
     /// Heat it gives burnt in a furnace's fuel slot (0: not fuel; tuning
     /// 4.7: soft coal 100, trunk 30, timber 15, stick 7).
     #[serde(default)]
@@ -635,6 +639,10 @@ fn default_crit_effect() -> f32 {
     0.2
 }
 
+fn white() -> [u8; 3] {
+    [255; 3]
+}
+
 fn default_stack() -> u16 {
     100
 }
@@ -682,6 +690,7 @@ impl ItemRegistry {
                     } else {
                         0
                     },
+                    held_colour: b.light_colour,
                     fuel: b.fuel,
                     returns: None,
                     flex: 0,
@@ -760,6 +769,7 @@ impl ItemRegistry {
                 stack: e.stack,
                 icon: e.icon,
                 held_light: 0,
+                held_colour: [255; 3],
                 fuel: e.fuel,
                 returns: e.returns,
                 flex: e.flex,

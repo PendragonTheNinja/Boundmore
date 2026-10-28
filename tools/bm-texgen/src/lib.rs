@@ -20,6 +20,7 @@ pub mod furnishings;
 pub mod gathered;
 pub mod gems;
 pub mod icons;
+pub mod lights;
 pub mod living;
 pub mod machines;
 pub mod materials;

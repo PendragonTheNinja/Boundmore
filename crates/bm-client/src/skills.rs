@@ -301,11 +301,11 @@ pub fn recipe_gate(tree: &SkillTree, effects: &Effects, recipe: &Recipe) -> Opti
 /// a **guess**: Boundless never published its radius).
 pub const INNER_LIGHT: u8 = 10;
 
-/// The light we carry: the item in hand's, or the light-source epic's when
-/// that is brighter.
-pub fn carried_light(held: u8, effects: &Effects) -> u8 {
+/// The light we carry per channel: the item in hand's, or the
+/// light-source epic's white light where that is brighter.
+pub fn carried_light(held: [u8; 3], effects: &Effects) -> [u8; 3] {
     if effects.light_epic {
-        held.max(INNER_LIGHT)
+        bm_core::light::brighter(held, [INNER_LIGHT; 3])
     } else {
         held
     }
@@ -468,9 +468,9 @@ mod tests {
             c.learn(&t, "control").unwrap();
         }
         assert_eq!(reach(4.0, &c.effects(&t)), 6.25);
-        assert_eq!(carried_light(0, &c.effects(&t)), 0);
+        assert_eq!(carried_light([0; 3], &c.effects(&t)), [0; 3]);
         c.learn(&t, "light_epic").unwrap();
-        assert_eq!(carried_light(0, &c.effects(&t)), INNER_LIGHT);
-        assert_eq!(carried_light(14, &c.effects(&t)), 14);
+        assert_eq!(carried_light([0; 3], &c.effects(&t)), [INNER_LIGHT; 3]);
+        assert_eq!(carried_light([14, 12, 3], &c.effects(&t)), [14, 12, INNER_LIGHT]);
     }
 }

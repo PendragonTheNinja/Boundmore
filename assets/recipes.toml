@@ -4024,6 +4024,7 @@ tint = 0
 [[recipe]]
 output = "refined_glow_crystal"
 inputs = [["glow_crystal", 1]]
+tint = 0
 station = "refinery"
 seconds = 30.0
 xp = 6
@@ -4032,6 +4033,7 @@ wear = 28
 [[recipe]]
 output = "faceted_glow_crystal"
 inputs = [["refined_glow_crystal", 2], ["bonding_agent", 1], ["any_base_metal", 1]]
+tint = 0
 station = "refinery"
 seconds = 30.0
 spark = 800
@@ -4042,6 +4044,7 @@ wear = 28
 [[recipe]]
 output = "clear_glass"
 inputs = [["glass", 4], ["refined_glow_crystal", 2]]
+tint = 1
 station = "refinery"
 seconds = 60.0
 spark = 400
@@ -4051,6 +4054,7 @@ wear = 35
 [[recipe]]
 output = "framed_glass"
 inputs = [["glass", 6], ["refined_glow_crystal", 3], ["any_base_metal", 2]]
+tint = 1
 station = "refinery"
 seconds = 120.0
 spark = 800
@@ -4061,6 +4065,7 @@ wear = 55
 [[recipe]]
 output = "ornate_glass"
 inputs = [["glass", 12], ["refined_glow_crystal", 6], ["any_base_alloy", 4]]
+tint = 1
 station = "refinery"
 seconds = 180.0
 spark = 2000
@@ -4365,6 +4370,7 @@ wear = 55
 [[recipe]]
 output = "plain_crystal_door"
 inputs = [["glow_crystal", 4]]
+tint = 0
 station = "refinery"
 seconds = 180.0
 spark = 400
@@ -4403,6 +4409,7 @@ wear = 85
 [[recipe]]
 output = "stylish_crystal_door"
 inputs = [["glow_crystal", 6], ["any_base_metal", 2]]
+tint = 0
 station = "refinery"
 seconds = 300.0
 spark = 800
@@ -4444,6 +4451,7 @@ wear = 150
 [[recipe]]
 output = "ornate_crystal_door"
 inputs = [["glow_crystal", 12], ["any_base_alloy", 4]]
+tint = 0
 station = "refinery"
 seconds = 600.0
 spark = 2000
@@ -4481,6 +4489,7 @@ wear = 55
 [[recipe]]
 output = "plain_crystal_trapdoor"
 inputs = [["glow_crystal", 4]]
+tint = 0
 station = "refinery"
 seconds = 180.0
 spark = 400
@@ -4519,6 +4528,7 @@ wear = 85
 [[recipe]]
 output = "stylish_crystal_trapdoor"
 inputs = [["glow_crystal", 6], ["any_base_metal", 2]]
+tint = 0
 station = "refinery"
 seconds = 300.0
 spark = 800
@@ -4560,6 +4570,7 @@ wear = 150
 [[recipe]]
 output = "ornate_crystal_trapdoor"
 inputs = [["glow_crystal", 12], ["any_base_alloy", 4]]
+tint = 0
 station = "refinery"
 seconds = 600.0
 spark = 2000
@@ -4599,6 +4610,7 @@ wear = 55
 [[recipe]]
 output = "plain_crystal_pole"
 inputs = [["glow_crystal", 4], ["vital_essence", 2]]
+tint = 0
 station = "refinery"
 seconds = 180.0
 spark = 400
@@ -4637,6 +4649,7 @@ wear = 85
 [[recipe]]
 output = "stylish_crystal_pole"
 inputs = [["glow_crystal", 6], ["any_base_metal", 2], ["vital_essence", 4]]
+tint = 0
 station = "refinery"
 seconds = 300.0
 spark = 800
@@ -4678,6 +4691,7 @@ wear = 150
 [[recipe]]
 output = "ornate_crystal_pole"
 inputs = [["glow_crystal", 12], ["any_base_alloy", 4], ["vital_essence", 4]]
+tint = 0
 station = "refinery"
 seconds = 600.0
 spark = 2000
@@ -4715,6 +4729,7 @@ wear = 55
 [[recipe]]
 output = "plain_crystal_beam"
 inputs = [["glow_crystal", 4], ["vital_essence", 2]]
+tint = 0
 station = "refinery"
 seconds = 180.0
 spark = 400
@@ -4753,6 +4768,7 @@ wear = 85
 [[recipe]]
 output = "stylish_crystal_beam"
 inputs = [["glow_crystal", 6], ["any_base_metal", 2], ["vital_essence", 4]]
+tint = 0
 station = "refinery"
 seconds = 300.0
 spark = 800
@@ -4794,6 +4810,7 @@ wear = 150
 [[recipe]]
 output = "ornate_crystal_beam"
 inputs = [["glow_crystal", 12], ["any_base_alloy", 4], ["vital_essence", 4]]
+tint = 0
 station = "refinery"
 seconds = 600.0
 spark = 2000
@@ -4804,6 +4821,7 @@ wear = 190
 [[recipe]]
 output = "plain_glass_pane"
 inputs = [["glass", 4], ["refined_glow_crystal", 2]]
+tint = 1
 station = "refinery"
 seconds = 60.0
 spark = 400
@@ -4813,6 +4831,7 @@ wear = 35
 [[recipe]]
 output = "stylish_glass_pane"
 inputs = [["glass", 6], ["refined_glow_crystal", 3], ["any_base_metal", 2]]
+tint = 1
 station = "refinery"
 seconds = 120.0
 spark = 800
@@ -4823,6 +4842,7 @@ wear = 55
 [[recipe]]
 output = "ornate_glass_pane"
 inputs = [["glass", 12], ["refined_glow_crystal", 6], ["any_base_alloy", 4]]
+tint = 1
 station = "refinery"
 seconds = 180.0
 spark = 2000
@@ -4949,6 +4969,7 @@ wear = 150
 [[recipe]]
 output = "plain_crystal_storage"
 inputs = [["refined_glow_crystal", 6], ["vital_essence", 2], ["relic_fragment", 6]]
+tint = 0
 station = "refinery"
 seconds = 180.0
 spark = 400
@@ -4958,6 +4979,7 @@ wear = 70
 [[recipe]]
 output = "stylish_crystal_storage"
 inputs = [["refined_glow_crystal", 8], ["vital_essence", 4], ["any_metal", 8]]
+tint = 0
 station = "refinery"
 seconds = 360.0
 spark = 800
@@ -4968,6 +4990,7 @@ wear = 120
 [[recipe]]
 output = "ornate_crystal_storage"
 inputs = [["refined_glow_crystal", 12], ["vital_essence", 6], ["any_base_metal", 4], ["any_base_alloy", 4]]
+tint = 0
 station = "refinery"
 seconds = 640.0
 spark = 2000
@@ -5077,6 +5100,7 @@ wear = 70
 [[recipe]]
 output = "crystal_sign"
 inputs = [["glow_crystal", 5], ["nail", 2], ["ink", 1]]
+tint = 0
 station = "refinery"
 seconds = 180.0
 spark = 800
@@ -5087,6 +5111,7 @@ wear = 70
 [[recipe]]
 output = "crystal_sign_panel"
 inputs = [["glow_crystal", 5], ["nail", 2], ["ink", 1]]
+tint = 0
 station = "refinery"
 seconds = 180.0
 spark = 800
@@ -5849,3 +5874,83 @@ power = 3000
 xp = 500
 wear = 110
 skill = { name = "machine_crafting", level = 3 }
+
+# Milestone 26: gem torches and the crystal lantern (Boundless's recipes,
+# boundlessinfo data; wear a guess, as the other lights').
+
+[[recipe]]
+output = "amethyst_torch"
+count = 2
+inputs = [["stick", 1], ["rough_amethyst", 1]]
+station = "workbench"
+seconds = 60.0
+spark = 800
+xp = 20
+skill = { name = "decoration_crafting", level = 3 }
+wear = 4
+
+[[recipe]]
+output = "emerald_torch"
+count = 2
+inputs = [["stick", 1], ["rough_emerald", 1]]
+station = "workbench"
+seconds = 60.0
+spark = 800
+xp = 20
+skill = { name = "decoration_crafting", level = 3 }
+wear = 4
+
+[[recipe]]
+output = "sapphire_torch"
+count = 2
+inputs = [["stick", 1], ["rough_sapphire", 1]]
+station = "workbench"
+seconds = 60.0
+spark = 800
+xp = 20
+skill = { name = "decoration_crafting", level = 3 }
+wear = 4
+
+[[recipe]]
+output = "topaz_torch"
+count = 2
+inputs = [["stick", 1], ["rough_topaz", 1]]
+station = "workbench"
+seconds = 60.0
+spark = 800
+xp = 20
+skill = { name = "decoration_crafting", level = 3 }
+wear = 4
+
+[[recipe]]
+output = "diamond_torch"
+count = 2
+inputs = [["stick", 1], ["rough_diamond", 1]]
+station = "workbench"
+seconds = 60.0
+spark = 800
+xp = 20
+skill = { name = "decoration_crafting", level = 3 }
+wear = 4
+
+[[recipe]]
+output = "ruby_torch"
+count = 2
+inputs = [["stick", 1], ["rough_ruby", 1]]
+station = "workbench"
+seconds = 60.0
+spark = 800
+xp = 20
+skill = { name = "decoration_crafting", level = 3 }
+wear = 4
+
+[[recipe]]
+output = "crystal_lantern"
+inputs = [["glow_crystal", 1], ["any_base_metal", 2], ["glowing_lamella", 1]]
+tint = 0
+station = "refinery"
+seconds = 60.0
+spark = 400
+xp = 18
+skill = { name = "decoration_crafting", level = 3 }
+wear = 35

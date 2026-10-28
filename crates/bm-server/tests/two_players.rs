@@ -4279,11 +4279,13 @@ async fn torches_stand_and_hang_on_solid_blocks_and_fall_with_them() {
     assert_eq!(alice.count("torch"), 10, "and is back in the pack");
     assert_eq!(alice.count("stone"), 10);
 
-    // Holding a torch lights her for others; putting it away does not.
+    // Holding a torch lights her for others, in its warm colour (milestone
+    // 26); putting it away does not.
     let alice_id = alice.welcome.player_id;
-    let light = alice.items.get(alice.item("torch")).unwrap().held_light;
-    assert!(light > 0);
-    for (slot, want) in [(2, light), (HAND, 0)] {
+    let def = alice.items.get(alice.item("torch")).unwrap();
+    let light = bm_core::light::emission(def.held_light, def.held_colour);
+    assert!(light[0] > 0 && light[2] < light[0], "warm: {light:?}");
+    for (slot, want) in [(2, light), (HAND, [0; 3])] {
         alice.send_inputs(
             3,
             PlayerInput {
@@ -4980,7 +4982,7 @@ async fn the_light_epic_shines_out_of_daylight() {
         let deadline = tokio::time::Instant::now() + Duration::from_secs(5);
         loop {
             let (_, _, _, others) = bob.latest_snapshot().await;
-            if others.iter().any(|o| o.id == her && o.light == want) {
+            if others.iter().any(|o| o.id == her && o.light == [want; 3]) {
                 return;
             }
             assert!(tokio::time::Instant::now() < deadline, "her light never became {want}");

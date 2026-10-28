@@ -84,8 +84,13 @@ Not built yet, from Boundless: energy per swing (damage / 50), skills (power, ma
 | Torch | light 10 (reaches 9 blocks), placed on floors and walls or held | **Guess.** How far did a basic torch light, next to a glowing crystal? |
 | Glow crystal | light 12 | Boundless gleam was the reference for "fully lit" |
 | Torch recipe | 1 stick + 1 flint makes 4, by hand; 1 trunk makes 4 sticks | Boundless, exact |
+| Light colour (M26) | each channel gives off `level x colour / 255`, so dark colours reach less far | Boundless since 2019 ("light colours go further than darker ones"); exact rule **a guess** |
+| Glow crystal colours (M26) | each world's crystal in its kind's bright colours; refined, faceted, doors, poles, beams, storage, signs, glasses and the crystal lantern take the crystal's colour | Boundless, exact (its recipes' `tintTakenFrom`) |
+| Gem torches (M26) | light 14 in the gem's colour; 1 stick + 1 rough gem makes 2, workbench, 60 s, spark 800, Decoration Crafting 3 | Recipe Boundless, exact; **light a guess** (Measure F4) |
+| Crystal lantern (M26) | light 14 in its crystal's colour; 1 glow crystal, 2 base metal, 1 glowing lamella, refinery, 60 s, spark 400 | Recipe Boundless, exact; **light a guess** (Measure F4) |
+| Light colours of the rest (M26) | torches warm (255, 226, 180), furnaces and lava fire, portals, wayshards and shrines violet, glowcaps teal, machines cool white | **Guesses by eye** (Measure F5) |
 
-Not built yet, from Boundless: the better torch (tallow and sackcloth, at a workbench), gem torches (tinted light, brighter), lanterns (refinery: torch and glass), the glow forge boon (6, 9 or 12 m), the light-source skill.
+Built since: the better torch, lanterns, the glow forge boon, the light-source skill (M12 to M22), gem torches and coloured light (M26).
 
 ## Gathering and crafting (`assets/planets.toml` flora, `assets/recipes.toml`; M11)
 

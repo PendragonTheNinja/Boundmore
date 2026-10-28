@@ -2090,12 +2090,15 @@ impl Game {
                                     .state
                                     .hook
                                     .map(|h| RemotePlayer::pack_hook(shape.delta(o.state.pos, h.pos))),
-                                light: o
-                                    .inventory
-                                    .get(o.last_input.slot as usize)
-                                    .filter(|_| (o.last_input.slot as usize) < HOTBAR_SLOTS)
-                                    .map_or(0, |s| self.items.get(s.item).map_or(0, |d| d.held_light_of(&s)))
-                                    .max(if o.inner_light { skills::INNER_LIGHT } else { 0 }),
+                                light: bm_core::light::brighter(
+                                    o.inventory
+                                        .get(o.last_input.slot as usize)
+                                        .filter(|_| (o.last_input.slot as usize) < HOTBAR_SLOTS)
+                                        .map_or([0; 3], |s| {
+                                            self.items.get(s.item).map_or([0; 3], |d| d.held_rgb_of(&s))
+                                        }),
+                                    [if o.inner_light { skills::INNER_LIGHT } else { 0 }; 3],
+                                ),
                             },
                         ))
                     })

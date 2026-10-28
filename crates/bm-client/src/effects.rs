@@ -18,6 +18,8 @@ use std::f32::consts::TAU;
 pub const BLAST_SECONDS: f64 = 1.2;
 /// Its light flashes this long.
 pub const FLASH_SECONDS: f64 = 0.45;
+/// A blast's flash colour (sRGB; milestone 26): fire.
+const BLAST_LIGHT: [u8; 3] = [255, 196, 130];
 /// The camera shakes within this many blast radii.
 pub const SHAKE_RADII: f64 = 2.0;
 /// The shake lasts this long, and moves the eye at most this far (blocks).
@@ -113,15 +115,22 @@ impl Effects {
 
     /// Lights the blasts cast (`Renderer::set_point_lights`): a bright flash
     /// fading over `FLASH_SECONDS`.
-    pub fn lights(&self, now: f64) -> Vec<(DVec3, u8)> {
+    /// A blast's flash: warm, fading over the flash.
+    pub fn lights(&self, now: f64) -> Vec<(DVec3, [u8; 3])> {
         self.blasts
             .iter()
             .filter_map(|b| {
                 let t = (now - b.born) / FLASH_SECONDS;
                 (0.0..1.0)
                     .contains(&t)
-                    .then(|| (b.pos + DVec3::new(0.0, 0.5, 0.0), (15.0 * (1.0 - t)).round() as u8))
-                    .filter(|l| l.1 > 0)
+                    .then(|| {
+                        let level = (15.0 * (1.0 - t)).round() as u8;
+                        (
+                            b.pos + DVec3::new(0.0, 0.5, 0.0),
+                            bm_core::light::emission(level, BLAST_LIGHT),
+                        )
+                    })
+                    .filter(|l| l.1 != [0; 3])
             })
             .collect()
     }
@@ -636,8 +645,10 @@ mod tests {
         e2.blast(DVec3::new(0.5, 44.0, 10.0), 3.0, 0.0);
         assert!(e2.shake(DVec3::new(w - 1.0, 44.0, 10.0), shape, 0.05).length() > 0.0);
         // The flash is bright at once and fades out.
-        assert_eq!(e.lights(0.0)[0].1, 15);
-        assert!(e.lights(FLASH_SECONDS * 0.8)[0].1 < 5);
+        // A warm flash: full red at once, then fading.
+        assert_eq!(e.lights(0.0)[0].1[0], 15);
+        assert!(e.lights(0.0)[0].1[2] < 15);
+        assert!(e.lights(FLASH_SECONDS * 0.8)[0].1[0] < 5);
         assert!(e.lights(FLASH_SECONDS + 0.01).is_empty());
     }
 

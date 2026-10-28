@@ -814,9 +814,13 @@ mod tests {
         let mesh = mesh_chunk_lit(&world[&pos], &nb, &refs, BlockId::AIR, &r.flags());
         let model = torch_model(Mount::Floor);
         assert_eq!(mesh.shaped_opaque.len(), model.len() * 3);
+        // The stick takes the torch's own warm light; the flame glows white.
+        let warm = Light::rgb(0, map.emission_of(bm_core::BlockState::plain(torch)));
+        assert_eq!(warm.block(), 10);
+        assert!(warm.block_rgb()[2] < 10, "warm: less blue");
         for (v, t) in mesh.shaped_opaque.iter().zip(model.iter().flat_map(|t| [t, t, t])) {
-            let want = if t.flame { 15 } else { 10 };
-            assert_eq!(v.light(), Light::new(0, want), "{t:?}");
+            let want = if t.flame { Light::new(0, 15) } else { warm };
+            assert_eq!(v.light(), want, "{t:?}");
         }
         // The floor beside the torch is lit by it.
         assert!(mesh.opaque.iter().any(|v| v.face() == 2 && v.block_light() >= 9));

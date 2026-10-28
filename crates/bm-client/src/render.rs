@@ -41,9 +41,11 @@ struct Globals {
     screen: [f32; 4],
     sky_rotation: [[f32; 4]; 4],
     planets: [SkyPlanetGpu; MAX_SKY_PLANETS],
-    /// Held lights (`Renderer::set_point_lights`): xyz camera-relative, w
-    /// the level; the count is in `screen.w`.
+    /// Held lights (`Renderer::set_point_lights`): xyz camera-relative; the
+    /// count is in `screen.w`.
     point_lights: [[f32; 4]; MAX_POINT_LIGHTS],
+    /// Their levels per channel (red, green, blue; milestone 26).
+    point_levels: [[f32; 4]; MAX_POINT_LIGHTS],
 }
 
 /// Moving lights the terrain shader adds to block light (torches in hands).
@@ -51,22 +53,26 @@ pub const MAX_POINT_LIGHTS: usize = 16;
 
 /// The nearest `MAX_POINT_LIGHTS` lights to the camera, camera-relative
 /// (each at the lap nearest the camera, ADR-0002), as the shader takes them.
-fn point_lights_gpu(shape: &PlanetShape, eye: DVec3, lights: &[(DVec3, u8)]) -> ([[f32; 4]; MAX_POINT_LIGHTS], usize) {
-    let mut near: Vec<(f64, DVec3, u8)> = lights
+type PointLightsGpu = ([[f32; 4]; MAX_POINT_LIGHTS], [[f32; 4]; MAX_POINT_LIGHTS], usize);
+
+fn point_lights_gpu(shape: &PlanetShape, eye: DVec3, lights: &[(DVec3, [u8; 3])]) -> PointLightsGpu {
+    let mut near: Vec<(f64, DVec3, [u8; 3])> = lights
         .iter()
-        .filter(|(_, level)| *level > 0)
+        .filter(|(_, level)| *level != [0; 3])
         .map(|&(p, level)| {
             let rel = shape.nearest_lap(eye, p) - eye;
-            (rel.length_squared(), rel, level.min(15))
+            (rel.length_squared(), rel, level.map(|l| l.min(15)))
         })
         .collect();
     near.sort_by(|a, b| a.0.total_cmp(&b.0));
-    let mut out = [[0.0; 4]; MAX_POINT_LIGHTS];
+    let mut at = [[0.0; 4]; MAX_POINT_LIGHTS];
+    let mut levels = [[0.0; 4]; MAX_POINT_LIGHTS];
     let n = near.len().min(MAX_POINT_LIGHTS);
-    for (slot, (_, rel, level)) in out.iter_mut().zip(near) {
-        *slot = [rel.x as f32, rel.y as f32, rel.z as f32, level as f32];
+    for ((a, l), (_, rel, level)) in at.iter_mut().zip(levels.iter_mut()).zip(near) {
+        *a = [rel.x as f32, rel.y as f32, rel.z as f32, 0.0];
+        *l = [level[0] as f32, level[1] as f32, level[2] as f32, 0.0];
     }
-    (out, n)
+    (at, levels, n)
 }
 
 /// One planet in the sky. Must match `SkyPlanet` in shaders/common.wgsl.
@@ -145,7 +151,10 @@ pub struct BoxInstance {
     pub rotation: [f32; 4],
     /// Sky light and block light (0 to 1, as the light map has them where
     /// the box stands), brightness (1 normal), glow (0 lit like terrain, 1
-    /// shining by itself: shots, a hit's flash).
+    /// shining by itself: shots, a hit's flash). Block light from 0 to 1 is
+    /// white; from 16 up it carries three levels, `16 + r + 16 g + 256 b`
+    /// ([`BoxInstance::light_of`], decoded by `box_block_light` in
+    /// simple.wgsl; milestone 26).
     pub light: [f32; 4],
 }
 
@@ -168,7 +177,9 @@ impl BoxInstance {
     /// The light-map light at a point as `light` takes it (brightness 1, no
     /// glow).
     pub fn light_of(l: bm_core::light::Light) -> [f32; 4] {
-        [l.sky() as f32 / 15.0, l.block() as f32 / 15.0, 1.0, 0.0]
+        let [r, g, b] = l.block_rgb();
+        let block = 16.0 + r as f32 + 16.0 * g as f32 + 256.0 * b as f32;
+        [l.sky() as f32 / 15.0, block, 1.0, 0.0]
     }
 }
 
@@ -275,8 +286,9 @@ pub struct Renderer {
     near_meshed: std::collections::HashSet<ChunkPos>,
     /// Far meshes (milestone 20), drawn where a chunk has no near mesh.
     far_chunks: HashMap<ChunkPos, GpuChunk>,
-    /// Held lights in canonical world positions, with their levels.
-    point_lights: Vec<(DVec3, u8)>,
+    /// Held lights in canonical world positions, with their levels per
+    /// channel.
+    point_lights: Vec<(DVec3, [u8; 3])>,
     instances: wgpu::Buffer,
     instance_capacity: usize,
     box_vertices: wgpu::Buffer,
@@ -457,7 +469,7 @@ impl Renderer {
             Some(wgpu::VertexBufferLayout {
                 array_stride: std::mem::size_of::<ShapedVertex>() as u64,
                 step_mode: wgpu::VertexStepMode::Vertex,
-                attributes: &wgpu::vertex_attr_array![0 => Uint32, 1 => Uint32, 2 => Uint32, 3 => Uint32],
+                attributes: &wgpu::vertex_attr_array![0 => Uint32, 1 => Uint32, 2 => Uint32, 3 => Uint32, 6 => Uint32],
             }),
             Some(wgpu::VertexBufferLayout {
                 array_stride: std::mem::size_of::<ChunkInstance>() as u64,
@@ -879,7 +891,7 @@ impl Renderer {
     /// block as block light does. Drawn in the shader on top of the meshed
     /// block light (the brighter wins), so nothing re-meshes and `LightMap`
     /// never sees them. The nearest [`MAX_POINT_LIGHTS`] are used.
-    pub fn set_point_lights(&mut self, lights: &[(DVec3, u8)]) {
+    pub fn set_point_lights(&mut self, lights: &[(DVec3, [u8; 3])]) {
         self.point_lights.clear();
         self.point_lights.extend_from_slice(lights);
     }
@@ -900,7 +912,7 @@ impl Renderer {
         let sky = scene.sky;
         let fog_start = scene.fog_end * 0.55;
         let v4 = |c: [f32; 3], w: f32| [c[0], c[1], c[2], w];
-        let (point_lights, point_count) = point_lights_gpu(&scene.shape, cam.eye, &self.point_lights);
+        let (point_lights, point_levels, point_count) = point_lights_gpu(&scene.shape, cam.eye, &self.point_lights);
         self.queue.write_buffer(
             &self.globals,
             0,
@@ -921,6 +933,7 @@ impl Renderer {
                 sky_rotation: Mat4::from_mat3(sky.sky_rotation).to_cols_array_2d(),
                 planets: sky_planets(scene.planets),
                 point_lights,
+                point_levels,
             }),
         );
 
@@ -1552,30 +1565,32 @@ mod tests {
         let w = shape.width_blocks() as f64;
         let eye = DVec3::new(1.0, 10.0, 1.0);
         let mut lights = vec![
-            (DVec3::new(w - 2.0, 10.0, 1.0), 10),
-            (DVec3::new(30.0, 10.0, 30.0), 10),
-            (eye, 0),
+            (DVec3::new(w - 2.0, 10.0, 1.0), [10, 8, 5]),
+            (DVec3::new(30.0, 10.0, 30.0), [10; 3]),
+            (eye, [0; 3]),
         ];
         for i in 0..20 {
-            lights.push((DVec3::new(40.0 + i as f64, 10.0, 40.0), 12));
+            lights.push((DVec3::new(40.0 + i as f64, 10.0, 40.0), [12; 3]));
         }
-        let (gpu, n) = point_lights_gpu(&shape, eye, &lights);
+        let (gpu, levels, n) = point_lights_gpu(&shape, eye, &lights);
         assert_eq!(n, MAX_POINT_LIGHTS);
-        // Across the seam, three blocks away; dark lights are dropped.
-        assert_eq!(gpu[0], [-3.0, 0.0, 0.0, 10.0]);
-        assert_eq!(gpu[1], [29.0, 0.0, 29.0, 10.0]);
-        assert!(gpu.iter().all(|l| l[3] > 0.0));
+        // Across the seam, three blocks away, in its colour; dark lights are
+        // dropped.
+        assert_eq!(gpu[0], [-3.0, 0.0, 0.0, 0.0]);
+        assert_eq!(levels[0], [10.0, 8.0, 5.0, 0.0]);
+        assert_eq!(gpu[1], [29.0, 0.0, 29.0, 0.0]);
+        assert!(levels.iter().all(|l| l[0] > 0.0));
     }
 
     #[test]
     fn layouts_match_the_shaders() {
         assert_eq!(
             std::mem::size_of::<Globals>(),
-            64 * 3 + 16 * 6 + 32 * MAX_SKY_PLANETS + 16 * MAX_POINT_LIGHTS
+            64 * 3 + 16 * 6 + 32 * MAX_SKY_PLANETS + 2 * 16 * MAX_POINT_LIGHTS
         );
         assert_eq!(std::mem::size_of::<ChunkInstance>(), 24);
         assert_eq!(std::mem::size_of::<Vertex>(), 8);
-        assert_eq!(std::mem::size_of::<ShapedVertex>(), 16);
+        assert_eq!(std::mem::size_of::<ShapedVertex>(), 20);
         assert_eq!(std::mem::size_of::<LineVertex>(), 28);
         // centre 12, half size 12, colour 16, rotation 16, light 16, in the
         // order of `BoxIn`'s locations 2 to 6.

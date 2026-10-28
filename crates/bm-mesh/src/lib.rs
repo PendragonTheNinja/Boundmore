@@ -315,18 +315,23 @@ fn face_light(p: &Padded, light: &PaddedLight, flags: &BlockFlags, b: [i32; 3], 
         let (o1, l1) = cell(su, 0);
         let (o2, l2) = cell(0, sv);
         let (oc, lc) = cell(su, sv);
-        let mut sum = (centre.sky() as u32, centre.block() as u32);
+        let channels = |l: Light| {
+            let [r, g, b] = l.block_rgb();
+            [l.sky() as u32, r as u32, g as u32, b as u32]
+        };
+        let mut sum = channels(centre);
         let mut count = 1;
         for (open, l) in [(!o1, l1), (!o2, l2), (!oc && !(o1 && o2), lc)] {
             if open {
-                sum.0 += l.sky() as u32;
-                sum.1 += l.block() as u32;
+                for (s, v) in sum.iter_mut().zip(channels(l)) {
+                    *s += v;
+                }
                 count += 1;
             }
         }
         // Rounded, so a block standing in open sky is at 15 all over.
         let avg = |v: u32| ((2 * v + count) / (2 * count)) as u8;
-        Light::new(avg(sum.0), avg(sum.1))
+        Light::rgb(avg(sum[0]), [avg(sum[1]), avg(sum[2]), avg(sum[3])])
     };
     [corner(-1, -1), corner(1, -1), corner(1, 1), corner(-1, 1)]
 }
@@ -483,11 +488,13 @@ pub fn mesh_quads_naive(p: &Padded, light: &PaddedLight, flags: &BlockFlags) -> 
 /// A packed vertex, 8 bytes.
 ///
 /// `a`: x (6 bits) | y << 6 | z << 12 | face << 18 (3 bits) | ao << 21 (2 bits)
-/// `b`: block id (16 bits) | sky light << 16 (4 bits) | block light << 20
+/// | green block light << 23 (4 bits) | blue block light << 27 (4 bits)
+/// `b`: block id (16 bits) | sky light << 16 (4 bits) | red block light << 20
 /// (4 bits) | colour << 24 (8 bits, palette id, 0 natural; ADR-0007).
 ///
 /// Sky and block light are separate so the shader can scale sky light by the
-/// time of day (and leave glow crystals alone) without anything re-meshing.
+/// time of day (and leave glow crystals alone) without anything re-meshing;
+/// block light has three channels (milestone 26).
 ///
 /// Positions are chunk-local corners in `0..=32`. The shader rebuilds texture
 /// coordinates from position and face, so quads of any size tile.
@@ -500,9 +507,16 @@ pub struct Vertex {
 
 impl Vertex {
     pub fn new(pos: [u32; 3], face: Face, ao: u8, block: BlockId, light: Light) -> Self {
+        let [r, g, b] = light.block_rgb();
         Self {
-            a: pos[0] | pos[1] << 6 | pos[2] << 12 | face.index() << 18 | (ao as u32) << 21,
-            b: block.0 as u32 | (light.sky() as u32) << 16 | (light.block() as u32) << 20,
+            a: pos[0]
+                | pos[1] << 6
+                | pos[2] << 12
+                | face.index() << 18
+                | (ao as u32) << 21
+                | (g as u32) << 23
+                | (b as u32) << 27,
+            b: block.0 as u32 | (light.sky() as u32) << 16 | (r as u32) << 20,
         }
     }
 
@@ -526,17 +540,26 @@ impl Vertex {
         (self.b >> 16 & 15) as u8
     }
 
+    /// The brightest channel of block light.
     pub fn block_light(self) -> u8 {
-        (self.b >> 20 & 15) as u8
+        self.light().block()
     }
 
     pub fn light(self) -> Light {
-        Light::new(self.sky(), self.block_light())
+        Light::rgb(
+            self.sky(),
+            [
+                (self.b >> 20 & 15) as u8,
+                (self.a >> 23 & 15) as u8,
+                (self.a >> 27 & 15) as u8,
+            ],
+        )
     }
 
     /// For choosing the quad diagonal: occlusion first, light to break ties.
     fn brightness(self) -> u32 {
-        self.ao() as u32 * 64 + self.sky() as u32 + self.block_light() as u32
+        let [r, g, b] = self.light().block_rgb();
+        self.ao() as u32 * 64 + self.sky() as u32 + r as u32 + g as u32 + b as u32
     }
 
     pub fn position(self) -> [u32; 3] {
@@ -631,7 +654,9 @@ pub const SHAPED_UNITS: f32 = 256.0;
 /// `z` also carries, from bit 21, an explicit texture coordinate for props
 /// (bit 21 set: u in bits 22..27, v in `normal`'s, both in pixels of the
 /// 32 x 32 face, 0..=32); clear, the shader takes it from the position.
-/// `b`: as [`Vertex`]: block id | sky << 16 | block light << 20 | colour << 24.
+/// `b`: as [`Vertex`]: block id | sky << 16 | red block light << 20 |
+/// colour << 24.
+/// `gb`: green block light | blue << 4 (milestone 26); the rest spare.
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, bytemuck::Pod, bytemuck::Zeroable)]
 pub struct ShapedVertex {
@@ -639,6 +664,7 @@ pub struct ShapedVertex {
     pub z: u32,
     pub normal: u32,
     pub b: u32,
+    pub gb: u32,
 }
 
 impl ShapedVertex {
@@ -650,7 +676,8 @@ impl ShapedVertex {
             xy: q(pos[0]) | q(pos[1]) << 16,
             z: q(pos[2]) | (tex_face as u32 & 7) << 16 | (ao as u32 & 3) << 19,
             normal: n(normal[0]) | n(normal[1]) << 8 | n(normal[2]) << 16,
-            b: block.0 as u32 | (light.sky() as u32) << 16 | (light.block() as u32) << 20 | (c.0 as u32) << 24,
+            b: block.0 as u32 | (light.sky() as u32) << 16 | (light.block_rgb()[0] as u32) << 20 | (c.0 as u32) << 24,
+            gb: light.block_rgb()[1] as u32 | (light.block_rgb()[2] as u32) << 4,
         }
     }
 
@@ -697,7 +724,14 @@ impl ShapedVertex {
     }
 
     pub fn light(self) -> Light {
-        Light::new((self.b >> 16 & 15) as u8, (self.b >> 20 & 15) as u8)
+        Light::rgb(
+            (self.b >> 16 & 15) as u8,
+            [
+                (self.b >> 20 & 15) as u8,
+                (self.gb & 15) as u8,
+                (self.gb >> 4 & 15) as u8,
+            ],
+        )
     }
 }
 
@@ -716,7 +750,7 @@ fn shaped_sample(
     let s: [f32; 3] = std::array::from_fn(|a| b[a] as f32 + q[a] + n[a] * 0.5 - 0.5);
     let c0: [i32; 3] = s.map(|v| v.floor() as i32);
     let f: [f32; 3] = std::array::from_fn(|a| s[a] - c0[a] as f32);
-    let (mut occ, mut open, mut sky, mut blk) = (0.0f32, 0.0f32, 0.0f32, 0.0f32);
+    let (mut occ, mut open, mut sky, mut blk) = (0.0f32, 0.0f32, 0.0f32, [0.0f32; 3]);
     for k in 0..8 {
         let d = [k & 1, k >> 1 & 1, k >> 2 & 1];
         let w: f32 = (0..3).map(|a| if d[a] == 1 { f[a] } else { 1.0 - f[a] }).product();
@@ -730,12 +764,14 @@ fn shaped_sample(
             let l = light.get(c[0], c[1], c[2]);
             open += w;
             sky += w * l.sky() as f32;
-            blk += w * l.block() as f32;
+            for (b, v) in blk.iter_mut().zip(l.block_rgb()) {
+                *b += w * v as f32;
+            }
         }
     }
     let ao = (3.0 - (occ * 4.0).round()).clamp(0.0, 3.0) as u8;
     let l = if open > 1e-3 {
-        Light::new((sky / open).round() as u8, (blk / open).round() as u8)
+        Light::rgb((sky / open).round() as u8, blk.map(|b| (b / open).round() as u8))
     } else {
         light.get(b[0], b[1], b[2])
     };
@@ -1357,7 +1393,8 @@ mod tests {
         );
         let n = v.normal();
         assert!((n[1] + 0.6).abs() < 0.01 && (n[2] - 0.8).abs() < 0.01 && n[0] == 0.0);
-        assert_eq!(std::mem::size_of::<ShapedVertex>(), 16);
+        // A fifth word carries green and blue block light (milestone 26).
+        assert_eq!(std::mem::size_of::<ShapedVertex>(), 20);
         // A cut block in open sky is lit at every vertex, and open.
         let mut c = Chunk::empty();
         let r = reg();

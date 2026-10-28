@@ -18,8 +18,10 @@ struct Globals {
     // The night sky's frame to the world's (stars and planets turn with it)
     sky_rotation: mat4x4<f32>,
     planets: array<SkyPlanet, 16>,
-    // Held torches: xyz camera-relative position, w light level (0..15).
+    // Held torches: xyz camera-relative position.
     point_lights: array<vec4<f32>, 16>,
+    // Their light levels per channel, rgb (0..15; milestone 26).
+    point_levels: array<vec4<f32>, 16>,
 };
 
 struct SkyPlanet {
@@ -62,24 +64,31 @@ fn light_curve(l: f32) -> f32 {
     return pow(l, 1.7);
 }
 
+// The same per channel of coloured block light (milestone 26).
+fn light_curve3(l: vec3<f32>) -> vec3<f32> {
+    return pow(l, vec3<f32>(1.7));
+}
+
 // The darkest anything gets: sealed caves are dark, but never pure black.
 const AMBIENT: f32 = 0.012;
-// Block light is warm, like lamplight on stone.
-const BLOCK_TINT: vec3<f32> = vec3<f32>(1.0, 0.88, 0.70);
+// Block light has the colour of what gives it off (milestone 26: each
+// light's `light_colour`, a glow crystal's world colour), so it is not tinted
+// here.
 
-// Block light from the held torches (`Renderer::set_point_lights`), 0..1:
-// each falls off one level per block, as block light spreads, measured to
-// the point half a block out from the surface (where a face samples its
-// block light). No occlusion: a held torch lights through walls within its
-// reach, a fair trade for never re-meshing a light that moves every frame.
-fn point_light(rel: vec3<f32>, n: vec3<f32>) -> f32 {
+// Block light from the held torches (`Renderer::set_point_lights`), 0..1 per
+// channel: each falls off one level per block, as block light spreads,
+// measured to the point half a block out from the surface (where a face
+// samples its block light). No occlusion: a held torch lights through walls
+// within its reach, a fair trade for never re-meshing a light that moves
+// every frame.
+fn point_light(rel: vec3<f32>, n: vec3<f32>) -> vec3<f32> {
     let p = rel + n * 0.5;
     let count = min(u32(g.screen.w), 16u);
-    var best = 0.0;
+    var best = vec3<f32>(0.0);
     for (var i = 0u; i < count; i++) {
-        let l = g.point_lights[i];
-        best = max(best, l.w - length(p - l.xyz));
+        let d = length(p - g.point_lights[i].xyz);
+        best = max(best, g.point_levels[i].rgb - vec3<f32>(d));
     }
-    return clamp(best, 0.0, 15.0) / 15.0;
+    return clamp(best, vec3<f32>(0.0), vec3<f32>(15.0)) / 15.0;
 }
 

@@ -33,8 +33,9 @@ struct VsOut {
     @location(3) @interpolate(flat) face: u32,
     @location(4) ao: f32,
     @location(5) @interpolate(flat) origin: vec3<i32>,
-    // x: sky light, y: block light, each 0..1 before the curve
-    @location(6) light: vec2<f32>,
+    // x: sky light, yzw: block light in red, green and blue, each 0..1
+    // before the curve
+    @location(6) light: vec4<f32>,
     // Palette colour id, 0 natural.
     @location(7) @interpolate(flat) colour: u32,
     // Surface normal: the face's for cubes, smooth across a rounded cut.
@@ -53,6 +54,8 @@ struct ShapedIn {
     @location(3) b: u32,
     @location(4) offset: vec3<f32>,
     @location(5) origin: vec3<i32>,
+    // Green and blue block light, 4 bits each (milestone 26).
+    @location(6) gb: u32,
 };
 
 const NORMALS = array<vec3<f32>, 6>(
@@ -75,7 +78,12 @@ fn vs_main(in: VsIn) -> VsOut {
     out.face = (in.a >> 18u) & 7u;
     out.ao = AO_CURVE[(in.a >> 21u) & 3u];
     out.origin = in.origin;
-    out.light = vec2<f32>(f32((in.b >> 16u) & 15u), f32((in.b >> 20u) & 15u)) / 15.0;
+    out.light = vec4<f32>(
+        f32((in.b >> 16u) & 15u),
+        f32((in.b >> 20u) & 15u),
+        f32((in.a >> 23u) & 15u),
+        f32((in.a >> 27u) & 15u),
+    ) / 15.0;
     out.colour = in.b >> 24u;
     out.normal = NORMALS[out.face];
     out.uv = vec3<f32>(0.0);
@@ -94,7 +102,12 @@ fn vs_shaped(in: ShapedIn) -> VsOut {
     out.face = (in.z >> 16u) & 7u;
     out.ao = AO_CURVE[(in.z >> 19u) & 3u];
     out.origin = in.origin;
-    out.light = vec2<f32>(f32((in.b >> 16u) & 15u), f32((in.b >> 20u) & 15u)) / 15.0;
+    out.light = vec4<f32>(
+        f32((in.b >> 16u) & 15u),
+        f32((in.b >> 20u) & 15u),
+        f32(in.gb & 15u),
+        f32((in.gb >> 4u) & 15u),
+    ) / 15.0;
     out.colour = in.b >> 24u;
     out.normal = unpack4x8snorm(in.n).xyz;
     // Props (bm-mesh `ShapedVertex::with_uv`): u in z bits 22..27, v in the
@@ -254,10 +267,10 @@ fn shade(in: VsOut, base: vec3<f32>) -> vec3<f32> {
     let sky = light_curve(in.light.x);
     // Meshed block light and the held lights: the brighter wins, as two
     // torches do in the light map.
-    let block = light_curve(max(in.light.y, point_light(in.rel, n)));
+    let block = light_curve3(max(in.light.yzw, point_light(in.rel, n)));
     let sun = max(dot(n, g.sun_dir.xyz), 0.0) * g.sun_dir.w;
     let sky_light = sky * g.sun_color.w * (0.82 + 0.18 * sun);
-    let light = max(vec3<f32>(sky_light), BLOCK_TINT * block) + AMBIENT;
+    let light = max(vec3<f32>(sky_light), block) + AMBIENT;
     let c = base * face_shade(n) * light * in.ao;
     let d = length(in.rel);
     let fog = clamp((d - g.params.x) / max(g.params.y - g.params.x, 1.0), 0.0, 1.0);

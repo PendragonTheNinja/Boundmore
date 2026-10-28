@@ -151,8 +151,11 @@ impl Items {
     }
 
     /// Light a held stack gives (a torch, a Glowing tool).
-    pub fn held_light_of(&self, stack: Option<&ItemStack>) -> u8 {
-        stack.and_then(|s| self.def(s).map(|d| d.held_light_of(s))).unwrap_or(0)
+    /// The light held in hand per channel (milestone 26).
+    pub fn held_rgb_of(&self, stack: Option<&ItemStack>) -> [u8; 3] {
+        stack
+            .and_then(|s| self.def(s).map(|d| d.held_rgb_of(s)))
+            .unwrap_or([0; 3])
     }
 
     /// A stack's name with its colour: "Stone, Rich Azure", or plain

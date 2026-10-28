@@ -70,6 +70,8 @@ Boundmore now: grazer walks 1.4, charges 12 blocks a second over up to 15 blocks
 
 - [ ] **F1.** Hit a block a few times and stop: how long until its damage is gone, and does it heal gradually or all at once? (Ours: all at once after 5 s.)
 - [ ] **F2.** At night in an open field: how far does a basic torch light (blocks from it that you can still read the ground), next to a glowing crystal (gleam) and a Glow 3 tool held? Which lights furthest?
+- [ ] **F4.** (M26) At night, next to a white glow crystal (gleam): how far do a gem torch and a gleam lantern light compared with it, and with a basic torch? (Ours: gleam 12, gem torch and crystal lantern 14, torch 10, lantern 14.)
+- [ ] **F5.** (M26) By eye: what colour is the light of a basic torch, a lantern, a furnace and lava (warm white, orange, yellow)? Does a dark gleam colour light a smaller area than a light one, and a very dark one almost nothing?
 - [ ] **F3.** Grapples, by feel only: swinging on a rope and letting go, does the fling carry long, or fade quickly? (No numbers needed; "carries further than ours" is enough.)
 
 ## G. Regions and meteors (tier 3 world)

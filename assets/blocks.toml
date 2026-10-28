@@ -281,7 +281,7 @@ build_xp = 0
 [[block]]
 name = "glow_crystal"
 prestige = 3
-colourable = false
+colourable = true
 color = [150, 230, 255]
 solid = true
 opaque = true
@@ -291,6 +291,8 @@ placeable = true
 health = "hard"
 textures = { all = "glow_crystal" }
 light = 12
+light_colour = [176, 236, 255]
+light_tint = true
 material = "crystal"
 mine_xp = 8
 build_xp = 8
@@ -381,6 +383,7 @@ textures = { top = "furnace_top", side = "furnace_side", bottom = "stone" }
 material = "rock"
 station = "furnace"
 light = 7
+light_colour = [255, 168, 96]
 assembly = "furnace_base"
 mine_xp = 0
 build_xp = 12
@@ -400,6 +403,7 @@ health = "hard"
 textures = { top = "claim_stone_top", side = "claim_stone_side", bottom = "stone" }
 material = "rock"
 light = 6
+light_colour = [208, 196, 255]
 
 # M4: blocks of the other planet kinds. New blocks always go at the END of this
 # file: block ids are positions here, and saved chunks store ids.
@@ -473,6 +477,7 @@ health = "hard"
 textures = { top = "warp_shrine_top", side = "warp_shrine_side", bottom = "stone" }
 material = "rock"
 light = 10
+light_colour = [196, 168, 255]
 
 # M5: storage.
 
@@ -528,6 +533,7 @@ health = "seam"
 textures = { all = "wayshard_vein" }
 material = "rock"
 light = 3
+light_colour = [176, 132, 255]
 drops = "wayshard"
 bonus = [{ item = "wayshard", per_tier = [0, 0, 0, 0, 0.5, 0.8, 0.8, 1.2] }]
 mine_xp = 64
@@ -562,6 +568,7 @@ placeable = false
 health = "hard"
 textures = { all = "portal_surface" }
 light = 11
+light_colour = [188, 152, 255]
 drops = ""
 
 [[block]]
@@ -576,6 +583,7 @@ breakable = true
 placeable = true
 health = "prop"
 light = 10
+light_colour = [255, 226, 180]
 textures = { all = "torch" }
 mount = "floor"
 mine_xp = 0
@@ -593,6 +601,7 @@ breakable = true
 placeable = false
 health = "prop"
 light = 10
+light_colour = [255, 226, 180]
 textures = { all = "torch" }
 mount = "north"
 drops = "torch"
@@ -609,6 +618,7 @@ breakable = true
 placeable = false
 health = "prop"
 light = 10
+light_colour = [255, 226, 180]
 textures = { all = "torch" }
 mount = "east"
 drops = "torch"
@@ -625,6 +635,7 @@ breakable = true
 placeable = false
 health = "prop"
 light = 10
+light_colour = [255, 226, 180]
 textures = { all = "torch" }
 mount = "south"
 drops = "torch"
@@ -641,6 +652,7 @@ breakable = true
 placeable = false
 health = "prop"
 light = 10
+light_colour = [255, 226, 180]
 textures = { all = "torch" }
 mount = "west"
 drops = "torch"
@@ -1117,6 +1129,7 @@ model = "fungus"
 drops = ""
 bonus = [{ item = "glowing_lamella", per_tier = [1.25, 1.25, 1.25, 1.25, 1.25, 1.25, 1.25, 1.25] }, { item = "shimmering_orb", per_tier = [0.6, 0.6, 0.6, 0.6, 0.6, 0.6, 0.6, 0.6] }]
 light = 6
+light_colour = [140, 255, 226]
 mine_xp = 40
 build_xp = 2
 
@@ -1135,6 +1148,7 @@ breakable = true
 placeable = true
 health = "prop"
 light = 13
+light_colour = [255, 234, 196]
 textures = { all = "tallow_torch" }
 mount = "floor"
 mine_xp = 0
@@ -1152,6 +1166,7 @@ breakable = true
 placeable = false
 health = "prop"
 light = 13
+light_colour = [255, 234, 196]
 textures = { all = "tallow_torch" }
 mount = "north"
 drops = "tallow_torch"
@@ -1168,6 +1183,7 @@ breakable = true
 placeable = false
 health = "prop"
 light = 13
+light_colour = [255, 234, 196]
 textures = { all = "tallow_torch" }
 mount = "east"
 drops = "tallow_torch"
@@ -1184,6 +1200,7 @@ breakable = true
 placeable = false
 health = "prop"
 light = 13
+light_colour = [255, 234, 196]
 textures = { all = "tallow_torch" }
 mount = "south"
 drops = "tallow_torch"
@@ -1200,6 +1217,7 @@ breakable = true
 placeable = false
 health = "prop"
 light = 13
+light_colour = [255, 234, 196]
 textures = { all = "tallow_torch" }
 mount = "west"
 drops = "tallow_torch"
@@ -1220,6 +1238,7 @@ breakable = true
 placeable = false
 health = "seam"
 light = 2
+light_colour = [210, 150, 255]
 textures = { all = "meteor_shell" }
 material = "rock"
 drops = ""
@@ -1237,6 +1256,7 @@ translucent = false
 breakable = false
 placeable = false
 light = 12
+light_colour = [255, 172, 112]
 textures = { all = "meteor_heart" }
 material = "crystal"
 drops = ""
@@ -1350,6 +1370,7 @@ textures = { top = "iron_furnace_top", side = "iron_furnace_side", bottom = "sto
 material = "rock"
 station = "furnace"
 light = 7
+light_colour = [255, 168, 96]
 assembly = "furnace_base"
 heat_share = 0.5
 build_xp = 16
@@ -1388,6 +1409,7 @@ textures = { top = "spark_generator_top", side = "spark_generator_side", bottom 
 material = "rock"
 station = "spark_generator"
 light = 5
+light_colour = [214, 226, 255]
 build_xp = 24
 
 [[block]]
@@ -2441,6 +2463,7 @@ textures = { top = "titanium_furnace_top", side = "titanium_furnace_side", botto
 material = "rock"
 station = "furnace"
 light = 7
+light_colour = [255, 176, 110]
 assembly = "furnace_base"
 heat_share = 0.25
 build_xp = 24
@@ -2496,6 +2519,7 @@ placeable = false
 health = "hard"
 textures = { all = "lava" }
 light = 15
+light_colour = [255, 136, 56]
 liquid = true
 burns = true
 
@@ -3199,7 +3223,7 @@ build_xp = 16
 name = "refined_glow_crystal"
 prestige = 5
 chisel = "any"
-colourable = false
+colourable = true
 color = [150, 230, 255]
 solid = true
 opaque = true
@@ -3209,6 +3233,8 @@ placeable = true
 health = "hard"
 textures = { all = "refined_glow_crystal" }
 light = 12
+light_colour = [176, 236, 255]
+light_tint = true
 material = "crystal"
 mine_xp = 2
 build_xp = 16
@@ -3217,7 +3243,7 @@ build_xp = 16
 name = "faceted_glow_crystal"
 prestige = 7
 chisel = "any"
-colourable = false
+colourable = true
 color = [170, 240, 255]
 solid = true
 opaque = true
@@ -3227,6 +3253,8 @@ placeable = true
 health = "hard"
 textures = { all = "faceted_glow_crystal" }
 light = 13
+light_colour = [176, 236, 255]
+light_tint = true
 material = "crystal"
 mine_xp = 2
 build_xp = 16
@@ -4112,6 +4140,7 @@ placeable = true
 health = "hard"
 textures = { all = "lantern" }
 light = 14
+light_colour = [255, 232, 190]
 material = "crystal"
 mine_xp = 2
 build_xp = 16
@@ -4237,7 +4266,7 @@ build_xp = 12
 name = "plain_crystal_door"
 prestige = 17
 chisel = "none"
-colourable = false
+colourable = true
 color = [150, 230, 255]
 solid = true
 opaque = true
@@ -4256,7 +4285,7 @@ build_xp = 12
 name = "plain_crystal_door_open"
 prestige = 17
 chisel = "none"
-colourable = false
+colourable = true
 color = [150, 230, 255]
 solid = false
 opaque = true
@@ -4389,7 +4418,7 @@ build_xp = 12
 name = "stylish_crystal_door"
 prestige = 18
 chisel = "none"
-colourable = false
+colourable = true
 color = [150, 230, 255]
 solid = true
 opaque = true
@@ -4408,7 +4437,7 @@ build_xp = 12
 name = "stylish_crystal_door_open"
 prestige = 18
 chisel = "none"
-colourable = false
+colourable = true
 color = [150, 230, 255]
 solid = false
 opaque = true
@@ -4541,7 +4570,7 @@ build_xp = 12
 name = "ornate_crystal_door"
 prestige = 20
 chisel = "none"
-colourable = false
+colourable = true
 color = [150, 230, 255]
 solid = true
 opaque = true
@@ -4560,7 +4589,7 @@ build_xp = 12
 name = "ornate_crystal_door_open"
 prestige = 20
 chisel = "none"
-colourable = false
+colourable = true
 color = [150, 230, 255]
 solid = false
 opaque = true
@@ -4693,7 +4722,7 @@ build_xp = 12
 name = "plain_crystal_trapdoor"
 prestige = 17
 chisel = "none"
-colourable = false
+colourable = true
 color = [150, 230, 255]
 solid = true
 opaque = true
@@ -4712,7 +4741,7 @@ build_xp = 12
 name = "plain_crystal_trapdoor_open"
 prestige = 17
 chisel = "none"
-colourable = false
+colourable = true
 color = [150, 230, 255]
 solid = false
 opaque = true
@@ -4845,7 +4874,7 @@ build_xp = 12
 name = "stylish_crystal_trapdoor"
 prestige = 18
 chisel = "none"
-colourable = false
+colourable = true
 color = [150, 230, 255]
 solid = true
 opaque = true
@@ -4864,7 +4893,7 @@ build_xp = 12
 name = "stylish_crystal_trapdoor_open"
 prestige = 18
 chisel = "none"
-colourable = false
+colourable = true
 color = [150, 230, 255]
 solid = false
 opaque = true
@@ -4997,7 +5026,7 @@ build_xp = 12
 name = "ornate_crystal_trapdoor"
 prestige = 20
 chisel = "none"
-colourable = false
+colourable = true
 color = [150, 230, 255]
 solid = true
 opaque = true
@@ -5016,7 +5045,7 @@ build_xp = 12
 name = "ornate_crystal_trapdoor_open"
 prestige = 20
 chisel = "none"
-colourable = false
+colourable = true
 color = [150, 230, 255]
 solid = false
 opaque = true
@@ -5114,7 +5143,7 @@ build_xp = 12
 name = "plain_crystal_pole"
 prestige = 12
 chisel = "none"
-colourable = false
+colourable = true
 color = [150, 230, 255]
 solid = true
 opaque = true
@@ -5125,6 +5154,8 @@ health = "hard"
 textures = { all = "plain_crystal_pole" }
 material = "crystal"
 light = 6
+light_colour = [176, 236, 255]
+light_tint = true
 form = "pole"
 style = "plain"
 mine_xp = 2
@@ -5191,7 +5222,7 @@ build_xp = 12
 name = "stylish_crystal_pole"
 prestige = 15
 chisel = "none"
-colourable = false
+colourable = true
 color = [150, 230, 255]
 solid = true
 opaque = true
@@ -5202,6 +5233,8 @@ health = "hard"
 textures = { all = "stylish_crystal_pole" }
 material = "crystal"
 light = 6
+light_colour = [176, 236, 255]
+light_tint = true
 form = "pole"
 style = "stylish"
 mine_xp = 2
@@ -5268,7 +5301,7 @@ build_xp = 12
 name = "ornate_crystal_pole"
 prestige = 16
 chisel = "none"
-colourable = false
+colourable = true
 color = [150, 230, 255]
 solid = true
 opaque = true
@@ -5279,6 +5312,8 @@ health = "hard"
 textures = { all = "ornate_crystal_pole" }
 material = "crystal"
 light = 6
+light_colour = [176, 236, 255]
+light_tint = true
 form = "pole"
 style = "ornate"
 mine_xp = 2
@@ -5345,7 +5380,7 @@ build_xp = 12
 name = "plain_crystal_beam"
 prestige = 12
 chisel = "none"
-colourable = false
+colourable = true
 color = [150, 230, 255]
 solid = true
 opaque = true
@@ -5356,6 +5391,8 @@ health = "hard"
 textures = { all = "plain_crystal_beam" }
 material = "crystal"
 light = 6
+light_colour = [176, 236, 255]
+light_tint = true
 form = "beam"
 style = "plain"
 mine_xp = 2
@@ -5422,7 +5459,7 @@ build_xp = 12
 name = "stylish_crystal_beam"
 prestige = 15
 chisel = "none"
-colourable = false
+colourable = true
 color = [150, 230, 255]
 solid = true
 opaque = true
@@ -5433,6 +5470,8 @@ health = "hard"
 textures = { all = "stylish_crystal_beam" }
 material = "crystal"
 light = 6
+light_colour = [176, 236, 255]
+light_tint = true
 form = "beam"
 style = "stylish"
 mine_xp = 2
@@ -5499,7 +5538,7 @@ build_xp = 12
 name = "ornate_crystal_beam"
 prestige = 16
 chisel = "none"
-colourable = false
+colourable = true
 color = [150, 230, 255]
 solid = true
 opaque = true
@@ -5510,6 +5549,8 @@ health = "hard"
 textures = { all = "ornate_crystal_beam" }
 material = "crystal"
 light = 6
+light_colour = [176, 236, 255]
+light_tint = true
 form = "beam"
 style = "ornate"
 mine_xp = 2
@@ -5519,7 +5560,7 @@ build_xp = 12
 name = "plain_glass_pane"
 prestige = 5
 chisel = "none"
-colourable = false
+colourable = true
 color = [200, 228, 236]
 solid = true
 opaque = false
@@ -5539,7 +5580,7 @@ build_xp = 12
 name = "stylish_glass_pane"
 prestige = 8
 chisel = "none"
-colourable = false
+colourable = true
 color = [200, 228, 236]
 solid = true
 opaque = false
@@ -5559,7 +5600,7 @@ build_xp = 12
 name = "ornate_glass_pane"
 prestige = 11
 chisel = "none"
-colourable = false
+colourable = true
 color = [200, 228, 236]
 solid = true
 opaque = false
@@ -5798,7 +5839,7 @@ build_xp = 12
 name = "plain_crystal_storage"
 prestige = 8
 chisel = "any"
-colourable = false
+colourable = true
 color = [150, 230, 255]
 solid = true
 opaque = true
@@ -5809,6 +5850,8 @@ health = "hard"
 textures = { top = "plain_crystal_storage_top", side = "plain_crystal_storage_side", bottom = "plain_crystal_storage_top" }
 material = "crystal"
 light = 8
+light_colour = [176, 236, 255]
+light_tint = true
 storage = 24
 mine_xp = 2
 build_xp = 12
@@ -5817,7 +5860,7 @@ build_xp = 12
 name = "stylish_crystal_storage"
 prestige = 10
 chisel = "any"
-colourable = false
+colourable = true
 color = [150, 230, 255]
 solid = true
 opaque = true
@@ -5828,6 +5871,8 @@ health = "hard"
 textures = { top = "stylish_crystal_storage_top", side = "stylish_crystal_storage_side", bottom = "stylish_crystal_storage_top" }
 material = "crystal"
 light = 8
+light_colour = [176, 236, 255]
+light_tint = true
 storage = 32
 mine_xp = 2
 build_xp = 12
@@ -5836,7 +5881,7 @@ build_xp = 12
 name = "ornate_crystal_storage"
 prestige = 12
 chisel = "any"
-colourable = false
+colourable = true
 color = [150, 230, 255]
 solid = true
 opaque = true
@@ -5847,6 +5892,8 @@ health = "hard"
 textures = { top = "ornate_crystal_storage_top", side = "ornate_crystal_storage_side", bottom = "ornate_crystal_storage_top" }
 material = "crystal"
 light = 8
+light_colour = [176, 236, 255]
+light_tint = true
 storage = 40
 mine_xp = 2
 build_xp = 12
@@ -6029,7 +6076,7 @@ build_xp = 12
 name = "crystal_sign"
 prestige = 17
 chisel = "none"
-colourable = false
+colourable = true
 color = [150, 230, 255]
 solid = true
 opaque = true
@@ -6049,7 +6096,7 @@ build_xp = 12
 name = "crystal_sign_panel"
 prestige = 17
 chisel = "none"
-colourable = false
+colourable = true
 color = [150, 230, 255]
 solid = true
 opaque = true
@@ -6179,6 +6226,7 @@ health = "hard"
 textures = { top = "helix_top", side = "builders_helix_side", bottom = "helix_top" }
 material = "rock"
 light = 5
+light_colour = [214, 226, 255]
 mine_xp = 2
 build_xp = 32
 
@@ -6195,6 +6243,7 @@ health = "hard"
 textures = { top = "helix_top", side = "grapple_run_helix_side", bottom = "helix_top" }
 material = "rock"
 light = 5
+light_colour = [214, 226, 255]
 mine_xp = 2
 build_xp = 32
 
@@ -6211,6 +6260,7 @@ health = "hard"
 textures = { top = "helix_top", side = "lava_protection_helix_side", bottom = "helix_top" }
 material = "rock"
 light = 5
+light_colour = [214, 226, 255]
 mine_xp = 2
 build_xp = 32
 
@@ -6227,6 +6277,7 @@ health = "hard"
 textures = { top = "helix_top", side = "defeat_insurance_helix_side", bottom = "helix_top" }
 material = "rock"
 light = 5
+light_colour = [214, 226, 255]
 mine_xp = 2
 build_xp = 32
 
@@ -6264,3 +6315,544 @@ material = "wood"
 storage = 16
 mine_xp = 2
 build_xp = 16
+
+# Milestone 26: gem torches (Boundless's six), placed on floors and walls
+# like torches, each lighting in its gem's colour (light 14 a guess:
+# brighter than glow crystal, as Boundless's were), and the crystal lantern
+# (Boundless's gleam lantern), lighting in its crystal's colour.
+
+[[block]]
+name = "amethyst_torch"
+prestige = 10
+colourable = false
+color = [154, 92, 216]
+solid = false
+opaque = false
+translucent = false
+breakable = true
+placeable = true
+health = "prop"
+light = 14
+light_colour = [196, 120, 255]
+textures = { all = "amethyst_torch" }
+mount = "floor"
+mine_xp = 0
+build_xp = 8
+
+[[block]]
+name = "amethyst_torch_north"
+prestige = 10
+colourable = false
+color = [154, 92, 216]
+solid = false
+opaque = false
+translucent = false
+breakable = true
+placeable = false
+health = "prop"
+light = 14
+light_colour = [196, 120, 255]
+textures = { all = "amethyst_torch" }
+mount = "north"
+drops = "amethyst_torch"
+
+[[block]]
+name = "amethyst_torch_east"
+prestige = 10
+colourable = false
+color = [154, 92, 216]
+solid = false
+opaque = false
+translucent = false
+breakable = true
+placeable = false
+health = "prop"
+light = 14
+light_colour = [196, 120, 255]
+textures = { all = "amethyst_torch" }
+mount = "east"
+drops = "amethyst_torch"
+
+[[block]]
+name = "amethyst_torch_south"
+prestige = 10
+colourable = false
+color = [154, 92, 216]
+solid = false
+opaque = false
+translucent = false
+breakable = true
+placeable = false
+health = "prop"
+light = 14
+light_colour = [196, 120, 255]
+textures = { all = "amethyst_torch" }
+mount = "south"
+drops = "amethyst_torch"
+
+[[block]]
+name = "amethyst_torch_west"
+prestige = 10
+colourable = false
+color = [154, 92, 216]
+solid = false
+opaque = false
+translucent = false
+breakable = true
+placeable = false
+health = "prop"
+light = 14
+light_colour = [196, 120, 255]
+textures = { all = "amethyst_torch" }
+mount = "west"
+drops = "amethyst_torch"
+
+[[block]]
+name = "emerald_torch"
+prestige = 10
+colourable = false
+color = [40, 180, 100]
+solid = false
+opaque = false
+translucent = false
+breakable = true
+placeable = true
+health = "prop"
+light = 14
+light_colour = [96, 255, 150]
+textures = { all = "emerald_torch" }
+mount = "floor"
+mine_xp = 0
+build_xp = 8
+
+[[block]]
+name = "emerald_torch_north"
+prestige = 10
+colourable = false
+color = [40, 180, 100]
+solid = false
+opaque = false
+translucent = false
+breakable = true
+placeable = false
+health = "prop"
+light = 14
+light_colour = [96, 255, 150]
+textures = { all = "emerald_torch" }
+mount = "north"
+drops = "emerald_torch"
+
+[[block]]
+name = "emerald_torch_east"
+prestige = 10
+colourable = false
+color = [40, 180, 100]
+solid = false
+opaque = false
+translucent = false
+breakable = true
+placeable = false
+health = "prop"
+light = 14
+light_colour = [96, 255, 150]
+textures = { all = "emerald_torch" }
+mount = "east"
+drops = "emerald_torch"
+
+[[block]]
+name = "emerald_torch_south"
+prestige = 10
+colourable = false
+color = [40, 180, 100]
+solid = false
+opaque = false
+translucent = false
+breakable = true
+placeable = false
+health = "prop"
+light = 14
+light_colour = [96, 255, 150]
+textures = { all = "emerald_torch" }
+mount = "south"
+drops = "emerald_torch"
+
+[[block]]
+name = "emerald_torch_west"
+prestige = 10
+colourable = false
+color = [40, 180, 100]
+solid = false
+opaque = false
+translucent = false
+breakable = true
+placeable = false
+health = "prop"
+light = 14
+light_colour = [96, 255, 150]
+textures = { all = "emerald_torch" }
+mount = "west"
+drops = "emerald_torch"
+
+[[block]]
+name = "sapphire_torch"
+prestige = 10
+colourable = false
+color = [50, 102, 226]
+solid = false
+opaque = false
+translucent = false
+breakable = true
+placeable = true
+health = "prop"
+light = 14
+light_colour = [100, 150, 255]
+textures = { all = "sapphire_torch" }
+mount = "floor"
+mine_xp = 0
+build_xp = 8
+
+[[block]]
+name = "sapphire_torch_north"
+prestige = 10
+colourable = false
+color = [50, 102, 226]
+solid = false
+opaque = false
+translucent = false
+breakable = true
+placeable = false
+health = "prop"
+light = 14
+light_colour = [100, 150, 255]
+textures = { all = "sapphire_torch" }
+mount = "north"
+drops = "sapphire_torch"
+
+[[block]]
+name = "sapphire_torch_east"
+prestige = 10
+colourable = false
+color = [50, 102, 226]
+solid = false
+opaque = false
+translucent = false
+breakable = true
+placeable = false
+health = "prop"
+light = 14
+light_colour = [100, 150, 255]
+textures = { all = "sapphire_torch" }
+mount = "east"
+drops = "sapphire_torch"
+
+[[block]]
+name = "sapphire_torch_south"
+prestige = 10
+colourable = false
+color = [50, 102, 226]
+solid = false
+opaque = false
+translucent = false
+breakable = true
+placeable = false
+health = "prop"
+light = 14
+light_colour = [100, 150, 255]
+textures = { all = "sapphire_torch" }
+mount = "south"
+drops = "sapphire_torch"
+
+[[block]]
+name = "sapphire_torch_west"
+prestige = 10
+colourable = false
+color = [50, 102, 226]
+solid = false
+opaque = false
+translucent = false
+breakable = true
+placeable = false
+health = "prop"
+light = 14
+light_colour = [100, 150, 255]
+textures = { all = "sapphire_torch" }
+mount = "west"
+drops = "sapphire_torch"
+
+[[block]]
+name = "topaz_torch"
+prestige = 10
+colourable = false
+color = [240, 142, 30]
+solid = false
+opaque = false
+translucent = false
+breakable = true
+placeable = true
+health = "prop"
+light = 14
+light_colour = [255, 192, 80]
+textures = { all = "topaz_torch" }
+mount = "floor"
+mine_xp = 0
+build_xp = 8
+
+[[block]]
+name = "topaz_torch_north"
+prestige = 10
+colourable = false
+color = [240, 142, 30]
+solid = false
+opaque = false
+translucent = false
+breakable = true
+placeable = false
+health = "prop"
+light = 14
+light_colour = [255, 192, 80]
+textures = { all = "topaz_torch" }
+mount = "north"
+drops = "topaz_torch"
+
+[[block]]
+name = "topaz_torch_east"
+prestige = 10
+colourable = false
+color = [240, 142, 30]
+solid = false
+opaque = false
+translucent = false
+breakable = true
+placeable = false
+health = "prop"
+light = 14
+light_colour = [255, 192, 80]
+textures = { all = "topaz_torch" }
+mount = "east"
+drops = "topaz_torch"
+
+[[block]]
+name = "topaz_torch_south"
+prestige = 10
+colourable = false
+color = [240, 142, 30]
+solid = false
+opaque = false
+translucent = false
+breakable = true
+placeable = false
+health = "prop"
+light = 14
+light_colour = [255, 192, 80]
+textures = { all = "topaz_torch" }
+mount = "south"
+drops = "topaz_torch"
+
+[[block]]
+name = "topaz_torch_west"
+prestige = 10
+colourable = false
+color = [240, 142, 30]
+solid = false
+opaque = false
+translucent = false
+breakable = true
+placeable = false
+health = "prop"
+light = 14
+light_colour = [255, 192, 80]
+textures = { all = "topaz_torch" }
+mount = "west"
+drops = "topaz_torch"
+
+[[block]]
+name = "diamond_torch"
+prestige = 10
+colourable = false
+color = [188, 224, 234]
+solid = false
+opaque = false
+translucent = false
+breakable = true
+placeable = true
+health = "prop"
+light = 14
+light_colour = [232, 246, 255]
+textures = { all = "diamond_torch" }
+mount = "floor"
+mine_xp = 0
+build_xp = 8
+
+[[block]]
+name = "diamond_torch_north"
+prestige = 10
+colourable = false
+color = [188, 224, 234]
+solid = false
+opaque = false
+translucent = false
+breakable = true
+placeable = false
+health = "prop"
+light = 14
+light_colour = [232, 246, 255]
+textures = { all = "diamond_torch" }
+mount = "north"
+drops = "diamond_torch"
+
+[[block]]
+name = "diamond_torch_east"
+prestige = 10
+colourable = false
+color = [188, 224, 234]
+solid = false
+opaque = false
+translucent = false
+breakable = true
+placeable = false
+health = "prop"
+light = 14
+light_colour = [232, 246, 255]
+textures = { all = "diamond_torch" }
+mount = "east"
+drops = "diamond_torch"
+
+[[block]]
+name = "diamond_torch_south"
+prestige = 10
+colourable = false
+color = [188, 224, 234]
+solid = false
+opaque = false
+translucent = false
+breakable = true
+placeable = false
+health = "prop"
+light = 14
+light_colour = [232, 246, 255]
+textures = { all = "diamond_torch" }
+mount = "south"
+drops = "diamond_torch"
+
+[[block]]
+name = "diamond_torch_west"
+prestige = 10
+colourable = false
+color = [188, 224, 234]
+solid = false
+opaque = false
+translucent = false
+breakable = true
+placeable = false
+health = "prop"
+light = 14
+light_colour = [232, 246, 255]
+textures = { all = "diamond_torch" }
+mount = "west"
+drops = "diamond_torch"
+
+[[block]]
+name = "ruby_torch"
+prestige = 10
+colourable = false
+color = [214, 40, 68]
+solid = false
+opaque = false
+translucent = false
+breakable = true
+placeable = true
+health = "prop"
+light = 14
+light_colour = [255, 86, 100]
+textures = { all = "ruby_torch" }
+mount = "floor"
+mine_xp = 0
+build_xp = 8
+
+[[block]]
+name = "ruby_torch_north"
+prestige = 10
+colourable = false
+color = [214, 40, 68]
+solid = false
+opaque = false
+translucent = false
+breakable = true
+placeable = false
+health = "prop"
+light = 14
+light_colour = [255, 86, 100]
+textures = { all = "ruby_torch" }
+mount = "north"
+drops = "ruby_torch"
+
+[[block]]
+name = "ruby_torch_east"
+prestige = 10
+colourable = false
+color = [214, 40, 68]
+solid = false
+opaque = false
+translucent = false
+breakable = true
+placeable = false
+health = "prop"
+light = 14
+light_colour = [255, 86, 100]
+textures = { all = "ruby_torch" }
+mount = "east"
+drops = "ruby_torch"
+
+[[block]]
+name = "ruby_torch_south"
+prestige = 10
+colourable = false
+color = [214, 40, 68]
+solid = false
+opaque = false
+translucent = false
+breakable = true
+placeable = false
+health = "prop"
+light = 14
+light_colour = [255, 86, 100]
+textures = { all = "ruby_torch" }
+mount = "south"
+drops = "ruby_torch"
+
+[[block]]
+name = "ruby_torch_west"
+prestige = 10
+colourable = false
+color = [214, 40, 68]
+solid = false
+opaque = false
+translucent = false
+breakable = true
+placeable = false
+health = "prop"
+light = 14
+light_colour = [255, 86, 100]
+textures = { all = "ruby_torch" }
+mount = "west"
+drops = "ruby_torch"
+
+[[block]]
+name = "crystal_lantern"
+prestige = 16
+chisel = "any"
+colourable = true
+color = [176, 236, 255]
+solid = true
+opaque = true
+translucent = false
+breakable = true
+placeable = true
+health = "hard"
+textures = { all = "crystal_lantern" }
+light = 14
+light_colour = [176, 236, 255]
+light_tint = true
+material = "crystal"
+mine_xp = 2
+build_xp = 18

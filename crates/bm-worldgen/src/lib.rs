@@ -2340,6 +2340,7 @@ mod tests {
     /// 3, relic cores everywhere). Only the four kinds that existed before M18 have such
     /// planets.
     fn before_m18(mut cfg: PlanetGenConfig) -> PlanetGenConfig {
+        cfg = before_m26(cfg);
         assert_eq!(cfg.ores.last().map(|o| o.block.as_str()), Some("relic_core_seam"));
         cfg.ores.pop();
         if cfg.ores.last().map(|o| o.block.as_str()) == Some("hard_coal_seam") {
@@ -2347,6 +2348,13 @@ mod tests {
         }
         assert_eq!(cfg.ores.last().map(|o| o.block.as_str()), Some("medium_coal_seam"));
         cfg.ores.pop();
+        cfg
+    }
+
+    /// A kind's settings as planets made before M26 saved them: glow
+    /// crystals natural (no colour choices).
+    fn before_m26(mut cfg: PlanetGenConfig) -> PlanetGenConfig {
+        cfg.colours.remove("glow_crystal");
         cfg
     }
 
@@ -2837,6 +2845,13 @@ mod tests {
         let want: Vec<(String, u64)> = PINNED.iter().map(|(n, h)| (n.to_string(), *h)).collect();
         assert_eq!(got, want, "version 3 terrain changed");
         assert!(opens_generator_version(3));
+        // Planets saved before M26 (no glow crystal colours) keep theirs.
+        let blocks = BlockRegistry::builtin();
+        for k in &PlanetKinds::builtin(&blocks).kinds {
+            let g = Generator::new(PlanetShape::new(64, 12), before_m26(k.generation(42).single()), &blocks).unwrap();
+            let pin = PINNED_M25.iter().find(|(n, _)| *n == k.name).expect("pinned").1;
+            assert_eq!(fingerprint(&g), pin, "{} saved before M26 keeps its terrain", k.name);
+        }
     }
 
     /// Pins what generator 4 makes for every built-in kind with its biomes.
@@ -2856,11 +2871,40 @@ mod tests {
         assert_eq!(GENERATOR_VERSION, 4);
         let want: Vec<(String, u64)> = PINNED_V4.iter().map(|(n, h)| (n.to_string(), *h)).collect();
         assert_eq!(got, want, "terrain changed");
+        // Planets saved before M26 (no glow crystal colours) keep theirs.
+        for k in &PlanetKinds::builtin(&blocks).kinds {
+            let g = Generator::new(PlanetShape::new(64, 12), before_m26(k.generation(42)), &blocks).unwrap();
+            let pin = PINNED_V4_M25.iter().find(|(n, _)| *n == k.name).expect("pinned").1;
+            assert_eq!(fingerprint(&g), pin, "{} saved before M26 keeps its terrain", k.name);
+        }
     }
     // Re-pinned for M19 part 2's trees and outcrops and part 3's lifted land
     // and caves (2026-10-25) without a bump:
     // generator 4 had not left the branch, so no planet held the old pins.
+    // Re-pinned for M26's glow crystal colours (kind data only) without a
+    // version bump: planets saved before keep theirs (`PINNED_V4_M25`).
     const PINNED_V4: [(&str, u64); 16] = [
+        ("temperate", 0xebbb_b6ad_2a2d_4428),
+        ("arid", 0xf87d_9467_37d9_33a9),
+        ("frozen", 0xc9ee_c353_8b86_8989),
+        ("lush", 0xf8ac_414c_a1b1_e0e3),
+        ("overgrown", 0xcaf5_a93b_71fe_63f2),
+        ("rustland", 0x339d_5b75_3ef9_fb6f),
+        ("cinderland", 0x8815_3bae_6647_234e),
+        ("acrid", 0x7583_155b_9b3d_d99a),
+        ("blighted", 0x99d5_27dd_6f4e_7d50),
+        ("glacial", 0xca3b_e5e4_bdf2_4821),
+        ("stormy", 0x04cd_101d_e331_2a41),
+        ("scorched", 0x1b0d_ef2b_2a2e_6956),
+        ("ember", 0x5ae9_9f35_c4a7_7236),
+        // Milestone 21's tier 7 kinds (new kinds: nothing older changed).
+        ("auroral", 0x03f5_05a4_2c79_0069),
+        ("pyric", 0xda05_d528_4a70_1bbc),
+        ("gloaming", 0x2419_609f_400c_f58e),
+    ];
+    // Before M26 gave glow crystals their worlds' colours (kind data only,
+    // no generator change): what planets saved before still make.
+    const PINNED_V4_M25: [(&str, u64); 16] = [
         ("temperate", 0x1c45_7b1d_cfba_bc48),
         ("arid", 0xf87d_9467_37d9_33a9),
         ("frozen", 0xc9ee_c353_8b86_8989),
@@ -2903,7 +2947,30 @@ mod tests {
     // their gems and lava
     // without a version bump: planets saved before keep their terrain
     // (`PINNED_M17`, checked in `appending_m18_only_turns_rock_into_coal`).
+    // Re-pinned for M26's glow crystal colours (kind data only) without a
+    // version bump: planets saved before keep theirs (`PINNED_M25`).
     const PINNED: [(&str, u64); 17] = [
+        ("default", 0x6bc9_e59d_8877_7736),
+        ("temperate", 0x667d_b72f_1f1b_60cb),
+        ("arid", 0x157e_220c_2614_6ab8),
+        ("frozen", 0xd5e0_f0d6_62fa_8d4a),
+        ("lush", 0x6045_df1f_3bec_6f16),
+        ("overgrown", 0x5d60_fdc0_4971_0c72),
+        ("rustland", 0xee61_8199_3a77_6e62),
+        ("cinderland", 0xe11a_e129_c18d_a1d1),
+        ("acrid", 0xb510_c490_03f4_f397),
+        ("blighted", 0x95cc_bdcf_77cc_eded),
+        ("glacial", 0x3bdd_53c0_5161_9ba9),
+        ("stormy", 0xf0d9_2e65_ad14_b9d1),
+        ("scorched", 0xb4d3_67f8_2bb5_eefc),
+        ("ember", 0x2714_019c_6485_d237),
+        // Milestone 21's tier 7 kinds (new kinds: nothing older changed).
+        ("auroral", 0x7ebe_da1d_e029_5f96),
+        ("pyric", 0xea60_e765_e561_9d81),
+        ("gloaming", 0x22e1_bd1b_b247_0c79),
+    ];
+    // Version 3 pins before M26's glow crystal colours (kind data only).
+    const PINNED_M25: [(&str, u64); 17] = [
         ("default", 0x6bc9_e59d_8877_7736),
         ("temperate", 0xaae5_c5bd_f326_8a63),
         ("arid", 0x1e58_8500_d8a3_d120),
@@ -2945,7 +3012,7 @@ mod tests {
         let rock = ["stone", "deep_stone", "sandstone"].map(id);
         let fossils = [id("small_fossil_seam"), id("medium_fossil_seam")];
         for k in original_kinds(&kinds) {
-            let with = k.generation(42).single();
+            let with = before_m26(k.generation(42).single());
             let shape = PlanetShape::new(64, 12);
             let old = Generator::new(shape, before_m17(with.clone()), &blocks).unwrap();
             let new = Generator::new(shape, before_m18(with), &blocks).unwrap();
@@ -2983,7 +3050,7 @@ mod tests {
         let rock = ["stone", "deep_stone", "sandstone", "glow_crystal"].map(id);
         let coal = [id("medium_coal_seam"), id("hard_coal_seam"), id("relic_core_seam")];
         for k in original_kinds(&kinds) {
-            let with = k.generation(42).single();
+            let with = before_m26(k.generation(42).single());
             // A cave fungus whose rock floor became coal no longer grows.
             let props: Vec<_> = with.flora.iter().map(|f| id(&f.block)).collect();
             let shape = PlanetShape::new(64, 12);
@@ -3039,7 +3106,7 @@ mod tests {
         let crops: Vec<BlockId> = CROP_FLORA.iter().map(|n| id(n)).collect();
         let mut grown = 0;
         for k in original_kinds(&kinds) {
-            let with = k.generation(42).single();
+            let with = before_m26(k.generation(42).single());
             let shape = PlanetShape::new(64, 12);
             let old = Generator::new(shape, before_m16(with.clone()), &blocks).unwrap();
             let new = Generator::new(shape, before_m17(with), &blocks).unwrap();
@@ -3079,7 +3146,7 @@ mod tests {
         let rock = ["stone", "deep_stone", "sandstone"].map(id);
         let relic = id("relic_seam");
         for (name, pinned) in PINNED_M8 {
-            let with = kinds.get(name).unwrap().generation(42).single();
+            let with = before_m26(kinds.get(name).unwrap().generation(42).single());
             let props: Vec<BlockId> = with.flora.iter().map(|f| id(&f.block)).collect();
             let shape = PlanetShape::new(64, 12);
             let old = Generator::new(shape, before_m11(with.clone()), &blocks).unwrap();
@@ -3117,7 +3184,7 @@ mod tests {
         let rock = ["stone", "deep_stone", "sandstone"].map(id);
         let (cache, silver) = (id("relic_cache"), id("silver_seam"));
         for k in original_kinds(&kinds) {
-            let with = k.generation(42).single();
+            let with = before_m26(k.generation(42).single());
             let shape = PlanetShape::new(64, 12);
             let old = Generator::new(shape, before_m15(with.clone()), &blocks).unwrap();
             let new = Generator::new(shape, before_m16(with), &blocks).unwrap();
@@ -3925,16 +3992,10 @@ mod tests {
                     None => assert_eq!(s.colour, Colour::NATURAL, "{name}: {}", def.name),
                 }
             }
-            // Ores, water, bedrock and crystals are never listed, so stay
-            // natural; the common ground blocks did get coloured.
-            for b in [
-                "coal_seam",
-                "copper_vein",
-                "iron_vein",
-                "water",
-                "bedrock",
-                "glow_crystal",
-            ] {
+            // Ores, water and bedrock are never listed, so stay natural; the
+            // common ground blocks did get coloured (and glow crystals take
+            // their world's colours, milestone 26).
+            for b in ["coal_seam", "copper_vein", "iron_vein", "water", "bedrock"] {
                 assert!(!g.cfg.colours.contains_key(b), "{name} colours {b}");
             }
             for b in ["stone", "gravel"] {
