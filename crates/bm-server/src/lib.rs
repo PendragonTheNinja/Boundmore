@@ -2,6 +2,7 @@
 //! start real servers on ephemeral ports the same way.
 
 pub mod accounts;
+pub mod atlas;
 pub mod chat;
 pub mod claims;
 pub mod config;

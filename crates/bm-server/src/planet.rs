@@ -51,6 +51,8 @@ pub struct Planet {
     pub world: World,
     /// Far copies of its chunks (milestone 20).
     pub far: crate::far::FarStore,
+    /// Its atlas map's tiles (milestone 27).
+    pub atlas: crate::atlas::AtlasStore,
     pub stations: Stations,
     /// Storage blocks with something in them.
     pub storage: Storages,
@@ -389,6 +391,7 @@ pub fn open(
         tints,
         day: saved.day,
         far: crate::far::FarStore::new(id, cat.registry.flags(), generator.clone(), store.clone()),
+        atlas: crate::atlas::AtlasStore::new(id, generator.clone(), store.clone(), cat.registry),
         world: World::new(id, saved.shape, cat.registry.clone(), generator, store.clone()),
         stations,
         storage,

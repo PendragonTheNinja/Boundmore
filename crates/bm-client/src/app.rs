@@ -1043,6 +1043,10 @@ pub struct App {
     portal_view: Option<PortalView>,
     /// The open shop stand or basket (milestone 24 part 2).
     shop_view: Option<bm_protocol::ShopView>,
+    /// The open atlas's map (milestone 27).
+    atlas: Option<crate::atlas::AtlasMap>,
+    /// The atlas in this slot was used this frame: its window opens.
+    atlas_request: Option<u8>,
     /// Prices being typed in the owner's price window, by slot.
     shop_prices: HashMap<u8, String>,
     /// The name being typed in the friends window.
@@ -1122,6 +1126,8 @@ impl App {
             sign_ui: None,
             portal_view: None,
             shop_view: None,
+            atlas: None,
+            atlas_request: None,
             shop_prices: HashMap::new(),
             friend_name: String::new(),
             guild_control_view: None,
@@ -1266,6 +1272,9 @@ impl App {
             self.shop_view = None;
             self.send(ClientMsg::OpenShop { pos: Some(pos) });
         }
+        if let Menu::Atlas(slot) = menu {
+            self.send(ClientMsg::OpenAtlas { slot: Some(slot) });
+        }
         self.menu = Some(menu);
         self.keys.clear();
         self.mouse = [false; 2];
@@ -1290,6 +1299,10 @@ impl App {
         if let Some(Menu::Portal(_)) = self.menu {
             self.send(ClientMsg::OpenPortal { pos: None });
             self.portal_view = None;
+        }
+        if let Some(Menu::Atlas(_)) = self.menu {
+            self.send(ClientMsg::OpenAtlas { slot: None });
+            self.atlas = None;
         }
         if let Some(Menu::Helix(_)) = self.menu {
             self.send(ClientMsg::OpenHelix { pos: None });
@@ -1707,6 +1720,13 @@ impl App {
             ServerMsg::Travel(t) => return self.travel(*t),
             ServerMsg::Storage(view) => return self.storage_update(view),
             ServerMsg::Shop(view) => return self.shop_update(view),
+            ServerMsg::Atlas(view) => return self.atlas_update(view),
+            ServerMsg::AtlasTile { planet, tile, rgb } => {
+                if let Some(a) = &mut self.atlas {
+                    a.tile(planet, tile, &rgb);
+                }
+                return;
+            }
             ServerMsg::Helix(view) => {
                 if view.closed {
                     if self.menu == Some(Menu::Helix(view.pos)) {
@@ -1765,6 +1785,8 @@ impl App {
         let now = self.now();
         let Some(s) = &mut self.session else { return };
         match m {
+            // Handled above.
+            ServerMsg::Atlas(_) | ServerMsg::AtlasTile { .. } => {}
             // Milestone 17: a session of ours ended.
             ServerMsg::Creative { at, on } => s.creative(at, on),
             ServerMsg::GuildBody {
@@ -1956,11 +1978,29 @@ impl App {
         }
     }
 
+    /// `ServerMsg::Atlas`: the open atlas's world, or that it closed.
+    fn atlas_update(&mut self, view: bm_protocol::AtlasView) {
+        if view.closed {
+            if matches!(self.menu, Some(Menu::Atlas(_))) {
+                self.close_menu(true);
+            }
+            self.atlas = None;
+            return;
+        }
+        match &mut self.atlas {
+            Some(a) if a.view.planet == view.planet => a.update(view),
+            _ => self.atlas = Some(crate::atlas::AtlasMap::new(view)),
+        }
+    }
+
     fn update(&mut self) {
         let now = Instant::now();
         let dt = (now - self.last_frame).as_secs_f64().min(0.25);
         self.last_frame = now;
         self.handle_net();
+        if let Some(slot) = self.atlas_request.take() {
+            self.open_menu(Menu::Atlas(slot));
+        }
         // Defeated (the server said so, or our prediction took its word):
         // the defeat screen holds the mouse until we are back on our feet.
         let down = self.session.as_mut().is_some_and(|s| {
@@ -2246,8 +2286,15 @@ impl App {
         let bucket = held
             .and_then(|h| s.items.def(&h))
             .is_some_and(|d| matches!(d.kind, bm_core::items::ItemKind::Bucket { .. }));
-        if food.is_some() || bucket {
+        // An atlas in hand opens its map with a press (milestone 27).
+        let atlas = held
+            .and_then(|h| s.items.def(&h))
+            .is_some_and(|d| matches!(d.kind, bm_core::items::ItemKind::Atlas));
+        if food.is_some() || bucket || atlas {
             mouse[0] = false;
+        }
+        if atlas && pressed && !s.travelling() && !claim_mode {
+            self.atlas_request = Some(slot as u8);
         }
         if let Some(food) = food.filter(|_| pressed && !s.travelling() && !claim_mode) {
             match s.me.state.can_eat(&food) {
@@ -2507,6 +2554,8 @@ impl App {
         let guild_form = &mut self.guild_form;
         let guild_control_view = self.guild_control_view.as_ref();
         let helix_view = self.helix_view.as_ref();
+        let mut atlas = self.atlas.as_mut();
+        let facing = self.yaw;
         let unix_now = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .map_or(0, |d| d.as_secs());
@@ -2753,6 +2802,24 @@ impl App {
                     }
                 }
                 Some(Menu::Feats) => menus::feats(&ctx, &FEAT_BOOK, s.ledger.as_ref(), &mut actions),
+                Some(Menu::Atlas(_)) => match atlas.as_mut() {
+                    Some(a) => {
+                        let here = crate::atlas::Here {
+                            planet: s.planet.id,
+                            pos: [s.me.state.pos.x, s.me.state.pos.z],
+                            yaw: facing,
+                            account: &s.account,
+                            claims: s.claims.iter().collect(),
+                            settlements: s.claims.settlements(),
+                        };
+                        a.show(&ctx, &here, &mut actions);
+                    }
+                    None => {
+                        menus::window("Atlas").show(&ctx, |ui| {
+                            ui.label(egui::RichText::new("Opening the map").color(menus::MUTED));
+                        });
+                    }
+                },
                 Some(Menu::Helix(at)) => {
                     menus::helix(&ctx, helix_view.filter(|v| v.pos == at), unix_now, &mut actions);
                 }
@@ -3527,6 +3594,15 @@ impl App {
                     s.me.teleport(st);
                 }
                 (self.yaw, self.pitch) = (0.4, -0.05);
+            }
+            "atlas" => {
+                if let Some(Link::Demo(d)) = &mut self.link {
+                    d.show_atlas();
+                }
+                if let Some(s) = &mut self.session {
+                    s.selected = 9;
+                }
+                self.atlas_request = Some(9);
             }
             "lights" => {
                 if let Some(Link::Demo(d)) = &mut self.link {

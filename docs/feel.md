@@ -85,6 +85,8 @@ Not built yet, from Boundless: energy per swing (damage / 50), skills (power, ma
 | Glow crystal | light 12 | Boundless gleam was the reference for "fully lit" |
 | Torch recipe | 1 stick + 1 flint makes 4, by hand; 1 trunk makes 4 sticks | Boundless, exact |
 | Lume (M26) | the glow crystal family's name in game | **Nathan, 2026-10-28**: "Lume for now" (a name of our own for Boundless's gleam) |
+| Atlas (M27) | 2 copper ingots and 4 glass at a workbench, 30 s, 8 XP; bound to the first world it is opened on | Boundless, exact (wiki) |
+| Atlas map (M27) | 4 blocks a pixel at its widest, zoom to one screen point a block; tiles redrawn half a second after an edit | Boundmore's choices |
 | Light colour (M26) | each channel gives off `level x colour / 255`, so dark colours reach less far | Boundless since 2019 ("light colours go further than darker ones"); exact rule **a guess** |
 | Glow crystal colours (M26) | each world's crystal in its kind's bright colours; refined, faceted, doors, poles, beams, storage, signs, glasses and the crystal lantern take the crystal's colour | Boundless, exact (its recipes' `tintTakenFrom`) |
 | Gem torches (M26) | light 14 in the gem's colour; 1 stick + 1 rough gem makes 2, workbench, 60 s, spark 800, Decoration Crafting 3 | Recipe Boundless, exact; **light a guess** (Measure F4) |

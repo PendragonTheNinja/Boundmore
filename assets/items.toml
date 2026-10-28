@@ -182,6 +182,13 @@ name = "portal_token"
 stack = 1
 portal_token = true
 
+# Milestone 27: a map of one world, bound to the first it is used on; its tag
+# packs that world and the resource loaded in it (bm-core `atlas`).
+[[item]]
+name = "atlas"
+stack = 1
+atlas = true
+
 # Starter tools (Boundless's numbers, tuning 2.1): the hand stone is crafted
 # from nothing, as Boundless's starter tool was, and breaks anything at full
 # damage; wood tools come before stone.

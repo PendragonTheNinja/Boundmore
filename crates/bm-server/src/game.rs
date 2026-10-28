@@ -24,6 +24,7 @@ use crate::reclaim::Reclaims;
 use crate::storage::move_stack;
 use crate::store::{PlayerData, SavedBrews, SavedFood, Store, WriteBatch, load_slots, save_slots};
 
+mod atlas;
 mod blasts;
 mod combat;
 mod creative;
@@ -243,6 +244,8 @@ struct Player {
     storage: Option<BlockPos>,
     /// The shop stand or basket whose window is open (milestone 24 part 2).
     shop: Option<BlockPos>,
+    /// The open atlas (milestone 27).
+    atlas: Option<atlas::OpenAtlas>,
     /// The other player's claim this one stood in at the last footfall
     /// check (milestone 24 part 4): stepping into a new one is a visit.
     in_claim: Option<u32>,
@@ -986,6 +989,7 @@ impl Game {
         }
         let far = Instant::now();
         self.receive_far();
+        self.tend_atlases();
         self.stats.far_time += far.elapsed();
         self.catch_up_crops();
         // Before streaming: a chunk is never sent with a portal's old look.
@@ -1214,6 +1218,7 @@ impl Game {
                 ClientMsg::Warp { shrine, planet } => self.warp(id, shrine, planet),
                 ClientMsg::OpenStorage { pos } => self.open_storage(id, pos),
                 ClientMsg::OpenShop { pos } => self.open_shop(id, pos),
+                ClientMsg::OpenAtlas { slot } => self.open_atlas(id, slot),
                 ClientMsg::Shop { pos, action } => self.shop_action(id, pos, action),
                 ClientMsg::StorageMove { pos, from, to, count } => self.storage_move(id, pos, from, to, count),
                 ClientMsg::Chat { channel, text } => self.chat(id, channel, text),
@@ -1484,6 +1489,7 @@ impl Game {
                 region: None,
                 square: None,
                 at_centre: false,
+                atlas: None,
             },
         );
         self.ledgers_unsent.insert(id);

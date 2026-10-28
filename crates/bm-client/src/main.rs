@@ -3,6 +3,7 @@
 //! `boundmore [--server HOST:PORT] [--name NAME] [--password PW] [--register] [--cert PATH]`
 
 mod app;
+mod atlas;
 mod chat;
 mod chisel;
 mod claims;

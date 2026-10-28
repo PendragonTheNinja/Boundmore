@@ -542,6 +542,7 @@ impl Game {
         if self.cfg.discovery_xp {
             self.add_xp(id, xp);
         }
+        self.atlas_discovered(id, pi);
     }
 
     /// The configured test meteor, once a player is on the start planet and

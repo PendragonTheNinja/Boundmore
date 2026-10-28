@@ -79,6 +79,11 @@ impl Claims {
         self.prestige = prestige.into_iter().collect();
     }
 
+    /// The planet's settlements.
+    pub fn settlements(&self) -> &[SettlementView] {
+        &self.settlements
+    }
+
     /// The settlement a claim is part of.
     pub fn settlement_of(&self, claim: u32) -> Option<&SettlementView> {
         self.settlements.iter().find(|s| s.claims.contains(&claim))

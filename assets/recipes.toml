@@ -5954,3 +5954,14 @@ spark = 400
 xp = 18
 skill = { name = "decoration_crafting", level = 3 }
 wear = 35
+
+# Milestone 27: the atlas (Boundless's recipe, wiki "Atlas": 2 copper bars and
+# 4 glass at a workbench, 30 s, 8 XP, wear 6).
+
+[[recipe]]
+output = "atlas"
+inputs = [["copper_ingot", 2], ["glass", 4]]
+station = "workbench"
+seconds = 30.0
+xp = 8
+wear = 6

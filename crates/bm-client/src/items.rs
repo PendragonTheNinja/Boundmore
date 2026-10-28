@@ -311,6 +311,18 @@ impl Items {
                     lines.push(format!("{left} of {total} uses left"));
                 }
             }
+            ItemKind::Atlas => {
+                lines.push("A map of one world: right click to open it".into());
+                lines.push(match bm_core::atlas::bound(stack.tag) {
+                    Some(_) => "Bound to the world it maps".into(),
+                    None => "Not bound yet: it will map the first world you open it on".into(),
+                });
+                if let Some(item) = bm_core::atlas::loaded(stack.tag)
+                    && let Some(def) = self.registry.get(item)
+                {
+                    lines.push(format!("Shows where to find {}", def.display));
+                }
+            }
             ItemKind::PortalToken => lines.push(match self.token_name(stack.tag) {
                 Some(name) => format!("Links to: {name}"),
                 None => "Links two portals of the same size".into(),

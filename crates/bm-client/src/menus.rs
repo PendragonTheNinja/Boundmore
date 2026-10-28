@@ -78,6 +78,8 @@ pub enum Menu {
     /// Someone else's shop stand or request basket at this block (milestone
     /// 24 part 2).
     Shop(BlockPos),
+    /// The atlas in this inventory slot (milestone 27).
+    Atlas(u8),
 }
 
 #[derive(Default)]

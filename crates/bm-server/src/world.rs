@@ -38,6 +38,8 @@ pub struct World {
     pub flags: BlockFlags,
     pub water: BlockId,
     chunks: HashMap<ChunkPos, Slot>,
+    /// Columns edited since `take_edited` (the atlas redraws their tiles).
+    edited: Vec<(i64, i64)>,
     loading: HashSet<ChunkPos>,
     loader: Loader,
     /// Chunks whose latest save is not durable yet, with the save that
@@ -76,6 +78,7 @@ impl World {
             registry,
             water,
             chunks: HashMap::new(),
+            edited: Vec::new(),
             loading: HashSet::new(),
             loader: Loader::new(planet, generator, store),
             unconfirmed: HashMap::new(),
@@ -218,8 +221,22 @@ impl World {
         if old != state {
             slot.dirty = true;
             slot.frame = None;
+            self.edited.push((p.x, p.z));
         }
         Some(old)
+    }
+
+    /// Columns edited since the last call.
+    pub fn take_edited(&mut self) -> Vec<(i64, i64)> {
+        std::mem::take(&mut self.edited)
+    }
+
+    /// Snapshots of the resident chunks among `chunks`.
+    pub fn snapshots(&self, chunks: &[ChunkPos]) -> HashMap<ChunkPos, Chunk> {
+        chunks
+            .iter()
+            .filter_map(|c| self.chunks.get(c).map(|s| (*c, s.chunk.clone())))
+            .collect()
     }
 
     /// Takes every dirty chunk's encoded bytes for saving, clearing the

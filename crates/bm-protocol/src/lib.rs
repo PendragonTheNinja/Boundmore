@@ -25,7 +25,7 @@ use glam::DVec3;
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
 
 /// Bump on any change to a message below. Client and server must match.
-pub const PROTOCOL_VERSION: u32 = 53;
+pub const PROTOCOL_VERSION: u32 = 54;
 
 /// QUIC application protocol name; also refuses non-Boundmore peers early.
 pub const ALPN: &[u8] = b"boundmore/1";
@@ -146,6 +146,11 @@ pub enum ClientMsg {
     OpenShop { pos: Option<BlockPos> },
     /// Do something at the open shop stand or basket.
     Shop { pos: BlockPos, action: ShopAction },
+    /// Open (Some) the atlas in this inventory slot, binding it to the world
+    /// we stand on if it is not bound yet, or close (None) the open one
+    /// (milestone 27). Answered with `Atlas` and the discovered tiles
+    /// (`AtlasTile`), sent again as they change while it is open.
+    OpenAtlas { slot: Option<u8> },
     /// Ask, accept, decline or end a friendship with the player of this
     /// name (milestone 25). Answered with `Friends`.
     Friend { name: String, action: FriendAction },
@@ -576,6 +581,17 @@ pub enum ServerMsg {
     /// A shop stand or request basket as its window shows it (milestone 24
     /// part 2); `closed` when it is gone or out of reach.
     Shop(ShopView),
+    /// The open atlas's world (milestone 27); `closed` when it closes.
+    Atlas(AtlasView),
+    /// One tile of the open atlas's map (`bm_core::atlas`): `TILE_PIXELS`
+    /// squared RGB pixels, row by row (z, then x), lz4-compressed; pixels
+    /// past the planet's edge are left out of a short tile's rows, and
+    /// `atlas::FOG` marks land not discovered.
+    AtlasTile {
+        planet: u16,
+        tile: (u16, u16),
+        rgb: Vec<u8>,
+    },
     /// This player's friends and requests (milestone 25), on joining and on
     /// every change.
     Friends(FriendsView),
@@ -1092,6 +1108,24 @@ pub struct SettlementView {
     /// The planet's top settlement.
     pub capital: bool,
     pub claims: Vec<u32>,
+}
+
+/// The open atlas's world (milestone 27).
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct AtlasView {
+    /// The inventory slot it was opened from.
+    pub slot: u8,
+    pub planet: u16,
+    pub name: String,
+    pub shape: PlanetShape,
+    /// Its regions as `Regions` gives them: names by index (laid out from
+    /// `layout_seed`) and the ones this character has discovered there.
+    pub layout_seed: u64,
+    pub region_names: Vec<String>,
+    pub discovered: Vec<u16>,
+    /// Its warp shrine.
+    pub shrine: BlockPos,
+    pub closed: bool,
 }
 
 /// A shop stand or request basket as its window shows it.

@@ -12,6 +12,7 @@ name = "boundmore"
 path = "src/main.rs"
 
 [dependencies]
+lz4_flex.workspace = true
 anyhow.workspace = true
 bm-core.workspace = true
 bm-mesh.workspace = true

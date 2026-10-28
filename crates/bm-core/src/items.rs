@@ -164,6 +164,10 @@ pub enum ItemKind {
     /// A forging ingredient (milestone 17): index into
     /// `forge::INGREDIENTS`.
     Ingredient(u8),
+    /// A map of one world (milestone 27, `atlas`): bound to the world it
+    /// is first used on; its `tag` packs that world and the resource loaded
+    /// in it (`atlas::pack`).
+    Atlas,
 }
 
 /// What a bag of bombs does [tuning 3.1.3]: area (impulse) damage within
@@ -496,6 +500,8 @@ struct ItemEntry {
     #[serde(default)]
     portal_token: bool,
     #[serde(default)]
+    atlas: bool,
+    #[serde(default)]
     sling: Option<SlingEntry>,
     #[serde(default)]
     bomb: Option<BombEntry>,
@@ -748,6 +754,7 @@ impl ItemRegistry {
                     })
                 }
                 (None, None, None) if e.portal_token => ItemKind::PortalToken,
+                (None, None, None) if e.atlas => ItemKind::Atlas,
                 (None, None, None) if e.food.is_some() => ItemKind::Food(e.food.expect("checked")),
                 (None, None, None) if e.bucket.is_some() => ItemKind::Bucket {
                     fills: e.bucket.expect("checked"),
@@ -821,7 +828,9 @@ impl ItemRegistry {
                 {
                     return Err(ItemError::BadTool(d.name.clone()));
                 }
-                ItemKind::PortalToken if d.stack != 1 => return Err(ItemError::BadTool(d.name.clone())),
+                ItemKind::PortalToken | ItemKind::Atlas if d.stack != 1 => {
+                    return Err(ItemError::BadTool(d.name.clone()));
+                }
                 ItemKind::Sling(l) if d.stack != 1 || !l.valid() => return Err(ItemError::BadTool(d.name.clone())),
                 ItemKind::Bomb(b) if d.stack != 1 || !b.valid() => return Err(ItemError::BadTool(d.name.clone())),
                 ItemKind::Block(b) if !blocks.contains(b) => return Err(ItemError::BadBlock(d.name.clone(), b.0)),

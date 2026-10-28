@@ -39,7 +39,60 @@ pub fn paint(name: &str) -> Option<Tex> {
 
 /// An icon of this module, if `name` is one.
 pub fn paint_icon(name: &str) -> Option<Tex> {
+    if name == "atlas" {
+        return Some(atlas_icon());
+    }
     gem_of(name).map(gem_torch_icon)
+}
+
+/// The atlas (milestone 27; its recipe is copper and glass): a glass globe
+/// of a small world, sea and green land under a white glint, held in a
+/// copper ring on a copper foot.
+fn atlas_icon() -> Tex {
+    let salt = seed("atlas_icon");
+    let copper = crate::materials::copper_ramp();
+    let sea = Ramp::from_hex(&[0x0e2a5a, 0x16407e, 0x2260a4, 0x3a86c6, 0x6aaee0]);
+    let land = Ramp::from_hex(&[0x1e4a1e, 0x2e6e2a, 0x48923a, 0x6eb24e, 0x9ccc6a]);
+    let (cx, cy, r) = (16.0f32, 13.5f32, 9.5f32);
+    let mut icon = Icon::new();
+    // The foot and the stem.
+    icon.layer(true, |x, y| {
+        let (fx, fy) = (c(x), c(y));
+        let foot = (26.5..29.5).contains(&fy) && (fx - 16.0).abs() < 7.5 - (fy - 26.5);
+        let stem = (22.0..26.5).contains(&fy) && (fx - 16.0).abs() < 1.6;
+        (foot || stem).then(|| copper.pick(0.55 - (fx - 16.0) / 20.0, x, y))
+    });
+    // The globe: sea and land, lit from the top left.
+    icon.layer(true, |x, y| {
+        let (dx, dy) = (c(x) - cx, c(y) - cy);
+        let d = dx.hypot(dy);
+        if d > r {
+            return None;
+        }
+        let lit = (0.75 - (dx + dy) / (2.5 * r)).clamp(0.0, 1.0) * (1.0 - (d / r).powi(4) * 0.5);
+        // Land in blobs, a little noisy at the shore.
+        let u = dx / r;
+        let v = dy / r;
+        let shore = (u * 3.1 + 0.4).sin() * (v * 2.7 - 0.6).cos()
+            + (u * 5.3 - v * 4.1).sin() * 0.35
+            + (unit(hash2(salt, (x * 32 + y) as u32)) - 0.5) * 0.15;
+        let glint = (dx + 3.5).hypot(dy + 4.0) < 1.6;
+        Some(if glint {
+            crate::color::Rgba::hex(0xf4fbff)
+        } else if shore > 0.25 {
+            land.pick(lit, x, y)
+        } else {
+            sea.pick(lit, x, y)
+        })
+    });
+    // The copper ring round its middle, tilted.
+    icon.layer(true, |x, y| {
+        let (dx, dy) = (c(x) - cx, c(y) - cy);
+        let e = (dx / (r + 1.4)).powi(2) + ((dy - dx * 0.18) / 2.6).powi(2);
+        let front = dy - dx * 0.18 > -0.3;
+        ((0.78..1.0).contains(&e) && front).then(|| copper.pick(0.75 - dx / 30.0, x, y))
+    });
+    icon.finish()
 }
 
 fn cord_ramp() -> Ramp {

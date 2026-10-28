@@ -1081,6 +1081,108 @@ impl Demo {
     /// Milestone 26: the torch hall lit in colour. Gem torches on the walls,
     /// a row of lume in six colours along the floor, a lume lantern at the
     /// far end, an amethyst torch in hand; no white light anywhere.
+    /// Milestone 27: an atlas in hand (slot 9). Opening it answers with a
+    /// 48-chunk map of this world, painted from a fixture landscape (islands,
+    /// hills and snowy peaks, wrapping at the edges: a picture, not world
+    /// generation), the spawn's region and two more discovered, the rest
+    /// fogged as the server fogs it.
+    pub fn show_atlas(&mut self) {
+        let before = self.inv.clone();
+        self.inv.slots[9] = Some(ItemStack::new(self.items.id("atlas").expect("builtin item"), 1));
+        self.slots_since(&before);
+    }
+
+    fn open_atlas(&mut self, slot: u8) {
+        use bm_core::atlas;
+        let here = self.planets[self.here].info.clone();
+        let shape = PlanetShape::new(48, SHAPE.1);
+        let seed = bm_core::regions::layout_seed(&here.name, shape);
+        let map = bm_core::regions::RegionMap::new(shape, seed);
+        let lands = vec![bm_core::regions::LandClass::Plain; map.len()];
+        let names = bm_core::regions::RegionNames::builtin().name_all("temperate", &lands, seed);
+        let home = map.locate(SPAWN[0], SPAWN[2]);
+        let mut discovered = vec![home as u16];
+        let [hx, hz] = map.centre(home);
+        let mut others: Vec<usize> = (0..map.len()).filter(|&r| r != home).collect();
+        others.sort_by(|&a, &b| map.distance(a, hx, hz).total_cmp(&map.distance(b, hx, hz)));
+        discovered.extend(others.iter().take(2).map(|&r| r as u16));
+        if let Some(s) = self.inv.slots[slot as usize].as_mut() {
+            s.tag = atlas::pack(Some(here.id), None);
+        }
+        let changes = vec![(slot, self.inv.slots[slot as usize])];
+        self.events.push_back(NetEvent::Msg(ServerMsg::Slots { changes }));
+        self.events
+            .push_back(NetEvent::Msg(ServerMsg::Atlas(bm_protocol::AtlasView {
+                slot,
+                planet: here.id,
+                name: here.name.clone(),
+                shape,
+                layout_seed: seed,
+                region_names: names,
+                discovered: discovered.clone(),
+                shrine: BlockPos::new(SPAWN[0] as i64 + 4, GROUND + 1, SPAWN[2] as i64),
+                closed: false,
+            })));
+        let colour = |n: &str| {
+            let d = self.blocks.get(self.blocks.id(n).expect("builtin block"));
+            d.top_color.unwrap_or(d.color)
+        };
+        let (water, sand, turf, stone, snow) = (
+            colour("water"),
+            colour("sand"),
+            colour("turf"),
+            colour("stone"),
+            colour("snow"),
+        );
+        let n = atlas::map_pixels(shape) as f64;
+        let tau = std::f64::consts::TAU;
+        // Land height at map pixel (x, z): sums of whole waves, so it wraps.
+        let height = |x: f64, z: f64| {
+            let (u, v) = (x / n * tau, z / n * tau);
+            ((u * 2.0).sin() * (v * 3.0).cos() * 22.0
+                + (u * 5.0 + 1.3).cos() * 9.0
+                + (v * 4.0 + 0.7).sin() * 8.0
+                + ((u + v) * 7.0).sin() * 4.0
+                + 6.0)
+                .round() as i64
+        };
+        let tiles = atlas::tiles_per_side(shape);
+        for tz in 0..tiles {
+            for tx in 0..tiles {
+                let mut px = Vec::with_capacity(atlas::TILE_PIXELS * atlas::TILE_PIXELS * 3);
+                for pz in 0..atlas::TILE_PIXELS {
+                    for pxx in 0..atlas::TILE_PIXELS {
+                        let (x, z) = atlas::pixel_column(shape, (tx, tz), pxx, pz).expect("whole tiles");
+                        let r = map.locate(x as f64, z as f64) as u16;
+                        if !discovered.contains(&r) {
+                            px.extend_from_slice(&atlas::FOG);
+                            continue;
+                        }
+                        let (mx, mz) = (
+                            (x / atlas::BLOCKS_PER_PIXEL) as f64,
+                            (z / atlas::BLOCKS_PER_PIXEL) as f64,
+                        );
+                        let h = height(mx, mz);
+                        let (west, north) = (height(mx - 1.0, mz), height(mx, mz - 1.0));
+                        let c = match h {
+                            h if h < 0 => atlas::shade(water, 0, 0, 0, 0, Some(-h)),
+                            h if h < 3 => atlas::shade(sand, h, west, north, 0, None),
+                            h if h < 24 => atlas::shade(turf, h, west, north, 0, None),
+                            h if h < 32 => atlas::shade(stone, h, west, north, 0, None),
+                            h => atlas::shade(snow, h, west, north, 0, None),
+                        };
+                        px.extend_from_slice(&c);
+                    }
+                }
+                self.events.push_back(NetEvent::Msg(ServerMsg::AtlasTile {
+                    planet: here.id,
+                    tile: (tx, tz),
+                    rgb: lz4_flex::compress_prepend_size(&px),
+                }));
+            }
+        }
+    }
+
     pub fn show_lights(&mut self) {
         let b = |n: &str| BlockState::plain(self.blocks.id(n).expect("builtin block"));
         let paint = |n: &str, c: &str| {
@@ -1819,6 +1921,7 @@ impl Demo {
             } => self.throw(at, slot, yaw, pitch, hold),
             ClientMsg::Loot { creature } => self.loot(creature),
             ClientMsg::Eat { slot, .. } => self.eat(slot),
+            ClientMsg::OpenAtlas { slot: Some(slot) } => self.open_atlas(slot),
             ClientMsg::LookCrop { pos } => self.look_crop(pos),
             ClientMsg::ForgeBegin { pos, gear, deck } => self.forge_begin(pos, gear, deck),
             ClientMsg::ForgeUse { pos, slot, round } => self.forge_use(pos, slot, round),

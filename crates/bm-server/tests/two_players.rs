@@ -7911,3 +7911,99 @@ async fn breaking_a_sign_unwrites_it() {
     drop(alice);
     server.stop();
 }
+
+/// Milestone 27: an atlas binds to the world it is first opened on, shows
+/// the regions its holder has discovered and fogs the rest (whose land is
+/// never sent), and is drawn again when blocks change.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn an_atlas_maps_what_was_discovered_and_nothing_else() {
+    use bm_core::atlas;
+    use bm_core::regions::{RegionMap, layout_seed};
+    let dir = tempfile::tempdir().unwrap();
+    seed(dir.path(), "Alice", &[(1, "atlas", 1, 0)]);
+    let mut cfg = config(dir.path());
+    // Three regions a side, so most of the planet is undiscovered.
+    cfg.planets = vec![PlanetSpec::new("Testworld", "temperate", 7, 48)];
+    // The region she stands in is the one she has discovered.
+    let server = bm_server::start(cfg.clone()).unwrap();
+    let alice = TestClient::login(&server, "Alice").await;
+    let shape = alice.shape();
+    let regions = RegionMap::new(shape, layout_seed("Testworld", shape));
+    let feet = alice.feet();
+    let home = regions.locate(feet.x as f64, feet.z as f64) as u16;
+    server.stop();
+    drop(alice);
+    let store = Store::open(&planet_file(dir.path())).unwrap();
+    store
+        .write(&WriteBatch {
+            discoveries: vec![("alice".into(), [(0u16, vec![home])].into_iter().collect())],
+            ..Default::default()
+        })
+        .unwrap();
+    drop(store);
+    let server = bm_server::start(cfg).unwrap();
+    let mut alice = TestClient::login(&server, "Alice").await;
+    assert_eq!(atlas::bound(stack(&alice, 1).unwrap().tag), None, "made unbound");
+
+    alice.send(ClientMsg::OpenAtlas { slot: Some(1) }).await;
+    let ServerMsg::Atlas(view) = alice.until(|m| matches!(m, ServerMsg::Atlas(_))).await else {
+        unreachable!()
+    };
+    assert_eq!((view.planet, view.slot, view.closed), (0, 1, false));
+    assert_eq!(view.discovered, vec![home]);
+    alice.settle().await;
+    assert_eq!(
+        atlas::bound(stack(&alice, 1).unwrap().tag),
+        Some(0),
+        "bound on first use"
+    );
+
+    // Tiles arrive; each holds some of her region, and land elsewhere is fog.
+    let (tx, tz) = atlas::tile_of(feet.x, feet.z);
+    let mut seen = 0;
+    let mut home_tile = None;
+    while home_tile.is_none() {
+        let ServerMsg::AtlasTile { planet, tile, rgb } =
+            alice.until(|m| matches!(m, ServerMsg::AtlasTile { .. })).await
+        else {
+            unreachable!()
+        };
+        assert_eq!(planet, 0);
+        let px = lz4_flex::decompress_size_prepended(&rgb).unwrap();
+        assert_eq!(
+            px.len(),
+            atlas::TILE_PIXELS * atlas::TILE_PIXELS * 3,
+            "48 chunks: whole tiles"
+        );
+        let mut land = 0;
+        for (i, c) in px.chunks(3).enumerate() {
+            let (x, z) = atlas::pixel_column(shape, tile, i % atlas::TILE_PIXELS, i / atlas::TILE_PIXELS).unwrap();
+            let mine = regions.locate(x as f64, z as f64) as u16 == home;
+            assert_eq!(c != atlas::FOG, mine, "pixel ({x}, {z}) of tile {tile:?}");
+            land += mine as usize;
+        }
+        assert!(land > 0, "a tile with none of her land is never sent");
+        seen += 1;
+        if tile == (tx, tz) {
+            home_tile = Some(px);
+        }
+    }
+    assert!(seen >= 1);
+
+    // Digging where she stands draws her tile again.
+    alice.wait_for_chunk(feet.chunk()).await;
+    alice.settle().await;
+    let mut under = feet.offset(0, -1, 0);
+    while alice.block_at(under) == BlockId::AIR {
+        under = under.offset(0, -1, 0);
+    }
+    alice.ready();
+    let dug = alice.dig(1, under).await;
+    assert!(dug.0, "dug {dug:?} at {under:?}");
+    alice
+        .until(|m| matches!(m, ServerMsg::AtlasTile { tile, .. } if *tile == (tx, tz)))
+        .await;
+
+    alice.send(ClientMsg::OpenAtlas { slot: None }).await;
+    server.stop();
+}
