@@ -47,6 +47,20 @@ From Boundless (`research/coin-and-trade.md`) where known; the rest decided here
 12. **A stand or basket with stock, items or coin in its till cannot be broken.** When a claim lapses, its contents go to the owner's reclaim as storage does, and the till back into the owner's coin.
 13. **Feats:** the owner's sales and fees (`sold`, `basket_sold`, `tax`) and the buyer's coin spent (`spent`) count, the owner's even while they are away.
 
+## Part 4: prestige, settlements and footfall (specced 2026-10-28, waiting on Nathan)
+
+From Boundless (`docs/research/prestige-and-settlements.md`): **prestige** is a score per claim from the blocks in it; claims whose plot columns touch form a **settlement** once their prestige adds to 10,000, ranked Outpost (10,000), Hamlet (50,000), Village (250,000), Town (1,250,000), City (6,500,000), Great City (32,000,000); the owner with the most prestige there is its **warden** and names it, and the top one on a world is its **capital**. **Footfall:** a visitor entering a claim in a settlement pays its owner, from nowhere, the rank's base (20, 30, 40, 60, 80, 100 coin), doubled for a fresh visit, at most once a day per visitor and owner, less for repeat visits within 5 days (20% to 100% by days since) and stepped down for busy claims; only claims with 10,000 prestige of their own earn it; visitors with rights on that owner's claim pay nothing.
+
+What Boundless never published (its "secret formula"): the real prestige behind each block's value (the data has only a rank, 0 to 26, which the research maps to Boundmore's blocks), and the curves for its rules: repeating one kind of block counts less and less, a spread of kinds counts more, solid-packed plots count less, colours from other worlds and a variety of chisel shapes add a bonus. It promised that adding a block, chiselling or adding a plot never lowers prestige.
+
+### Decisions for Nathan
+
+14. **The prestige formula.** Boundless's is secret, so Boundmore's must be its own. Recommended: each block's research rank turned into points (rank 1 = 1 point, doubling about every 4 ranks, so a rank 24 coil is about 60), each kind of block giving full points for its first 100 and less after (square root), a variety bonus for the number of different kinds, a chisel bonus for the number of different shapes, and **only placed blocks counting** (untouched ground gives nothing, as players found); never lowered by adding. Or: something simpler (placed blocks' points only).
+15. **Footfall as Boundless's** (above: per-visitor once a day, doubled when fresh, falling for repeats, stepped down when busy), recommended; or a simpler flat once-a-day amount.
+16. **Settlement joining as Boundless's** (touching claims of different owners; thin connecting "roads" of plots do not join), recommended; or any touching claims.
+17. **Wardens and capitals:** named by the owner with the most prestige, as Boundless (recommended), and the capital shown in the planet list; players disliked "wardens they never chose": keep it, or let the founders pick?
+18. **Footfall is new coin** (a faucet beside feats). With a 2% fee as the only sink, keep it? (Boundless's tax was 10%.)
+
 ## The plan once decided
 
 - **Part 1, coin and feats:** coin on the character (saved; a new table or a save version), feats with their rewards and a feats window, coin shown in the inventory.
@@ -71,4 +85,5 @@ Guilds, mail, sovereign worlds, a premium currency (Boundless's cubits), NPC tra
 - Screenshots (2026-10-27): `docs/media/m24-shop.jpg`, `m24-basket.jpg`, `m24-feats.jpg` (`--demo-ui shop|basket|feats`). Fixed the same day: a character's current level was not counted until their next level-up (now counted on joining).
 - [x] An away owner's sales and fees are counted and paid when they next join (`Ledger::note`, 2026-10-28).
 - [ ] Part 2, left: the stand's and basket's own art.
+- [x] Part 4 researched and specced (2026-10-28); **waiting on Nathan's answers to Decisions 14 to 18**
 - [ ] Part 4, footfall (with prestige and settlements)
