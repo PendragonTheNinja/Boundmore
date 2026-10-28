@@ -1006,12 +1006,11 @@ pub fn paint(name: &str) -> Option<Tex> {
         "stone_plinth" => return Some(stone_plinth()),
         "wood_table" => return Some(wood_table()),
         "wood_chair" => return Some(wood_chair()),
-        // Milestone 24 part 2's trading blocks, for now in the ornate
-        // storage designs (wood for the stand, wicker for the basket).
-        "shop_stand_top" => return paint("ornate_wood_storage_top"),
-        "shop_stand_side" => return paint("ornate_wood_storage_side"),
-        "request_basket_top" => return paint("ornate_wicker_storage_top"),
-        "request_basket_side" => return paint("ornate_wicker_storage_side"),
+        // Milestone 24's trading blocks.
+        "shop_stand_top" => return Some(shop_stand_top()),
+        "shop_stand_side" => return Some(shop_stand_side()),
+        "request_basket_top" => return Some(request_basket_top()),
+        "request_basket_side" => return Some(request_basket_side()),
         _ => {}
     }
     for (suffix, beam) in [("_pole", false), ("_beam", true)] {
@@ -1035,6 +1034,212 @@ pub fn paint(name: &str) -> Option<Tex> {
         }
     }
     None
+}
+
+// ---------------------------------------------------------------- trade
+
+/// Cloth, paper and felt laid over a rendered face: where `mask` gives a
+/// height, the pixel is painted from `ramp` (its tone the height's light
+/// plus `tone`), else the face is kept.
+fn overlay(mut tex: Tex, ramp: impl Fn(f32, f32) -> Ramp, mask: impl Fn(f32, f32) -> Option<(f32, f32)>) -> Tex {
+    let n = tex.n;
+    let cells: Vec<Option<(f32, f32)>> = (0..n * n).map(|i| mask(c(i % n), c(i / n))).collect();
+    let height = Field::from_fn(|x, y| cells[y * n + x].map_or(0.0, |(h, _)| h));
+    let light = height.light();
+    for y in 0..n {
+        for x in 0..n {
+            if let Some((h, tone)) = cells[y * n + x] {
+                let r = ramp(c(x), c(y));
+                tex.set(x, y, r.pick(0.35 + light.at(x, y) * 0.7 + h * 0.15 + tone, x, y));
+            }
+        }
+    }
+    tex
+}
+
+/// The awning's red and cream stripes, 4 units wide.
+fn awning_ramp(fx: f32) -> Ramp {
+    if (fx / 4.0).floor() as i32 % 2 == 0 {
+        Ramp::from_hex(&[0x5a1c1c, 0x8a2a26, 0xb23d32, 0xd0574a, 0xe68a74])
+    } else {
+        Ramp::from_hex(&[0x7a6a52, 0xa8977a, 0xd4c6a6, 0xeee2c6, 0xfaf4e4])
+    }
+}
+
+/// How far down the awning hangs at `fx`: its hem scalloped, one scallop
+/// a stripe.
+fn awning_hem(fx: f32) -> f32 {
+    let t = (fx.rem_euclid(4.0) - 2.0) / 2.0;
+    9.0 + 2.2 * (1.0 - t * t).max(0.0).sqrt()
+}
+
+/// A shop stand's side: a wooden counter under a striped awning, a gold
+/// coin plate on its front.
+fn shop_stand_side() -> Tex {
+    let design = |fx: f32, fy: f32| -> Px {
+        // The coin plate: a raised gold disc with a rim and a square hole.
+        let (dx, dy) = (fx - 16.0, fy - 20.5);
+        let r = dx.hypot(dy);
+        if r < 4.6 {
+            if dx.abs().max(dy.abs()) < 1.1 {
+                return gap(0.2);
+            }
+            let rim = ridge(r, 3.4, 4.6);
+            return Px {
+                h: 1.1 + rim * 0.35 + 0.15 * (1.0 - r / 4.6),
+                part: Part::Inlay,
+            };
+        }
+        if let Some(p) = rim(Mat::Wood, fx, fy, 2.5, true) {
+            return p;
+        }
+        // A counter ledge across the top of the body.
+        if (12.0..14.5).contains(&fy) {
+            return toned(0.9 + 0.3 * rise(14.5 - fy, 1.0), 31, true, 0.05);
+        }
+        chest_boards(Mat::Wood, fy, 14.5, 29.5, 3, 10)
+    };
+    let tex = render("shop_stand_side", Mat::Wood, false, design);
+    overlay(
+        tex,
+        |fx, _| awning_ramp(fx),
+        |fx, fy| {
+            let hem = awning_hem(fx);
+            if fy >= hem {
+                return None;
+            }
+            // Each stripe a gentle fold; the cloth darker up under the top
+            // rail and at the hem's lip.
+            let fold = (PI * fx.rem_euclid(4.0) / 4.0).sin();
+            let lip = rise(hem - fy, 1.2);
+            Some((
+                0.4 + 0.35 * fold + 0.2 * lip,
+                -0.12 * (1.0 - fy / hem) - 0.1 * (1.0 - lip),
+            ))
+        },
+    )
+}
+
+/// A shop stand's top: a wooden counter with a green felt mat on it and
+/// three coins left there.
+fn shop_stand_top() -> Tex {
+    let coins = [(11.5, 12.0), (19.5, 14.0), (14.0, 20.5)];
+    let design = move |fx: f32, fy: f32| -> Px {
+        for (cx, cy) in coins {
+            let r = (fx - cx).hypot(fy - cy);
+            if r < 2.3 {
+                return Px {
+                    h: 1.3 + ridge(r, 1.5, 2.3) * 0.3,
+                    part: Part::Inlay,
+                };
+            }
+        }
+        if let Some(p) = rim(Mat::Wood, fx, fy, 3.0, true) {
+            return p;
+        }
+        let (k, a, b) = board(fx, 3.0, 29.0, 4);
+        if k > 0 && a < 1.0 {
+            return gap(0.1);
+        }
+        body(0.45 + 0.35 * rise(a.min(b) - 0.5, 1.2), 10 + k, false)
+    };
+    let tex = render("shop_stand_top", Mat::Wood, false, design);
+    let felt = Ramp::from_hex(&[0x173323, 0x22482f, 0x2f603c, 0x3f784b, 0x5a9462]);
+    overlay(
+        tex,
+        move |_, _| felt.clone(),
+        move |fx, fy| {
+            let d = inside((fx, fy), 6.0, 6.0, 26.0, 26.0);
+            if d <= 0.0 || coins.iter().any(|&(cx, cy)| (fx - cx).hypot(fy - cy) < 2.3) {
+                return None;
+            }
+            // A soft nap and a stitched hem.
+            let nap = value(seed("felt"), 16, 16, fx, fy) - 0.5;
+            let stitch = if (0.9..1.5).contains(&d) && (fx + fy).rem_euclid(2.0) < 1.0 {
+                0.25
+            } else {
+                0.0
+            };
+            Some((0.3 + 0.3 * rise(d, 1.0), nap * 0.12 + stitch))
+        },
+    )
+}
+
+/// Where a request basket's paper tag lies: a slightly tilted card.
+fn tag_at(fx: f32, fy: f32) -> Option<f32> {
+    let (dx, dy) = (fx - 16.0, fy - 19.0);
+    let (u, v) = (dx * 0.985 + dy * 0.17, -dx * 0.17 + dy * 0.985);
+    let d = (5.0 - u.abs()).min(6.5 - v.abs());
+    (d > 0.0).then_some(d)
+}
+
+/// A request basket's side: woven wicker with a cane rim and two leather
+/// straps, a paper order tag tied on with a cord.
+fn request_basket_side() -> Tex {
+    let design = |fx: f32, fy: f32| -> Px {
+        if let Some(p) = rim(Mat::Wicker, fx, fy, 3.0, false) {
+            return p;
+        }
+        // Leather straps.
+        for x0 in [6.0, 23.0] {
+            let d = inside((fx, fy), x0, 0.0, x0 + 3.0, SIZEF);
+            if d > 0.0 {
+                if let Some(s) = stud(fx, fy, x0 + 1.5, 7.0, 0.9) {
+                    return fit(1.4 + s * 0.3);
+                }
+                return fit(0.9 + 0.3 * rise(d, 0.8));
+            }
+        }
+        // The cord the tag hangs from.
+        if (fx - 16.0 + (fy - 9.0) * 0.15).abs() < 0.5 && (4.0..12.5).contains(&fy) {
+            return gap(0.9);
+        }
+        body(0.55, 12, true)
+    };
+    let tex = render("request_basket_side", Mat::Wicker, false, design);
+    let paper = Ramp::from_hex(&[0x6e5a3c, 0x9e8a64, 0xcdbb92, 0xe8dab6, 0xf6eed6]);
+    let ink = Ramp::from_hex(&[0x2a1e16, 0x3e2c20, 0x55402e, 0x6a5038, 0x7e6244]);
+    overlay(
+        tex,
+        move |fx, fy| {
+            // Ink: a coin drawn at the top of the card, lines written below.
+            let (dx, dy) = (fx - 16.4, fy - 15.6);
+            let coin = ((dx.hypot(dy) - 1.8).abs() < 0.55) as u8;
+            let line =
+                (fy > 18.5 && fy < 24.5 && (fy - 18.5).rem_euclid(2.0) < 0.8 && (12.5..20.0).contains(&fx)) as u8;
+            if coin + line > 0 { ink.clone() } else { paper.clone() }
+        },
+        |fx, fy| tag_at(fx, fy).map(|d| (0.3 + 0.4 * rise(d, 1.0), 0.05)),
+    )
+}
+
+/// A request basket's top: looking into it past the cane rim, the weave
+/// in shadow, a folded cloth lining at the bottom.
+fn request_basket_top() -> Tex {
+    let design = |fx: f32, fy: f32| -> Px {
+        if let Some(p) = rim(Mat::Wicker, fx, fy, 4.0, false) {
+            return p;
+        }
+        // Inside: the weave falling away into shadow.
+        let d = face_inset((fx, fy)) - 4.0;
+        toned(0.4 - 0.25 * rise(d, 6.0), 12, true, -0.18 - 0.2 * rise(d, 8.0))
+    };
+    let tex = render("request_basket_top", Mat::Wicker, false, design);
+    let cloth = Ramp::from_hex(&[0x2a3550, 0x3b4a6e, 0x52648e, 0x6e82aa, 0x93a6c8]);
+    overlay(
+        tex,
+        move |_, _| cloth.clone(),
+        |fx, fy| {
+            let d = inside((fx, fy), 9.0, 9.0, 23.0, 23.0);
+            if d <= 0.0 {
+                return None;
+            }
+            // Two diagonal folds.
+            let f = (fx - fy).abs();
+            let fold = ridge(f, 0.0, 3.0) * 0.5 - ridge((fx + fy - 32.0).abs(), 0.0, 2.0) * 0.3;
+            Some((0.3 + 0.2 * rise(d, 1.5) + fold, -0.05))
+        },
+    )
 }
 
 #[cfg(test)]
