@@ -4,10 +4,13 @@
 //! A far chunk is meshed once its column and the eight columns around it are
 //! all held (so its faces and its light are final, as "light first, mesh
 //! once" asks of near chunks). Light is simple: full sky above a column's
-//! highest opaque block, dimming a level a block below it to a floor, no
-//! block light; day and night still come from the shader's uniform.
+//! highest opaque block, dimming a level a block below it to a floor; day
+//! and night still come from the shader's uniform. Block light (milestone
+//! 26) spreads in colour from the far cells that give it off ([`far_glow`]),
+//! at the far copy's coarse scale, so lume, lava and lanterns light the
+//! horizon at night.
 
-use bm_core::{BlockFlags, BlockState, CHUNK_SIZE, ChunkPos, FarChunk, Light, PlanetShape};
+use bm_core::{BlockFlags, BlockState, CHUNK_SIZE, ChunkPos, ColourPalette, FarChunk, Light, MAX_LIGHT, PlanetShape};
 use bm_mesh::ChunkMesh;
 use crossbeam_channel::{Receiver, Sender};
 use std::collections::{HashMap, HashSet};
@@ -35,6 +38,8 @@ pub struct FarMesh {
 pub struct FarWorld {
     shape: PlanetShape,
     flags: BlockFlags,
+    /// Painted lume lights in its colour (milestone 26).
+    palette: Arc<ColourPalette>,
     held: HashMap<ChunkPos, Held>,
     /// Chunks held per column (x, z).
     columns: HashMap<(i32, i32), u32>,
@@ -54,6 +59,7 @@ impl FarWorld {
         Self {
             shape,
             flags,
+            palette: Arc::new(ColourPalette::builtin()),
             held: HashMap::new(),
             columns: HashMap::new(),
             dirty: HashSet::new(),
@@ -64,6 +70,12 @@ impl FarWorld {
             done,
             empty: Vec::new(),
         }
+    }
+
+    /// Painted lume lights in its palette colour.
+    pub fn with_colours(mut self, palette: &ColourPalette) -> Self {
+        self.palette = Arc::new(palette.clone());
+        self
     }
 
     pub fn insert(&mut self, pos: ChunkPos, copy: FarChunk) {
@@ -186,10 +198,11 @@ impl FarWorld {
             let version = self.counter;
             self.versions.insert(p, version);
             let flags = self.flags.clone();
+            let palette = self.palette.clone();
             let tx = self.done_tx.clone();
             self.in_flight += 1;
             rayon::spawn(move || {
-                let mesh = mesh(p, &near, &columns, h, &flags);
+                let mesh = mesh(p, &near, &columns, h, &flags, &palette);
                 let _ = tx.send(FarMesh { pos: p, version, mesh });
             });
         }
@@ -257,12 +270,105 @@ fn tops(copy: &FarChunk, flags: &BlockFlags) -> Tops {
     t
 }
 
+/// Block light over a far chunk at its cells' scale: emitters within reach
+/// in it and its 26 neighbours spread in colour, losing a cell's width in
+/// levels per cell, stopped by opaque cells (as near light is, coarsely).
+/// `None` when no light reaches it (the common case, and free).
+struct Glow {
+    /// Blocks a cell is wide.
+    size: i32,
+    /// Cells of border round the chunk.
+    border: i32,
+    side: i32,
+    cells: Vec<[u8; 3]>,
+}
+
+impl Glow {
+    fn at(&self, x: i32, y: i32, z: i32) -> [u8; 3] {
+        let c = |v: i32| v.div_euclid(self.size) + self.border;
+        let (cx, cy, cz) = (c(x), c(y), c(z));
+        if [cx, cy, cz].iter().any(|&v| v < 0 || v >= self.side) {
+            return [0; 3];
+        }
+        self.cells[((cy * self.side + cz) * self.side + cx) as usize]
+    }
+}
+
+fn far_glow(
+    near: &[Option<Arc<FarChunk>>; 27],
+    state: &impl Fn(i32, i32, i32) -> BlockState,
+    flags: &BlockFlags,
+    palette: &ColourPalette,
+) -> Option<Glow> {
+    let centre = near[13].as_ref()?;
+    // Any emitter in the neighbourhood at all? Uniform copies answer at once.
+    let emits = |s: BlockState| flags.light(s.id) > 0;
+    let any = near.iter().flatten().any(|c| c.states().iter().any(|&s| emits(s)));
+    if !any {
+        return None;
+    }
+    let size = 1i32 << centre.level();
+    let border = (MAX_LIGHT as i32 - 1) / size + 1;
+    let across = centre.across() as i32;
+    let side = across + 2 * border;
+    let n = (side * side * side) as usize;
+    let idx = |x: i32, y: i32, z: i32| ((y * side + z) * side + x) as usize;
+    let mut opaque = vec![false; n];
+    let mut light = vec![[0u8; 3]; n];
+    let mut queue = std::collections::VecDeque::new();
+    for y in 0..side {
+        for z in 0..side {
+            for x in 0..side {
+                let b = |v: i32| (v - border) * size + size / 2;
+                let s = state(b(x), b(y), b(z));
+                let i = idx(x, y, z);
+                opaque[i] = flags.opaque(s.id);
+                let e = flags.emission(s, Some(palette));
+                if e != [0; 3] {
+                    light[i] = e;
+                    queue.push_back((x, y, z));
+                }
+            }
+        }
+    }
+    let step = size as u8;
+    while let Some((x, y, z)) = queue.pop_front() {
+        let l = light[idx(x, y, z)];
+        if l.iter().all(|&v| v <= step) {
+            continue;
+        }
+        for (dx, dy, dz) in [(1, 0, 0), (-1, 0, 0), (0, 1, 0), (0, -1, 0), (0, 0, 1), (0, 0, -1)] {
+            let (nx, ny, nz) = (x + dx, y + dy, z + dz);
+            if [nx, ny, nz].iter().any(|&v| v < 0 || v >= side) {
+                continue;
+            }
+            let j = idx(nx, ny, nz);
+            if opaque[j] {
+                continue;
+            }
+            let offer = l.map(|v| v.saturating_sub(step));
+            let cur = light[j];
+            if (0..3).any(|c| offer[c] > cur[c]) {
+                light[j] = [0, 1, 2].map(|c| cur[c].max(offer[c]));
+                queue.push_back((nx, ny, nz));
+            }
+        }
+    }
+    Some(Glow {
+        size,
+        border,
+        side,
+        cells: light,
+    })
+}
+
 fn mesh(
     p: ChunkPos,
     near: &[Option<Arc<FarChunk>>; 27],
     columns: &[Vec<Arc<Tops>>],
     height_chunks: i32,
     flags: &BlockFlags,
+    palette: &ColourPalette,
 ) -> ChunkMesh {
     let centre = near[13].as_ref().expect("centre held");
     if centre.uniform().is_some_and(|s| s.id.is_air()) {
@@ -295,6 +401,7 @@ fn mesh(
         copy.cell((lx >> l) as usize, (ly >> l) as usize, (lz >> l) as usize)
     };
     let base = p.y * N;
+    let glow = far_glow(near, &state, flags, palette);
     let light = |x: i32, y: i32, z: i32| -> Light {
         let t = top[(x + 1) as usize + (z + 1) as usize * side];
         let wy = base + y;
@@ -303,7 +410,7 @@ fn mesh(
         } else {
             15u8.saturating_sub((t - wy).min(15) as u8).max(FLOOR_SKY)
         };
-        Light::new(sky, 0)
+        Light::rgb(sky, glow.as_ref().map_or([0; 3], |g| g.at(x, y, z)))
     };
     bm_mesh::mesh_far(state, light, flags)
 }
@@ -332,6 +439,44 @@ mod tests {
             Chunk::empty()
         };
         FarChunk::from_chunk(&c, &r.flags())
+    }
+
+    /// Milestone 26: a painted lume in a far chunk lights the far cells
+    /// round it in its colour, less with distance; with no light anywhere
+    /// near, no glow is worked out at all.
+    #[test]
+    fn far_lume_lights_the_horizon_in_its_colour() {
+        let r = BlockRegistry::builtin();
+        let flags = r.flags();
+        let palette = ColourPalette::builtin();
+        let lume = BlockState::coloured(r.id("glow_crystal").unwrap(), palette.id("Bright Crimson").unwrap());
+        // A 2x2x2 lump: a lone block is open at the far scale (fewer than
+        // three of a cell's eight blocks solid).
+        let mut c = Chunk::empty();
+        for (x, y, z) in (0..8).map(|i| (16 + (i & 1), 16 + (i >> 1 & 1), 16 + (i >> 2))) {
+            c.set_state(LocalPos::new(x, y, z), lume);
+        }
+        let far = Arc::new(FarChunk::from_chunk(&c, &flags));
+        let mut near: [Option<Arc<FarChunk>>; 27] = std::array::from_fn(|_| None);
+        near[13] = Some(far.clone());
+        let state = |x: i32, y: i32, z: i32| {
+            if [x, y, z].iter().all(|v| (0..N).contains(v)) {
+                far.cell((x >> 1) as usize, (y >> 1) as usize, (z >> 1) as usize)
+            } else {
+                BlockState::AIR
+            }
+        };
+        let g = far_glow(&near, &state, &flags, &palette).expect("a light nearby");
+        let close = g.at(16, 19, 16);
+        let further = g.at(16, 25, 16);
+        assert!(close[0] > 0 && close[0] > close[2], "red: {close:?}");
+        assert!(further[0] < close[0], "fades: {further:?} after {close:?}");
+        assert_eq!(g.at(16, 31 + 16, 16), [0; 3], "out of reach");
+
+        let dark = Arc::new(FarChunk::from_chunk(&Chunk::empty(), &flags));
+        near[13] = Some(dark.clone());
+        let state = |_: i32, _: i32, _: i32| BlockState::AIR;
+        assert!(far_glow(&near, &state, &flags, &palette).is_none());
     }
 
     #[test]

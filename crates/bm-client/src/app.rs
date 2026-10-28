@@ -345,7 +345,7 @@ impl Session {
             base_reach: w.reach,
             view_radius: w.view_radius,
             far_radius: w.far_radius,
-            far: crate::far::FarWorld::new(shape, registry.flags()),
+            far: crate::far::FarWorld::new(shape, registry.flags()).with_colours(&w.colours),
             progress: Progress::new(tree, w.character),
             claims: Claims::new(shape, w.claims),
             signs: crate::signs::Signs::default(),
@@ -393,7 +393,7 @@ impl Session {
     fn arrive(&mut self, t: Travel, now: f64, local_ticks: f64) {
         let shape = t.planet.shape;
         let registry = self.world.registry.clone();
-        self.far = crate::far::FarWorld::new(shape, registry.flags());
+        self.far = crate::far::FarWorld::new(shape, registry.flags()).with_colours(&self.items.colours);
         self.world = ClientWorld::new(shape, registry, &self.items.colours);
         self.signs.clear();
         self.claims = Claims::new(shape, t.claims);

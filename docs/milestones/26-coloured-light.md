@@ -48,4 +48,5 @@ Coloured glass or water filtering light; crops growing by light (ADR-0010: crops
 - Cost (`light_bench`, release, against the base commit): lighting a column 1.18 ms (was 0.83, 1.4x); a block edit 20 us on average (was 12, 1.7x: each emitter now spreads three channels); dense light 64 KB a chunk (was 32). Meshing unchanged.
 - [x] Renamed in game (Nathan, 2026-10-28, "Lume for now"): the glow crystal family is shown as lume (`BlockDef::display`, `display_name`; 27 blocks; the mining feat "Lume Cutter"). Internal names and saves are unchanged. Protocol 53.
 - [x] Screenshot (2026-10-28): `docs/media/m26-lights.jpg` (`--demo-ui lights`: the torch hall with six gem torches, seven lume colours down the floor, a lume lantern and an amethyst torch in hand). Test counts in CLAUDE.md.
+- [x] Far views light in colour too (2026-10-28): far cells that give off light spread it, coloured, over the far copy's coarse cells (`bm-client/src/far.rs`, `far_glow`); a neighbourhood with no emitter (checked on each copy's palette) costs nothing. Test: a far lume lump lights the cells round it red, fading out of reach.
 - [ ] Nathan's play-test; Measure F4 and F5

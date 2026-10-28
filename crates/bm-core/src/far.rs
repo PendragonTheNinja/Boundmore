@@ -109,6 +109,11 @@ impl FarChunk {
         Self::from_dense(self.level + 1, &halve(self.across(), &self.dense(), flags))
     }
 
+    /// Every state the copy holds (each once).
+    pub fn states(&self) -> &[BlockState] {
+        &self.palette
+    }
+
     pub fn level(&self) -> u8 {
         self.level
     }
