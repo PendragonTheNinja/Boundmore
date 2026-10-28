@@ -18,6 +18,7 @@ pub mod net;
 pub mod planet;
 pub mod portals;
 pub mod reclaim;
+pub mod settlements;
 pub mod shops;
 pub mod signs;
 pub mod storage;
