@@ -194,6 +194,10 @@ pub struct BlockDef {
     /// part 4).
     #[serde(default)]
     pub glow_text: bool,
+    /// Its prestige rank, 0 to 26 (milestone 24 part 4): Boundless's data
+    /// bucket for the kind, turned into points by `prestige::points`.
+    #[serde(default)]
+    pub prestige: u8,
 }
 
 /// A block's health category [tuning 2.2]: soft 800 (soil, sand, foliage),

@@ -45,6 +45,7 @@
 
 [[block]]
 name = "air"
+prestige = 0
 colourable = false
 color = [0, 0, 0]
 solid = false
@@ -56,6 +57,7 @@ health = "hard"
 
 [[block]]
 name = "bedrock"
+prestige = 0
 colourable = false
 color = [38, 34, 44]
 solid = true
@@ -69,6 +71,7 @@ material = "rock"
 
 [[block]]
 name = "stone"
+prestige = 1
 chisel = "slope"
 color = [118, 116, 122]
 solid = true
@@ -85,6 +88,7 @@ build_xp = 8
 
 [[block]]
 name = "deep_stone"
+prestige = 1
 chisel = "slope"
 color = [82, 78, 92]
 solid = true
@@ -101,6 +105,7 @@ build_xp = 8
 
 [[block]]
 name = "soil"
+prestige = 1
 chisel = "slope"
 color = [112, 82, 58]
 solid = true
@@ -118,6 +123,7 @@ bonus = [{ item = "tuber", per_tier = [0.015, 0.015, 0.025, 0.015, 0, 0, 0, 0] }
 
 [[block]]
 name = "turf"
+prestige = 1
 chisel = "slope"
 color = [112, 82, 58]
 top_color = [92, 156, 74]
@@ -138,6 +144,7 @@ bonus = [{ item = "tuber", per_tier = [0.015, 0.015, 0.025, 0.015, 0, 0, 0, 0] }
 
 [[block]]
 name = "sand"
+prestige = 1
 chisel = "slope"
 color = [214, 196, 142]
 solid = true
@@ -153,6 +160,7 @@ build_xp = 2
 
 [[block]]
 name = "gravel"
+prestige = 1
 chisel = "slope"
 color = [136, 128, 122]
 solid = true
@@ -169,6 +177,7 @@ build_xp = 2
 
 [[block]]
 name = "snow"
+prestige = 1
 chisel = "slope"
 color = [236, 242, 248]
 solid = true
@@ -184,6 +193,7 @@ build_xp = 2
 
 [[block]]
 name = "water"
+prestige = 0
 colourable = false
 color = [52, 104, 186]
 solid = false
@@ -198,6 +208,7 @@ liquid = true
 
 [[block]]
 name = "trunk"
+prestige = 1
 color = [104, 74, 48]
 top_color = [168, 132, 88]
 bottom_color = [168, 132, 88]
@@ -216,6 +227,7 @@ build_xp = 8
 
 [[block]]
 name = "foliage"
+prestige = 1
 color = [58, 124, 64]
 solid = true
 opaque = true
@@ -232,6 +244,7 @@ bonus = [{ item = "dewberry", per_tier = [0.1, 0.1, 0.1, 0, 0, 0, 0, 0] }]
 
 [[block]]
 name = "coal_seam"
+prestige = 0
 colourable = false
 color = [52, 50, 54]
 solid = true
@@ -249,6 +262,7 @@ build_xp = 0
 
 [[block]]
 name = "copper_vein"
+prestige = 0
 colourable = false
 color = [184, 112, 72]
 solid = true
@@ -266,6 +280,7 @@ build_xp = 0
 
 [[block]]
 name = "glow_crystal"
+prestige = 3
 colourable = false
 color = [150, 230, 255]
 solid = true
@@ -282,6 +297,7 @@ build_xp = 8
 
 [[block]]
 name = "timber"
+prestige = 1
 chisel = "any"
 color = [176, 134, 86]
 solid = true
@@ -298,6 +314,7 @@ build_xp = 12
 
 [[block]]
 name = "brick"
+prestige = 9
 chisel = "any"
 color = [164, 82, 66]
 solid = true
@@ -313,6 +330,7 @@ build_xp = 20
 
 [[block]]
 name = "glass"
+prestige = 7
 chisel = "any"
 color = [200, 228, 236]
 solid = true
@@ -329,6 +347,7 @@ build_xp = 12
 
 [[block]]
 name = "workbench"
+prestige = 11
 colourable = false
 color = [150, 108, 64]
 top_color = [184, 142, 92]
@@ -348,6 +367,7 @@ build_xp = 16
 
 [[block]]
 name = "furnace"
+prestige = 6
 colourable = false
 color = [96, 92, 98]
 top_color = [120, 116, 122]
@@ -367,6 +387,7 @@ build_xp = 12
 
 [[block]]
 name = "claim_stone"
+prestige = 5
 colourable = false
 color = [120, 110, 150]
 top_color = [170, 210, 240]
@@ -387,6 +408,7 @@ build_xp = 8
 
 [[block]]
 name = "iron_vein"
+prestige = 0
 colourable = false
 color = [150, 120, 108]
 solid = true
@@ -404,6 +426,7 @@ build_xp = 0
 
 [[block]]
 name = "sandstone"
+prestige = 1
 chisel = "any"
 color = [214, 178, 120]
 solid = true
@@ -420,6 +443,7 @@ build_xp = 8
 
 [[block]]
 name = "ice"
+prestige = 1
 chisel = "any"
 color = [170, 210, 240]
 solid = true
@@ -436,6 +460,7 @@ build_xp = 2
 
 [[block]]
 name = "warp_shrine"
+prestige = 3
 colourable = false
 color = [96, 84, 140]
 top_color = [200, 170, 255]
@@ -453,6 +478,7 @@ light = 10
 
 [[block]]
 name = "storage_chest"
+prestige = 8
 colourable = false
 color = [150, 104, 62]
 top_color = [176, 128, 80]
@@ -472,6 +498,7 @@ build_xp = 8
 
 [[block]]
 name = "ash"
+prestige = 1
 chisel = "any"
 color = [150, 146, 140]
 solid = true
@@ -489,6 +516,7 @@ build_xp = 2
 
 [[block]]
 name = "wayshard_vein"
+prestige = 0
 colourable = false
 color = [118, 92, 168]
 solid = true
@@ -507,6 +535,7 @@ build_xp = 0
 
 [[block]]
 name = "portal_conduit"
+prestige = 15
 colourable = false
 color = [92, 86, 120]
 solid = true
@@ -521,6 +550,7 @@ material = "rock"
 # An open portal's conduits become this (ADR-0009); never placed by hand.
 [[block]]
 name = "portal_surface"
+prestige = 0
 colourable = false
 color = [150, 120, 255]
 solid = false
@@ -536,6 +566,7 @@ drops = ""
 
 [[block]]
 name = "torch"
+prestige = 2
 colourable = false
 color = [236, 168, 72]
 solid = false
@@ -552,6 +583,7 @@ build_xp = 8
 
 [[block]]
 name = "torch_north"
+prestige = 2
 colourable = false
 color = [236, 168, 72]
 solid = false
@@ -567,6 +599,7 @@ drops = "torch"
 
 [[block]]
 name = "torch_east"
+prestige = 2
 colourable = false
 color = [236, 168, 72]
 solid = false
@@ -582,6 +615,7 @@ drops = "torch"
 
 [[block]]
 name = "torch_south"
+prestige = 2
 colourable = false
 color = [236, 168, 72]
 solid = false
@@ -597,6 +631,7 @@ drops = "torch"
 
 [[block]]
 name = "torch_west"
+prestige = 2
 colourable = false
 color = [236, 168, 72]
 solid = false
@@ -613,6 +648,7 @@ drops = "torch"
 # Milestone 11: the crafting chain (docs/milestones/11-crafting-chain.md).
 [[block]]
 name = "crafting_table"
+prestige = 4
 colourable = false
 color = [160, 118, 72]
 top_color = [190, 150, 100]
@@ -630,6 +666,7 @@ build_xp = 8
 
 [[block]]
 name = "extractor"
+prestige = 11
 colourable = false
 color = [110, 116, 124]
 top_color = [140, 146, 150]
@@ -648,6 +685,7 @@ build_xp = 16
 
 [[block]]
 name = "furnace_crucible"
+prestige = 4
 colourable = false
 color = [104, 98, 96]
 top_color = [150, 90, 60]
@@ -665,6 +703,7 @@ build_xp = 12
 
 [[block]]
 name = "relic_seam"
+prestige = 0
 color = [120, 112, 104]
 solid = true
 opaque = true
@@ -682,6 +721,7 @@ build_xp = 0
 
 [[block]]
 name = "spikeleaf"
+prestige = 4
 colourable = false
 color = [176, 168, 96]
 solid = false
@@ -701,6 +741,7 @@ build_xp = 2
 
 [[block]]
 name = "hornroot"
+prestige = 4
 colourable = false
 color = [200, 120, 70]
 solid = false
@@ -720,6 +761,7 @@ build_xp = 2
 
 [[block]]
 name = "stiltfrond"
+prestige = 4
 colourable = false
 color = [96, 150, 90]
 solid = false
@@ -739,6 +781,7 @@ build_xp = 2
 
 [[block]]
 name = "nightlily"
+prestige = 4
 colourable = false
 color = [120, 90, 170]
 solid = false
@@ -758,6 +801,7 @@ build_xp = 2
 
 [[block]]
 name = "ridge_cactus"
+prestige = 4
 colourable = false
 color = [90, 140, 80]
 solid = false
@@ -777,6 +821,7 @@ build_xp = 2
 
 [[block]]
 name = "knot_aloe"
+prestige = 4
 colourable = false
 color = [110, 160, 120]
 solid = false
@@ -796,6 +841,7 @@ build_xp = 2
 
 [[block]]
 name = "frostbell"
+prestige = 4
 colourable = false
 color = [220, 230, 240]
 solid = false
@@ -815,6 +861,7 @@ build_xp = 2
 
 [[block]]
 name = "curlfern"
+prestige = 4
 colourable = false
 color = [80, 150, 70]
 solid = false
@@ -834,6 +881,7 @@ build_xp = 2
 
 [[block]]
 name = "boulder"
+prestige = 4
 colourable = false
 color = [130, 128, 124]
 solid = false
@@ -853,6 +901,7 @@ build_xp = 2
 
 [[block]]
 name = "stalk_boulder"
+prestige = 4
 colourable = false
 color = [150, 140, 120]
 solid = false
@@ -872,6 +921,7 @@ build_xp = 2
 
 [[block]]
 name = "stacked_boulder"
+prestige = 4
 colourable = false
 color = [120, 116, 110]
 solid = false
@@ -891,6 +941,7 @@ build_xp = 2
 
 [[block]]
 name = "ring_boulder"
+prestige = 4
 colourable = false
 color = [140, 136, 140]
 solid = false
@@ -910,6 +961,7 @@ build_xp = 2
 
 [[block]]
 name = "chip_boulder"
+prestige = 4
 colourable = false
 color = [110, 110, 118]
 solid = false
@@ -929,6 +981,7 @@ build_xp = 2
 
 [[block]]
 name = "tapered_boulder"
+prestige = 4
 colourable = false
 color = [136, 126, 116]
 solid = false
@@ -948,6 +1001,7 @@ build_xp = 2
 
 [[block]]
 name = "tarspot_cap"
+prestige = 4
 colourable = false
 color = [150, 60, 50]
 solid = false
@@ -967,6 +1021,7 @@ build_xp = 2
 
 [[block]]
 name = "tongue_bracket"
+prestige = 4
 colourable = false
 color = [200, 150, 90]
 solid = false
@@ -986,6 +1041,7 @@ build_xp = 2
 
 [[block]]
 name = "branch_coral"
+prestige = 4
 colourable = false
 color = [220, 120, 150]
 solid = false
@@ -1005,6 +1061,7 @@ build_xp = 2
 
 [[block]]
 name = "burst_cap"
+prestige = 4
 colourable = false
 color = [180, 100, 200]
 solid = false
@@ -1024,6 +1081,7 @@ build_xp = 2
 
 [[block]]
 name = "weeping_cap"
+prestige = 4
 colourable = false
 color = [120, 110, 160]
 solid = false
@@ -1043,6 +1101,7 @@ build_xp = 2
 
 [[block]]
 name = "glowcap"
+prestige = 4
 colourable = false
 color = [120, 220, 210]
 solid = false
@@ -1066,6 +1125,7 @@ build_xp = 2
 
 [[block]]
 name = "tallow_torch"
+prestige = 5
 colourable = false
 color = [246, 196, 96]
 solid = false
@@ -1082,6 +1142,7 @@ build_xp = 8
 
 [[block]]
 name = "tallow_torch_north"
+prestige = 5
 colourable = false
 color = [246, 196, 96]
 solid = false
@@ -1097,6 +1158,7 @@ drops = "tallow_torch"
 
 [[block]]
 name = "tallow_torch_east"
+prestige = 5
 colourable = false
 color = [246, 196, 96]
 solid = false
@@ -1112,6 +1174,7 @@ drops = "tallow_torch"
 
 [[block]]
 name = "tallow_torch_south"
+prestige = 5
 colourable = false
 color = [246, 196, 96]
 solid = false
@@ -1127,6 +1190,7 @@ drops = "tallow_torch"
 
 [[block]]
 name = "tallow_torch_west"
+prestige = 5
 colourable = false
 color = [246, 196, 96]
 solid = false
@@ -1146,6 +1210,7 @@ drops = "tallow_torch"
 # meteorites were made of conduits).
 [[block]]
 name = "meteor_shell"
+prestige = 0
 colourable = false
 color = [70, 58, 84]
 solid = true
@@ -1163,6 +1228,7 @@ drops = ""
 # their own share once); turns to shell when it closes.
 [[block]]
 name = "meteor_heart"
+prestige = 0
 colourable = false
 color = [255, 150, 80]
 solid = true
@@ -1180,6 +1246,7 @@ drops = ""
 # yields by tier from tuning 4.4.
 [[block]]
 name = "silver_seam"
+prestige = 0
 colourable = false
 color = [196, 204, 218]
 solid = true
@@ -1197,6 +1264,7 @@ build_xp = 0
 
 [[block]]
 name = "relic_cache"
+prestige = 0
 colourable = false
 color = [110, 120, 128]
 solid = true
@@ -1215,6 +1283,7 @@ build_xp = 0
 # Four blocks touching, like the workbench; they draw spark through links.
 [[block]]
 name = "mixer"
+prestige = 13
 colourable = false
 color = [120, 140, 150]
 solid = true
@@ -1231,6 +1300,7 @@ build_xp = 16
 
 [[block]]
 name = "refinery"
+prestige = 15
 colourable = false
 color = [150, 120, 110]
 solid = true
@@ -1247,6 +1317,7 @@ build_xp = 16
 
 [[block]]
 name = "compactor"
+prestige = 15
 colourable = false
 color = [110, 116, 140]
 solid = true
@@ -1265,6 +1336,7 @@ build_xp = 16
 # the heat (Boundless's heat multiplier 0.5).
 [[block]]
 name = "iron_furnace"
+prestige = 17
 colourable = false
 color = [88, 96, 112]
 top_color = [110, 118, 136]
@@ -1284,6 +1356,7 @@ build_xp = 16
 
 [[block]]
 name = "iron_furnace_crucible"
+prestige = 16
 colourable = false
 color = [96, 104, 120]
 solid = true
@@ -1301,6 +1374,7 @@ build_xp = 16
 # store. A spark link carries spark from generators to machines.
 [[block]]
 name = "spark_generator"
+prestige = 19
 colourable = false
 color = [90, 84, 100]
 top_color = [255, 190, 90]
@@ -1318,6 +1392,7 @@ build_xp = 24
 
 [[block]]
 name = "spark_link"
+prestige = 5
 colourable = false
 color = [160, 112, 70]
 solid = true
@@ -1334,6 +1409,7 @@ build_xp = 8
 # (fixing Boundless's reverting soil).
 [[block]]
 name = "tilled_soil"
+prestige = 2
 color = [96, 70, 50]
 solid = true
 opaque = true
@@ -1354,6 +1430,7 @@ build_xp = 2
 
 [[block]]
 name = "dewberry_seed"
+prestige = 1
 colourable = false
 color = [176, 52, 74]
 solid = false
@@ -1371,6 +1448,7 @@ build_xp = 1
 
 [[block]]
 name = "dewberry_bush_2"
+prestige = 1
 colourable = false
 color = [176, 52, 74]
 solid = false
@@ -1389,6 +1467,7 @@ build_xp = 0
 
 [[block]]
 name = "dewberry_bush_3"
+prestige = 1
 colourable = false
 color = [176, 52, 74]
 solid = false
@@ -1407,6 +1486,7 @@ build_xp = 0
 
 [[block]]
 name = "dewberry_bush_4"
+prestige = 1
 colourable = false
 color = [176, 52, 74]
 solid = false
@@ -1427,6 +1507,7 @@ build_xp = 0
 
 [[block]]
 name = "tuber_bulb"
+prestige = 1
 colourable = false
 color = [154, 106, 64]
 solid = false
@@ -1444,6 +1525,7 @@ build_xp = 1
 
 [[block]]
 name = "tuber_plant_2"
+prestige = 1
 colourable = false
 color = [154, 106, 64]
 solid = false
@@ -1462,6 +1544,7 @@ build_xp = 0
 
 [[block]]
 name = "tuber_plant_3"
+prestige = 1
 colourable = false
 color = [154, 106, 64]
 solid = false
@@ -1480,6 +1563,7 @@ build_xp = 0
 
 [[block]]
 name = "tuber_plant_4"
+prestige = 1
 colourable = false
 color = [154, 106, 64]
 solid = false
@@ -1500,6 +1584,7 @@ build_xp = 0
 
 [[block]]
 name = "waxy_tuber_bulb"
+prestige = 2
 colourable = false
 color = [184, 138, 48]
 solid = false
@@ -1517,6 +1602,7 @@ build_xp = 1
 
 [[block]]
 name = "waxy_tuber_plant_2"
+prestige = 2
 colourable = false
 color = [184, 138, 48]
 solid = false
@@ -1535,6 +1621,7 @@ build_xp = 0
 
 [[block]]
 name = "waxy_tuber_plant_3"
+prestige = 2
 colourable = false
 color = [184, 138, 48]
 solid = false
@@ -1553,6 +1640,7 @@ build_xp = 0
 
 [[block]]
 name = "waxy_tuber_plant_4"
+prestige = 2
 colourable = false
 color = [184, 138, 48]
 solid = false
@@ -1573,6 +1661,7 @@ build_xp = 0
 
 [[block]]
 name = "exotic_tuber_bulb"
+prestige = 3
 colourable = false
 color = [106, 58, 122]
 solid = false
@@ -1590,6 +1679,7 @@ build_xp = 1
 
 [[block]]
 name = "exotic_tuber_plant_2"
+prestige = 3
 colourable = false
 color = [106, 58, 122]
 solid = false
@@ -1608,6 +1698,7 @@ build_xp = 0
 
 [[block]]
 name = "exotic_tuber_plant_3"
+prestige = 3
 colourable = false
 color = [106, 58, 122]
 solid = false
@@ -1626,6 +1717,7 @@ build_xp = 0
 
 [[block]]
 name = "exotic_tuber_plant_4"
+prestige = 3
 colourable = false
 color = [106, 58, 122]
 solid = false
@@ -1646,6 +1738,7 @@ build_xp = 0
 
 [[block]]
 name = "oat_seed"
+prestige = 1
 colourable = false
 color = [200, 180, 110]
 solid = false
@@ -1663,6 +1756,7 @@ build_xp = 1
 
 [[block]]
 name = "oats_2"
+prestige = 1
 colourable = false
 color = [200, 180, 110]
 solid = false
@@ -1681,6 +1775,7 @@ build_xp = 0
 
 [[block]]
 name = "oats_3"
+prestige = 1
 colourable = false
 color = [200, 180, 110]
 solid = false
@@ -1699,6 +1794,7 @@ build_xp = 0
 
 [[block]]
 name = "oats_4"
+prestige = 1
 colourable = false
 color = [200, 180, 110]
 solid = false
@@ -1719,6 +1815,7 @@ build_xp = 0
 
 [[block]]
 name = "wheat_seed"
+prestige = 1
 colourable = false
 color = [214, 170, 72]
 solid = false
@@ -1736,6 +1833,7 @@ build_xp = 1
 
 [[block]]
 name = "wheat_2"
+prestige = 1
 colourable = false
 color = [214, 170, 72]
 solid = false
@@ -1754,6 +1852,7 @@ build_xp = 0
 
 [[block]]
 name = "wheat_3"
+prestige = 1
 colourable = false
 color = [214, 170, 72]
 solid = false
@@ -1772,6 +1871,7 @@ build_xp = 0
 
 [[block]]
 name = "wheat_4"
+prestige = 1
 colourable = false
 color = [214, 170, 72]
 solid = false
@@ -1792,6 +1892,7 @@ build_xp = 0
 
 [[block]]
 name = "rice_seed"
+prestige = 1
 colourable = false
 color = [170, 190, 110]
 solid = false
@@ -1809,6 +1910,7 @@ build_xp = 1
 
 [[block]]
 name = "rice_2"
+prestige = 1
 colourable = false
 color = [170, 190, 110]
 solid = false
@@ -1827,6 +1929,7 @@ build_xp = 0
 
 [[block]]
 name = "rice_3"
+prestige = 1
 colourable = false
 color = [170, 190, 110]
 solid = false
@@ -1845,6 +1948,7 @@ build_xp = 0
 
 [[block]]
 name = "rice_4"
+prestige = 1
 colourable = false
 color = [170, 190, 110]
 solid = false
@@ -1867,6 +1971,7 @@ build_xp = 0
 # spark through links for its queue.
 [[block]]
 name = "forge"
+prestige = 15
 colourable = false
 color = [112, 96, 132]
 top_color = [150, 128, 170]
@@ -1887,6 +1992,7 @@ build_xp = 16
 # cache (tuning 4.4).
 [[block]]
 name = "small_fossil_seam"
+prestige = 0
 colourable = false
 color = [176, 164, 140]
 solid = true
@@ -1904,6 +2010,7 @@ build_xp = 0
 
 [[block]]
 name = "medium_fossil_seam"
+prestige = 0
 colourable = false
 color = [160, 150, 128]
 solid = true
@@ -1924,6 +2031,7 @@ build_xp = 0
 # silver seam's and the fossils'.
 [[block]]
 name = "medium_coal_seam"
+prestige = 0
 colourable = false
 color = [40, 38, 44]
 solid = true
@@ -1941,6 +2049,7 @@ build_xp = 0
 
 [[block]]
 name = "hard_coal_seam"
+prestige = 0
 hard = true
 colourable = false
 color = [30, 30, 40]
@@ -1959,6 +2068,7 @@ build_xp = 0
 
 [[block]]
 name = "gold_seam"
+prestige = 0
 colourable = false
 color = [214, 176, 72]
 solid = true
@@ -1976,6 +2086,7 @@ build_xp = 0
 
 [[block]]
 name = "titanium_seam"
+prestige = 0
 colourable = false
 color = [190, 206, 222]
 solid = true
@@ -1995,6 +2106,7 @@ build_xp = 0
 # Yields by tier are Boundless's (tuning 4.4); mining XP a guess.
 [[block]]
 name = "amethyst_seam"
+prestige = 0
 hard = true
 colourable = false
 color = [168, 110, 220]
@@ -2013,6 +2125,7 @@ build_xp = 0
 
 [[block]]
 name = "emerald_seam"
+prestige = 0
 hard = true
 colourable = false
 color = [60, 190, 110]
@@ -2031,6 +2144,7 @@ build_xp = 0
 
 [[block]]
 name = "sapphire_seam"
+prestige = 0
 hard = true
 colourable = false
 color = [70, 110, 230]
@@ -2049,6 +2163,7 @@ build_xp = 0
 
 [[block]]
 name = "topaz_seam"
+prestige = 0
 hard = true
 colourable = false
 color = [240, 180, 60]
@@ -2067,6 +2182,7 @@ build_xp = 0
 
 [[block]]
 name = "diamond_seam"
+prestige = 0
 hard = true
 colourable = false
 color = [200, 240, 250]
@@ -2085,6 +2201,7 @@ build_xp = 0
 
 [[block]]
 name = "ruby_seam"
+prestige = 0
 hard = true
 colourable = false
 color = [220, 40, 70]
@@ -2105,6 +2222,7 @@ build_xp = 0
 # one kind across one block of air; advanced coils give 300.
 [[block]]
 name = "workbench_coil"
+prestige = 22
 colourable = false
 color = [200, 236, 248]
 solid = true
@@ -2121,6 +2239,7 @@ build_xp = 8
 
 [[block]]
 name = "advanced_workbench_coil"
+prestige = 24
 colourable = false
 color = [200, 236, 248]
 solid = true
@@ -2137,6 +2256,7 @@ build_xp = 16
 
 [[block]]
 name = "compactor_coil"
+prestige = 22
 colourable = false
 color = [214, 52, 76]
 solid = true
@@ -2153,6 +2273,7 @@ build_xp = 8
 
 [[block]]
 name = "advanced_compactor_coil"
+prestige = 24
 colourable = false
 color = [214, 52, 76]
 solid = true
@@ -2169,6 +2290,7 @@ build_xp = 16
 
 [[block]]
 name = "extractor_coil"
+prestige = 22
 colourable = false
 color = [72, 112, 228]
 solid = true
@@ -2185,6 +2307,7 @@ build_xp = 8
 
 [[block]]
 name = "advanced_extractor_coil"
+prestige = 24
 colourable = false
 color = [72, 112, 228]
 solid = true
@@ -2201,6 +2324,7 @@ build_xp = 16
 
 [[block]]
 name = "refinery_coil"
+prestige = 22
 colourable = false
 color = [236, 176, 64]
 solid = true
@@ -2217,6 +2341,7 @@ build_xp = 8
 
 [[block]]
 name = "advanced_refinery_coil"
+prestige = 24
 colourable = false
 color = [236, 176, 64]
 solid = true
@@ -2233,6 +2358,7 @@ build_xp = 16
 
 [[block]]
 name = "mixer_coil"
+prestige = 22
 colourable = false
 color = [64, 188, 112]
 solid = true
@@ -2249,6 +2375,7 @@ build_xp = 8
 
 [[block]]
 name = "advanced_mixer_coil"
+prestige = 24
 colourable = false
 color = [64, 188, 112]
 solid = true
@@ -2265,6 +2392,7 @@ build_xp = 16
 
 [[block]]
 name = "forge_coil"
+prestige = 22
 colourable = false
 color = [168, 112, 218]
 solid = true
@@ -2281,6 +2409,7 @@ build_xp = 8
 
 [[block]]
 name = "advanced_forge_coil"
+prestige = 24
 colourable = false
 color = [168, 112, 218]
 solid = true
@@ -2298,6 +2427,7 @@ build_xp = 16
 # Milestone 18 part 2: the titanium furnace (heat x0.25, Boundless).
 [[block]]
 name = "titanium_furnace"
+prestige = 21
 colourable = false
 color = [150, 170, 190]
 top_color = [176, 196, 214]
@@ -2317,6 +2447,7 @@ build_xp = 24
 
 [[block]]
 name = "titanium_furnace_crucible"
+prestige = 21
 colourable = false
 color = [160, 180, 200]
 solid = true
@@ -2334,6 +2465,7 @@ build_xp = 24
 # floor, 5+ under the surface; yields as titanium (tuning 4.3, 4.4).
 [[block]]
 name = "relic_core_seam"
+prestige = 0
 colourable = false
 color = [96, 140, 150]
 solid = true
@@ -2353,6 +2485,7 @@ build_xp = 0
 # 48): a liquid that glows and burns; swum at half water's speed.
 [[block]]
 name = "lava"
+prestige = 0
 colourable = false
 color = [255, 110, 30]
 solid = false
@@ -2372,6 +2505,7 @@ burns = true
 # trace fragment (tuning 4.4).
 [[block]]
 name = "basalt"
+prestige = 1
 chisel = "slope"
 color = [70, 68, 74]
 solid = true
@@ -2388,6 +2522,7 @@ build_xp = 8
 
 [[block]]
 name = "limestone"
+prestige = 1
 chisel = "slope"
 color = [196, 184, 156]
 solid = true
@@ -2404,6 +2539,7 @@ build_xp = 8
 
 [[block]]
 name = "clay"
+prestige = 1
 chisel = "slope"
 color = [150, 104, 78]
 solid = true
@@ -2420,6 +2556,7 @@ build_xp = 2
 
 [[block]]
 name = "peat"
+prestige = 1
 chisel = "slope"
 color = [66, 50, 40]
 solid = true
@@ -2437,6 +2574,7 @@ build_xp = 2
 
 [[block]]
 name = "mud"
+prestige = 1
 chisel = "slope"
 color = [92, 72, 54]
 solid = true
@@ -2452,6 +2590,7 @@ build_xp = 2
 
 [[block]]
 name = "meadow_turf"
+prestige = 1
 chisel = "slope"
 color = [150, 104, 78]
 top_color = [128, 170, 70]
@@ -2470,6 +2609,7 @@ build_xp = 2
 
 [[block]]
 name = "moss_turf"
+prestige = 1
 chisel = "slope"
 color = [66, 50, 40]
 top_color = [70, 120, 70]
@@ -2488,6 +2628,7 @@ build_xp = 2
 
 [[block]]
 name = "pale_trunk"
+prestige = 1
 color = [176, 160, 136]
 top_color = [214, 196, 160]
 bottom_color = [214, 196, 160]
@@ -2506,6 +2647,7 @@ build_xp = 8
 
 [[block]]
 name = "gnarled_trunk"
+prestige = 1
 color = [84, 62, 50]
 top_color = [150, 116, 86]
 bottom_color = [150, 116, 86]
@@ -2524,6 +2666,7 @@ build_xp = 8
 
 [[block]]
 name = "fronds"
+prestige = 1
 color = [46, 110, 80]
 solid = true
 opaque = true
@@ -2539,6 +2682,7 @@ build_xp = 4
 
 [[block]]
 name = "glossy_foliage"
+prestige = 1
 color = [90, 140, 50]
 solid = true
 opaque = true
@@ -2558,6 +2702,7 @@ build_xp = 4
 
 [[block]]
 name = "aurorite_seam"
+prestige = 0
 hard = true
 colourable = false
 color = [90, 220, 230]
@@ -2576,6 +2721,7 @@ build_xp = 0
 
 [[block]]
 name = "pyrelith_seam"
+prestige = 0
 hard = true
 colourable = false
 color = [250, 150, 50]
@@ -2594,6 +2740,7 @@ build_xp = 0
 
 [[block]]
 name = "gloamite_seam"
+prestige = 0
 hard = true
 colourable = false
 color = [150, 30, 60]
@@ -2616,6 +2763,7 @@ build_xp = 0
 
 [[block]]
 name = "stone_bricks"
+prestige = 9
 chisel = "any"
 color = [128, 124, 120]
 solid = true
@@ -2631,6 +2779,7 @@ build_xp = 16
 
 [[block]]
 name = "refined_stone"
+prestige = 4
 chisel = "any"
 color = [128, 124, 120]
 solid = true
@@ -2646,6 +2795,7 @@ build_xp = 16
 
 [[block]]
 name = "carved_stone"
+prestige = 12
 chisel = "any"
 color = [128, 124, 120]
 solid = true
@@ -2661,6 +2811,7 @@ build_xp = 16
 
 [[block]]
 name = "tiled_stone"
+prestige = 12
 chisel = "any"
 color = [128, 124, 120]
 solid = true
@@ -2676,6 +2827,7 @@ build_xp = 16
 
 [[block]]
 name = "basalt_bricks"
+prestige = 9
 chisel = "any"
 color = [70, 68, 74]
 solid = true
@@ -2691,6 +2843,7 @@ build_xp = 16
 
 [[block]]
 name = "refined_basalt"
+prestige = 4
 chisel = "any"
 color = [70, 68, 74]
 solid = true
@@ -2706,6 +2859,7 @@ build_xp = 16
 
 [[block]]
 name = "carved_basalt"
+prestige = 12
 chisel = "any"
 color = [70, 68, 74]
 solid = true
@@ -2721,6 +2875,7 @@ build_xp = 16
 
 [[block]]
 name = "tiled_basalt"
+prestige = 12
 chisel = "any"
 color = [70, 68, 74]
 solid = true
@@ -2736,6 +2891,7 @@ build_xp = 16
 
 [[block]]
 name = "limestone_bricks"
+prestige = 9
 chisel = "any"
 color = [214, 204, 176]
 solid = true
@@ -2751,6 +2907,7 @@ build_xp = 16
 
 [[block]]
 name = "refined_limestone"
+prestige = 4
 chisel = "any"
 color = [214, 204, 176]
 solid = true
@@ -2766,6 +2923,7 @@ build_xp = 16
 
 [[block]]
 name = "carved_limestone"
+prestige = 12
 chisel = "any"
 color = [214, 204, 176]
 solid = true
@@ -2781,6 +2939,7 @@ build_xp = 16
 
 [[block]]
 name = "tiled_limestone"
+prestige = 12
 chisel = "any"
 color = [214, 204, 176]
 solid = true
@@ -2796,6 +2955,7 @@ build_xp = 16
 
 [[block]]
 name = "marble"
+prestige = 19
 chisel = "any"
 color = [226, 222, 214]
 solid = true
@@ -2811,6 +2971,7 @@ build_xp = 16
 
 [[block]]
 name = "bordered_marble"
+prestige = 20
 chisel = "any"
 color = [226, 222, 214]
 solid = true
@@ -2826,6 +2987,7 @@ build_xp = 16
 
 [[block]]
 name = "marble_frieze"
+prestige = 20
 chisel = "any"
 color = [226, 222, 214]
 solid = true
@@ -2841,6 +3003,7 @@ build_xp = 16
 
 [[block]]
 name = "refined_timber"
+prestige = 4
 chisel = "any"
 color = [176, 134, 86]
 solid = true
@@ -2856,6 +3019,7 @@ build_xp = 16
 
 [[block]]
 name = "carved_timber"
+prestige = 12
 chisel = "any"
 color = [176, 134, 86]
 solid = true
@@ -2871,6 +3035,7 @@ build_xp = 16
 
 [[block]]
 name = "pale_timber"
+prestige = 1
 chisel = "any"
 color = [214, 196, 160]
 solid = true
@@ -2887,6 +3052,7 @@ build_xp = 16
 
 [[block]]
 name = "refined_pale_timber"
+prestige = 4
 chisel = "any"
 color = [214, 196, 160]
 solid = true
@@ -2902,6 +3068,7 @@ build_xp = 16
 
 [[block]]
 name = "carved_pale_timber"
+prestige = 12
 chisel = "any"
 color = [214, 196, 160]
 solid = true
@@ -2917,6 +3084,7 @@ build_xp = 16
 
 [[block]]
 name = "gnarled_timber"
+prestige = 1
 chisel = "any"
 color = [120, 84, 58]
 solid = true
@@ -2933,6 +3101,7 @@ build_xp = 16
 
 [[block]]
 name = "refined_gnarled_timber"
+prestige = 4
 chisel = "any"
 color = [120, 84, 58]
 solid = true
@@ -2948,6 +3117,7 @@ build_xp = 16
 
 [[block]]
 name = "carved_gnarled_timber"
+prestige = 12
 chisel = "any"
 color = [120, 84, 58]
 solid = true
@@ -2963,6 +3133,7 @@ build_xp = 16
 
 [[block]]
 name = "compact_soil"
+prestige = 10
 chisel = "any"
 color = [120, 86, 60]
 solid = true
@@ -2978,6 +3149,7 @@ build_xp = 16
 
 [[block]]
 name = "compact_clay"
+prestige = 10
 chisel = "any"
 color = [166, 110, 84]
 solid = true
@@ -2993,6 +3165,7 @@ build_xp = 16
 
 [[block]]
 name = "compact_peat"
+prestige = 10
 chisel = "any"
 color = [70, 52, 40]
 solid = true
@@ -3008,6 +3181,7 @@ build_xp = 16
 
 [[block]]
 name = "compact_gravel"
+prestige = 19
 chisel = "any"
 color = [130, 126, 120]
 solid = true
@@ -3023,6 +3197,7 @@ build_xp = 16
 
 [[block]]
 name = "refined_glow_crystal"
+prestige = 5
 chisel = "any"
 colourable = false
 color = [150, 230, 255]
@@ -3040,6 +3215,7 @@ build_xp = 16
 
 [[block]]
 name = "faceted_glow_crystal"
+prestige = 7
 chisel = "any"
 colourable = false
 color = [170, 240, 255]
@@ -3057,6 +3233,7 @@ build_xp = 16
 
 [[block]]
 name = "clear_glass"
+prestige = 7
 chisel = "any"
 color = [200, 228, 236]
 solid = true
@@ -3073,6 +3250,7 @@ build_xp = 16
 
 [[block]]
 name = "framed_glass"
+prestige = 9
 chisel = "any"
 color = [200, 228, 236]
 solid = true
@@ -3089,6 +3267,7 @@ build_xp = 16
 
 [[block]]
 name = "ornate_glass"
+prestige = 11
 chisel = "any"
 color = [200, 228, 236]
 solid = true
@@ -3105,6 +3284,7 @@ build_xp = 16
 
 [[block]]
 name = "compact_copper"
+prestige = 16
 chisel = "any"
 colourable = false
 color = [200, 120, 70]
@@ -3121,6 +3301,7 @@ build_xp = 16
 
 [[block]]
 name = "refined_copper"
+prestige = 17
 chisel = "any"
 colourable = false
 color = [200, 120, 70]
@@ -3137,6 +3318,7 @@ build_xp = 16
 
 [[block]]
 name = "machined_copper"
+prestige = 18
 chisel = "any"
 colourable = false
 color = [200, 120, 70]
@@ -3153,6 +3335,7 @@ build_xp = 16
 
 [[block]]
 name = "circuit_copper"
+prestige = 18
 chisel = "any"
 colourable = false
 color = [200, 120, 70]
@@ -3169,6 +3352,7 @@ build_xp = 16
 
 [[block]]
 name = "filigree_copper"
+prestige = 18
 chisel = "any"
 colourable = false
 color = [200, 120, 70]
@@ -3185,6 +3369,7 @@ build_xp = 16
 
 [[block]]
 name = "grid_copper"
+prestige = 18
 chisel = "any"
 colourable = false
 color = [200, 120, 70]
@@ -3201,6 +3386,7 @@ build_xp = 16
 
 [[block]]
 name = "compact_iron"
+prestige = 17
 chisel = "any"
 colourable = false
 color = [150, 150, 156]
@@ -3217,6 +3403,7 @@ build_xp = 16
 
 [[block]]
 name = "refined_iron"
+prestige = 18
 chisel = "any"
 colourable = false
 color = [150, 150, 156]
@@ -3233,6 +3420,7 @@ build_xp = 16
 
 [[block]]
 name = "machined_iron"
+prestige = 19
 chisel = "any"
 colourable = false
 color = [150, 150, 156]
@@ -3249,6 +3437,7 @@ build_xp = 16
 
 [[block]]
 name = "circuit_iron"
+prestige = 19
 chisel = "any"
 colourable = false
 color = [150, 150, 156]
@@ -3265,6 +3454,7 @@ build_xp = 16
 
 [[block]]
 name = "filigree_iron"
+prestige = 19
 chisel = "any"
 colourable = false
 color = [150, 150, 156]
@@ -3281,6 +3471,7 @@ build_xp = 16
 
 [[block]]
 name = "grid_iron"
+prestige = 19
 chisel = "any"
 colourable = false
 color = [150, 150, 156]
@@ -3297,6 +3488,7 @@ build_xp = 16
 
 [[block]]
 name = "compact_silver_alloy"
+prestige = 19
 chisel = "any"
 colourable = false
 color = [200, 206, 214]
@@ -3313,6 +3505,7 @@ build_xp = 16
 
 [[block]]
 name = "refined_silver_alloy"
+prestige = 20
 chisel = "any"
 colourable = false
 color = [200, 206, 214]
@@ -3329,6 +3522,7 @@ build_xp = 16
 
 [[block]]
 name = "machined_silver_alloy"
+prestige = 21
 chisel = "any"
 colourable = false
 color = [200, 206, 214]
@@ -3345,6 +3539,7 @@ build_xp = 16
 
 [[block]]
 name = "circuit_silver_alloy"
+prestige = 21
 chisel = "any"
 colourable = false
 color = [200, 206, 214]
@@ -3361,6 +3556,7 @@ build_xp = 16
 
 [[block]]
 name = "filigree_silver_alloy"
+prestige = 21
 chisel = "any"
 colourable = false
 color = [200, 206, 214]
@@ -3377,6 +3573,7 @@ build_xp = 16
 
 [[block]]
 name = "grid_silver_alloy"
+prestige = 21
 chisel = "any"
 colourable = false
 color = [200, 206, 214]
@@ -3393,6 +3590,7 @@ build_xp = 16
 
 [[block]]
 name = "compact_gold_alloy"
+prestige = 19
 chisel = "any"
 colourable = false
 color = [230, 190, 80]
@@ -3409,6 +3607,7 @@ build_xp = 16
 
 [[block]]
 name = "refined_gold_alloy"
+prestige = 20
 chisel = "any"
 colourable = false
 color = [230, 190, 80]
@@ -3425,6 +3624,7 @@ build_xp = 16
 
 [[block]]
 name = "machined_gold_alloy"
+prestige = 21
 chisel = "any"
 colourable = false
 color = [230, 190, 80]
@@ -3441,6 +3641,7 @@ build_xp = 16
 
 [[block]]
 name = "circuit_gold_alloy"
+prestige = 21
 chisel = "any"
 colourable = false
 color = [230, 190, 80]
@@ -3457,6 +3658,7 @@ build_xp = 16
 
 [[block]]
 name = "filigree_gold_alloy"
+prestige = 21
 chisel = "any"
 colourable = false
 color = [230, 190, 80]
@@ -3473,6 +3675,7 @@ build_xp = 16
 
 [[block]]
 name = "grid_gold_alloy"
+prestige = 21
 chisel = "any"
 colourable = false
 color = [230, 190, 80]
@@ -3489,6 +3692,7 @@ build_xp = 16
 
 [[block]]
 name = "compact_titanium_alloy"
+prestige = 22
 chisel = "any"
 colourable = false
 color = [170, 190, 210]
@@ -3505,6 +3709,7 @@ build_xp = 16
 
 [[block]]
 name = "refined_titanium_alloy"
+prestige = 23
 chisel = "any"
 colourable = false
 color = [170, 190, 210]
@@ -3521,6 +3726,7 @@ build_xp = 16
 
 [[block]]
 name = "machined_titanium_alloy"
+prestige = 24
 chisel = "any"
 colourable = false
 color = [170, 190, 210]
@@ -3537,6 +3743,7 @@ build_xp = 16
 
 [[block]]
 name = "circuit_titanium_alloy"
+prestige = 24
 chisel = "any"
 colourable = false
 color = [170, 190, 210]
@@ -3553,6 +3760,7 @@ build_xp = 16
 
 [[block]]
 name = "filigree_titanium_alloy"
+prestige = 24
 chisel = "any"
 colourable = false
 color = [170, 190, 210]
@@ -3569,6 +3777,7 @@ build_xp = 16
 
 [[block]]
 name = "grid_titanium_alloy"
+prestige = 24
 chisel = "any"
 colourable = false
 color = [170, 190, 210]
@@ -3585,6 +3794,7 @@ build_xp = 16
 
 [[block]]
 name = "compact_amethyst"
+prestige = 21
 chisel = "any"
 colourable = false
 color = [150, 90, 210]
@@ -3601,6 +3811,7 @@ build_xp = 16
 
 [[block]]
 name = "polished_amethyst"
+prestige = 22
 chisel = "any"
 colourable = false
 color = [150, 90, 210]
@@ -3617,6 +3828,7 @@ build_xp = 16
 
 [[block]]
 name = "compact_emerald"
+prestige = 21
 chisel = "any"
 colourable = false
 color = [60, 190, 110]
@@ -3633,6 +3845,7 @@ build_xp = 16
 
 [[block]]
 name = "polished_emerald"
+prestige = 22
 chisel = "any"
 colourable = false
 color = [60, 190, 110]
@@ -3649,6 +3862,7 @@ build_xp = 16
 
 [[block]]
 name = "compact_sapphire"
+prestige = 21
 chisel = "any"
 colourable = false
 color = [70, 110, 230]
@@ -3665,6 +3879,7 @@ build_xp = 16
 
 [[block]]
 name = "polished_sapphire"
+prestige = 22
 chisel = "any"
 colourable = false
 color = [70, 110, 230]
@@ -3681,6 +3896,7 @@ build_xp = 16
 
 [[block]]
 name = "compact_topaz"
+prestige = 21
 chisel = "any"
 colourable = false
 color = [240, 150, 40]
@@ -3697,6 +3913,7 @@ build_xp = 16
 
 [[block]]
 name = "polished_topaz"
+prestige = 22
 chisel = "any"
 colourable = false
 color = [240, 150, 40]
@@ -3713,6 +3930,7 @@ build_xp = 16
 
 [[block]]
 name = "compact_diamond"
+prestige = 21
 chisel = "any"
 colourable = false
 color = [200, 236, 244]
@@ -3729,6 +3947,7 @@ build_xp = 16
 
 [[block]]
 name = "polished_diamond"
+prestige = 22
 chisel = "any"
 colourable = false
 color = [200, 236, 244]
@@ -3745,6 +3964,7 @@ build_xp = 16
 
 [[block]]
 name = "compact_ruby"
+prestige = 21
 chisel = "any"
 colourable = false
 color = [220, 40, 70]
@@ -3761,6 +3981,7 @@ build_xp = 16
 
 [[block]]
 name = "polished_ruby"
+prestige = 22
 chisel = "any"
 colourable = false
 color = [220, 40, 70]
@@ -3777,6 +3998,7 @@ build_xp = 16
 
 [[block]]
 name = "compact_aurorite"
+prestige = 22
 chisel = "any"
 colourable = false
 color = [90, 220, 230]
@@ -3793,6 +4015,7 @@ build_xp = 16
 
 [[block]]
 name = "polished_aurorite"
+prestige = 26
 chisel = "any"
 colourable = false
 color = [90, 220, 230]
@@ -3809,6 +4032,7 @@ build_xp = 16
 
 [[block]]
 name = "compact_pyrelith"
+prestige = 22
 chisel = "any"
 colourable = false
 color = [250, 150, 50]
@@ -3825,6 +4049,7 @@ build_xp = 16
 
 [[block]]
 name = "polished_pyrelith"
+prestige = 26
 chisel = "any"
 colourable = false
 color = [250, 150, 50]
@@ -3841,6 +4066,7 @@ build_xp = 16
 
 [[block]]
 name = "compact_gloamite"
+prestige = 22
 chisel = "any"
 colourable = false
 color = [150, 40, 120]
@@ -3857,6 +4083,7 @@ build_xp = 16
 
 [[block]]
 name = "polished_gloamite"
+prestige = 26
 chisel = "any"
 colourable = false
 color = [150, 40, 120]
@@ -3873,6 +4100,7 @@ build_xp = 16
 
 [[block]]
 name = "lantern"
+prestige = 12
 chisel = "any"
 colourable = false
 color = [250, 220, 150]
@@ -3894,6 +4122,7 @@ build_xp = 16
 
 [[block]]
 name = "plain_wood_door"
+prestige = 3
 chisel = "none"
 color = [150, 108, 64]
 solid = true
@@ -3911,6 +4140,7 @@ build_xp = 12
 
 [[block]]
 name = "plain_wood_door_open"
+prestige = 3
 chisel = "none"
 color = [150, 108, 64]
 solid = false
@@ -3929,6 +4159,7 @@ build_xp = 12
 
 [[block]]
 name = "plain_stone_door"
+prestige = 5
 chisel = "none"
 color = [128, 124, 120]
 solid = true
@@ -3946,6 +4177,7 @@ build_xp = 12
 
 [[block]]
 name = "plain_stone_door_open"
+prestige = 5
 chisel = "none"
 color = [128, 124, 120]
 solid = false
@@ -3964,6 +4196,7 @@ build_xp = 12
 
 [[block]]
 name = "plain_metal_door"
+prestige = 13
 chisel = "none"
 colourable = false
 color = [160, 150, 140]
@@ -3982,6 +4215,7 @@ build_xp = 12
 
 [[block]]
 name = "plain_metal_door_open"
+prestige = 13
 chisel = "none"
 colourable = false
 color = [160, 150, 140]
@@ -4001,6 +4235,7 @@ build_xp = 12
 
 [[block]]
 name = "plain_crystal_door"
+prestige = 17
 chisel = "none"
 colourable = false
 color = [150, 230, 255]
@@ -4019,6 +4254,7 @@ build_xp = 12
 
 [[block]]
 name = "plain_crystal_door_open"
+prestige = 17
 chisel = "none"
 colourable = false
 color = [150, 230, 255]
@@ -4038,6 +4274,7 @@ build_xp = 12
 
 [[block]]
 name = "stylish_wood_door"
+prestige = 11
 chisel = "none"
 color = [150, 108, 64]
 solid = true
@@ -4055,6 +4292,7 @@ build_xp = 12
 
 [[block]]
 name = "stylish_wood_door_open"
+prestige = 11
 chisel = "none"
 color = [150, 108, 64]
 solid = false
@@ -4073,6 +4311,7 @@ build_xp = 12
 
 [[block]]
 name = "stylish_stone_door"
+prestige = 13
 chisel = "none"
 color = [128, 124, 120]
 solid = true
@@ -4090,6 +4329,7 @@ build_xp = 12
 
 [[block]]
 name = "stylish_stone_door_open"
+prestige = 13
 chisel = "none"
 color = [128, 124, 120]
 solid = false
@@ -4108,6 +4348,7 @@ build_xp = 12
 
 [[block]]
 name = "stylish_metal_door"
+prestige = 17
 chisel = "none"
 colourable = false
 color = [160, 150, 140]
@@ -4126,6 +4367,7 @@ build_xp = 12
 
 [[block]]
 name = "stylish_metal_door_open"
+prestige = 17
 chisel = "none"
 colourable = false
 color = [160, 150, 140]
@@ -4145,6 +4387,7 @@ build_xp = 12
 
 [[block]]
 name = "stylish_crystal_door"
+prestige = 18
 chisel = "none"
 colourable = false
 color = [150, 230, 255]
@@ -4163,6 +4406,7 @@ build_xp = 12
 
 [[block]]
 name = "stylish_crystal_door_open"
+prestige = 18
 chisel = "none"
 colourable = false
 color = [150, 230, 255]
@@ -4182,6 +4426,7 @@ build_xp = 12
 
 [[block]]
 name = "ornate_wood_door"
+prestige = 14
 chisel = "none"
 color = [150, 108, 64]
 solid = true
@@ -4199,6 +4444,7 @@ build_xp = 12
 
 [[block]]
 name = "ornate_wood_door_open"
+prestige = 14
 chisel = "none"
 color = [150, 108, 64]
 solid = false
@@ -4217,6 +4463,7 @@ build_xp = 12
 
 [[block]]
 name = "ornate_stone_door"
+prestige = 16
 chisel = "none"
 color = [128, 124, 120]
 solid = true
@@ -4234,6 +4481,7 @@ build_xp = 12
 
 [[block]]
 name = "ornate_stone_door_open"
+prestige = 16
 chisel = "none"
 color = [128, 124, 120]
 solid = false
@@ -4252,6 +4500,7 @@ build_xp = 12
 
 [[block]]
 name = "ornate_metal_door"
+prestige = 20
 chisel = "none"
 colourable = false
 color = [160, 150, 140]
@@ -4270,6 +4519,7 @@ build_xp = 12
 
 [[block]]
 name = "ornate_metal_door_open"
+prestige = 20
 chisel = "none"
 colourable = false
 color = [160, 150, 140]
@@ -4289,6 +4539,7 @@ build_xp = 12
 
 [[block]]
 name = "ornate_crystal_door"
+prestige = 20
 chisel = "none"
 colourable = false
 color = [150, 230, 255]
@@ -4307,6 +4558,7 @@ build_xp = 12
 
 [[block]]
 name = "ornate_crystal_door_open"
+prestige = 20
 chisel = "none"
 colourable = false
 color = [150, 230, 255]
@@ -4326,6 +4578,7 @@ build_xp = 12
 
 [[block]]
 name = "plain_wood_trapdoor"
+prestige = 3
 chisel = "none"
 color = [150, 108, 64]
 solid = true
@@ -4343,6 +4596,7 @@ build_xp = 12
 
 [[block]]
 name = "plain_wood_trapdoor_open"
+prestige = 3
 chisel = "none"
 color = [150, 108, 64]
 solid = false
@@ -4361,6 +4615,7 @@ build_xp = 12
 
 [[block]]
 name = "plain_stone_trapdoor"
+prestige = 5
 chisel = "none"
 color = [128, 124, 120]
 solid = true
@@ -4378,6 +4633,7 @@ build_xp = 12
 
 [[block]]
 name = "plain_stone_trapdoor_open"
+prestige = 5
 chisel = "none"
 color = [128, 124, 120]
 solid = false
@@ -4396,6 +4652,7 @@ build_xp = 12
 
 [[block]]
 name = "plain_metal_trapdoor"
+prestige = 13
 chisel = "none"
 colourable = false
 color = [160, 150, 140]
@@ -4414,6 +4671,7 @@ build_xp = 12
 
 [[block]]
 name = "plain_metal_trapdoor_open"
+prestige = 13
 chisel = "none"
 colourable = false
 color = [160, 150, 140]
@@ -4433,6 +4691,7 @@ build_xp = 12
 
 [[block]]
 name = "plain_crystal_trapdoor"
+prestige = 17
 chisel = "none"
 colourable = false
 color = [150, 230, 255]
@@ -4451,6 +4710,7 @@ build_xp = 12
 
 [[block]]
 name = "plain_crystal_trapdoor_open"
+prestige = 17
 chisel = "none"
 colourable = false
 color = [150, 230, 255]
@@ -4470,6 +4730,7 @@ build_xp = 12
 
 [[block]]
 name = "stylish_wood_trapdoor"
+prestige = 11
 chisel = "none"
 color = [150, 108, 64]
 solid = true
@@ -4487,6 +4748,7 @@ build_xp = 12
 
 [[block]]
 name = "stylish_wood_trapdoor_open"
+prestige = 11
 chisel = "none"
 color = [150, 108, 64]
 solid = false
@@ -4505,6 +4767,7 @@ build_xp = 12
 
 [[block]]
 name = "stylish_stone_trapdoor"
+prestige = 13
 chisel = "none"
 color = [128, 124, 120]
 solid = true
@@ -4522,6 +4785,7 @@ build_xp = 12
 
 [[block]]
 name = "stylish_stone_trapdoor_open"
+prestige = 13
 chisel = "none"
 color = [128, 124, 120]
 solid = false
@@ -4540,6 +4804,7 @@ build_xp = 12
 
 [[block]]
 name = "stylish_metal_trapdoor"
+prestige = 17
 chisel = "none"
 colourable = false
 color = [160, 150, 140]
@@ -4558,6 +4823,7 @@ build_xp = 12
 
 [[block]]
 name = "stylish_metal_trapdoor_open"
+prestige = 17
 chisel = "none"
 colourable = false
 color = [160, 150, 140]
@@ -4577,6 +4843,7 @@ build_xp = 12
 
 [[block]]
 name = "stylish_crystal_trapdoor"
+prestige = 18
 chisel = "none"
 colourable = false
 color = [150, 230, 255]
@@ -4595,6 +4862,7 @@ build_xp = 12
 
 [[block]]
 name = "stylish_crystal_trapdoor_open"
+prestige = 18
 chisel = "none"
 colourable = false
 color = [150, 230, 255]
@@ -4614,6 +4882,7 @@ build_xp = 12
 
 [[block]]
 name = "ornate_wood_trapdoor"
+prestige = 14
 chisel = "none"
 color = [150, 108, 64]
 solid = true
@@ -4631,6 +4900,7 @@ build_xp = 12
 
 [[block]]
 name = "ornate_wood_trapdoor_open"
+prestige = 14
 chisel = "none"
 color = [150, 108, 64]
 solid = false
@@ -4649,6 +4919,7 @@ build_xp = 12
 
 [[block]]
 name = "ornate_stone_trapdoor"
+prestige = 16
 chisel = "none"
 color = [128, 124, 120]
 solid = true
@@ -4666,6 +4937,7 @@ build_xp = 12
 
 [[block]]
 name = "ornate_stone_trapdoor_open"
+prestige = 16
 chisel = "none"
 color = [128, 124, 120]
 solid = false
@@ -4684,6 +4956,7 @@ build_xp = 12
 
 [[block]]
 name = "ornate_metal_trapdoor"
+prestige = 20
 chisel = "none"
 colourable = false
 color = [160, 150, 140]
@@ -4702,6 +4975,7 @@ build_xp = 12
 
 [[block]]
 name = "ornate_metal_trapdoor_open"
+prestige = 20
 chisel = "none"
 colourable = false
 color = [160, 150, 140]
@@ -4721,6 +4995,7 @@ build_xp = 12
 
 [[block]]
 name = "ornate_crystal_trapdoor"
+prestige = 20
 chisel = "none"
 colourable = false
 color = [150, 230, 255]
@@ -4739,6 +5014,7 @@ build_xp = 12
 
 [[block]]
 name = "ornate_crystal_trapdoor_open"
+prestige = 20
 chisel = "none"
 colourable = false
 color = [150, 230, 255]
@@ -4758,6 +5034,7 @@ build_xp = 12
 
 [[block]]
 name = "lock"
+prestige = 15
 chisel = "none"
 colourable = false
 color = [150, 140, 120]
@@ -4778,6 +5055,7 @@ build_xp = 12
 
 [[block]]
 name = "plain_wood_pole"
+prestige = 2
 chisel = "none"
 colourable = true
 color = [166, 120, 74]
@@ -4796,6 +5074,7 @@ build_xp = 12
 
 [[block]]
 name = "plain_stone_pole"
+prestige = 3
 chisel = "none"
 colourable = true
 color = [150, 150, 146]
@@ -4814,6 +5093,7 @@ build_xp = 12
 
 [[block]]
 name = "plain_metal_pole"
+prestige = 8
 chisel = "none"
 colourable = false
 color = [150, 154, 160]
@@ -4832,6 +5112,7 @@ build_xp = 12
 
 [[block]]
 name = "plain_crystal_pole"
+prestige = 12
 chisel = "none"
 colourable = false
 color = [150, 230, 255]
@@ -4851,6 +5132,7 @@ build_xp = 12
 
 [[block]]
 name = "stylish_wood_pole"
+prestige = 8
 chisel = "none"
 colourable = true
 color = [166, 120, 74]
@@ -4869,6 +5151,7 @@ build_xp = 12
 
 [[block]]
 name = "stylish_stone_pole"
+prestige = 11
 chisel = "none"
 colourable = true
 color = [150, 150, 146]
@@ -4887,6 +5170,7 @@ build_xp = 12
 
 [[block]]
 name = "stylish_metal_pole"
+prestige = 13
 chisel = "none"
 colourable = false
 color = [150, 154, 160]
@@ -4905,6 +5189,7 @@ build_xp = 12
 
 [[block]]
 name = "stylish_crystal_pole"
+prestige = 15
 chisel = "none"
 colourable = false
 color = [150, 230, 255]
@@ -4924,6 +5209,7 @@ build_xp = 12
 
 [[block]]
 name = "ornate_wood_pole"
+prestige = 11
 chisel = "none"
 colourable = true
 color = [166, 120, 74]
@@ -4942,6 +5228,7 @@ build_xp = 12
 
 [[block]]
 name = "ornate_stone_pole"
+prestige = 13
 chisel = "none"
 colourable = true
 color = [150, 150, 146]
@@ -4960,6 +5247,7 @@ build_xp = 12
 
 [[block]]
 name = "ornate_metal_pole"
+prestige = 15
 chisel = "none"
 colourable = false
 color = [150, 154, 160]
@@ -4978,6 +5266,7 @@ build_xp = 12
 
 [[block]]
 name = "ornate_crystal_pole"
+prestige = 16
 chisel = "none"
 colourable = false
 color = [150, 230, 255]
@@ -4997,6 +5286,7 @@ build_xp = 12
 
 [[block]]
 name = "plain_wood_beam"
+prestige = 2
 chisel = "none"
 colourable = true
 color = [166, 120, 74]
@@ -5015,6 +5305,7 @@ build_xp = 12
 
 [[block]]
 name = "plain_stone_beam"
+prestige = 3
 chisel = "none"
 colourable = true
 color = [150, 150, 146]
@@ -5033,6 +5324,7 @@ build_xp = 12
 
 [[block]]
 name = "plain_metal_beam"
+prestige = 8
 chisel = "none"
 colourable = false
 color = [150, 154, 160]
@@ -5051,6 +5343,7 @@ build_xp = 12
 
 [[block]]
 name = "plain_crystal_beam"
+prestige = 12
 chisel = "none"
 colourable = false
 color = [150, 230, 255]
@@ -5070,6 +5363,7 @@ build_xp = 12
 
 [[block]]
 name = "stylish_wood_beam"
+prestige = 8
 chisel = "none"
 colourable = true
 color = [166, 120, 74]
@@ -5088,6 +5382,7 @@ build_xp = 12
 
 [[block]]
 name = "stylish_stone_beam"
+prestige = 11
 chisel = "none"
 colourable = true
 color = [150, 150, 146]
@@ -5106,6 +5401,7 @@ build_xp = 12
 
 [[block]]
 name = "stylish_metal_beam"
+prestige = 13
 chisel = "none"
 colourable = false
 color = [150, 154, 160]
@@ -5124,6 +5420,7 @@ build_xp = 12
 
 [[block]]
 name = "stylish_crystal_beam"
+prestige = 15
 chisel = "none"
 colourable = false
 color = [150, 230, 255]
@@ -5143,6 +5440,7 @@ build_xp = 12
 
 [[block]]
 name = "ornate_wood_beam"
+prestige = 11
 chisel = "none"
 colourable = true
 color = [166, 120, 74]
@@ -5161,6 +5459,7 @@ build_xp = 12
 
 [[block]]
 name = "ornate_stone_beam"
+prestige = 13
 chisel = "none"
 colourable = true
 color = [150, 150, 146]
@@ -5179,6 +5478,7 @@ build_xp = 12
 
 [[block]]
 name = "ornate_metal_beam"
+prestige = 15
 chisel = "none"
 colourable = false
 color = [150, 154, 160]
@@ -5197,6 +5497,7 @@ build_xp = 12
 
 [[block]]
 name = "ornate_crystal_beam"
+prestige = 16
 chisel = "none"
 colourable = false
 color = [150, 230, 255]
@@ -5216,6 +5517,7 @@ build_xp = 12
 
 [[block]]
 name = "plain_glass_pane"
+prestige = 5
 chisel = "none"
 colourable = false
 color = [200, 228, 236]
@@ -5235,6 +5537,7 @@ build_xp = 12
 
 [[block]]
 name = "stylish_glass_pane"
+prestige = 8
 chisel = "none"
 colourable = false
 color = [200, 228, 236]
@@ -5254,6 +5557,7 @@ build_xp = 12
 
 [[block]]
 name = "ornate_glass_pane"
+prestige = 11
 chisel = "none"
 colourable = false
 color = [200, 228, 236]
@@ -5273,6 +5577,7 @@ build_xp = 12
 
 [[block]]
 name = "stone_plinth"
+prestige = 13
 chisel = "none"
 colourable = true
 color = [150, 150, 146]
@@ -5291,6 +5596,7 @@ build_xp = 12
 
 [[block]]
 name = "wood_table"
+prestige = 13
 chisel = "none"
 colourable = true
 color = [166, 120, 74]
@@ -5309,6 +5615,7 @@ build_xp = 12
 
 [[block]]
 name = "wood_chair"
+prestige = 13
 chisel = "none"
 colourable = true
 color = [166, 120, 74]
@@ -5327,6 +5634,7 @@ build_xp = 12
 
 [[block]]
 name = "plain_wood_storage"
+prestige = 8
 chisel = "any"
 colourable = true
 color = [166, 120, 74]
@@ -5344,6 +5652,7 @@ build_xp = 12
 
 [[block]]
 name = "stylish_wood_storage"
+prestige = 10
 chisel = "any"
 colourable = true
 color = [166, 120, 74]
@@ -5361,6 +5670,7 @@ build_xp = 12
 
 [[block]]
 name = "ornate_wood_storage"
+prestige = 12
 chisel = "any"
 colourable = true
 color = [166, 120, 74]
@@ -5378,6 +5688,7 @@ build_xp = 12
 
 [[block]]
 name = "plain_stone_storage"
+prestige = 8
 chisel = "any"
 colourable = true
 color = [150, 150, 146]
@@ -5395,6 +5706,7 @@ build_xp = 12
 
 [[block]]
 name = "stylish_stone_storage"
+prestige = 10
 chisel = "any"
 colourable = true
 color = [150, 150, 146]
@@ -5412,6 +5724,7 @@ build_xp = 12
 
 [[block]]
 name = "ornate_stone_storage"
+prestige = 12
 chisel = "any"
 colourable = true
 color = [150, 150, 146]
@@ -5429,6 +5742,7 @@ build_xp = 12
 
 [[block]]
 name = "plain_metal_storage"
+prestige = 8
 chisel = "any"
 colourable = false
 color = [150, 154, 160]
@@ -5446,6 +5760,7 @@ build_xp = 12
 
 [[block]]
 name = "stylish_metal_storage"
+prestige = 10
 chisel = "any"
 colourable = false
 color = [150, 154, 160]
@@ -5463,6 +5778,7 @@ build_xp = 12
 
 [[block]]
 name = "ornate_metal_storage"
+prestige = 12
 chisel = "any"
 colourable = false
 color = [150, 154, 160]
@@ -5480,6 +5796,7 @@ build_xp = 12
 
 [[block]]
 name = "plain_crystal_storage"
+prestige = 8
 chisel = "any"
 colourable = false
 color = [150, 230, 255]
@@ -5498,6 +5815,7 @@ build_xp = 12
 
 [[block]]
 name = "stylish_crystal_storage"
+prestige = 10
 chisel = "any"
 colourable = false
 color = [150, 230, 255]
@@ -5516,6 +5834,7 @@ build_xp = 12
 
 [[block]]
 name = "ornate_crystal_storage"
+prestige = 12
 chisel = "any"
 colourable = false
 color = [150, 230, 255]
@@ -5534,6 +5853,7 @@ build_xp = 12
 
 [[block]]
 name = "plain_wicker_storage"
+prestige = 8
 chisel = "any"
 colourable = false
 color = [196, 160, 96]
@@ -5551,6 +5871,7 @@ build_xp = 12
 
 [[block]]
 name = "stylish_wicker_storage"
+prestige = 10
 chisel = "any"
 colourable = false
 color = [196, 160, 96]
@@ -5568,6 +5889,7 @@ build_xp = 12
 
 [[block]]
 name = "ornate_wicker_storage"
+prestige = 12
 chisel = "any"
 colourable = false
 color = [196, 160, 96]
@@ -5589,6 +5911,7 @@ build_xp = 12
 
 [[block]]
 name = "wood_sign"
+prestige = 14
 chisel = "none"
 colourable = true
 color = [166, 120, 74]
@@ -5607,6 +5930,7 @@ build_xp = 12
 
 [[block]]
 name = "wood_sign_panel"
+prestige = 14
 chisel = "none"
 colourable = true
 color = [166, 120, 74]
@@ -5625,6 +5949,7 @@ build_xp = 12
 
 [[block]]
 name = "stone_sign"
+prestige = 14
 chisel = "none"
 colourable = true
 color = [150, 150, 146]
@@ -5643,6 +5968,7 @@ build_xp = 12
 
 [[block]]
 name = "stone_sign_panel"
+prestige = 14
 chisel = "none"
 colourable = true
 color = [150, 150, 146]
@@ -5661,6 +5987,7 @@ build_xp = 12
 
 [[block]]
 name = "metal_sign"
+prestige = 16
 chisel = "none"
 colourable = false
 color = [150, 154, 160]
@@ -5680,6 +6007,7 @@ build_xp = 12
 
 [[block]]
 name = "metal_sign_panel"
+prestige = 16
 chisel = "none"
 colourable = false
 color = [150, 154, 160]
@@ -5699,6 +6027,7 @@ build_xp = 12
 
 [[block]]
 name = "crystal_sign"
+prestige = 17
 chisel = "none"
 colourable = false
 color = [150, 230, 255]
@@ -5718,6 +6047,7 @@ build_xp = 12
 
 [[block]]
 name = "crystal_sign_panel"
+prestige = 17
 chisel = "none"
 colourable = false
 color = [150, 230, 255]
@@ -5737,6 +6067,7 @@ build_xp = 12
 
 [[block]]
 name = "glass_sign"
+prestige = 17
 chisel = "none"
 colourable = false
 color = [200, 228, 236]
@@ -5756,6 +6087,7 @@ build_xp = 12
 
 [[block]]
 name = "glass_sign_panel"
+prestige = 17
 chisel = "none"
 colourable = false
 color = [200, 228, 236]
@@ -5775,6 +6107,7 @@ build_xp = 12
 
 [[block]]
 name = "glowing_glass_sign"
+prestige = 17
 chisel = "none"
 colourable = false
 color = [210, 236, 240]
@@ -5795,6 +6128,7 @@ build_xp = 12
 
 [[block]]
 name = "glowing_glass_sign_panel"
+prestige = 17
 chisel = "none"
 colourable = false
 color = [210, 236, 240]
@@ -5818,6 +6152,7 @@ build_xp = 12
 
 [[block]]
 name = "shop_stand"
+prestige = 16
 color = [176, 132, 86]
 solid = true
 opaque = true
@@ -5833,6 +6168,7 @@ build_xp = 16
 
 [[block]]
 name = "request_basket"
+prestige = 16
 color = [190, 160, 104]
 solid = true
 opaque = true

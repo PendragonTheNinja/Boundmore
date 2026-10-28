@@ -29,6 +29,7 @@ pub mod movement;
 pub mod planet;
 pub mod plots;
 pub mod portal;
+pub mod prestige;
 pub mod raycast;
 pub mod recipes;
 pub mod regions;
