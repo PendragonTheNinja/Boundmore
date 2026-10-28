@@ -186,6 +186,8 @@ struct Session {
     craft_colours: HashMap<u16, bm_core::Colour>,
     /// Coin and feats, once the server has sent them (milestone 24).
     ledger: Option<bm_core::feats::Ledger>,
+    /// Friends and requests (milestone 25).
+    friends: bm_protocol::FriendsView,
     account: String,
     /// Ours, from the welcome: critical hits and random areas hash it.
     player_id: u32,
@@ -374,6 +376,7 @@ impl Session {
             universe: w.universe,
             craft_colours: HashMap::new(),
             ledger: None,
+            friends: Default::default(),
         })
     }
 
@@ -1002,6 +1005,8 @@ pub struct App {
     shop_view: Option<bm_protocol::ShopView>,
     /// Prices being typed in the owner's price window, by slot.
     shop_prices: HashMap<u8, String>,
+    /// The name being typed in the friends window.
+    friend_name: String,
     /// The warp shrine window's open tab.
     shrine_tab: ShrineTab,
     /// The skill screen's chosen category and reset question.
@@ -1073,6 +1078,7 @@ impl App {
             portal_view: None,
             shop_view: None,
             shop_prices: HashMap::new(),
+            friend_name: String::new(),
             shrine_tab: ShrineTab::Worlds,
             skill_ui: SkillUi::default(),
             forge_ui: ForgeUi::default(),
@@ -1309,7 +1315,7 @@ impl App {
             return;
         }
         if let Some(c) = s.claims.at(PlotPos::of(pos, s.world.shape))
-            && c.owner != s.account
+            && !crate::claims::may(c, &s.account, bm_core::rights::Act::Work)
         {
             let text = format!("This land belongs to {}", c.owner);
             self.notices.push(text, now);
@@ -1328,7 +1334,7 @@ impl App {
         let writable = s
             .claims
             .at(PlotPos::of(pos, s.world.shape))
-            .is_none_or(|c| c.owner == s.account);
+            .is_none_or(|c| crate::claims::may(c, &s.account, bm_core::rights::Act::Build));
         let anchor = s.signs.sign_at(&s.world, pos);
         let text = anchor
             .and_then(|a| s.signs.get(a))
@@ -1724,6 +1730,7 @@ impl App {
             ServerMsg::BlockChanged { pos, block } => s.block_changed(pos, block),
             ServerMsg::Character { character, at } => s.character(character, at),
             ServerMsg::Ledger(l) => s.ledger = Some(l),
+            ServerMsg::Friends(f) => s.friends = f,
             ServerMsg::BlockHealth { pos, damage } => s.block_health(pos, damage),
             ServerMsg::EditResult { seq, pos, block, .. } => s.edit_result(seq, pos, block),
             ServerMsg::PlayerJoined { id, name } => s.remotes.joined(id, name),
@@ -2408,6 +2415,7 @@ impl App {
         let portal_view = self.portal_view.as_ref();
         let shop_view = self.shop_view.as_ref();
         let shop_prices = &mut self.shop_prices;
+        let friend_name = &mut self.friend_name;
         let notices = self.notices.visible(now);
         let menu = self.menu;
         let login = &mut self.login;
@@ -2651,6 +2659,12 @@ impl App {
                     }
                 }
                 Some(Menu::Feats) => menus::feats(&ctx, &FEAT_BOOK, s.ledger.as_ref(), &mut actions),
+                Some(Menu::Friends) => {
+                    let feet = s.me.state.pos;
+                    let here = PlotPos::of(BlockPos::containing(feet.x, feet.y, feet.z), s.world.shape);
+                    let mine = s.claims.at(here).filter(|c| c.owner == s.account);
+                    menus::friends(&ctx, &s.friends, mine, friend_name, &mut actions);
+                }
                 Some(Menu::Shop(pos)) => menus::shop(
                     &ctx,
                     shop_view.filter(|v| v.pos == pos),
@@ -3055,7 +3069,7 @@ impl App {
             "inventory" => self.open_menu(Menu::Inventory),
             // Milestone 24: someone's shop stand and request basket, as a
             // customer sees them, with coin to spend; and the feats.
-            "shop" | "basket" | "feats" => {
+            "shop" | "basket" | "feats" | "friends" => {
                 let Some(s) = &mut self.session else { return };
                 let id = |n: &str| s.items.registry.id(n).ok();
                 let mut ledger = bm_core::feats::Ledger {
@@ -3095,6 +3109,9 @@ impl App {
                     if screen == "feats" {
                         self.shop_view = None;
                         self.open_menu(Menu::Feats);
+                    } else if screen == "friends" {
+                        self.shop_view = None;
+                        self.open_menu(Menu::Friends);
                     } else {
                         self.menu = Some(Menu::Shop(pos));
                         self.set_grab(false);
@@ -3756,6 +3773,8 @@ impl ApplicationHandler for App {
                     KeyCode::KeyK => self.toggle(Menu::Skills),
                     // Feats and coin (milestone 24).
                     KeyCode::KeyJ => self.toggle(Menu::Feats),
+                    // Friends and rights (milestone 25).
+                    KeyCode::KeyO => self.toggle(Menu::Friends),
                     KeyCode::KeyC => {
                         let m = self.crafting_menu();
                         self.toggle(m);

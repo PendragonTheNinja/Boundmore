@@ -33,6 +33,7 @@ pub mod prestige;
 pub mod raycast;
 pub mod recipes;
 pub mod regions;
+pub mod rights;
 pub mod shape;
 pub mod signs;
 pub mod skills;

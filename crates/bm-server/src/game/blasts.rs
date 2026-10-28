@@ -232,7 +232,11 @@ impl Game {
         {
             return None;
         }
-        if planet.claims.at_block(canon).is_some_and(|c| c.owner != account) {
+        if planet
+            .claims
+            .at_block(canon)
+            .is_some_and(|c| self.may_on(c, account, self.act_for_block(pi, state.id)).is_err())
+        {
             return None;
         }
         Some(state)

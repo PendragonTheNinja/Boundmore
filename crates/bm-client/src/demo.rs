@@ -435,12 +435,14 @@ impl Demo {
                 owner: account.to_string(),
                 stone: BlockPos::new(126, 44, 131),
                 plots: own,
+                rights: vec![("Wren".into(), bm_core::rights::BUILDER | bm_core::rights::WORKER)],
             },
             ClaimView {
                 id: 2,
                 owner: "Wren".into(),
                 stone: BlockPos::new(150, 44, 118),
                 plots: theirs,
+                rights: Vec::new(),
             },
         ];
         let mut chest = vec![None; 20];
@@ -527,6 +529,21 @@ impl Demo {
             creatures: bm_core::creatures::CreatureKinds::builtin().defs().to_vec(),
         };
         self.events.push_back(NetEvent::Connected(Box::new(w)));
+        // Friends (milestone 25).
+        self.events
+            .push_back(NetEvent::Msg(ServerMsg::Friends(bm_protocol::FriendsView {
+                friends: vec![
+                    bm_protocol::FriendView {
+                        name: "Wren".into(),
+                        planet: Some("Verdance".into()),
+                    },
+                    bm_protocol::FriendView {
+                        name: "Halloran".into(),
+                        planet: None,
+                    },
+                ],
+                asked_by: vec!["Tamsin".into()],
+            })));
         // The two claims make a settlement (milestone 24 part 4).
         self.events.push_back(NetEvent::Msg(ServerMsg::Settlements {
             settlements: vec![bm_protocol::SettlementView {

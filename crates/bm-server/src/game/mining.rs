@@ -4,7 +4,6 @@
 //! pure functions in `bm_core::mining`; this applies them.
 
 use super::{Game, Refusal, in_reach, send_slots, swing_tool_of, wear_slot};
-use crate::claims::ClaimError;
 use crate::world::World;
 use bm_core::forge::Held;
 use bm_core::items::ToolClass;
@@ -132,10 +131,13 @@ impl Game {
         if let Some(r) = self.meteor_guards(pi, canon) {
             return Err(r);
         }
-        if let Some(c) = planet.claims.at_block(canon)
-            && c.owner != p.account
-        {
-            return Err(ClaimError::OwnedBy(c.owner_name.clone()).into());
+        // Rights there (milestone 25): the block's right, and only its
+        // owner breaks a claim stone.
+        if let Some(c) = planet.claims.at_block(canon) {
+            self.may_on(c, &p.account, self.act_for_block(pi, state.id))?;
+            if state.id == self.claim_stone && c.owner != p.account {
+                return Err(Refusal::Told(format!("Only {} can remove this claim", c.owner_name)));
+            }
         }
         let def = planet.world.registry.get(state.id);
         if state.id.is_air() || !def.breakable {
@@ -332,10 +334,8 @@ impl Game {
         let Some(p) = self.players.get(&id) else { return };
         let pi = p.planet;
         let effects = p.effects.brewed(&p.state);
-        if let Some(c) = self.planets[pi].claims.at_block(canon)
-            && c.owner != p.account
-        {
-            return self.swing_refused(id, seq, pos, ClaimError::OwnedBy(c.owner_name.clone()).into());
+        if let Err(r) = self.may(pi, canon, &p.account, bm_core::rights::Act::Work) {
+            return self.swing_refused(id, seq, pos, r);
         }
         let is_machine = self
             .machine(pi, canon)

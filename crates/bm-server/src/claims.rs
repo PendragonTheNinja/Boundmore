@@ -31,6 +31,8 @@ impl Claim {
             owner: self.owner_name.clone(),
             stone: self.stone,
             plots: self.plots.iter().copied().collect(),
+            // Filled in by the game, which keeps the rights.
+            rights: Vec::new(),
         }
     }
 }

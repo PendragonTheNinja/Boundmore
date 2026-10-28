@@ -68,6 +68,9 @@ pub enum Menu {
     Sign(BlockPos),
     /// Feats and coin (milestone 24).
     Feats,
+    /// Friends, requests, and friends' rights on the claim we stand in
+    /// (milestone 25).
+    Friends,
     /// Someone else's shop stand or request basket at this block (milestone
     /// 24 part 2).
     Shop(BlockPos),
@@ -626,6 +629,125 @@ pub fn feats(
                 });
             }
         });
+    });
+    if !open {
+        actions.push(UiAction::CloseMenu);
+    }
+}
+
+/// Friends (milestone 25): ask by name, answer requests, see who is
+/// playing and where, end a friendship; standing in a claim of our own,
+/// tick each friend's rights there.
+pub fn friends(
+    ctx: &egui::Context,
+    view: &bm_protocol::FriendsView,
+    claim: Option<&bm_protocol::ClaimView>,
+    input: &mut String,
+    actions: &mut Vec<UiAction>,
+) {
+    use bm_protocol::FriendAction;
+    let mut open = true;
+    let friend = |name: &str, action| {
+        UiAction::Send(ClientMsg::Friend {
+            name: name.to_string(),
+            action,
+        })
+    };
+    window("Friends").open(&mut open).show(ctx, |ui| {
+        ui.horizontal(|ui| {
+            let field = ui.add(
+                egui::TextEdit::singleline(input)
+                    .hint_text("Player name")
+                    .desired_width(180.0),
+            );
+            let ready = !input.trim().is_empty();
+            let ask = ui.add_enabled(ready, egui::Button::new("Ask to be friends"));
+            let entered = field.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter));
+            if ready && (ask.clicked() || entered) {
+                actions.push(friend(input.trim(), FriendAction::Ask));
+                input.clear();
+            }
+        });
+        if !view.asked_by.is_empty() {
+            ui.add_space(6.0);
+            heading(ui, "Asking to be your friend");
+            for name in &view.asked_by {
+                ui.horizontal(|ui| {
+                    ui.label(egui::RichText::new(name).color(TEXT));
+                    if ui.button("Accept").clicked() {
+                        actions.push(friend(name, FriendAction::Accept));
+                    }
+                    if ui.button("Decline").clicked() {
+                        actions.push(friend(name, FriendAction::Decline));
+                    }
+                });
+            }
+        }
+        ui.add_space(6.0);
+        heading(ui, "Friends");
+        if view.friends.is_empty() {
+            ui.label(
+                egui::RichText::new("No friends yet. Ask someone by name above, or type /friend name in chat.")
+                    .color(MUTED)
+                    .small(),
+            );
+        }
+        // Standing in a claim of our own: each friend's rights there.
+        let rights_of = |name: &str| {
+            claim
+                .and_then(|c| c.rights.iter().find(|(n, _)| n == name))
+                .map_or(0, |(_, r)| *r)
+        };
+        egui::ScrollArea::vertical().max_height(360.0).show(ui, |ui| {
+            for f in &view.friends {
+                ui.horizontal(|ui| {
+                    // A dot: filled green while they play.
+                    let (rect, _) = ui.allocate_exact_size(vec2(10.0, 10.0), egui::Sense::hover());
+                    if f.planet.is_some() {
+                        ui.painter()
+                            .circle_filled(rect.center(), 4.0, Color32::from_rgb(120, 210, 110));
+                    } else {
+                        ui.painter()
+                            .circle_stroke(rect.center(), 3.5, egui::Stroke::new(1.2, MUTED));
+                    }
+                    ui.label(egui::RichText::new(&f.name).color(TEXT));
+                    let at = match &f.planet {
+                        Some(p) => format!("on {p}"),
+                        None => "away".to_string(),
+                    };
+                    ui.label(egui::RichText::new(at).color(MUTED).small());
+                    if ui.small_button("Remove").clicked() {
+                        actions.push(friend(&f.name, FriendAction::Remove));
+                    }
+                });
+                if let Some(c) = claim {
+                    let had = rights_of(&f.name);
+                    ui.horizontal(|ui| {
+                        ui.add_space(22.0);
+                        for (bit, label) in bm_core::rights::NAMED {
+                            let mut on = had & bit != 0;
+                            if ui.checkbox(&mut on, label).changed() {
+                                let rights = if on { had | bit } else { had & !bit };
+                                actions.push(UiAction::Send(ClientMsg::SetRights {
+                                    claim: c.id,
+                                    friend: f.name.clone(),
+                                    rights,
+                                }));
+                            }
+                        }
+                    });
+                }
+            }
+        });
+        ui.add_space(4.0);
+        let note = if claim.is_some() {
+            "Ticks give a friend rights on the claim you stand in. Builder places and breaks blocks; Worker uses \
+             storage, machines and locked doors; Engineer places and breaks machines, storage and locks; Farmhand \
+             tills, sows and harvests."
+        } else {
+            "Stand in a claim of yours to give friends rights there."
+        };
+        ui.label(egui::RichText::new(note).color(MUTED).small());
     });
     if !open {
         actions.push(UiAction::CloseMenu);

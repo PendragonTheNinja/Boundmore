@@ -32,7 +32,12 @@ impl Game {
             return;
         };
         let account = p.account.clone();
-        let foreign = |b: BlockPos| planet.claims.at_block(b).filter(|c| c.owner != account);
+        let foreign = |b: BlockPos| {
+            planet
+                .claims
+                .at_block(b)
+                .filter(|c| self.may_on(c, &account, bm_core::rights::Act::Build).is_err())
+        };
         if let Some(c) = foreign(canon) {
             let text = format!("Only {} may write on signs here", c.owner_name);
             return self.notice(id, &text);

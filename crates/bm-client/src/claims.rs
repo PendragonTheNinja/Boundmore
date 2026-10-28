@@ -6,6 +6,15 @@ use bm_protocol::{ClaimView, SettlementView};
 use glam::DVec3;
 use std::collections::{HashMap, HashSet};
 
+/// Whether `account` (as shown) may do `act` on claim `c`: its owner, or a
+/// friend the owner gave the right (the server rules it too).
+pub fn may(c: &ClaimView, account: &str, act: bm_core::rights::Act) -> bool {
+    c.owner == account
+        || c.rights
+            .iter()
+            .any(|(n, r)| n == account && bm_core::rights::allows(*r, act))
+}
+
 #[derive(Default)]
 pub struct Claims {
     claims: HashMap<u32, ClaimView>,
@@ -229,6 +238,7 @@ mod tests {
             owner: "Pendragon".into(),
             stone: BlockPos::new(0, 16, 0),
             plots: vec![PlotPos::new(0, 2, 0), PlotPos::new(-1, 2, 0)],
+            rights: Vec::new(),
         };
         let mut c = Claims::new(s, vec![mine.clone()]);
         assert_eq!(

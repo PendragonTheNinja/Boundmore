@@ -21,6 +21,7 @@ pub mod reclaim;
 pub mod settlements;
 pub mod shops;
 pub mod signs;
+pub mod social;
 pub mod storage;
 pub mod store;
 pub mod world;

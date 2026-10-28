@@ -25,7 +25,7 @@ use glam::DVec3;
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
 
 /// Bump on any change to a message below. Client and server must match.
-pub const PROTOCOL_VERSION: u32 = 47;
+pub const PROTOCOL_VERSION: u32 = 48;
 
 /// QUIC application protocol name; also refuses non-Boundmore peers early.
 pub const ALPN: &[u8] = b"boundmore/1";
@@ -146,6 +146,12 @@ pub enum ClientMsg {
     OpenShop { pos: Option<BlockPos> },
     /// Do something at the open shop stand or basket.
     Shop { pos: BlockPos, action: ShopAction },
+    /// Ask, accept, decline or end a friendship with the player of this
+    /// name (milestone 25). Answered with `Friends`.
+    Friend { name: String, action: FriendAction },
+    /// Give a friend these rights (`bm_core::rights`) on one of our claims;
+    /// 0 takes them all. Answered with the claim's `Claim`.
+    SetRights { claim: u32, friend: String, rights: u8 },
     /// Move up to `count` between the inventory and the open storage block,
     /// or within either: same rules as `MoveItems` (merge, split, whole-stack
     /// swap). The server answers with `Slots` and/or `Storage`.
@@ -395,6 +401,9 @@ pub struct ClaimView {
     /// The block holding its claim stone.
     pub stone: BlockPos,
     pub plots: Vec<PlotPos>,
+    /// Friends holding rights there (milestone 25), by name as shown, with
+    /// their `bm_core::rights` bits.
+    pub rights: Vec<(String, u8)>,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -551,6 +560,9 @@ pub enum ServerMsg {
     /// A shop stand or request basket as its window shows it (milestone 24
     /// part 2); `closed` when it is gone or out of reach.
     Shop(ShopView),
+    /// This player's friends and requests (milestone 25), on joining and on
+    /// every change.
+    Friends(FriendsView),
     /// The settlements of the player's planet and each claim's prestige
     /// there (milestone 24 part 4), sent on arrival and when they change.
     Settlements {
@@ -848,6 +860,31 @@ pub struct ShotView {
     pub kind: ShotKind,
     /// What a homing bolt turns toward.
     pub homing: Option<Target>,
+}
+
+/// What to do about a friend (milestone 25).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub enum FriendAction {
+    Ask,
+    Accept,
+    Decline,
+    Remove,
+}
+
+/// One friend as the friends window shows them.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct FriendView {
+    pub name: String,
+    /// Playing now, and on which planet.
+    pub planet: Option<String>,
+}
+
+/// This player's friends and requests (milestone 25).
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct FriendsView {
+    pub friends: Vec<FriendView>,
+    /// Players asking to be our friend.
+    pub asked_by: Vec<String>,
 }
 
 /// What a shop stand or request basket's window asks (milestone 24 part 2).
@@ -1318,6 +1355,8 @@ mod tests {
                 owner: "x".into(),
                 stone: BlockPos::new(0, 0, 0),
                 plots: vec![PlotPos::new(0, 0, 0); 64],
+                // As many friends with rights as a claim may hold.
+                rights: vec![("A player with a long name".into(), 15); 50],
             }],
             plot_allowance: 64,
             creatures: bm_core::creatures::CreatureKinds::builtin().defs().to_vec(),

@@ -225,10 +225,8 @@ impl Game {
         let Some(p) = self.players.get(&id) else { return };
         let pi = p.planet;
         let effects = p.effects.brewed(&p.state);
-        if let Some(c) = self.planets[pi].claims.at_block(canon)
-            && c.owner != p.account
-        {
-            return self.swing_refused(id, seq, pos, ClaimError::OwnedBy(c.owner_name.clone()).into());
+        if let Err(r) = self.may(pi, canon, &p.account, bm_core::rights::Act::Farm) {
+            return self.swing_refused(id, seq, pos, r);
         }
         let p = self.players.get_mut(&id).expect("present");
         p.last_swing = Some((at, bm_core::mining::swing_ticks(tool.action_speed)));

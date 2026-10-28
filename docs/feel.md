@@ -334,6 +334,15 @@ Boundless's live tree and tables exactly (Nathan, 2026-10-20), in Boundmore's na
 | Busy claims | 100% up to 5 visitors a day, 70% to 20, 50% to 50, 30% beyond | **guess** (players saw 120 become about 84; measure K6) |
 | Footfall needs | 10,000 prestige on the claim itself | Boundless (Release 211) |
 
+## Friends and rights (M25, `bm-core/src/rights.rs`, `bm-server/src/social.rs`)
+
+| Number | Value | Source |
+|---|---|---|
+| Rights | Builder, Worker, Engineer as Boundless; Farmhand added; a builder may farm | Boundless (Release 182); Nathan, 2026-10-28 |
+| Most friends | 200 | **guess** |
+| Requests waiting | 50 | **guess** |
+| Friends with rights on one claim | 50 | **guess** (bounds the welcome) |
+
 ## Living worlds (M19, `docs/milestones/19-living-worlds.md`, `bm-worldgen/src/biomes.rs`)
 
 | Value | Now | Source, or guess |

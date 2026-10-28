@@ -28,7 +28,7 @@ const UNIVERSE: Color32 = GOLD;
 const WHISPER: Color32 = Color32::from_rgb(198, 150, 255);
 const SERVER: Color32 = Color32::from_rgb(160, 156, 150);
 
-pub const HELP: &str = "Commands: /l local, /p planet, /u universe, /w name text to whisper, /r text to reply, /settlement name to name the settlement you are warden of. \
+pub const HELP: &str = "Commands: /l local, /p planet, /u universe, /w name text to whisper, /r text to reply, /friend name and /unfriend name (O for friends), /settlement name to name the settlement you are warden of. \
                         Testing (servers started with --creative): /creative or F8, /give item count, /xp amount.";
 
 /// What a line typed into the box asks for.
@@ -48,6 +48,8 @@ pub enum Typed {
     Creative,
     /// A testing command for the server (`/give`, `/xp`), as typed.
     Command(String),
+    /// Ask (`/friend name`) or end (`/unfriend name`) a friendship.
+    Friend(String, bm_protocol::FriendAction),
 }
 
 /// Reads one typed line. Plain text goes to `default`. `/l`, `/p` and `/u`
@@ -77,6 +79,17 @@ pub fn parse(input: &str, default: &Channel, last_whisperer: Option<&str>) -> Ty
             return send(Channel::Whisper(name), text);
         }
         "creative" | "c" => return Typed::Creative,
+        "friend" | "unfriend" => {
+            if rest.is_empty() {
+                return Typed::Local(format!("Name them: /{} name", word.to_lowercase()));
+            }
+            let action = if word.eq_ignore_ascii_case("friend") {
+                bm_protocol::FriendAction::Ask
+            } else {
+                bm_protocol::FriendAction::Remove
+            };
+            return Typed::Friend(rest.to_string(), action);
+        }
         "give" | "xp" | "settlement" => return Typed::Command(input.to_string()),
         "r" | "reply" => {
             let Some(name) = last_whisperer else {
@@ -242,6 +255,7 @@ impl ChatBox {
                 None
             }
             Typed::Command(text) => Some(ClientMsg::Command { text }),
+            Typed::Friend(name, action) => Some(ClientMsg::Friend { name, action }),
         }
     }
 
@@ -476,6 +490,10 @@ mod tests {
         assert_eq!(
             parse("/give iron_ingot 20", &Channel::Local, None),
             Typed::Command("/give iron_ingot 20".into())
+        );
+        assert_eq!(
+            parse("/friend Wren", &Channel::Local, None),
+            Typed::Friend("Wren".into(), bm_protocol::FriendAction::Ask)
         );
         assert!(!HELP.contains('\u{2014}'), "no em dashes in player text");
     }

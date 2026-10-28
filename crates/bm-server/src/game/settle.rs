@@ -69,6 +69,7 @@ impl Game {
     /// A claim is gone: its prestige and footfall go with it.
     pub(super) fn claim_forgotten(&mut self, claim: u32) {
         self.tallies.forget(claim);
+        self.social.forget_claim(claim);
         if self.footfall.remove(&claim).is_some() {
             self.footfall_dirty.insert(claim);
         }
@@ -271,7 +272,7 @@ impl Game {
             let here = shape.wrap_block(BlockPos::containing(feet.x, feet.y, feet.z));
             let claim = self
                 .claim_around(pi, here)
-                .filter(|c| c.owner != p.account)
+                .filter(|c| c.owner != p.account && !self.holds_rights(c.id, &p.account))
                 .map(|c| (c.id, c.owner.clone()));
             let entered = claim.as_ref().map(|c| c.0);
             let was = p.in_claim;

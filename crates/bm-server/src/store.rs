@@ -88,6 +88,12 @@ const SETTLEMENT_NAMES: TableDefinition<u32, &str> = TableDefinition::new("settl
 /// Footfall paid at each claim (milestone 24 part 4): claim id ->
 /// [`SavedFootfall`].
 const FOOTFALL: TableDefinition<u32, &[u8]> = TableDefinition::new("claim_footfall");
+/// Each account's friends and the requests waiting for it (milestone 25):
+/// account -> `crate::social::SavedFriends`. A new table.
+const FRIENDS: TableDefinition<&str, &[u8]> = TableDefinition::new("player_friends");
+/// Rights friends hold on each claim (milestone 25): claim id ->
+/// `crate::social::SavedRights`. A new table.
+const RIGHTS: TableDefinition<u32, &[u8]> = TableDefinition::new("claim_rights");
 /// Regions each account has discovered (save version 7).
 const DISCOVERIES: TableDefinition<&str, &[u8]> = TableDefinition::new("discoveries");
 /// Far copies of chunks (milestone 20), keyed like `CHUNKS`: a cache made
@@ -1841,6 +1847,46 @@ impl Store {
         Ok(out)
     }
 
+    /// Every account's friends (none if the table is missing). A corrupt
+    /// row is reported and skipped (left on disk untouched).
+    pub fn friends(&self) -> Result<Vec<(String, crate::social::SavedFriends)>> {
+        let tx = self.db.begin_read()?;
+        let t = match tx.open_table(FRIENDS) {
+            Ok(t) => t,
+            Err(redb::TableError::TableDoesNotExist(_)) => return Ok(Vec::new()),
+            Err(e) => return Err(e.into()),
+        };
+        let mut out = Vec::new();
+        for row in t.iter()? {
+            let (k, v) = row?;
+            match postcard::from_bytes(v.value()) {
+                Ok(f) => out.push((k.value().to_string(), f)),
+                Err(e) => tracing::error!("the friends of `{}` are corrupt ({e}); skipped", k.value()),
+            }
+        }
+        Ok(out)
+    }
+
+    /// Every claim's rights (none if the table is missing). A corrupt row is
+    /// reported and skipped.
+    pub fn rights(&self) -> Result<Vec<(u32, crate::social::SavedRights)>> {
+        let tx = self.db.begin_read()?;
+        let t = match tx.open_table(RIGHTS) {
+            Ok(t) => t,
+            Err(redb::TableError::TableDoesNotExist(_)) => return Ok(Vec::new()),
+            Err(e) => return Err(e.into()),
+        };
+        let mut out = Vec::new();
+        for row in t.iter()? {
+            let (k, v) = row?;
+            match postcard::from_bytes(v.value()) {
+                Ok(r) => out.push((k.value(), r)),
+                Err(e) => tracing::error!("claim {}'s rights are corrupt ({e}); skipped", k.value()),
+            }
+        }
+        Ok(out)
+    }
+
     /// Every settlement name by its key claim.
     pub fn settlement_names(&self) -> Result<Vec<(u32, String)>> {
         let tx = self.db.begin_read()?;
@@ -2038,6 +2084,22 @@ impl Store {
                 };
             }
             drop(footfall);
+            let mut friends = tx.open_table(FRIENDS)?;
+            for (key, f) in &batch.friends {
+                match f {
+                    Some(f) => friends.insert(key.as_str(), postcard::to_stdvec(f)?.as_slice())?,
+                    None => friends.remove(key.as_str())?,
+                };
+            }
+            drop(friends);
+            let mut rights = tx.open_table(RIGHTS)?;
+            for (id, r) in &batch.rights {
+                match r {
+                    Some(r) => rights.insert(*id, postcard::to_stdvec(r)?.as_slice())?,
+                    None => rights.remove(*id)?,
+                };
+            }
+            drop(rights);
             let mut ledgers = tx.open_table(LEDGER)?;
             for (key, l) in &batch.ledgers {
                 ledgers.insert(key.as_str(), postcard::to_stdvec(l)?.as_slice())?;
@@ -2536,6 +2598,10 @@ pub struct WriteBatch {
     pub settlement_names: Vec<(u32, Option<String>)>,
     /// Footfall records by claim that changed; None deletes.
     pub footfall: Vec<(u32, Option<SavedFootfall>)>,
+    /// Friends by account that changed (milestone 25); None deletes.
+    pub friends: Vec<(String, Option<crate::social::SavedFriends>)>,
+    /// Claim rights that changed; None deletes.
+    pub rights: Vec<(u32, Option<crate::social::SavedRights>)>,
     /// The universe clock, so days and station jobs continue across restarts.
     pub clock: Option<u64>,
     /// Departed wanderers (milestone 21): every row under each id is deleted,
@@ -2567,6 +2633,8 @@ impl WriteBatch {
             && self.tallies.is_empty()
             && self.settlement_names.is_empty()
             && self.footfall.is_empty()
+            && self.friends.is_empty()
+            && self.rights.is_empty()
             && self.forget_planets.is_empty()
     }
 }
@@ -2898,6 +2966,11 @@ mod tests {
         let mut tally = bm_core::prestige::Tally::default();
         tally.placed("polished_aurorite");
         tally.chiselled(3);
+        let mut friends = crate::social::SavedFriends::default();
+        friends.friends.insert("wren".into(), "Wren".into());
+        friends.asked_by.insert("bob".into(), "Bob".into());
+        let rights: crate::social::SavedRights =
+            [("wren".to_string(), ("Wren".to_string(), 3u8))].into_iter().collect();
         let footfall = SavedFootfall {
             paid: vec![("bob".into(), 1_700_000_000)],
         };
@@ -2983,6 +3056,8 @@ mod tests {
                 tallies: vec![(7, Some(tally.clone())), (8, None)],
                 settlement_names: vec![(7, Some("Riverholm".into()))],
                 footfall: vec![(7, Some(footfall.clone()))],
+                friends: vec![("pendragon".into(), Some(friends.clone())), ("nobody".into(), None)],
+                rights: vec![(7, Some(rights.clone()))],
                 clock: Some(777),
                 done: Vec::new(),
             })
@@ -3014,6 +3089,12 @@ mod tests {
         assert_eq!(s.tallies().unwrap(), vec![(7, tally)], "prestige kept (part 4)");
         assert_eq!(s.settlement_names().unwrap(), vec![(7, "Riverholm".to_string())]);
         assert_eq!(s.footfall().unwrap(), vec![(7, footfall)]);
+        assert_eq!(
+            s.friends().unwrap(),
+            vec![("pendragon".to_string(), friends)],
+            "friends kept (milestone 25)"
+        );
+        assert_eq!(s.rights().unwrap(), vec![(7, rights)]);
         assert_eq!(
             s.ledger("nobody").unwrap().coin,
             bm_core::feats::STARTING_COIN,

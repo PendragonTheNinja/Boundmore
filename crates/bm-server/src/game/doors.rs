@@ -55,9 +55,10 @@ impl Game {
                 }
             }
         }
-        // A lock beside it on someone else's claim.
+        // A lock beside it on someone else's claim (a friend with Worker
+        // there goes through, milestone 25).
         if let Some(c) = claim
-            && c.owner != p.account
+            && self.may_on(c, &p.account, bm_core::rights::Act::Work).is_err()
         {
             let locked = door.iter().any(|b| {
                 [(1, 0, 0), (-1, 0, 0), (0, 1, 0), (0, -1, 0), (0, 0, 1), (0, 0, -1)]

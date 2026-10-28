@@ -37,6 +37,7 @@ mod forge;
 mod meteors;
 mod mining;
 mod portal;
+mod rights;
 mod settle;
 mod shops;
 mod signs;
@@ -441,6 +442,8 @@ pub struct Game {
     /// settlements and claim prestige as last found; settlement names by
     /// key claim; footfall paid by claim; and what changed since the save.
     tallies: crate::settlements::Tallies,
+    /// Friends and the rights they hold on claims (milestone 25).
+    social: crate::social::Social,
     settlements: Vec<settle::Found>,
     /// Per planet: the tallies' generation, claim count and plot count when
     /// its settlements were last found.
@@ -691,6 +694,7 @@ impl Game {
         let portal_rules = cfg.portal_rules();
         let reclaims = Reclaims::load(store.reclaims()?, &items);
         let tallies = crate::settlements::Tallies::load(store.tallies()?);
+        let social = crate::social::Social::load(store.friends()?, store.rights()?);
         let settlement_names: HashMap<u32, String> = store.settlement_names()?.into_iter().collect();
         let footfall: HashMap<u32, crate::store::SavedFootfall> = store.footfall()?.into_iter().collect();
         let last_seen = claim_owners_last_seen(&store, &planets, planets[start].id);
@@ -791,6 +795,7 @@ impl Game {
             ledgers_dirty: HashSet::new(),
             ledgers_unsent: HashSet::new(),
             tallies,
+            social,
             settlements: Vec::new(),
             settle_seen: Vec::new(),
             settlement_names,
@@ -1089,6 +1094,8 @@ impl Game {
                 ClientMsg::Skill { at, action } => self.queue(id, at, Queued::Skill { at, action }),
                 ClientMsg::Creative { at, on } => self.queue(id, at, Queued::Creative { at, on }),
                 ClientMsg::Command { text } => self.command(id, &text),
+                ClientMsg::Friend { name, action } => self.friend(id, &name, action),
+                ClientMsg::SetRights { claim, friend, rights } => self.set_rights(id, claim, &friend, rights),
                 ClientMsg::Eat { at, slot } => self.queue(id, at, Queued::Eat { at, slot }),
                 ClientMsg::FillBucket { slot, pos } => self.fill_bucket(id, slot, pos),
                 ClientMsg::LookCrop { pos } => self.look_crop(id, pos),
@@ -1340,7 +1347,7 @@ impl Game {
             view_radius: self.cfg.view_radius,
             far_radius: self.cfg.far_radius,
             reach: self.cfg.reach,
-            claims: pl.claims.views(),
+            claims: self.claim_views(planet),
             // Plots bought with marks included (the client adds nothing).
             plot_allowance: self.cfg.plot_allowance.saturating_add(character.plots_bought),
             creatures: self.creature_kinds.defs().to_vec(),
@@ -1442,6 +1449,8 @@ impl Game {
         }
         self.arrived_in_sky(id);
         self.send_settlements(id);
+        self.send_friends(id);
+        self.tell_friends_of(&self.players[&id].account.clone());
         self.tell_tokens(id);
         self.server_line(planet, arrived);
         if let Some(text) = came_back {
@@ -1455,6 +1464,7 @@ impl Game {
     fn leave(&mut self, id: u32) {
         let Some(p) = self.players.remove(&id) else { return };
         tracing::info!("{} (#{id}) left", p.name);
+        let account = p.account.clone();
         if let Some(trip) = &p.trip {
             self.unpin_trip(trip);
         }
@@ -1479,6 +1489,7 @@ impl Game {
         }
         self.server_line(planet, format!("{} left", p.name));
         self.left_planet(planet);
+        self.tell_friends_of(&account);
     }
 
     /// A player has gone from `planet` (left the server or travelled).
@@ -2187,7 +2198,16 @@ impl Game {
         }
         // Building inside your own claim earns the block's build XP.
         let build_xp = match accepted.effect {
-            Effect::Placed { .. } if planet.claims.at_block(canon).is_some_and(|c| c.owner == p.account) => {
+            Effect::Placed { .. }
+                if planet.claims.at_block(canon).is_some_and(|c| {
+                    c.owner == p.account
+                        || (self.social.are_friends(&c.owner, &p.account)
+                            && bm_core::rights::allows(
+                                self.social.rights(c.id, &p.account),
+                                bm_core::rights::Act::Build,
+                            ))
+                }) =>
+            {
                 planet.world.registry.get(new.id).build_xp as u64
             }
             _ => 0,
@@ -2310,6 +2330,26 @@ impl Game {
             let account = &self.players[&id].account;
             self.allowance_on(account, pi)
         };
+        // Rights on a claim there (milestone 25): placing needs the right
+        // for the block placed, chiselling Builder.
+        let rights_here = {
+            let p = self.players.get(&id).ok_or("no such player")?;
+            let shape = self.planets[pi].world.shape;
+            let needed = match action {
+                EditAction::Place { slot, .. } => p
+                    .inventory
+                    .get(slot as usize)
+                    .and_then(|s| self.items.get(s.item))
+                    .and_then(|d| d.block())
+                    .map_or(bm_core::rights::Act::Build, |b| self.act_for_block(pi, b)),
+                EditAction::Chisel { .. } => bm_core::rights::Act::Build,
+            };
+            if shape.contains_y(pos.y) {
+                self.may(pi, shape.wrap_block(pos), &p.account, needed)
+            } else {
+                Ok(())
+            }
+        };
         let planet = &self.planets[pi];
         let world = &planet.world;
         let shape = world.shape;
@@ -2343,11 +2383,7 @@ impl Game {
                 "The ground around a warp shrine cannot be changed".into(),
             ));
         }
-        if let Some(c) = planet.claims.at_block(canon)
-            && c.owner != p.account
-        {
-            return Err(ClaimError::OwnedBy(c.owner_name.clone()).into());
-        }
+        rights_here?;
         let reg = &world.registry;
         match action {
             EditAction::Place { slot, mount } => {
@@ -2572,6 +2608,7 @@ impl Game {
     /// `travel`, facing `yaw` on arriving (None keeps the facing).
     fn travel_facing(&mut self, id: u32, to: usize, arrival: Option<PlayerState>, yaw: Option<f64>) {
         let arrival = arrival.unwrap_or_else(|| self.planets[to].arrival());
+        let claim_views = self.claim_views(to);
         let Some(p) = self.players.get_mut(&id) else { return };
         let from = p.planet;
         p.planet = to;
@@ -2629,7 +2666,7 @@ impl Game {
             planet: planet.info(),
             spawn: arrival,
             tick: self.tick,
-            claims: planet.claims.views(),
+            claims: claim_views,
             yaw,
         })));
 
@@ -2673,6 +2710,9 @@ impl Game {
         }
         self.arrived_in_sky(id);
         self.send_settlements(id);
+        if let Some(account) = self.players.get(&id).map(|p| p.account.clone()) {
+            self.tell_friends_of(&account);
+        }
     }
 
     /// The storage block at `pos` and its slots, if this player may use it
@@ -2691,11 +2731,7 @@ impl Game {
     fn block_access(&self, id: u32, pos: BlockPos) -> Result<(BlockPos, BlockId), Refusal> {
         let (canon, block) = self.block_in_reach(id, pos)?;
         let p = &self.players[&id];
-        if let Some(c) = self.planets[p.planet].claims.at_block(canon)
-            && c.owner != p.account
-        {
-            return Err(ClaimError::OwnedBy(c.owner_name.clone()).into());
-        }
+        self.may(p.planet, canon, &p.account, bm_core::rights::Act::Work)?;
         Ok((canon, block))
     }
 
@@ -2759,7 +2795,7 @@ impl Game {
 
     fn broadcast_claim(&self, pi: usize, claim: u32) {
         if let Some(c) = self.planets[pi].claims.get(claim) {
-            let msg = ServerMsg::Claim(c.view());
+            let msg = ServerMsg::Claim(self.claim_view(c));
             for p in self.players.values().filter(|p| p.planet == pi) {
                 p.out.send(&msg);
             }
@@ -3391,6 +3427,7 @@ impl Game {
             .filter_map(|a| self.discoveries.get(&a).map(|d| (a, d.clone())))
             .collect();
         let settle = self.take_settle_dirty();
+        let (friends, rights) = self.social.take_dirty();
         let batch = WriteBatch {
             chunks,
             far,
@@ -3411,6 +3448,8 @@ impl Game {
             tallies: settle.tallies,
             settlement_names: settle.names,
             footfall: settle.footfall,
+            friends,
+            rights,
             clock: Some(self.tick),
             forget_planets: std::mem::take(&mut self.forget_planets),
             done,

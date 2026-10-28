@@ -3750,6 +3750,99 @@ async fn prestige_makes_a_settlement_that_earns_footfall() {
     server.stop();
 }
 
+/// Milestone 25 part 1: a stranger cannot build on a claim; friends are
+/// asked and accepted; a friend still needs the owner to give them a right;
+/// Builder lets them place there; only the owner removes the claim; ending
+/// the friendship takes the right away.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn friends_build_on_a_claim_only_with_the_right_given() {
+    use bm_core::rights::BUILDER;
+    use bm_protocol::FriendAction;
+    let dir = tempfile::tempdir().unwrap();
+    seed(dir.path(), "Alice", &[(5, "claim_stone", 1, 0)]);
+    seed(dir.path(), "Bob", &[(0, "stone", 10, 0)]);
+    let server = bm_server::start(config(dir.path())).unwrap();
+    let mut alice = TestClient::login(&server, "Alice").await;
+    let mut bob = TestClient::login(&server, "Bob").await;
+    let feet = alice.feet();
+    alice.wait_for_chunk(feet.chunk()).await;
+    bob.wait_for_chunk(feet.chunk()).await;
+    let shape = alice.shape();
+    let half = bm_core::PLOT_SIZE / 2;
+    let side = |v: i64| {
+        if v.rem_euclid(bm_core::PLOT_SIZE) < half { 1 } else { -1 }
+    };
+    let spot = feet.offset(side(feet.x), 0, 0);
+    assert_eq!(PlotPos::of(spot, shape), PlotPos::of(feet, shape));
+    let air = alice.block("air");
+    if alice.block_at(spot) != air {
+        assert!(alice.dig(20, spot).await.0);
+    }
+    assert!(alice.dig(2, feet).await.0);
+    assert!(place(&mut alice, 3, feet, 5, None).await.0);
+    if alice.claim.is_none() {
+        alice.until(|m| matches!(m, ServerMsg::Claim(_))).await;
+    }
+    let claim = alice.claim.as_ref().unwrap().id;
+    bob.settle().await;
+
+    // A stranger: refused.
+    assert!(!place(&mut bob, 1, spot, 0, None).await.0);
+    bob.notice("This land belongs to Alice").await;
+    // Friends, asked and accepted.
+    bob.send(ClientMsg::Friend {
+        name: "alice".into(),
+        action: FriendAction::Ask,
+    })
+    .await;
+    alice.notice("Bob asks to be your friend (O for friends)").await;
+    alice
+        .send(ClientMsg::Friend {
+            name: "Bob".into(),
+            action: FriendAction::Accept,
+        })
+        .await;
+    bob.notice("You and Alice are friends").await;
+    let view = match bob
+        .until(|m| matches!(m, ServerMsg::Friends(f) if !f.friends.is_empty()))
+        .await
+    {
+        ServerMsg::Friends(f) => f,
+        _ => unreachable!(),
+    };
+    assert_eq!(view.friends[0].name, "Alice");
+    assert!(view.friends[0].planet.is_some(), "playing");
+    // A friend without the right: still refused, saying which.
+    assert!(!place(&mut bob, 2, spot, 0, None).await.0);
+    bob.notice("Alice has not given you Builder rights here").await;
+    // Builder, given.
+    alice
+        .send(ClientMsg::SetRights {
+            claim,
+            friend: "Bob".into(),
+            rights: BUILDER,
+        })
+        .await;
+    bob.until(|m| matches!(m, ServerMsg::Claim(c) if c.id == claim && c.rights == vec![("Bob".to_string(), BUILDER)]))
+        .await;
+    assert!(place(&mut bob, 3, spot, 0, None).await.0, "a builder builds");
+    // Only the owner removes the claim.
+    let (broke, _) = bob.dig(4, feet).await;
+    assert!(!broke);
+    bob.notice("Only Alice can remove this claim").await;
+    // No longer friends: no longer a builder.
+    alice
+        .send(ClientMsg::Friend {
+            name: "Bob".into(),
+            action: FriendAction::Remove,
+        })
+        .await;
+    bob.until(|m| matches!(m, ServerMsg::Claim(c) if c.id == claim && c.rights.is_empty()))
+        .await;
+    assert!(!bob.dig(5, spot).await.0, "not a builder any more");
+    server.stop();
+}
+
 /// An item catalogue with a tool no recipe makes: an area tool for every
 /// block (forging, which gives areas in Boundless, does not exist yet).
 fn area_items(dir: &Path) -> std::path::PathBuf {
