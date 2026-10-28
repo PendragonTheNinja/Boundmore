@@ -317,6 +317,16 @@ Boundless's live tree and tables exactly (Nathan, 2026-10-20), in Boundmore's na
 | Lifesaving | back up at 25% health with half the energy spent | **guess** (Boundless: "a health and energy deficit") |
 | Deepwater recipe | grade I flask, 3 rice, a float sac, a bucket of water | **guess** (Boundless's Kraken took event orbs) |
 
+## Coin and trade (M24, `bm-core/src/feats.rs`, `bm-core/src/trade.rs`)
+
+| Number | Value | Source |
+|---|---|---|
+| Feat tiers | 100, 280, 860, 2,560, 7,700 coin | Boundless (wiki Coin) |
+| Feat XP | the tier's coin again | **guess** (not on the wiki) |
+| Starting coin | 500 | Nathan, 2026-10-27 |
+| Sales fee | 10% of each stand or basket sale, paid by the seller, burnt; 7.5% with the Merchant epic | Boundless's tax and Tax Epic; Nathan, 2026-10-28 |
+| Stand and basket slots | 16 | players' reports (**guess**-level, measure K5) |
+
 ## Living worlds (M19, `docs/milestones/19-living-worlds.md`, `bm-worldgen/src/biomes.rs`)
 
 | Value | Now | Source, or guess |

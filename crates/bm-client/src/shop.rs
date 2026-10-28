@@ -112,7 +112,7 @@ mod tests {
             slots,
             prices,
             till: 100,
-            fee_percent: 2,
+            fee_permille: 100,
             closed: false,
         }
     }

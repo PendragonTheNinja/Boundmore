@@ -25,7 +25,7 @@ use glam::DVec3;
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
 
 /// Bump on any change to a message below. Client and server must match.
-pub const PROTOCOL_VERSION: u32 = 44;
+pub const PROTOCOL_VERSION: u32 = 45;
 
 /// QUIC application protocol name; also refuses non-Boundmore peers early.
 pub const ALPN: &[u8] = b"boundmore/1";
@@ -875,8 +875,9 @@ pub struct ShopView {
     /// Coin in it: only its owner is told (0 for everyone else), except a
     /// basket's, which sellers need to see.
     pub till: u64,
-    /// The sales fee, percent.
-    pub fee_percent: u64,
+    /// The viewer's sales fee here, in tenths of a percent (the stand's for a
+    /// buyer, their own for a basket's seller).
+    pub fee_permille: u64,
     /// Gone or out of reach: the window closes.
     pub closed: bool,
 }

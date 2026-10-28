@@ -715,9 +715,22 @@ pub fn shop(
         }
         ui.add_space(4.0);
         ui.label(
-            egui::RichText::new(format!("A {}% sales fee goes to nobody.", v.fee_percent))
-                .color(MUTED)
-                .small(),
+            egui::RichText::new(match v.kind {
+                bm_protocol::ShopKind::Basket => {
+                    format!(
+                        "You pay a {} sales fee on what you sell here.",
+                        permille_text(v.fee_permille)
+                    )
+                }
+                bm_protocol::ShopKind::Stand => {
+                    format!(
+                        "Its owner pays a {} sales fee on each sale.",
+                        permille_text(v.fee_permille)
+                    )
+                }
+            })
+            .color(MUTED)
+            .small(),
         );
     });
     if !open {
@@ -783,6 +796,15 @@ pub fn shop_owner(
                 }
             });
         });
+}
+
+/// "10%", "7.5%".
+pub fn permille_text(p: u64) -> String {
+    if p % 10 == 0 {
+        format!("{}%", p / 10)
+    } else {
+        format!("{}.{}%", p / 10, p % 10)
+    }
 }
 
 /// "1,250 coin".

@@ -5,17 +5,28 @@
 
 use serde::{Deserialize, Serialize};
 
-/// The sales fee on every sale through a stand or basket, paid by the
-/// seller and taken out of the game (Nathan, 2026-10-27: a small fee; 2%
-/// until he picks between it and Boundless's own 10%).
-pub const SALES_FEE_PERCENT: u64 = 2;
+/// The sales fee on every sale through a stand or basket, in tenths of a
+/// percent, paid by the seller and taken out of the game: Boundless's 10%
+/// (Nathan, 2026-10-28), a quarter off for a seller with the Merchant epic
+/// (Boundless's Tax Epic).
+pub const SALES_FEE_PERMILLE: u64 = 100;
+pub const MERCHANT_FEE_PERMILLE: u64 = 75;
+
+/// The fee rate for a seller, in tenths of a percent.
+pub fn fee_permille(merchant: bool) -> u64 {
+    if merchant {
+        MERCHANT_FEE_PERMILLE
+    } else {
+        SALES_FEE_PERMILLE
+    }
+}
 
 /// The fee on a sale of `total` coin, rounded up (any sale pays at least 1).
-pub fn fee(total: u64) -> u64 {
+pub fn fee(total: u64, merchant: bool) -> u64 {
     if total == 0 {
         return 0;
     }
-    total.saturating_mul(SALES_FEE_PERCENT).div_ceil(100).max(1)
+    total.saturating_mul(fee_permille(merchant)).div_ceil(1000).max(1)
 }
 
 /// What a stand or basket keeps beside its slots.
@@ -26,6 +37,10 @@ pub struct ShopRecord {
     /// Coin waiting in it: a stand's takings, or a basket's money to buy
     /// with.
     pub till: u64,
+    /// Its owner had the Merchant epic when they last opened it: its sales
+    /// pay the lower fee (Boundless applied the Tax Epic at a stand once its
+    /// owner revisited it).
+    pub merchant: bool,
 }
 
 impl ShopRecord {
@@ -46,7 +61,7 @@ impl ShopRecord {
 
     /// Nothing to keep: no price and no coin.
     pub fn is_empty(&self) -> bool {
-        self.till == 0 && self.prices.iter().all(|&p| p == 0)
+        self.till == 0 && !self.merchant && self.prices.iter().all(|&p| p == 0)
     }
 }
 
@@ -68,12 +83,14 @@ mod tests {
     use super::*;
 
     #[test]
-    fn the_fee_is_two_percent_rounded_up() {
-        assert_eq!(fee(0), 0);
-        assert_eq!(fee(1), 1);
-        assert_eq!(fee(100), 2);
-        assert_eq!(fee(149), 3);
-        assert_eq!(fee(10_000), 200);
+    fn the_fee_is_ten_percent_and_merchants_pay_three_quarters_of_it() {
+        assert_eq!(fee(0, false), 0);
+        assert_eq!(fee(1, false), 1);
+        assert_eq!(fee(100, false), 10);
+        assert_eq!(fee(149, false), 15);
+        assert_eq!(fee(10_000, false), 1000);
+        assert_eq!(fee(100, true), 8, "7.5 rounded up");
+        assert_eq!(fee(10_000, true), 750);
     }
 
     #[test]

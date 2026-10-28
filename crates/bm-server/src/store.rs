@@ -2867,6 +2867,7 @@ mod tests {
                     Some(bm_core::trade::ShopRecord {
                         prices: vec![0, 25],
                         till: 300,
+                        merchant: true,
                     }),
                 )],
                 clock: Some(777),

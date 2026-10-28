@@ -52,6 +52,14 @@ impl Game {
     fn shop_view(&self, at: &ShopAt, viewer: &str) -> ShopView {
         let rec = self.planets[at.pi].shops.get(at.canon);
         let mine = viewer == at.owner;
+        // Who pays the fee: a stand's owner (at the rate it was last opened
+        // with), or a basket's seller (at their own).
+        let merchant = match at.kind {
+            ShopKind::Stand => rec.merchant,
+            ShopKind::Basket => self
+                .player_by_account(viewer)
+                .is_some_and(|id| self.players[&id].effects.merchant),
+        };
         let slots = self.planets[at.pi].storage.slots(at.canon, at.size);
         ShopView {
             pos: at.canon,
@@ -65,7 +73,7 @@ impl Game {
             } else {
                 0
             },
-            fee_percent: trade::SALES_FEE_PERCENT,
+            fee_permille: trade::fee_permille(merchant),
             closed: false,
         }
     }
@@ -79,7 +87,7 @@ impl Game {
             slots: Vec::new(),
             prices: Vec::new(),
             till: 0,
-            fee_percent: trade::SALES_FEE_PERCENT,
+            fee_permille: trade::SALES_FEE_PERMILLE,
             closed: true,
         })
     }
@@ -96,6 +104,16 @@ impl Game {
         match self.shop_access(id, pos) {
             Ok(at) => {
                 let account = self.players[&id].account.clone();
+                // Its owner's visit applies their Merchant epic (or its loss).
+                if account == at.owner {
+                    let merchant = self.players[&id].effects.merchant;
+                    let shops = &mut self.planets[at.pi].shops;
+                    let mut rec = shops.get(at.canon);
+                    if rec.merchant != merchant {
+                        rec.merchant = merchant;
+                        shops.set(at.canon, rec);
+                    }
+                }
                 let view = self.shop_view(&at, &account);
                 let mine = view.mine;
                 if let Some(p) = self.players.get_mut(&id) {
@@ -240,7 +258,7 @@ impl Game {
             ..stack
         });
         self.planets[at.pi].storage.set(at.canon, slots);
-        let fee = trade::fee(cost);
+        let fee = trade::fee(cost, self.planets[at.pi].shops.get(at.canon).merchant);
         self.ledgers.get_mut(&account).expect("checked").spend(cost);
         let shops = &mut self.planets[at.pi].shops;
         let mut rec: ShopRecord = shops.get(at.canon);
@@ -284,7 +302,7 @@ impl Game {
             }));
         }
         let pay = price * n as u64;
-        let fee = trade::fee(pay);
+        let fee = trade::fee(pay, p.effects.merchant);
         let account = p.account.clone();
         let p = self.players.get_mut(&id).expect("present");
         let before = p.inventory.clone();

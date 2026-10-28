@@ -195,6 +195,8 @@ pub enum Effect {
     /// Provisioner adds to cooking and brewing).
     BrewCrafting,
     BrewCraftingEpic,
+    /// Milestone 24: a quarter off the shop sales fee (Boundless's Tax Epic).
+    TaxEpic,
     /// Milestone 16 part 2: the sowing level (+1 a rank) and its epic (+2,
     /// more yield, stronger fertiliser).
     Farming,
@@ -589,6 +591,8 @@ pub struct Effects {
     pub food_crafting: u8,
     /// Milestone 23 part 2.
     pub brew_crafting: u8,
+    /// Milestone 24: the lower sales fee.
+    pub merchant: bool,
     /// What the brew in effect adds (`Effects::brewed`): damage and action
     /// speed as fractions more, and how much nearer creatures notice you.
     pub brew_damage: f64,
@@ -688,6 +692,7 @@ impl Effects {
                     e.brew_crafting += r;
                 }
                 Effect::BrewCrafting | Effect::BrewCraftingEpic => e.brew_crafting += r,
+                Effect::TaxEpic => e.merchant |= on,
                 Effect::Farming => e.farming += r,
                 Effect::FarmingEpic => {
                     e.farming += 2 * r;

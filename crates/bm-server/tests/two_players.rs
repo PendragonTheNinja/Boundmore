@@ -3431,7 +3431,7 @@ async fn ledger_until(c: &mut TestClient, pred: impl Fn(&bm_core::feats::Ledger)
 
 /// Milestone 24 part 2: Alice stocks and prices a shop stand on her claim;
 /// Bob buys from it (paying the price, the stand's till keeping it less the
-/// 2% fee) and Alice takes the till; Alice's request basket, charged with
+/// 10% fee) and Alice takes the till; Alice's request basket, charged with
 /// coin, buys Bob's stone at its price until its coin runs out; a stand
 /// cannot go outside its owner's claim.
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
@@ -3526,7 +3526,7 @@ async fn shop_stands_sell_and_request_baskets_buy() {
     bob.settle().await;
     assert_eq!(bob.count("stone"), 16, "13 and 3 bought");
     let v = shop_until(&mut alice, stand, |v| v.till > 0).await;
-    assert_eq!(v.till, 150 - 3, "less the 2% fee");
+    assert_eq!(v.till, 150 - 15, "less the 10% fee");
     alice
         .send(ClientMsg::Shop {
             pos: stand,
@@ -3534,7 +3534,7 @@ async fn shop_stands_sell_and_request_baskets_buy() {
         })
         .await;
     let l = ledger_until(&mut alice, |l| l.coin > STARTING_COIN).await;
-    assert_eq!(l.coin, STARTING_COIN + 147);
+    assert_eq!(l.coin, STARTING_COIN + 135);
     // Bob may not set prices or take the till.
     bob.send(ClientMsg::Shop {
         pos: stand,
@@ -3579,7 +3579,7 @@ async fn shop_stands_sell_and_request_baskets_buy() {
     let v = shop_until(&mut bob, basket, |v| v.till == 0).await;
     assert_eq!(v.slots[0].unwrap().count, 11, "ten bought, as far as its coin went");
     let l = ledger_until(&mut bob, |l| l.coin > STARTING_COIN - 150).await;
-    assert_eq!(l.coin, STARTING_COIN - 150 + 98, "100 less the 2% fee");
+    assert_eq!(l.coin, STARTING_COIN - 150 + 90, "100 less the 10% fee");
     assert_eq!(l.count("basket_sold"), 1);
     bob.settle().await;
     assert_eq!(bob.count("stone"), 6);

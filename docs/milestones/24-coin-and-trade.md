@@ -53,7 +53,13 @@ From Boundless (`docs/research/prestige-and-settlements.md`): **prestige** is a 
 
 What Boundless never published (its "secret formula"): the real prestige behind each block's value (the data has only a rank, 0 to 26, which the research maps to Boundmore's blocks), and the curves for its rules: repeating one kind of block counts less and less, a spread of kinds counts more, solid-packed plots count less, colours from other worlds and a variety of chisel shapes add a bonus. It promised that adding a block, chiselling or adding a plot never lowers prestige.
 
-### Decisions for Nathan
+### Decided (Nathan, 2026-10-28)
+
+- **Prestige is Boundless-like** (Decision 14, the recommended formula): placed blocks only, each by its rank's points, repeats of one kind counting less, variety and chisel shapes adding, never lowered by adding.
+- **Footfall as Boundless's** (Decision 15), **wardens by most prestige and capitals** (Decision 17), and Boundless's joining rule with roads (Decision 16, the default; he was not asked).
+- **The sales fee is Boundless's 10%** (Decision 18), and the Merchant epic (Boundless's Tax Epic) takes a quarter off it for a seller who has it, applied at a stand once its owner visits it with the epic (as in Boundless).
+
+### Decisions for Nathan (as asked)
 
 14. **The prestige formula.** Boundless's is secret, so Boundmore's must be its own. Recommended: each block's research rank turned into points (rank 1 = 1 point, doubling about every 4 ranks, so a rank 24 coil is about 60), each kind of block giving full points for its first 100 and less after (square root), a variety bonus for the number of different kinds, a chisel bonus for the number of different shapes, and **only placed blocks counting** (untouched ground gives nothing, as players found); never lowered by adding. Or: something simpler (placed blocks' points only).
 15. **Footfall as Boundless's** (above: per-visitor once a day, doubled when fresh, falling for repeats, stepped down when busy), recommended; or a simpler flat once-a-day amount.
@@ -85,5 +91,5 @@ Guilds, mail, sovereign worlds, a premium currency (Boundless's cubits), NPC tra
 - Screenshots (2026-10-27): `docs/media/m24-shop.jpg`, `m24-basket.jpg`, `m24-feats.jpg` (`--demo-ui shop|basket|feats`). Fixed the same day: a character's current level was not counted until their next level-up (now counted on joining).
 - [x] An away owner's sales and fees are counted and paid when they next join (`Ledger::note`, 2026-10-28).
 - [ ] Part 2, left: the stand's and basket's own art.
-- [x] Part 4 researched and specced (2026-10-28); **waiting on Nathan's answers to Decisions 14 to 18**
+- [x] Part 4 researched and specced (2026-10-28); decided the same day
 - [ ] Part 4, footfall (with prestige and settlements)

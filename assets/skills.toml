@@ -525,8 +525,8 @@ name = "Merchant"
 category = "epic2"
 ranks = 1
 cost = 5
-effect = "later"
-text = "Lower shop tax (comes with shops)"
+effect = "tax_epic"
+text = "A quarter off the sales fee on what you sell; open your stands to apply it to them"
 
 [[skill]]
 id = "forging_epic"

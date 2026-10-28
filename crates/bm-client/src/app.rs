@@ -3077,7 +3077,7 @@ impl App {
                         ],
                         prices: vec![if basket { 30 } else { 4 }, 25],
                         till: if basket { 900 } else { 0 },
-                        fee_percent: bm_core::trade::SALES_FEE_PERCENT,
+                        fee_permille: bm_core::trade::SALES_FEE_PERMILLE,
                         closed: false,
                     });
                     if screen == "feats" {
