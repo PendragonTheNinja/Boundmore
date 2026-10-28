@@ -10,9 +10,11 @@
 //! player has not discovered before sending (`Tile::frame_for`).
 
 use crate::store::Store;
-use bm_core::atlas::{FOG, TILE_BLOCKS, TILE_PIXELS, map_pixels, pixel_column, shade};
+use bm_core::atlas::{
+    FOG, HEAT_CELL, HEAT_HIDDEN, TILE_BLOCKS, TILE_PIXELS, heat_band, heat_side, map_pixels, pixel_column, shade,
+};
 use bm_core::regions::RegionMap;
-use bm_core::{BlockRegistry, CHUNK_SIZE, Chunk, ChunkPos, ColourPalette, LocalPos, PlanetShape};
+use bm_core::{BlockRegistry, CHUNK_SIZE, Chunk, ChunkPos, ColourPalette, ItemId, LocalPos, PlanetShape};
 use bm_protocol::ServerMsg;
 use bm_worldgen::Generator;
 use crossbeam_channel::{Receiver, Sender};
@@ -46,6 +48,33 @@ impl Tile {
         }
         let rgb = lz4_flex::compress_prepend_size(&bytes);
         Some(bm_protocol::encode_frame(&ServerMsg::AtlasTile { planet, tile, rgb }))
+    }
+}
+
+/// One resource's heat map (part 2): its band per cell and each cell's
+/// region.
+pub struct Heat {
+    pub side: usize,
+    pub bands: Vec<u8>,
+    pub region: Vec<u16>,
+}
+
+impl Heat {
+    /// The heat map as one player may see it: cells in regions they have
+    /// not discovered are hidden.
+    pub fn frame_for(&self, planet: u16, item: ItemId, discovered: &[u16]) -> Vec<u8> {
+        let bands: Vec<u8> = self
+            .bands
+            .iter()
+            .zip(&self.region)
+            .map(|(&b, r)| if discovered.contains(r) { b } else { HEAT_HIDDEN })
+            .collect();
+        bm_protocol::encode_frame(&ServerMsg::AtlasHeat {
+            planet,
+            item: Some(item),
+            side: self.side as u16,
+            bands: lz4_flex::compress_prepend_size(&bands),
+        })
     }
 }
 
@@ -95,6 +124,10 @@ pub struct AtlasStore {
     done: Receiver<Built>,
     /// Tiles drawn again since `take_changed`.
     changed: Vec<(u16, u16)>,
+    heats: HashMap<ItemId, Arc<Heat>>,
+    heat_in_flight: HashSet<ItemId>,
+    heat_tx: Sender<(ItemId, Heat)>,
+    heat_done: Receiver<(ItemId, Heat)>,
     last_used: u64,
 }
 
@@ -110,7 +143,12 @@ impl AtlasStore {
             sea: generator.config().sea_level,
         };
         let (done_tx, done) = crossbeam_channel::unbounded();
+        let (heat_tx, heat_done) = crossbeam_channel::unbounded();
         Self {
+            heats: HashMap::new(),
+            heat_in_flight: HashSet::new(),
+            heat_tx,
+            heat_done,
             planet,
             shape: generator.shape(),
             generator,
@@ -184,8 +222,32 @@ impl AtlasStore {
         });
     }
 
+    pub fn heat(&self, item: ItemId) -> Option<&Arc<Heat>> {
+        self.heats.get(&item)
+    }
+
+    pub fn heat_building(&self, item: ItemId) -> bool {
+        self.heat_in_flight.contains(&item)
+    }
+
+    /// Works out `item`'s heat map on the worker pool from where the
+    /// generator puts `sources` (the blocks that drop it).
+    pub fn request_heat(&mut self, item: ItemId, sources: Vec<bm_core::BlockId>, regions: RegionMap) {
+        if self.heats.contains_key(&item) || !self.heat_in_flight.insert(item) {
+            return;
+        }
+        let (shape, g, tx) = (self.shape, self.generator.clone(), self.heat_tx.clone());
+        rayon::spawn(move || {
+            let _ = tx.send((item, heat(shape, &sources, &regions, &g)));
+        });
+    }
+
     /// Takes finished tiles in.
     pub fn receive(&mut self) {
+        while let Ok((item, h)) = self.heat_done.try_recv() {
+            self.heat_in_flight.remove(&item);
+            self.heats.insert(item, Arc::new(h));
+        }
         while let Ok(b) = self.done.try_recv() {
             self.in_flight.remove(&b.tile);
             if b.version != self.versions.get(&b.tile).copied().unwrap_or(0) {
@@ -239,11 +301,46 @@ impl AtlasStore {
         } else if !self.tiles.is_empty() && tick.saturating_sub(self.last_used) > idle_ticks {
             self.tiles.clear();
             self.stale.clear();
+            self.heats.clear();
         }
     }
 
     pub fn held(&self) -> usize {
         self.tiles.len()
+    }
+}
+
+/// A resource's heat map: each cell's density from four columns in it,
+/// banded against the world's richest cell.
+fn heat(shape: PlanetShape, sources: &[bm_core::BlockId], regions: &RegionMap, g: &Generator) -> Heat {
+    use rayon::prelude::*;
+    let side = heat_side(shape);
+    let q = HEAT_CELL / 4;
+    let values: Vec<f64> = (0..side * side)
+        .into_par_iter()
+        .map(|i| {
+            let (x0, z0) = ((i % side) as i64 * HEAT_CELL, (i / side) as i64 * HEAT_CELL);
+            [(q, q), (3 * q, q), (q, 3 * q), (3 * q, 3 * q)]
+                .iter()
+                .map(|&(dx, dz)| g.density(sources, x0 + dx, z0 + dz))
+                .sum()
+        })
+        .collect();
+    let max = values.iter().copied().fold(0.0, f64::max);
+    let region = (0..side * side)
+        .map(|i| {
+            let half = HEAT_CELL as f64 / 2.0;
+            let (x, z) = (
+                (i % side) as f64 * HEAT_CELL as f64 + half,
+                (i / side) as f64 * HEAT_CELL as f64 + half,
+            );
+            regions.locate(x, z) as u16
+        })
+        .collect();
+    Heat {
+        side,
+        bands: values.iter().map(|&v| heat_band(v, max)).collect(),
+        region,
     }
 }
 

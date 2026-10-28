@@ -7920,7 +7920,7 @@ async fn an_atlas_maps_what_was_discovered_and_nothing_else() {
     use bm_core::atlas;
     use bm_core::regions::{RegionMap, layout_seed};
     let dir = tempfile::tempdir().unwrap();
-    seed(dir.path(), "Alice", &[(1, "atlas", 1, 0)]);
+    seed(dir.path(), "Alice", &[(1, "atlas", 1, 0), (2, "copper_ore", 3, 0)]);
     let mut cfg = config(dir.path());
     // Three regions a side, so most of the planet is undiscovered.
     cfg.planets = vec![PlanetSpec::new("Testworld", "temperate", 7, 48)];
@@ -8003,6 +8003,46 @@ async fn an_atlas_maps_what_was_discovered_and_nothing_else() {
     alice
         .until(|m| matches!(m, ServerMsg::AtlasTile { tile, .. } if *tile == (tx, tz)))
         .await;
+
+    // Part 2: copper in the atlas shows where copper lies, in her region
+    // only; taken out, the ore comes back and the heat map clears.
+    let copper = alice.item("copper_ore");
+    alice.send(ClientMsg::AtlasLoad { slot: 1, from: Some(2) }).await;
+    let ServerMsg::AtlasHeat { item, side, bands, .. } = alice
+        .until(|m| matches!(m, ServerMsg::AtlasHeat { item: Some(_), .. }))
+        .await
+    else {
+        unreachable!()
+    };
+    assert_eq!(item, Some(copper));
+    assert_eq!(alice.count("copper_ore"), 2, "one went into the atlas");
+    assert_eq!(atlas::loaded(stack(&alice, 1).unwrap().tag), Some(copper));
+    let bands = lz4_flex::decompress_size_prepended(&bands).unwrap();
+    assert_eq!(side as usize, atlas::heat_side(shape));
+    assert_eq!(bands.len(), (side as usize).pow(2));
+    let cell = atlas::HEAT_CELL as f64;
+    let mut found = 0;
+    for (i, &b) in bands.iter().enumerate() {
+        let (x, z) = (
+            (i % side as usize) as f64 * cell + cell / 2.0,
+            (i / side as usize) as f64 * cell + cell / 2.0,
+        );
+        let mine = regions.locate(x, z) as u16 == home;
+        assert_eq!(b == atlas::HEAT_HIDDEN, !mine, "cell {i}");
+        if mine && b > 0 {
+            assert!(b <= 4);
+            found += 1;
+        }
+    }
+    assert!(found > 0, "copper somewhere in her region");
+    alice.send(ClientMsg::AtlasLoad { slot: 1, from: None }).await;
+    alice
+        .until(|m| matches!(m, ServerMsg::AtlasHeat { item: None, .. }))
+        .await;
+    alice.settle().await;
+    assert_eq!(alice.count("copper_ore"), 3, "and came back out");
+    assert_eq!(atlas::loaded(stack(&alice, 1).unwrap().tag), None);
+    assert_eq!(atlas::bound(stack(&alice, 1).unwrap().tag), Some(0), "still bound");
 
     alice.send(ClientMsg::OpenAtlas { slot: None }).await;
     server.stop();

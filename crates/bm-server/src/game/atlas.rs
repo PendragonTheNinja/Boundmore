@@ -15,6 +15,10 @@ pub(super) struct OpenAtlas {
     pub planet: u16,
     /// Tiles sent (or found to hold nothing of theirs to see).
     pub sent: HashSet<(u16, u16)>,
+    /// The resource loaded in it (part 2), and whether its heat map (or its
+    /// clearing) has been sent.
+    pub heat: Option<ItemId>,
+    pub heat_sent: bool,
 }
 
 /// Tile jobs running at once, over every planet.
@@ -66,6 +70,7 @@ impl Game {
             return;
         };
         let account = p.account.clone();
+        let loaded = p.inventory.get(slot as usize).and_then(|s| atlas::loaded(s.tag));
         let view = self.atlas_view(pi, &account, slot, false);
         let Some(p) = self.players.get_mut(&id) else { return };
         p.out.send(&ServerMsg::Atlas(view));
@@ -73,6 +78,8 @@ impl Game {
             slot,
             planet,
             sent: HashSet::new(),
+            heat: loaded,
+            heat_sent: false,
         });
     }
 
@@ -110,6 +117,7 @@ impl Game {
             p.out.send(&ServerMsg::Atlas(view));
             if let Some(a) = p.atlas.as_mut() {
                 a.sent.clear();
+                a.heat_sent = false;
             }
         }
     }
@@ -156,6 +164,9 @@ impl Game {
                 } else {
                     self.planets[pi].atlas.drop_tile(tile);
                 }
+            }
+            for &id in &viewers {
+                self.send_heat(pi, id, &mut running);
             }
             for id in viewers {
                 let wanted = self.wanted_tiles(pi, &self.players[&id].account);
@@ -229,6 +240,120 @@ impl Game {
         }
         // Nearest the discovered centres first: the order they were added.
         out
+    }
+
+    /// Sends a viewer the heat map of what their atlas holds, once it is
+    /// worked out (or that it holds nothing).
+    fn send_heat(&mut self, pi: usize, id: u32, running: &mut usize) {
+        let planet = self.planets[pi].id;
+        let Some(a) = self.players[&id].atlas.as_ref().filter(|a| !a.heat_sent) else {
+            return;
+        };
+        let Some(item) = a.heat else {
+            let p = self.players.get_mut(&id).expect("a viewer");
+            p.out.send(&ServerMsg::AtlasHeat {
+                planet,
+                item: None,
+                side: 0,
+                bands: Vec::new(),
+            });
+            p.atlas.as_mut().expect("checked").heat_sent = true;
+            return;
+        };
+        match self.planets[pi].atlas.heat(item).cloned() {
+            Some(h) => {
+                let discovered = self.discovered_on(&self.players[&id].account, planet);
+                let frame = h.frame_for(planet, item, &discovered);
+                self.stats.bytes_sent += frame.len() as u64;
+                let p = self.players.get_mut(&id).expect("a viewer");
+                p.out.send_shared(Arc::new(frame));
+                p.atlas.as_mut().expect("checked").heat_sent = true;
+            }
+            None => {
+                if *running < ATLAS_JOBS && !self.planets[pi].atlas.heat_building(item) {
+                    let sources: Vec<BlockId> = self.planets[pi]
+                        .world
+                        .registry
+                        .iter()
+                        .map(|(b, _)| b)
+                        .filter(|&b| self.items.drop_of(b) == Some(item))
+                        .collect();
+                    let regions = self.skies[pi].regions.clone();
+                    self.planets[pi].atlas.request_heat(item, sources, regions);
+                    *running += 1;
+                }
+            }
+        }
+    }
+
+    /// `ClientMsg::AtlasLoad`: one of what is in `from` goes into the atlas
+    /// in `slot` (what it held comes back), or what it holds comes out.
+    pub(super) fn atlas_load(&mut self, id: u32, slot: u8, from: Option<u8>) {
+        let Some(p) = self.players.get(&id) else { return };
+        let Some(atlas_stack) = p.inventory.get(slot as usize) else {
+            return;
+        };
+        if !self
+            .items
+            .get(atlas_stack.item)
+            .is_some_and(|d| matches!(d.kind, ItemKind::Atlas))
+        {
+            return;
+        }
+        let held = atlas::loaded(atlas_stack.tag);
+        let incoming = match from {
+            Some(f) => {
+                let Some(s) = p.inventory.get(f as usize).filter(|_| f != slot) else {
+                    return;
+                };
+                if s.colour != Colour::NATURAL {
+                    self.notice(id, "An atlas only takes a resource in its natural colour");
+                    return;
+                }
+                if !self.loadable(s.item) {
+                    self.notice(
+                        id,
+                        "An atlas cannot find that: put in an ore, a gem or something gathered",
+                    );
+                    return;
+                }
+                Some(s.item)
+            }
+            None => None,
+        };
+        if held.is_none() && incoming.is_none() {
+            return;
+        }
+        let p = self.players.get_mut(&id).expect("checked");
+        let before = p.inventory.clone();
+        if let (Some(f), Some(_)) = (from, incoming) {
+            p.inventory.take_one(f as usize);
+        }
+        if let Some(old) = held
+            && p.inventory.add(&self.items, old, 1) > 0
+        {
+            p.inventory = before;
+            self.notice(id, "Your inventory is full");
+            return;
+        }
+        if let Some(s) = p.inventory.slots[slot as usize].as_mut() {
+            s.tag = atlas::pack(atlas::bound(s.tag), incoming);
+        }
+        send_slots(p, &before);
+        if let Some(a) = p.atlas.as_mut().filter(|a| a.slot == slot) {
+            a.heat = incoming;
+            a.heat_sent = false;
+        }
+    }
+
+    /// Whether an atlas can show where `item` lies: some block drops it.
+    fn loadable(&self, item: ItemId) -> bool {
+        self.planets.first().is_some_and(|w| {
+            w.world
+                .registry
+                .iter()
+                .any(|(b, d)| atlas::finds(d) && self.items.drop_of(b) == Some(item))
+        })
     }
 
     fn draw_tile(&mut self, pi: usize, tile: (u16, u16)) {

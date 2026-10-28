@@ -23,6 +23,31 @@ pub const TILE_BLOCKS: i64 = TILE_PIXELS as i64 * BLOCKS_PER_PIXEL;
 /// this value ([`shade`] keeps every channel at 1 or more).
 pub const FOG: [u8; 3] = [0, 0, 0];
 
+/// Blocks along each side of one heat map cell (part 2).
+pub const HEAT_CELL: i64 = 16;
+/// A heat map cell in a region not discovered.
+pub const HEAT_HIDDEN: u8 = 255;
+
+/// Cells along each side of a planet's heat map.
+pub fn heat_side(shape: PlanetShape) -> usize {
+    (shape.width_blocks() / HEAT_CELL) as usize
+}
+
+/// The band (1 to 4, 0 for none) of a cell holding `v` on a world whose
+/// richest cell holds `max`.
+pub fn heat_band(v: f64, max: f64) -> u8 {
+    if v <= 0.0 || max <= 0.0 {
+        return 0;
+    }
+    1 + ((v / max * 4.0) as u8).min(3)
+}
+
+/// Whether an atlas can find what `def` drops: seams (ores, gems, fossils)
+/// and gathered plants, whose places the generator can estimate.
+pub fn finds(def: &crate::BlockDef) -> bool {
+    matches!(def.health, crate::block::Health::Seam | crate::block::Health::Plant)
+}
+
 /// Pixels along each side of the map of a planet.
 pub fn map_pixels(shape: PlanetShape) -> usize {
     (shape.width_blocks() / BLOCKS_PER_PIXEL) as usize

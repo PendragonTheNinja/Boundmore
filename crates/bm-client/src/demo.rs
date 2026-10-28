@@ -1088,26 +1088,87 @@ impl Demo {
     /// fogged as the server fogs it.
     pub fn show_atlas(&mut self) {
         let before = self.inv.clone();
-        self.inv.slots[9] = Some(ItemStack::new(self.items.id("atlas").expect("builtin item"), 1));
+        let copper = self.items.id("copper_ore").expect("builtin item");
+        let mut atlas = ItemStack::new(self.items.id("atlas").expect("builtin item"), 1);
+        atlas.tag = bm_core::atlas::pack(None, Some(copper));
+        self.inv.slots[9] = Some(atlas);
+        self.inv.slots[8] = Some(ItemStack::new(self.items.id("iron_ore").expect("builtin item"), 5));
         self.slots_since(&before);
     }
 
-    fn open_atlas(&mut self, slot: u8) {
-        use bm_core::atlas;
-        let here = self.planets[self.here].info.clone();
+    /// The demo atlas's world: its shape, regions and the ones discovered.
+    fn atlas_world(&self) -> (PlanetShape, bm_core::regions::RegionMap, u64, Vec<u16>) {
+        let here = &self.planets[self.here].info;
         let shape = PlanetShape::new(48, SHAPE.1);
         let seed = bm_core::regions::layout_seed(&here.name, shape);
         let map = bm_core::regions::RegionMap::new(shape, seed);
-        let lands = vec![bm_core::regions::LandClass::Plain; map.len()];
-        let names = bm_core::regions::RegionNames::builtin().name_all("temperate", &lands, seed);
         let home = map.locate(SPAWN[0], SPAWN[2]);
         let mut discovered = vec![home as u16];
         let [hx, hz] = map.centre(home);
         let mut others: Vec<usize> = (0..map.len()).filter(|&r| r != home).collect();
         others.sort_by(|&a, &b| map.distance(a, hx, hz).total_cmp(&map.distance(b, hx, hz)));
         discovered.extend(others.iter().take(2).map(|&r| r as u16));
+        (shape, map, seed, discovered)
+    }
+
+    /// A fixture heat map for the demo atlas: bands from a pattern, hidden
+    /// outside the discovered regions (as the server hides them).
+    fn atlas_heat(&mut self, item: Option<bm_core::ItemId>) {
+        use bm_core::atlas;
+        let (shape, map, _, discovered) = self.atlas_world();
+        let side = atlas::heat_side(shape);
+        let k = item.map_or(0.0, |i| i.0 as f64 * 0.37);
+        let bands: Vec<u8> = (0..side * side)
+            .map(|i| {
+                let (x, z) = ((i % side) as f64, (i / side) as f64);
+                let c = atlas::HEAT_CELL as f64;
+                if !discovered.contains(&(map.locate(x * c + c / 2.0, z * c + c / 2.0) as u16)) {
+                    return atlas::HEAT_HIDDEN;
+                }
+                let tau = std::f64::consts::TAU / side as f64;
+                let v =
+                    (x * tau * 3.0 + k).sin() * (z * tau * 4.0 - k).cos() + (x * tau * 7.0 + z * tau * 5.0).sin() * 0.4;
+                atlas::heat_band(v - 0.2, 1.2)
+            })
+            .collect();
+        self.events.push_back(NetEvent::Msg(ServerMsg::AtlasHeat {
+            planet: self.planets[self.here].info.id,
+            item,
+            side: side as u16,
+            bands: if item.is_some() {
+                lz4_flex::compress_prepend_size(&bands)
+            } else {
+                Vec::new()
+            },
+        }));
+    }
+
+    fn atlas_load(&mut self, slot: u8, from: Option<u8>) {
+        let Some(tag) = self.inv.slots[slot as usize].map(|s| s.tag) else {
+            return;
+        };
+        let before = self.inv.clone();
+        if let Some(old) = bm_core::atlas::loaded(tag) {
+            self.inv.add(&self.items, old, 1);
+        }
+        let incoming = from.and_then(|f| self.inv.take_one(f as usize)).map(|s| s.item);
         if let Some(s) = self.inv.slots[slot as usize].as_mut() {
-            s.tag = atlas::pack(Some(here.id), None);
+            s.tag = bm_core::atlas::pack(bm_core::atlas::bound(tag), incoming);
+        }
+        self.slots_since(&before);
+        self.atlas_heat(incoming);
+    }
+
+    fn open_atlas(&mut self, slot: u8) {
+        use bm_core::atlas;
+        let here = self.planets[self.here].info.clone();
+        let (shape, map, seed, discovered) = self.atlas_world();
+        let lands = vec![bm_core::regions::LandClass::Plain; map.len()];
+        let names = bm_core::regions::RegionNames::builtin().name_all("temperate", &lands, seed);
+        let mut loaded = None;
+        if let Some(s) = self.inv.slots[slot as usize].as_mut() {
+            loaded = atlas::loaded(s.tag);
+            s.tag = atlas::pack(Some(here.id), loaded);
         }
         let changes = vec![(slot, self.inv.slots[slot as usize])];
         self.events.push_back(NetEvent::Msg(ServerMsg::Slots { changes }));
@@ -1180,6 +1241,9 @@ impl Demo {
                     rgb: lz4_flex::compress_prepend_size(&px),
                 }));
             }
+        }
+        if loaded.is_some() {
+            self.atlas_heat(loaded);
         }
     }
 
@@ -1922,6 +1986,7 @@ impl Demo {
             ClientMsg::Loot { creature } => self.loot(creature),
             ClientMsg::Eat { slot, .. } => self.eat(slot),
             ClientMsg::OpenAtlas { slot: Some(slot) } => self.open_atlas(slot),
+            ClientMsg::AtlasLoad { slot, from } => self.atlas_load(slot, from),
             ClientMsg::LookCrop { pos } => self.look_crop(pos),
             ClientMsg::ForgeBegin { pos, gear, deck } => self.forge_begin(pos, gear, deck),
             ClientMsg::ForgeUse { pos, slot, round } => self.forge_use(pos, slot, round),

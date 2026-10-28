@@ -1219,6 +1219,7 @@ impl Game {
                 ClientMsg::OpenStorage { pos } => self.open_storage(id, pos),
                 ClientMsg::OpenShop { pos } => self.open_shop(id, pos),
                 ClientMsg::OpenAtlas { slot } => self.open_atlas(id, slot),
+                ClientMsg::AtlasLoad { slot, from } => self.atlas_load(id, slot, from),
                 ClientMsg::Shop { pos, action } => self.shop_action(id, pos, action),
                 ClientMsg::StorageMove { pos, from, to, count } => self.storage_move(id, pos, from, to, count),
                 ClientMsg::Chat { channel, text } => self.chat(id, channel, text),

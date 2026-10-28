@@ -1727,6 +1727,17 @@ impl App {
                 }
                 return;
             }
+            ServerMsg::AtlasHeat {
+                planet,
+                item,
+                side,
+                bands,
+            } => {
+                if let Some(a) = &mut self.atlas {
+                    a.heat(planet, item, side, &bands);
+                }
+                return;
+            }
             ServerMsg::Helix(view) => {
                 if view.closed {
                     if self.menu == Some(Menu::Helix(view.pos)) {
@@ -1786,7 +1797,7 @@ impl App {
         let Some(s) = &mut self.session else { return };
         match m {
             // Handled above.
-            ServerMsg::Atlas(_) | ServerMsg::AtlasTile { .. } => {}
+            ServerMsg::Atlas(_) | ServerMsg::AtlasTile { .. } | ServerMsg::AtlasHeat { .. } => {}
             // Milestone 17: a session of ours ended.
             ServerMsg::Creative { at, on } => s.creative(at, on),
             ServerMsg::GuildBody {
@@ -2802,8 +2813,33 @@ impl App {
                     }
                 }
                 Some(Menu::Feats) => menus::feats(&ctx, &FEAT_BOOK, s.ledger.as_ref(), &mut actions),
-                Some(Menu::Atlas(_)) => match atlas.as_mut() {
+                Some(Menu::Atlas(slot)) => match atlas.as_mut() {
                     Some(a) => {
+                        let name = |i: ItemId| s.items.registry.get(i).map_or_else(String::new, |d| d.display.clone());
+                        let loaded = s
+                            .items
+                            .slot(slot as usize)
+                            .and_then(|st| bm_core::atlas::loaded(st.tag))
+                            .map(name);
+                        // What an atlas can find: whatever some block drops.
+                        let found: std::collections::HashSet<ItemId> = s
+                            .world
+                            .registry
+                            .iter()
+                            .filter(|(_, d)| bm_core::atlas::finds(d))
+                            .filter_map(|(b, _)| s.items.registry.drop_of(b))
+                            .collect();
+                        let mut loadable: Vec<(u8, String)> = Vec::new();
+                        for i in 0..bm_core::INVENTORY_SLOTS {
+                            if let Some(st) = s.items.slot(i)
+                                && i != slot as usize
+                                && st.colour == Colour::NATURAL
+                                && found.contains(&st.item)
+                                && !loadable.iter().any(|(_, n)| *n == name(st.item))
+                            {
+                                loadable.push((i as u8, name(st.item)));
+                            }
+                        }
                         let here = crate::atlas::Here {
                             planet: s.planet.id,
                             pos: [s.me.state.pos.x, s.me.state.pos.z],
@@ -2811,6 +2847,8 @@ impl App {
                             account: &s.account,
                             claims: s.claims.iter().collect(),
                             settlements: s.claims.settlements(),
+                            loaded,
+                            loadable,
                         };
                         a.show(&ctx, &here, &mut actions);
                     }

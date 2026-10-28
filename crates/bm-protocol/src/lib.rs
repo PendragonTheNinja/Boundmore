@@ -16,7 +16,7 @@
 //! decoders bound sizes, and the server validates content.
 
 use bm_core::{
-    BlockDef, BlockPos, BlockState, ChunkPos, ColourPalette, DayCycle, Inventory, ItemDef, ItemStack, Mount,
+    BlockDef, BlockPos, BlockState, ChunkPos, ColourPalette, DayCycle, Inventory, ItemDef, ItemId, ItemStack, Mount,
     MoveConfig, PlanetLook, PlanetShape, PlayerInput, PlayerState, PlotPos, Recipe, Station,
     creatures::CreatureDef,
     skills::{Character, SkillDef},
@@ -25,7 +25,7 @@ use glam::DVec3;
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
 
 /// Bump on any change to a message below. Client and server must match.
-pub const PROTOCOL_VERSION: u32 = 54;
+pub const PROTOCOL_VERSION: u32 = 55;
 
 /// QUIC application protocol name; also refuses non-Boundmore peers early.
 pub const ALPN: &[u8] = b"boundmore/1";
@@ -151,6 +151,11 @@ pub enum ClientMsg {
     /// (milestone 27). Answered with `Atlas` and the discovered tiles
     /// (`AtlasTile`), sent again as they change while it is open.
     OpenAtlas { slot: Option<u8> },
+    /// Put one of what is in inventory slot `from` into the atlas in `slot`
+    /// (giving back what it held), or take what it holds out (`from` None).
+    /// An open atlas is then sent the heat map of what it holds
+    /// (`AtlasHeat`).
+    AtlasLoad { slot: u8, from: Option<u8> },
     /// Ask, accept, decline or end a friendship with the player of this
     /// name (milestone 25). Answered with `Friends`.
     Friend { name: String, action: FriendAction },
@@ -591,6 +596,16 @@ pub enum ServerMsg {
         planet: u16,
         tile: (u16, u16),
         rgb: Vec<u8>,
+    },
+    /// The open atlas's heat map of `item` (milestone 27 part 2): one byte
+    /// a cell of `atlas::HEAT_CELL` blocks, `side` cells a side, row by row,
+    /// lz4-compressed: 0 none, 1 to 4 more and more, `atlas::HEAT_HIDDEN`
+    /// in regions not discovered. `item` None clears it.
+    AtlasHeat {
+        planet: u16,
+        item: Option<ItemId>,
+        side: u16,
+        bands: Vec<u8>,
     },
     /// This player's friends and requests (milestone 25), on joining and on
     /// every change.

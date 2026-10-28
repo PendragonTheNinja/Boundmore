@@ -3,13 +3,14 @@
 //! not been. The map wraps as the planet does, so it pans forever.
 
 use crate::menus::{GOLD, MUTED, TEXT, UiAction, window};
+use bm_core::ItemId;
 use bm_core::atlas::{BLOCKS_PER_PIXEL, FOG, TILE_PIXELS, map_pixels};
 use bm_core::regions::RegionMap;
 use bm_protocol::{AtlasView, ClaimView, SettlementView};
 use egui::{Align2, Color32, FontId, Pos2, Rect, Sense, Stroke, Vec2, pos2, vec2};
 
 /// The map's side on screen, in points.
-const CANVAS: f32 = 560.0;
+const CANVAS: f32 = 500.0;
 /// Screen points per map pixel at the closer zoom steps (the widest fits
 /// the whole planet); the closest shows one point a block.
 const STEPS: [f32; 3] = [1.0, 2.0, 4.0];
@@ -17,6 +18,9 @@ const STEPS: [f32; 3] = [1.0, 2.0, 4.0];
 const FOG_COLOUR: [u8; 3] = [46, 50, 64];
 const MINE: Color32 = Color32::from_rgba_premultiplied(150, 110, 40, 150);
 const THEIRS: Color32 = Color32::from_rgba_premultiplied(110, 120, 150, 120);
+/// Heat map bands 1 to 4, little to much (Boundmore's colours).
+const BANDS: [[u8; 3]; 4] = [[84, 40, 132], [40, 186, 206], [242, 172, 46], [255, 250, 232]];
+const BAND_ALPHA: u8 = 175;
 
 /// What the window needs from the world around it.
 pub struct Here<'a> {
@@ -28,6 +32,16 @@ pub struct Here<'a> {
     pub account: &'a str,
     pub claims: Vec<&'a ClaimView>,
     pub settlements: &'a [SettlementView],
+    /// The resource the atlas holds, by name.
+    pub loaded: Option<String>,
+    /// Inventory slots holding something an atlas can show, with its name.
+    pub loadable: Vec<(u8, String)>,
+}
+
+/// A heat map from the server.
+struct HeatMap {
+    side: usize,
+    bands: Vec<u8>,
 }
 
 pub struct AtlasMap {
@@ -44,6 +58,9 @@ pub struct AtlasMap {
     scale: f32,
     /// Centred on us until panned.
     follow: bool,
+    heat: Option<HeatMap>,
+    heat_texture: Option<egui::TextureHandle>,
+    heat_dirty: bool,
 }
 
 impl AtlasMap {
@@ -58,6 +75,9 @@ impl AtlasMap {
             centre: vec2(n as f32 / 2.0, n as f32 / 2.0),
             scale: 0.0,
             follow: true,
+            heat: None,
+            heat_texture: None,
+            heat_dirty: false,
             view,
         }
     }
@@ -91,6 +111,51 @@ impl AtlasMap {
             }
         }
         self.dirty = true;
+    }
+
+    /// A heat map from the server (`ServerMsg::AtlasHeat`); `item` None
+    /// clears it.
+    pub fn heat(&mut self, planet: u16, item: Option<ItemId>, side: u16, bands: &[u8]) {
+        if planet != self.view.planet {
+            return;
+        }
+        self.heat = item.and_then(|_| {
+            let bands = lz4_flex::decompress_size_prepended(bands).ok()?;
+            (bands.len() == side as usize * side as usize).then_some(HeatMap {
+                side: side as usize,
+                bands,
+            })
+        });
+        self.heat_dirty = true;
+    }
+
+    fn heat_texture(&mut self, ctx: &egui::Context) -> Option<egui::TextureId> {
+        let h = self.heat.as_ref()?;
+        if self.heat_dirty || self.heat_texture.is_none() {
+            let pixels = h
+                .bands
+                .iter()
+                .map(|&b| match b {
+                    1..=4 => {
+                        let [r, g, bl] = BANDS[b as usize - 1];
+                        Color32::from_rgba_unmultiplied(r, g, bl, BAND_ALPHA)
+                    }
+                    // None, or hidden (`HEAT_HIDDEN`): the land shows.
+                    _ => Color32::TRANSPARENT,
+                })
+                .collect();
+            let image = egui::ColorImage {
+                size: [h.side, h.side],
+                source_size: vec2(h.side as f32, h.side as f32),
+                pixels,
+            };
+            match &mut self.heat_texture {
+                Some(t) => t.set(image, egui::TextureOptions::NEAREST),
+                None => self.heat_texture = Some(ctx.load_texture("atlas heat", image, egui::TextureOptions::NEAREST)),
+            }
+            self.heat_dirty = false;
+        }
+        self.heat_texture.as_ref().map(|t| t.id())
     }
 
     /// How much of the map has arrived.
@@ -154,6 +219,7 @@ impl AtlasMap {
             self.centre = me;
         }
         let tex = self.texture(ctx);
+        let heat = self.heat_texture(ctx);
         let mut open = true;
         let title = format!("Atlas: {}", self.view.name);
         window(&title).open(&mut open).show(ctx, |ui| {
@@ -204,6 +270,10 @@ impl AtlasMap {
                     let r = Rect::from_min_size(min, vec2(size, size));
                     if r.intersects(rect) {
                         painter.image(tex, r, uv, Color32::WHITE);
+                        // A heat cell covers whole map pixels exactly.
+                        if let Some(h) = heat {
+                            painter.image(h, r, uv, Color32::WHITE);
+                        }
                     }
                 }
             }
@@ -259,6 +329,43 @@ impl AtlasMap {
                     Stroke::new(1.5, Color32::BLACK),
                 ));
             }
+            ui.horizontal_wrapped(|ui| match &here.loaded {
+                Some(name) => {
+                    ui.label(egui::RichText::new(format!("Showing where {name} lies")).color(TEXT));
+                    for (i, c) in BANDS.iter().enumerate() {
+                        let (r, _) = ui.allocate_exact_size(vec2(14.0, 14.0), Sense::hover());
+                        ui.painter().rect_filled(r, 2.0, Color32::from_rgb(c[0], c[1], c[2]));
+                        if i == 0 {
+                            ui.label(egui::RichText::new("little").color(MUTED).small());
+                        }
+                    }
+                    ui.label(egui::RichText::new("much").color(MUTED).small());
+                    if ui.button("Take it out").clicked() {
+                        actions.push(UiAction::Send(bm_protocol::ClientMsg::AtlasLoad {
+                            slot: self.view.slot,
+                            from: None,
+                        }));
+                    }
+                }
+                None if here.loadable.is_empty() => {
+                    ui.label(
+                        egui::RichText::new("Carry an ore, a gem or something gathered to see where it lies")
+                            .color(MUTED)
+                            .small(),
+                    );
+                }
+                None => {
+                    ui.label(egui::RichText::new("Put in to find:").color(MUTED));
+                    for (slot, name) in &here.loadable {
+                        if ui.button(name).clicked() {
+                            actions.push(UiAction::Send(bm_protocol::ClientMsg::AtlasLoad {
+                                slot: self.view.slot,
+                                from: Some(*slot),
+                            }));
+                        }
+                    }
+                }
+            });
             ui.horizontal(|ui| {
                 if on_it && ui.button("Centre on me").clicked() {
                     self.follow = true;

@@ -895,6 +895,9 @@ struct Column {
     lift_fill: f64,
 }
 
+/// Rows between the samples `Generator::density` takes of an ore's noise.
+pub const DENSITY_STEP: i64 = 3;
+
 /// Lifted land fades this far into its band's top and bottom (blocks).
 const LIFT_FADE: f64 = 8.0;
 
@@ -1216,6 +1219,56 @@ impl Generator {
 
     pub fn config(&self) -> &PlanetGenConfig {
         &self.cfg
+    }
+
+    /// How much of `blocks` the generator puts in column `(x, z)`, roughly:
+    /// ore blocks (its noise sampled every [`DENSITY_STEP`] blocks down its
+    /// depth band, where the column's rules allow it), plus the chance of a
+    /// surface plant of those kinds. For the atlas's heat maps (milestone
+    /// 27): relative, never the depth, and blind to caves and to what was
+    /// mined since.
+    pub fn density(&self, blocks: &[BlockId], x: i64, z: i64) -> f64 {
+        let (h, top) = match &self.biome {
+            Some(bw) => {
+                let c = self.column(bw, x, z);
+                (c.h, self.biome_cover(bw, c, 0, false, x, z).0)
+            }
+            None => {
+                let h = self.surface_height(x, z);
+                (h, self.surface_block(h, 0, x, z))
+            }
+        };
+        let sea = self.cfg.sea_level;
+        let mut total = 0.0;
+        for ore in self.ores.iter().filter(|o| blocks.contains(&o.block)) {
+            if !ore.column_allows(h, top, sea, self.water_level, |dx, dz| {
+                self.surface_height(x + dx, z + dz)
+            }) {
+                continue;
+            }
+            let lo = ore.min_y.max(h.saturating_sub(ore.max_depth)).max(1);
+            let hi = ore.max_y.min(h - ore.min_depth);
+            let mut y = lo;
+            while y <= hi {
+                if ore.noise.sample3(x as f64, y as f64, z as f64, self.width) > ore.threshold {
+                    total += DENSITY_STEP as f64;
+                }
+                y += DENSITY_STEP;
+            }
+        }
+        for f in self.flora.iter().filter(|f| blocks.contains(&f.block) && !f.cave) {
+            let y = h + 1;
+            if y < f.min_y || y > f.max_y || !f.on.contains(&top) {
+                continue;
+            }
+            if let Some((noise, above)) = &f.patch
+                && noise.sample2(x as f64, z as f64, self.width) <= *above
+            {
+                continue;
+            }
+            total += f.density;
+        }
+        total
     }
 
     /// Y of the topmost terrain block in a column (before caves and trees).
@@ -2281,6 +2334,38 @@ mod tests {
             ..Default::default()
         };
         Generator::new(PlanetShape::new(64, 12), cfg, &BlockRegistry::builtin()).unwrap()
+    }
+
+    /// Milestone 27: the atlas's density estimate tracks the terrain: the
+    /// chunk columns it rates richest in copper hold more copper than the
+    /// ones it rates poorest, and a block the planet never makes reads 0.
+    #[test]
+    fn density_follows_the_ore_it_estimates() {
+        let g = kind("temperate");
+        let copper = id("copper_vein");
+        let mut cols: Vec<(f64, usize)> = Vec::new();
+        for cz in 0..5 {
+            for cx in 0..5 {
+                let mut est = 0.0;
+                for z in (0..32).step_by(4) {
+                    for x in (0..32).step_by(4) {
+                        est += g.density(&[copper], cx * 32 + x, cz * 32 + z);
+                    }
+                }
+                let mut real = 0;
+                for cy in 0..12 {
+                    let c = g.generate(ChunkPos::new(cx as i32, cy, cz as i32));
+                    real += c.to_dense_states().iter().filter(|s| s.id == copper).count();
+                }
+                cols.push((est, real));
+            }
+        }
+        cols.sort_by(|a, b| a.0.total_cmp(&b.0));
+        let third = cols.len() / 3;
+        let low: usize = cols[..third].iter().map(|c| c.1).sum();
+        let high: usize = cols[cols.len() - third..].iter().map(|c| c.1).sum();
+        assert!(high > low, "richest {high} against poorest {low}: {cols:?}");
+        assert_eq!(g.density(&[id("gold_seam")], 40, 40), 0.0, "no gold on a tier 1 world");
     }
 
     fn kind(name: &str) -> Generator {

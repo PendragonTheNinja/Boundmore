@@ -80,7 +80,7 @@ What a Boundless player expects to find, and where each stands. "Ours" is the Bo
 
 **M25: Friends, permissions and guilds** (specced 2026-10-28, waiting on Nathan's decisions, `milestones/25-guilds.md`). A friends list, Boundless's Builder, Worker and Engineer rights on claims, then guilds, messages and guild buffs.
 
-**M27: The atlas** (part 1 built 2026-10-28, `milestones/27-atlas.md`). Boundless's map item: a map of one world, fogged where you have not been, with region and settlement names; heat maps next.
+**M27: The atlas** (built 2026-10-28, `milestones/27-atlas.md`). Boundless's map item: a map of one world, fogged where you have not been, with region and settlement names, and heat maps of the resource put in it.
 
 **M26: Coloured light** (built 2026-10-28, `milestones/26-coloured-light.md`). Block light in red, green and blue; glow crystals light in their worlds' colours; gem torches and the crystal lantern.
 
