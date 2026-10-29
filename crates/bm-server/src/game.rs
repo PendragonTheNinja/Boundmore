@@ -21,7 +21,6 @@ use crate::net::{Event, Outbox};
 use crate::planet::Planet;
 use crate::portals::{PortalRules, Portals};
 use crate::reclaim::Reclaims;
-use crate::storage::move_stack;
 use crate::store::{PlayerData, SavedBrews, SavedFood, Store, WriteBatch, load_slots, save_slots};
 
 mod atlas;
@@ -145,7 +144,7 @@ enum Queued {
         seq: u32,
         at: u32,
         pos: BlockPos,
-        slot: u8,
+        slot: u16,
     },
     /// A change to the character's skills (milestone 12): what the page
     /// does to the body counts from the input it follows.
@@ -156,7 +155,7 @@ enum Queued {
     /// A sling shot (milestone 13).
     Shoot {
         at: u32,
-        slot: u8,
+        slot: u16,
         yaw: u16,
         pitch: i16,
         charge: u16,
@@ -165,12 +164,12 @@ enum Queued {
     Strike {
         at: u32,
         creature: u32,
-        slot: u8,
+        slot: u16,
     },
     /// A bomb thrown (milestone 13 part 2).
     Throw {
         at: u32,
-        slot: u8,
+        slot: u16,
         yaw: u16,
         pitch: i16,
         hold: u16,
@@ -178,7 +177,7 @@ enum Queued {
     /// Food eaten (milestone 16): it changes the body from its input on.
     Eat {
         at: u32,
-        slot: u8,
+        slot: u16,
     },
 }
 
@@ -576,45 +575,25 @@ fn closed_storage(pos: BlockPos) -> ServerMsg {
     })
 }
 
-/// The slot a `SlotRef` names, if it exists.
-fn slot_of(inv: &[Option<ItemStack>], storage: &[Option<ItemStack>], r: SlotRef) -> Option<Option<ItemStack>> {
-    match r {
-        SlotRef::Inventory(i) => inv.get(i as usize).copied(),
-        SlotRef::Storage(i) => storage.get(i as usize).copied(),
-    }
-}
-
-fn set_slot(inv: &mut [Option<ItemStack>], storage: &mut [Option<ItemStack>], r: SlotRef, v: Option<ItemStack>) {
-    match r {
-        SlotRef::Inventory(i) => inv[i as usize] = v,
-        SlotRef::Storage(i) => storage[i as usize] = v,
-    }
-}
-
 /// Moves between two slots of a pack and a storage block (either may be in
-/// either), with the rules of `Inventory::move_items`. Every index is
-/// checked; all or nothing. Returns whether anything changed.
+/// either): `bm_core::inventory::move_across`, all or nothing. Returns
+/// whether anything changed.
 fn storage_move_slots(
     items: &ItemRegistry,
-    inv: &mut [Option<ItemStack>],
+    inv: &mut Inventory,
     storage: &mut [Option<ItemStack>],
     from: SlotRef,
     to: SlotRef,
     count: u16,
 ) -> bool {
-    if from == to {
-        return false;
-    }
-    let (Some(src), Some(dst)) = (slot_of(inv, storage, from), slot_of(inv, storage, to)) else {
-        return false;
-    };
-    match move_stack(items, src, dst, count) {
-        Some((a, b)) if (a, b) != (src, dst) => {
-            set_slot(inv, storage, from, a);
-            set_slot(inv, storage, to, b);
-            true
-        }
-        _ => false,
+    bm_core::inventory::move_across(items, inv, storage, side(from), side(to), count)
+}
+
+/// A protocol slot reference as the inventory rules name it.
+fn side(r: SlotRef) -> bm_core::inventory::Side {
+    match r {
+        SlotRef::Inventory(i) => bm_core::inventory::Side::Pack(i as usize),
+        SlotRef::Storage(i) => bm_core::inventory::Side::Row(i as usize),
     }
 }
 
@@ -637,7 +616,7 @@ fn body_overlaps(m: &MoveConfig, feet: DVec3, lo: DVec3, hi: DVec3) -> bool {
 fn send_slots(p: &Player, before: &Inventory) {
     let changes: Vec<_> = (0..p.inventory.slots.len())
         .filter(|&i| before.slots.get(i) != p.inventory.slots.get(i))
-        .map(|i| (i as u8, p.inventory.get(i)))
+        .map(|i| (i as u16, p.inventory.get(i)))
         .collect();
     if !changes.is_empty() {
         p.out.send(&ServerMsg::Slots { changes });
@@ -1266,6 +1245,9 @@ impl Game {
                 ClientMsg::StationFuel { pos, slot, count, into } => self.station_fuel(id, pos, slot, count, into),
                 ClientMsg::Edit { seq, at, pos, action } => self.queue(id, at, Queued::Edit { seq, pos, action }),
                 ClientMsg::Swing { seq, at, pos, slot } => self.queue(id, at, Queued::Swing { seq, at, pos, slot }),
+                ClientMsg::MoveGroup { from, to } => {
+                    self.change_inventory(id, |inv, items| inv.move_group(items, from as usize, to as usize));
+                }
                 ClientMsg::MoveItems { from, to, count } => {
                     self.change_inventory(id, |inv, items| {
                         inv.move_items(items, from as usize, to as usize, count)
@@ -1360,9 +1342,7 @@ impl Game {
                     (
                         pi,
                         state,
-                        Inventory {
-                            slots: load_slots(&self.items, &data.inventory, &name),
-                        },
+                        crate::store::player_inventory(load_slots(&self.items, &data.inventory, &name)),
                         skills::sanitize(data.character.into(), &self.skills),
                         data.hurt,
                         data.food,
@@ -1684,13 +1664,12 @@ impl Game {
                 // The grapples in the hands the input names (milestone 28:
                 // left and right), from our own copy of the inventory: the
                 // client's word is only which slots.
+                // A hand holds a hotbar slot, a smart stack: its active stack
+                // (milestone 33).
                 let hand = |slot: u8| {
                     p.inventory
-                        .slots
-                        .get(slot as usize)
-                        .filter(|_| (slot as usize) < HOTBAR_SLOTS)
-                        .copied()
-                        .flatten()
+                        .held(slot as usize)
+                        .filter(|_| bm_core::inventory::in_hotbar(slot as usize))
                 };
                 // One item is never in both hands: the same slot in both is
                 // the left hand's, and the right hand is empty.
@@ -1755,8 +1734,10 @@ impl Game {
                 p.bank -= 1.0;
                 let fell = p.state.down && !p.defeated;
                 // The grapple that fired, or held the hook let go, wears.
-                let slot = if events.hand == 1 { input.off } else { input.slot } as usize;
-                if (events.fired || events.released)
+                let group = if events.hand == 1 { input.off } else { input.slot } as usize;
+                let slot = p.inventory.active(group).unwrap_or(usize::MAX);
+                if slot < p.inventory.slots.len()
+                    && (events.fired || events.released)
                     && mining::roll(&mut self.rng) >= p.state.wear_spared(p.effects.wear_saved())
                 {
                     let before = p.inventory.clone();
@@ -2185,9 +2166,10 @@ impl Game {
                                 light: [o.last_input.slot, o.last_input.off].into_iter().fold(
                                     [if o.inner_light { skills::INNER_LIGHT } else { 0 }; 3],
                                     |l, slot| {
+                                        // A hand holds a hotbar slot's active stack.
                                         let held = o
                                             .inventory
-                                            .get(slot as usize)
+                                            .held(slot as usize)
                                             .filter(|_| (slot as usize) < HOTBAR_SLOTS)
                                             .map_or([0; 3], |s| {
                                                 self.items.get(s.item).map_or([0; 3], |d| d.held_rgb_of(&s))
@@ -2243,7 +2225,7 @@ impl Game {
     fn starting_inventory(&self) -> Inventory {
         let mut inv = Inventory::default();
         if let Ok(stone) = self.items.id("hand_stone") {
-            inv.slots[HOTBAR_SLOTS - 1] = Some(ItemStack::new(stone, 1));
+            inv.slots[(HOTBAR_SLOTS - 1) * bm_core::inventory::SMART] = Some(ItemStack::new(stone, 1));
         }
         inv
     }
@@ -2554,7 +2536,7 @@ impl Game {
             EditAction::Place { slot, mount } => {
                 let slot = slot as usize;
                 let placer = p.state.pos;
-                if slot >= HOTBAR_SLOTS {
+                if !bm_core::inventory::in_hotbar(slot) {
                     return Err("not a hotbar slot".into());
                 }
                 let stack = p.inventory.get(slot).ok_or("nothing placeable in that slot")?;
@@ -2694,7 +2676,7 @@ impl Game {
             }
             EditAction::Chisel { slot, octants, restore } => {
                 let slot = slot as usize;
-                if slot >= HOTBAR_SLOTS {
+                if !bm_core::inventory::in_hotbar(slot) {
                     return Err("not a hotbar slot".into());
                 }
                 let def = p.inventory.get(slot).and_then(|s| self.items.get(s.item));
@@ -3105,7 +3087,7 @@ impl Game {
         let Some(pos) = pos else {
             let Some(p) = self.players.get_mut(&id) else { return };
             let before = p.inventory.clone();
-            bm_core::inventory::sort_slots(&self.items, &mut p.inventory.slots[HOTBAR_SLOTS..]);
+            p.inventory.sort_from(&self.items, HOTBAR_SLOTS);
             return send_slots(p, &before);
         };
         let (canon, size) = match self.storage_access(id, pos) {
@@ -3130,7 +3112,11 @@ impl Game {
         let p = self.players.get_mut(&id).expect("present");
         let before = p.inventory.clone();
         if deposit {
-            bm_core::inventory::deposit_matching(&self.items, &mut p.inventory.slots[HOTBAR_SLOTS..], &mut slots);
+            bm_core::inventory::deposit_matching(
+                &self.items,
+                &mut p.inventory.slots[HOTBAR_SLOTS * bm_core::inventory::SMART..],
+                &mut slots,
+            );
         } else {
             bm_core::inventory::sort_slots(&self.items, &mut slots);
         }
@@ -3154,7 +3140,7 @@ impl Game {
         let mut slots = self.planets[pi].storage.slots(canon, size);
         let before = p.inventory.clone();
         let stored = slots.clone();
-        let moved = storage_move_slots(&self.items, &mut p.inventory.slots, &mut slots, from, to, count);
+        let moved = storage_move_slots(&self.items, &mut p.inventory, &mut slots, from, to, count);
         send_slots(p, &before);
         if !moved {
             let view = ServerMsg::Storage(self.storage_view(pi, canon, size));
@@ -3879,36 +3865,38 @@ mod storage_move_tests {
         let stone = items.id("stone").unwrap();
         let sand = items.id("sand").unwrap();
         let st = |item, count| Some(ItemStack::new(item, count));
-        let mut inv = vec![None; 40];
+        let mut inv = Inventory::default();
         let mut chest = vec![None; 20];
-        inv[0] = st(stone, 30);
+        inv.slots[0] = st(stone, 30);
 
         // Split into the chest, merge more onto it, then take some back.
         assert!(storage_move_slots(&items, &mut inv, &mut chest, I(0), S(19), 10));
-        assert_eq!((inv[0], chest[19]), (st(stone, 20), st(stone, 10)));
+        assert_eq!((inv.slots[0], chest[19]), (st(stone, 20), st(stone, 10)));
         assert!(storage_move_slots(&items, &mut inv, &mut chest, I(0), S(19), 500));
-        assert_eq!((inv[0], chest[19]), (None, st(stone, 30)));
+        assert_eq!((inv.slots[0], chest[19]), (None, st(stone, 30)));
         assert!(storage_move_slots(&items, &mut inv, &mut chest, S(19), I(5), 5));
-        assert_eq!((inv[5], chest[19]), (st(stone, 5), st(stone, 25)));
+        assert_eq!((inv.slots[5], chest[19]), (st(stone, 5), st(stone, 25)));
         // Within the chest, and within the pack.
         assert!(storage_move_slots(&items, &mut inv, &mut chest, S(19), S(0), 25));
         assert_eq!((chest[0], chest[19]), (st(stone, 25), None));
         assert!(storage_move_slots(&items, &mut inv, &mut chest, I(5), I(6), 2));
-        assert_eq!((inv[5], inv[6]), (st(stone, 3), st(stone, 2)));
+        assert_eq!((inv.slots[5], inv.slots[6]), (st(stone, 3), st(stone, 2)));
         // A whole-stack swap across.
-        inv[7] = st(sand, 4);
-        assert!(storage_move_slots(&items, &mut inv, &mut chest, I(7), S(0), 4));
-        assert_eq!((inv[7], chest[0]), (st(stone, 25), st(sand, 4)));
+        inv.slots[18] = st(sand, 4);
+        assert!(storage_move_slots(&items, &mut inv, &mut chest, I(18), S(0), 4));
+        assert_eq!((inv.slots[18], chest[0]), (st(stone, 25), st(sand, 4)));
+        // Sand never joins the stone smart stack in slot 0's group.
+        let (i0, c0) = (inv.clone(), chest.clone());
+        assert!(!storage_move_slots(&items, &mut inv, &mut chest, S(0), I(1), 4));
         // Refused, changing nothing: a part of a stack onto another item,
         // bad indices either side, the same slot, nothing in the source.
-        let (i0, c0) = (inv.clone(), chest.clone());
-        assert!(!storage_move_slots(&items, &mut inv, &mut chest, I(7), S(0), 3));
-        assert!(!storage_move_slots(&items, &mut inv, &mut chest, I(7), S(20), 1));
+        assert!(!storage_move_slots(&items, &mut inv, &mut chest, I(18), S(0), 3));
+        assert!(!storage_move_slots(&items, &mut inv, &mut chest, I(18), S(20), 1));
         assert!(!storage_move_slots(&items, &mut inv, &mut chest, S(200), I(9), 1));
-        assert!(!storage_move_slots(&items, &mut inv, &mut chest, I(40), S(1), 1));
+        assert!(!storage_move_slots(&items, &mut inv, &mut chest, I(4000), S(1), 1));
         assert!(!storage_move_slots(&items, &mut inv, &mut chest, S(0), S(0), 1));
         assert!(!storage_move_slots(&items, &mut inv, &mut chest, S(1), I(9), 1));
-        assert!(!storage_move_slots(&items, &mut inv, &mut chest, I(7), S(1), 0));
+        assert!(!storage_move_slots(&items, &mut inv, &mut chest, I(18), S(1), 0));
         assert_eq!((inv, chest), (i0, c0));
     }
 }

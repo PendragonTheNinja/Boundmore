@@ -300,7 +300,7 @@ impl Game {
         Ok(())
     }
 
-    fn sell(&mut self, id: u32, at: &ShopAt, slot: u8, from: u8, count: u16, shown: u64) -> Result<(), Refusal> {
+    fn sell(&mut self, id: u32, at: &ShopAt, slot: u8, from: u16, count: u16, shown: u64) -> Result<(), Refusal> {
         let slot = slot as usize;
         let rec = self.planets[at.pi].shops.get(at.canon);
         let price = rec.price(slot);

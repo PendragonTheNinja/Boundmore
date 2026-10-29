@@ -40,7 +40,9 @@ impl Items {
         blocks: &BlockRegistry,
     ) -> Result<Self, ItemError> {
         let registry = ItemRegistry::from_defs(defs, blocks)?;
-        // Index safety for everything below: exactly 40 slots, all valid.
+        // Index safety for everything below: a player's 40 smart stacks,
+        // every stack valid.
+        inventory.group = bm_core::inventory::SMART;
         inventory.sanitize(&registry);
         let recipes = recipes
             .into_iter()
@@ -72,10 +74,10 @@ impl Items {
 
     /// Applies a `Slots` update. Out-of-range slots and unknown items are
     /// ignored rather than trusted.
-    pub fn apply_slots(&mut self, changes: &[(u8, Option<ItemStack>)]) {
+    pub fn apply_slots(&mut self, changes: &[(u16, Option<ItemStack>)]) {
         for (slot, stack) in changes {
             let i = *slot as usize;
-            if i >= INVENTORY_SLOTS {
+            if i >= self.inventory.slots.len() {
                 continue;
             }
             self.inventory.slots[i] = stack.filter(|s| self.registry.contains(s.item) && s.count > 0);
@@ -86,8 +88,16 @@ impl Items {
         self.registry.get(stack.item)
     }
 
+    /// What visible slot `slot` shows and a hand holding it uses: its
+    /// smart stack's active stack (milestone 33).
     pub fn slot(&self, slot: usize) -> Option<ItemStack> {
-        self.inventory.get(slot)
+        self.inventory.held(slot)
+    }
+
+    /// The stored index messages name for visible slot `g`: its active
+    /// stack, or its first sub-slot when it is empty.
+    pub fn at(&self, g: usize) -> u16 {
+        self.inventory.active(g).unwrap_or(g * bm_core::inventory::SMART) as u16
     }
 
     /// The first hotbar slot holding a tool that breaks blocks, if any.
@@ -109,22 +119,47 @@ impl Items {
         }
     }
 
-    /// The message for dragging slot `from` onto `to` (the whole stack, or
-    /// half of it), or None when the server would refuse it anyway: onto
-    /// itself, from an empty slot, onto a full stack, or part of a stack onto
-    /// a different item (only whole stacks swap).
+    /// The message for dragging visible slot `from` onto `to` (milestone
+    /// 33): the whole smart stack (`MoveGroup`: into an empty slot, merged
+    /// into one of its family, or swapped), or half of its active stack
+    /// (`MoveItems` onto where the server would put it). None when the
+    /// server would refuse it anyway.
     pub fn move_request(&self, from: usize, to: usize, half_stack: bool) -> Option<ClientMsg> {
-        if from >= INVENTORY_SLOTS || to >= INVENTORY_SLOTS {
+        if from >= INVENTORY_SLOTS || to >= INVENTORY_SLOTS || from == to {
             return None;
         }
-        let src = self.inventory.get(from)?;
-        let count = if half_stack { half(src.count) } else { src.count };
         let mut trial = self.inventory.clone();
-        trial.move_items(&self.registry, from, to, count)?;
+        if !half_stack {
+            trial.move_group(&self.registry, from, to)?;
+            return Some(ClientMsg::MoveGroup {
+                from: from as u8,
+                to: to as u8,
+            });
+        }
+        let src_at = self.inventory.active(from)?;
+        let src = self.inventory.get(src_at)?;
+        let count = half(src.count);
+        let dst = self.inventory.drop_target(&self.registry, src_at, to, count)?;
+        trial.move_items(&self.registry, src_at, dst, count)?;
         Some(ClientMsg::MoveItems {
-            from: from as u8,
-            to: to as u8,
+            from: src_at as u16,
+            to: dst as u16,
             count,
+        })
+    }
+
+    /// The message moving one stack (stored index `from`, an opened smart
+    /// stack's sub-slot) onto visible slot `to`: what fits where the server
+    /// would put it. None when it cannot go there.
+    pub fn move_stack_request(&self, from: usize, to: usize) -> Option<ClientMsg> {
+        let src = self.inventory.get(from)?;
+        let dst = self.inventory.drop_target(&self.registry, from, to, src.count)?;
+        let mut trial = self.inventory.clone();
+        trial.move_items(&self.registry, from, dst, src.count)?;
+        Some(ClientMsg::MoveItems {
+            from: from as u16,
+            to: dst as u16,
+            count: src.count,
         })
     }
 
@@ -420,17 +455,18 @@ impl Items {
         self.registry.get(item).map(|d| d.fuel).unwrap_or(0)
     }
 
-    /// The pack slots holding fuel, in slot order.
-    pub fn fuel_slots(&self) -> Vec<u8> {
-        (0..INVENTORY_SLOTS)
+    /// The stored slots holding fuel, in slot order (every stack, inside
+    /// smart stacks too).
+    pub fn fuel_slots(&self) -> Vec<u16> {
+        (0..self.inventory.slots.len())
             .filter(|&i| self.inventory.get(i).is_some_and(|s| self.fuel(s.item) > 0))
-            .map(|i| i as u8)
+            .map(|i| i as u16)
             .collect()
     }
 
     /// The message putting fuel from pack `slot` into the furnace at `pos`
     /// (the whole stack, or one), or None when the slot holds no fuel.
-    pub fn fuel_in(&self, pos: BlockPos, slot: u8, one: bool) -> Option<ClientMsg> {
+    pub fn fuel_in(&self, pos: BlockPos, slot: u16, one: bool) -> Option<ClientMsg> {
         let s = self.inventory.get(slot as usize)?;
         (self.fuel(s.item) > 0).then_some(ClientMsg::StationFuel {
             pos,
@@ -444,16 +480,17 @@ impl Items {
     /// same item with room, else the first empty slot; None when the pack
     /// has no room for any.
     pub fn fuel_out(&self, pos: BlockPos, fuel: &ItemStack) -> Option<ClientMsg> {
-        let max = self.registry.get(fuel.item).map(|d| d.stack).unwrap_or(1);
-        let slots = &self.inventory.slots;
-        let merge = (0..INVENTORY_SLOTS).find(|&i| {
-            slots[i].is_some_and(|s| s.item == fuel.item && s.colour == fuel.colour && s.wear == 0 && s.count < max)
-        });
-        let slot = merge.or_else(|| (0..INVENTORY_SLOTS).find(|&i| slots[i].is_none()))?;
-        let room = slots[slot].map(|s| max - s.count).unwrap_or(max);
+        // Where the pack would take it: the first stored slot an add
+        // changes (a stack it tops up, a sub-slot of its smart stack, or an
+        // empty slot), and how much fits there.
+        let mut trial = self.inventory.clone();
+        trial.add_stack(&self.registry, *fuel);
+        let slot = (0..trial.slots.len()).find(|&i| trial.slots[i] != self.inventory.slots[i])?;
+        let before = self.inventory.get(slot).map_or(0, |s| s.count);
+        let room = trial.get(slot).map_or(0, |s| s.count) - before;
         Some(ClientMsg::StationFuel {
             pos,
-            slot: slot as u8,
+            slot: slot as u16,
             count: fuel.count.min(room),
             into: false,
         })
@@ -739,7 +776,7 @@ mod tests {
     fn the_left_hand_starts_on_a_tool() {
         let mut i = items();
         assert_eq!(i.starting_hand(), 0, "nothing carried: slot 1");
-        i.inventory.slots[9] = stack(&i, "hand_stone", 1);
+        i.inventory.slots[9 * bm_core::inventory::SMART] = stack(&i, "hand_stone", 1);
         assert_eq!((i.starting_hand(), i.first_tool_slot()), (9, Some(9)));
         i.inventory.slots[0] = stack(&i, "stone", 5);
         assert_eq!(i.starting_hand(), 0, "something in slot 1 stays chosen");
@@ -749,14 +786,15 @@ mod tests {
     fn slot_updates_apply_and_bad_ones_are_ignored() {
         let mut i = items();
         let stone = stack(&i, "stone", 5);
-        i.apply_slots(&[(3, stone), (200, stone)]);
+        // Stored indices: visible slot 3's first stack is 27.
+        i.apply_slots(&[(27, stone), (4000, stone)]);
         assert_eq!(i.slot(3), stone);
-        i.apply_slots(&[(3, None)]);
+        i.apply_slots(&[(27, None)]);
         assert_eq!(i.slot(3), None);
         let bogus = Some(ItemStack::new(bm_core::ItemId(60000), 1));
         i.apply_slots(&[
-            (4, bogus),
-            (5, Some(ItemStack::new(i.registry.id("stone").unwrap(), 0))),
+            (36, bogus),
+            (45, Some(ItemStack::new(i.registry.id("stone").unwrap(), 0))),
         ]);
         assert_eq!((i.slot(4), i.slot(5)), (None, None));
     }
@@ -765,31 +803,44 @@ mod tests {
     fn a_short_inventory_from_the_server_is_padded() {
         let blocks = BlockRegistry::builtin();
         let reg = ItemRegistry::builtin(&blocks);
-        let inv = Inventory { slots: vec![None; 3] };
+        let inv = Inventory::row(vec![None; 3]);
         let i = Items::new(reg.defs().to_vec(), vec![], inv, ColourPalette::builtin(), &blocks).unwrap();
-        assert_eq!(i.inventory.slots.len(), INVENTORY_SLOTS);
+        assert_eq!(i.inventory.slots.len(), bm_core::inventory::PACK_SLOTS);
     }
 
     #[test]
     fn drags_follow_the_servers_move_rules() {
         let mut i = items();
-        i.inventory.slots[0] = stack(&i, "stone", 9);
-        i.inventory.slots[1] = stack(&i, "soil", 4);
-        i.inventory.slots[2] = stack(&i, "stone", 100);
-        let mv = |from: u8, to: u8, count: u16| Some(ClientMsg::MoveItems { from, to, count });
-        // Whole stack onto an empty slot, and half of it (rounded up).
-        assert_eq!(i.move_request(0, 7, false), mv(0, 7, 9));
-        assert_eq!(i.move_request(0, 7, true), mv(0, 7, 5));
-        // Whole stacks of different items swap; half stacks cannot.
-        assert_eq!(i.move_request(0, 1, false), mv(0, 1, 9));
+        let g = |v: usize| v * bm_core::inventory::SMART;
+        i.inventory.slots[g(0)] = stack(&i, "stone", 9);
+        i.inventory.slots[g(1)] = stack(&i, "soil", 4);
+        i.inventory.slots[g(2)] = stack(&i, "stone", 100);
+        let group = |from: u8, to: u8| Some(ClientMsg::MoveGroup { from, to });
+        let mv = |from: usize, to: usize, count: u16| {
+            Some(ClientMsg::MoveItems {
+                from: from as u16,
+                to: to as u16,
+                count,
+            })
+        };
+        // A whole smart stack onto an empty slot, a different one (swap) or
+        // one of its family (merge).
+        assert_eq!(i.move_request(0, 7, false), group(0, 7));
+        assert_eq!(i.move_request(0, 1, false), group(0, 1));
+        assert_eq!(i.move_request(2, 0, false), group(2, 0));
+        // Half of the active stack: onto an empty slot, into a smart stack of
+        // its family, never into another family's.
+        assert_eq!(i.move_request(0, 7, true), mv(g(0), g(7), 5));
+        assert_eq!(i.move_request(2, 0, true), mv(g(2), g(0), 50));
         assert_eq!(i.move_request(0, 1, true), None);
-        // Nothing to move, onto itself, onto a full stack, off the end.
+        // Nothing to move, onto itself, off the end.
         assert_eq!(i.move_request(5, 6, false), None);
         assert_eq!(i.move_request(0, 0, false), None);
-        assert_eq!(i.move_request(0, 2, false), None);
         assert_eq!(i.move_request(0, 40, false), None);
-        // Merging asks for the whole stack; the server moves what fits.
-        assert_eq!(i.move_request(2, 0, false), mv(2, 0, 100));
+        // One stack out of an opened smart stack.
+        i.inventory.slots[g(0) + 1] = stack(&i, "stone", 3);
+        assert_eq!(i.move_stack_request(g(0) + 1, 7), mv(g(0) + 1, g(7), 3));
+        assert_eq!(i.move_stack_request(g(0) + 1, 1), None, "soil's slot takes no stone");
         assert_eq!(half(1), 1);
         assert_eq!(half(7), 4);
     }
@@ -1092,31 +1143,32 @@ mod tests {
     fn fuel_goes_in_from_the_pack_and_comes_back_out_where_it_fits() {
         let mut i = items();
         let pos = BlockPos::new(4, 5, 6);
-        i.inventory.slots[2] = stack(&i, "coal", 9);
-        i.inventory.slots[3] = stack(&i, "stone", 9);
-        i.inventory.slots[5] = stack(&i, "stick", 4);
-        assert_eq!(i.fuel_slots(), vec![2, 5], "coal and sticks burn, stone does not");
+        i.inventory.slots[18] = stack(&i, "coal", 9);
+        i.inventory.slots[27] = stack(&i, "stone", 9);
+        i.inventory.slots[45] = stack(&i, "stick", 4);
+        assert_eq!(i.fuel_slots(), vec![18, 45], "coal and sticks burn, stone does not");
         assert_eq!(
-            i.fuel_in(pos, 2, false),
+            i.fuel_in(pos, 18, false),
             Some(ClientMsg::StationFuel {
                 pos,
-                slot: 2,
+                slot: 18,
                 count: 9,
                 into: true
             })
         );
         assert_eq!(
-            i.fuel_in(pos, 5, true),
+            i.fuel_in(pos, 45, true),
             Some(ClientMsg::StationFuel {
                 pos,
-                slot: 5,
+                slot: 45,
                 count: 1,
                 into: true
             })
         );
-        assert_eq!(i.fuel_in(pos, 3, false), None);
-        assert_eq!(i.fuel_in(pos, 7, false), None);
-        // Out: onto the coal stack there, else into the first empty slot.
+        assert_eq!(i.fuel_in(pos, 27, false), None);
+        assert_eq!(i.fuel_in(pos, 63, false), None);
+        // Out: onto the coal stack there, else into the coal's smart stack,
+        // else into the first empty slot.
         let coal = stack(&i, "coal", 30).unwrap();
         let out = |i: &Items| match i.fuel_out(pos, &coal) {
             Some(ClientMsg::StationFuel { slot, count, into, .. }) => {
@@ -1125,10 +1177,12 @@ mod tests {
             }
             _ => None,
         };
-        assert_eq!(out(&i), Some((2, 30)));
-        i.inventory.slots[2] = stack(&i, "coal", 100);
-        assert_eq!(out(&i), Some((0, 30)));
-        for s in 0..INVENTORY_SLOTS {
+        assert_eq!(out(&i), Some((18, 30)));
+        i.inventory.slots[18] = stack(&i, "coal", 100);
+        assert_eq!(out(&i), Some((19, 30)));
+        i.inventory.slots[18] = None;
+        assert_eq!(out(&i), Some((0, 30)), "no coal carried: the first empty slot");
+        for s in 0..i.inventory.slots.len() {
             i.inventory.slots[s] = stack(&i, "stone", 1);
         }
         assert_eq!(out(&i), None, "a full pack takes nothing");

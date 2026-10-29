@@ -402,9 +402,7 @@ impl StationData {
             kind,
             jobs: VecDeque::new(),
             started: 0,
-            output: Inventory {
-                slots: vec![None; OUTPUT_STACKS],
-            },
+            output: Inventory::row(vec![None; OUTPUT_STACKS]),
             fuel: None,
             heat: 0,
             wait: None,
@@ -1853,9 +1851,13 @@ mod tests {
         assert_eq!(inv.count(items.id("trunk").unwrap()), 0);
 
         // Outputs that cannot fit refuse the craft and keep the inputs.
+        // Every other slot a full smart stack of stone in nine colours.
         let mut full = Inventory::default();
-        full.add(&items, items.id("stone").unwrap(), 100 * 39);
-        full.slots[39] = Some(ItemStack::new(items.id("trunk").unwrap(), 2));
+        let stone = items.id("stone").unwrap();
+        for i in 0..39 * bm_core::inventory::SMART {
+            full.slots[i] = Some(ItemStack::coloured(stone, bm_core::Colour((i % 9) as u8 + 1), 100));
+        }
+        full.slots[39 * bm_core::inventory::SMART] = Some(ItemStack::new(items.id("trunk").unwrap(), 2));
         // One trunk out leaves the slot holding the other: no room for timber.
         assert_eq!(craft_by_hand(&mut full, &items, r, 1), Err(CraftError::NoRoom));
         assert_eq!(full.count(items.id("trunk").unwrap()), 2);

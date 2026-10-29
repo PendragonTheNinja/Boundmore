@@ -20,6 +20,7 @@
 
 use crate::net::NetEvent;
 use bm_core::forge::Held;
+use bm_core::inventory::SMART;
 use bm_core::portal::{PortalAxis, PortalFrame};
 use bm_core::skills::{Character, SkillTree};
 use bm_core::{
@@ -364,7 +365,7 @@ impl Demo {
         for (i, (name, count, wear)) in sample.into_iter().enumerate() {
             // The first ten fill the hotbar; the rest leave a gap or two.
             let slot = if i < 10 { i } else { i + 3 };
-            inv.slots[slot] = Some(ItemStack {
+            inv.slots[slot * SMART] = Some(ItemStack {
                 wear,
                 ..ItemStack::new(id(name), count)
             });
@@ -756,7 +757,7 @@ impl Demo {
         let before = self.inv.clone();
         for (i, (item, colour, n)) in coloured.into_iter().enumerate() {
             let slot = if i < 7 { 3 + i } else { 13 + i };
-            self.inv.slots[slot] = Some(ItemStack::coloured(id(item), c(colour), n));
+            self.inv.slots[slot * SMART] = Some(ItemStack::coloured(id(item), c(colour), n));
         }
         self.slots_since(&before);
         let chunks = self.chunks_around_spawn();
@@ -1009,7 +1010,7 @@ impl Demo {
                 "precise_slope_chisel",
             ];
             for (i, name) in chisels.into_iter().enumerate() {
-                self.inv.slots[4 + i] = Some(ItemStack::new(id(name), 1));
+                self.inv.slots[(4 + i) * SMART] = Some(ItemStack::new(id(name), 1));
             }
             self.slots_since(&before);
         }
@@ -1038,7 +1039,7 @@ impl Demo {
         let id = |n: &str| self.items.id(n).expect("builtin item");
         let before = self.inv.clone();
         for (i, name) in ["copper_grapple", "iron_grapple"].into_iter().enumerate() {
-            self.inv.slots[7 + i] = Some(ItemStack::new(id(name), 1));
+            self.inv.slots[(7 + i) * SMART] = Some(ItemStack::new(id(name), 1));
         }
         self.slots_since(&before);
         let chunks = self.chunks_around_spawn();
@@ -1072,7 +1073,7 @@ impl Demo {
         planet.edits.clear();
         planet.edits.extend(put);
         let before = self.inv.clone();
-        self.inv.slots[9] = Some(ItemStack::new(self.items.id("torch").expect("builtin item"), 12));
+        self.inv.slots[9 * SMART] = Some(ItemStack::new(self.items.id("torch").expect("builtin item"), 12));
         self.slots_since(&before);
         let chunks = self.chunks_around_spawn();
         self.events.extend(chunks.into_iter().map(NetEvent::Msg));
@@ -1091,8 +1092,8 @@ impl Demo {
         let copper = self.items.id("copper_ore").expect("builtin item");
         let mut atlas = ItemStack::new(self.items.id("atlas").expect("builtin item"), 1);
         atlas.tag = bm_core::atlas::pack(None, Some(copper));
-        self.inv.slots[9] = Some(atlas);
-        self.inv.slots[8] = Some(ItemStack::new(self.items.id("iron_ore").expect("builtin item"), 5));
+        self.inv.slots[9 * SMART] = Some(atlas);
+        self.inv.slots[8 * SMART] = Some(ItemStack::new(self.items.id("iron_ore").expect("builtin item"), 5));
         self.slots_since(&before);
     }
 
@@ -1143,7 +1144,7 @@ impl Demo {
         }));
     }
 
-    fn atlas_load(&mut self, slot: u8, from: Option<u8>) {
+    fn atlas_load(&mut self, slot: u16, from: Option<u16>) {
         let Some(tag) = self.inv.slots[slot as usize].map(|s| s.tag) else {
             return;
         };
@@ -1159,7 +1160,7 @@ impl Demo {
         self.atlas_heat(incoming);
     }
 
-    fn open_atlas(&mut self, slot: u8) {
+    fn open_atlas(&mut self, slot: u16) {
         use bm_core::atlas;
         let here = self.planets[self.here].info.clone();
         let (shape, map, seed, discovered) = self.atlas_world();
@@ -1301,7 +1302,7 @@ impl Demo {
         planet.edits.clear();
         planet.edits.extend(put);
         let before = self.inv.clone();
-        self.inv.slots[9] = Some(ItemStack::new(
+        self.inv.slots[9 * SMART] = Some(ItemStack::new(
             self.items.id("amethyst_torch").expect("builtin item"),
             2,
         ));
@@ -1348,7 +1349,7 @@ impl Demo {
             (8, "tuber_risotto", 1),
             (9, "meat_loaf", 1),
         ] {
-            self.inv.slots[slot] = Some(ItemStack::new(id(name), n));
+            self.inv.slots[slot * SMART] = Some(ItemStack::new(id(name), n));
         }
         self.slots_since(&before);
         let chunks = self.chunks_around_spawn();
@@ -1393,14 +1394,14 @@ impl Demo {
             (8, "bucket", 2),
             (9, "water_bucket", 1),
         ] {
-            self.inv.slots[slot] = Some(ItemStack::new(id(name), n));
+            self.inv.slots[slot * SMART] = Some(ItemStack::new(id(name), n));
         }
         self.slots_since(&before);
     }
 
     /// Eats one from `slot`, as the server would (the client has applied
     /// the meal to its own body already; the demo does not simulate it).
-    fn eat(&mut self, slot: u8) {
+    fn eat(&mut self, slot: u16) {
         let edible = self
             .inv
             .get(slot as usize)
@@ -1463,10 +1464,10 @@ impl Demo {
         let id = |n: &str| self.items.id(n).expect("builtin item");
         let (token, shard) = (id("portal_token"), id("wayshard"));
         let before = self.inv.clone();
-        self.inv.slots[8] = Some(ItemStack::tagged(token, 3));
-        self.inv.slots[9] = Some(ItemStack::new(shard, 60));
-        self.inv.slots[25] = Some(ItemStack::tagged(token, 4));
-        self.inv.slots[26] = Some(ItemStack::new(shard, 40));
+        self.inv.slots[8 * SMART] = Some(ItemStack::tagged(token, 3));
+        self.inv.slots[9 * SMART] = Some(ItemStack::new(shard, 60));
+        self.inv.slots[25 * SMART] = Some(ItemStack::tagged(token, 4));
+        self.inv.slots[26 * SMART] = Some(ItemStack::new(shard, 40));
         self.slots_since(&before);
         let names = (0..self.portals.len()).map(|i| self.token_name(i)).collect();
         self.events.push_back(NetEvent::Msg(ServerMsg::TokenNames { names }));
@@ -1569,9 +1570,10 @@ impl Demo {
         match action {
             PortalAction::MakeToken => {
                 let token = self.items.id("portal_token").expect("builtin item");
-                match self.inv.slots.iter().position(Option::is_none) {
-                    Some(slot) => {
-                        self.inv.slots[slot] = Some(ItemStack::tagged(token, i as u32 + 1));
+                let mut trial = self.inv.clone();
+                match (trial.add_stack(&self.items, ItemStack::tagged(token, i as u32 + 1)) == 0).then_some(()) {
+                    Some(()) => {
+                        self.inv = trial;
                         let names = vec![self.token_name(i)];
                         self.events.push_back(NetEvent::Msg(ServerMsg::TokenNames { names }));
                     }
@@ -1675,9 +1677,8 @@ impl Demo {
         let mut left = Vec::new();
         for stack in std::mem::take(&mut self.reclaim) {
             if stack.wear > 0 {
-                match self.inv.slots.iter().position(Option::is_none) {
-                    Some(i) => self.inv.slots[i] = Some(stack),
-                    None => left.push(stack),
+                if self.inv.add_stack(&self.items, stack) > 0 {
+                    left.push(stack);
                 }
                 continue;
             }
@@ -1763,9 +1764,9 @@ impl Demo {
     }
 
     fn slots_since(&mut self, before: &Inventory) {
-        let changes: Vec<(u8, Option<ItemStack>)> = (0..self.inv.slots.len())
+        let changes: Vec<(u16, Option<ItemStack>)> = (0..self.inv.slots.len())
             .filter(|&i| before.slots[i] != self.inv.slots[i])
-            .map(|i| (i as u8, self.inv.slots[i]))
+            .map(|i| (i as u16, self.inv.slots[i]))
             .collect();
         if !changes.is_empty() {
             self.events.push_back(NetEvent::Msg(ServerMsg::Slots { changes }));
@@ -1947,7 +1948,7 @@ impl Demo {
             ClientMsg::StorageMove { pos, from, to, count } => {
                 if self.open_chest == Some(pos)
                     && let Some(chest) = self.chests.get_mut(&pos)
-                    && crate::storage::apply_move(&self.items, &mut self.inv.slots, chest, from, to, count)
+                    && crate::storage::apply_move(&self.items, &mut self.inv, chest, from, to, count)
                 {
                     self.push_storage(pos, false);
                 }
@@ -2182,7 +2183,7 @@ impl Demo {
 
     /// Moves fuel between inventory `slot` and a furnace, as the server's
     /// `StationFuel` does: only fuel goes in, merging with what is there.
-    fn station_fuel(&mut self, pos: BlockPos, slot: u8, count: u16, into: bool) {
+    fn station_fuel(&mut self, pos: BlockPos, slot: u16, count: u16, into: bool) {
         let m = self.machine(pos);
         let slot = slot as usize;
         let items = &self.items;
@@ -2552,8 +2553,8 @@ impl Demo {
         }
         self.stations.insert(first, station);
         let before = self.inv.clone();
-        self.inv.slots[1] = Some(forged);
-        self.inv.slots[8] = Some(ItemStack::new(id("copper_grapple"), 1));
+        self.inv.slots[SMART] = Some(forged);
+        self.inv.slots[8 * SMART] = Some(ItemStack::new(id("copper_grapple"), 1));
         for (n, c) in [
             ("pure_tincture_1", 24),
             ("rough_tincture_1", 8),
@@ -2597,7 +2598,7 @@ impl Demo {
     /// `ForgeBegin`, as the server rules it: unforged gear the forge takes,
     /// a deck of ingredient stacks (at most the forger's slots, 100 each),
     /// moved out of the pack; the session's stats from the character.
-    fn forge_begin(&mut self, pos: BlockPos, gear: u8, deck: Vec<(u8, u16)>) {
+    fn forge_begin(&mut self, pos: BlockPos, gear: u16, deck: Vec<(u16, u16)>) {
         use bm_core::forge::{DECK_STACK, DeckSlot, Gear, Session};
         let pos = self.machine(pos);
         let forger = self.character.effects(&self.tree).forger();
@@ -2792,7 +2793,7 @@ impl Demo {
             self.stations.insert(bp(blocks[0]), st);
         }
         let before = self.inv.clone();
-        self.inv.slots[9] = Some(ItemStack::new(id("iron_spanner"), 1));
+        self.inv.slots[9 * SMART] = Some(ItemStack::new(id("iron_spanner"), 1));
         for (n, c) in [("silver_ingot", 6), ("iron_ingot", 6), ("coal", 20)] {
             self.inv.add(&self.items, id(n), c);
         }
@@ -2823,7 +2824,7 @@ impl Demo {
     /// answered with `EditResult`, damage with `BlockHealth`. The demo has
     /// no look direction (it gets no inputs): an area tool's shape faces
     /// east. Unlike the server it checks no reach.
-    fn swing(&mut self, seq: u32, at: u32, pos: BlockPos, slot: u8) {
+    fn swing(&mut self, seq: u32, at: u32, pos: BlockPos, slot: u16) {
         use crate::mining::skilled_tool;
         use bm_core::mining::{HEAL_TICKS, aoe_blocks, block_health, is_crit, swing_ticks};
         let hit = shape().wrap_block(pos);
@@ -2950,7 +2951,7 @@ impl Demo {
     #[cfg(test)]
     pub fn put_slot(&mut self, slot: usize, stack: ItemStack) {
         let before = self.inv.clone();
-        self.inv.slots[slot] = Some(stack);
+        self.inv.slots[slot * SMART] = Some(stack);
         self.slots_since(&before);
     }
 
@@ -3180,7 +3181,7 @@ impl Demo {
         let before = self.inv.clone();
         for (slot, name) in [(7, "copper_bombs"), (8, "stone_sling"), (9, "iron_sling")] {
             let id = self.items.id(name).expect("builtin item");
-            self.inv.slots[slot] = Some(ItemStack::new(id, 1));
+            self.inv.slots[slot * SMART] = Some(ItemStack::new(id, 1));
         }
         self.slots_since(&before);
     }
@@ -3346,7 +3347,7 @@ impl Demo {
     /// flown from `FIGHT_VIEW`'s eye (the demo does not know where we stand)
     /// until it meets a living creature or its range. Unlike the server it
     /// spends no energy (the client predicts that) and flies through blocks.
-    fn shoot(&mut self, at: u32, slot: u8, yaw: u16, pitch: i16, charge: u16) {
+    fn shoot(&mut self, at: u32, slot: u16, yaw: u16, pitch: i16, charge: u16) {
         let Some(sling) = self
             .inv
             .get(slot as usize)
@@ -3389,7 +3390,7 @@ impl Demo {
     /// the demo's level ground, it goes off when the fuse lit `hold` ticks
     /// ago ends. Like `shoot`, it spends no energy (the client predicts
     /// that) and flies through blocks.
-    fn throw(&mut self, at: u32, slot: u8, yaw: u16, pitch: i16, hold: u16) {
+    fn throw(&mut self, at: u32, slot: u16, yaw: u16, pitch: i16, hold: u16) {
         let Some(bag) = self
             .inv
             .get(slot as usize)
@@ -3449,7 +3450,7 @@ impl Demo {
     /// skilled action speed, its damage (the same on creatures as on blocks:
     /// hand stone 200, iron 700), a crit roll, the creature's armour, one
     /// wear. Unlike the server it checks no reach.
-    fn strike(&mut self, at: u32, creature: u32, slot: u8) {
+    fn strike(&mut self, at: u32, creature: u32, slot: u16) {
         let held = self.inv.get(slot as usize);
         let Some(tool) = held.and_then(|s| self.items.get(s.item)?.tool_of(&s, &Held::default())) else {
             return;
@@ -3619,7 +3620,7 @@ mod tests {
 
     /// Swings at `pos` with hotbar `slot` as often as allowed until the
     /// demo answers with an `EditResult`; returns that poll's events.
-    fn swing_until_answered(d: &mut Demo, pos: BlockPos, slot: u8) -> Vec<NetEvent> {
+    fn swing_until_answered(d: &mut Demo, pos: BlockPos, slot: u16) -> Vec<NetEvent> {
         for n in 1..100 {
             d.send(ClientMsg::Swing {
                 seq: 1000 + n,
@@ -3672,7 +3673,7 @@ mod tests {
             seq: 1,
             at: 10,
             pos: mixer,
-            slot: 9,
+            slot: 81,
         });
         let ev = d.poll();
         assert!(
@@ -3738,14 +3739,14 @@ mod tests {
         );
         // A torch goes on the face named, and only on a solid one.
         let torch = d.items.id("torch").unwrap();
-        d.inv.slots[5] = Some(ItemStack::new(torch, 4));
+        d.inv.slots[5 * SMART] = Some(ItemStack::new(torch, 4));
         let place = |d: &mut Demo, pos, mount| {
             d.send(ClientMsg::Edit {
                 seq: 9,
                 at: 0,
                 pos,
                 action: EditAction::Place {
-                    slot: 5,
+                    slot: 45,
                     mount: Some(mount),
                 },
             });
@@ -3788,9 +3789,10 @@ mod tests {
         let first = d.poll();
         assert!(matches!(first[0], NetEvent::Connected(_)));
         assert!(first.len() > 100, "chunks follow the welcome");
+        // Visible slot 1's stack to visible slot 30 (stored indices).
         d.send(ClientMsg::MoveItems {
-            from: 1,
-            to: 30,
+            from: 9,
+            to: 270,
             count: 10,
         });
         let ev = d.poll();
@@ -3800,7 +3802,7 @@ mod tests {
         });
         let changes = slots.expect("slots sent");
         assert_eq!(changes.len(), 2);
-        assert_eq!(changes.iter().find(|c| c.0 == 30).unwrap().1.unwrap().count, 10);
+        assert_eq!(changes.iter().find(|c| c.0 == 270).unwrap().1.unwrap().count, 10);
     }
 
     fn station_views(ev: &[NetEvent]) -> Vec<StationView> {
@@ -3861,7 +3863,7 @@ mod tests {
         let pos = bp(FURNACE[1]);
         d.send(ClientMsg::StationFuel {
             pos,
-            slot: slot as u8,
+            slot: slot as u16,
             count: 4,
             into: true,
         });
@@ -3874,7 +3876,7 @@ mod tests {
             .unwrap();
         d.send(ClientMsg::StationFuel {
             pos,
-            slot: stone as u8,
+            slot: stone as u16,
             count: 5,
             into: true,
         });
@@ -3882,7 +3884,7 @@ mod tests {
         // All of it back out, onto the coal stack.
         d.send(ClientMsg::StationFuel {
             pos,
-            slot: slot as u8,
+            slot: slot as u16,
             count: 10,
             into: false,
         });
@@ -3962,7 +3964,7 @@ mod tests {
         d.send(ClientMsg::StorageMove {
             pos,
             from: SlotRef::Storage(1),
-            to: SlotRef::Inventory(35),
+            to: SlotRef::Inventory(315),
             count: coal.count,
         });
         let ev = d.poll();
@@ -3970,7 +3972,7 @@ mod tests {
         assert!(
             ev.iter()
                 .any(|e| matches!(e, NetEvent::Msg(ServerMsg::Slots { changes })
-            if changes.contains(&(35, Some(coal)))))
+            if changes.contains(&(315, Some(coal)))))
         );
         // A chest with things in it stays.
         let ev = swing_until_answered(&mut d, pos, 0);
@@ -4027,12 +4029,17 @@ mod tests {
         d.poll();
         let brick = BlockPos::new(128, 45, 127);
         let edge = 1 << octant(0, 1, 1) | 1 << octant(1, 1, 1);
-        let edit = |d: &mut Demo, seq, pos, slot: u8, octants, restore| {
+        let edit = |d: &mut Demo, seq, pos, slot: u16, octants, restore| {
             d.send(ClientMsg::Edit {
                 seq,
                 at: 0,
                 pos,
-                action: EditAction::Chisel { slot, octants, restore },
+                // Visible slot `slot`'s first stack.
+                action: EditAction::Chisel {
+                    slot: slot * SMART as u16,
+                    octants,
+                    restore,
+                },
             });
             d.poll().into_iter().find_map(|e| match e {
                 NetEvent::Msg(ServerMsg::EditResult { block, accepted, .. }) => Some((block, accepted)),
@@ -4043,7 +4050,7 @@ mod tests {
         let (block, ok) = edit(&mut d, 1, brick, 6, edge, false).unwrap();
         assert!(ok);
         assert_eq!(block.shape, Shape::new(ShapeFamily::Bevel, edge).unwrap());
-        assert_eq!(d.inv.slots[6].unwrap().wear, 1);
+        assert_eq!(d.inv.slots[6 * SMART].unwrap().wear, 1);
         // A precise cut asked of an ordinary chisel is refused.
         assert!(!edit(&mut d, 2, brick, 6, 1, false).unwrap().1);
         // Another family on the same block is refused.
@@ -4080,7 +4087,7 @@ mod tests {
             at: 0,
             pos,
             action: EditAction::Place {
-                slot: slot as u8,
+                slot: slot as u16,
                 mount: None,
             },
         });
@@ -4128,7 +4135,7 @@ mod tests {
             c.beaten = false;
         }
         d.poll();
-        let hammer = 0u8;
+        let hammer = 0u16;
         let speed = d
             .items
             .swing_tool(d.items.id("stone_hammer").ok())
@@ -4163,7 +4170,7 @@ mod tests {
         let shoot = |d: &mut Demo, at, (yaw, pitch)| {
             d.send(ClientMsg::Shoot {
                 at,
-                slot: 8,
+                slot: 72,
                 yaw,
                 pitch,
                 charge: 0,
@@ -4211,7 +4218,7 @@ mod tests {
         let throw = |d: &mut Demo, at, hold| {
             d.send(ClientMsg::Throw {
                 at,
-                slot: 7,
+                slot: 63,
                 yaw: 0,
                 pitch: 0,
                 hold,
@@ -4222,7 +4229,7 @@ mod tests {
         throw(&mut d, 10, 0);
         throw(&mut d, 11, 0);
         assert_eq!(d.fight.bombs.len(), 1, "the second waits for the cooldown");
-        assert_eq!(d.inv.get(7).unwrap().wear, 1);
+        assert_eq!(d.inv.get(7 * SMART).unwrap().wear, 1);
         let fuse = BOMB_FUSE_TICKS as f64 / 60.0;
         d.run_fight(fuse - 0.1);
         assert!(blasts(&d.poll()).is_empty(), "not yet");
@@ -4258,7 +4265,7 @@ mod tests {
         assert!(seen >= 2, "a blast every {SHOWCASE_SECONDS} s: {seen}");
         assert!(
             d.inv
-                .get(7)
+                .get(7 * SMART)
                 .is_some_and(|s| d.items.get(s.item).and_then(|d| d.bomb()).is_some())
         );
     }
@@ -4383,13 +4390,13 @@ mod tests {
             if block.id == conduit))
         );
         // Fuel from a stack reopens it.
-        d.send(act(PortalAction::AddFuel { slot: 9, count: 5 }));
+        d.send(act(PortalAction::AddFuel { slot: 81, count: 5 }));
         let v = portal_views(&d.poll()).pop().unwrap();
         assert_eq!((v.fuel, v.open), (5, true));
         // The 37 taken out joined the 60 in slot 9; 5 of those went back.
-        assert_eq!(d.inv.get(9).unwrap().count, 92);
+        assert_eq!(d.inv.get(9 * SMART).unwrap().count, 92);
         // A token of another size, or of this portal, is refused and kept.
-        d.send(act(PortalAction::Link { slot: 25 }));
+        d.send(act(PortalAction::Link { slot: 225 }));
         assert_eq!(notices(&d.poll()), vec!["That token is for a portal of another size"]);
         d.send(act(PortalAction::MakeToken));
         let ev = d.poll();
@@ -4399,16 +4406,16 @@ mod tests {
             if names == &vec![(1, "1 by 2, Hearthmoor, near 122, 121".to_string())]))
         );
         let own = d.inv.slots.iter().position(|s| s.is_some_and(|s| s.tag == 1)).unwrap();
-        d.send(act(PortalAction::Link { slot: own as u8 }));
+        d.send(act(PortalAction::Link { slot: own as u16 }));
         assert_eq!(notices(&d.poll()), vec!["That token was made at this portal"]);
         assert!(d.inv.get(own).is_some());
         // The token for Saffra links there, at two a trip; the old partner
         // is left unlinked and goes dormant.
-        d.send(act(PortalAction::Link { slot: 8 }));
+        d.send(act(PortalAction::Link { slot: 72 }));
         let v = portal_views(&d.poll()).pop().unwrap();
         assert_eq!(v.link.as_deref(), Some("Saffra, near 212, 96"));
         assert_eq!((v.trip_cost, v.open), (2, true));
-        assert!(d.inv.get(8).is_none(), "the token is used up");
+        assert!(d.inv.get(8 * SMART).is_none(), "the token is used up");
         assert_eq!(d.portals[1].link, None);
         // Unlink closes it.
         d.send(act(PortalAction::Unlink));
@@ -4518,23 +4525,25 @@ mod tests {
         let pos = bp(FORGE[0]);
         d.stations.get_mut(&pos).unwrap().forge = Some(DemoForge::default());
         let id = |d: &Demo, n: &str| d.items.id(n).unwrap();
-        d.inv.slots[30] = Some(ItemStack::new(id(&d, "copper_hammer"), 1));
-        d.inv.slots[31] = Some(ItemStack::new(id(&d, "unmaking_wax_1"), 2));
-        let pure = (0..40)
+        d.inv.slots[30 * SMART] = Some(ItemStack::new(id(&d, "copper_hammer"), 1));
+        d.inv.slots[31 * SMART] = Some(ItemStack::new(id(&d, "unmaking_wax_1"), 2));
+        let pure = (0..d.inv.slots.len())
             .find(|&i| d.inv.get(i).is_some_and(|s| s.item == id(&d, "pure_tincture_1")))
-            .unwrap() as u8;
+            .unwrap() as u16;
+        // Stored indices: visible slot n's first stack is n * SMART.
+        let at = |n: usize| (n * SMART) as u16;
         let had = d.inv.get(pure as usize).unwrap().count;
         // Refused: forged gear, and stone in the deck.
         d.send(ClientMsg::ForgeBegin {
             pos,
-            gear: 1,
+            gear: at(1),
             deck: vec![(pure, 5)],
         });
         assert_eq!(notices(&d.poll()), vec!["That cannot be forged".to_string()]);
         d.send(ClientMsg::ForgeBegin {
             pos,
-            gear: 30,
-            deck: vec![(pure, 5), (31, 1), (2, 1)],
+            gear: at(30),
+            deck: vec![(pure, 5), (at(31), 1), (at(2), 1)],
         });
         assert_eq!(
             notices(&d.poll()),
@@ -4542,14 +4551,14 @@ mod tests {
         );
         d.send(ClientMsg::ForgeBegin {
             pos,
-            gear: 30,
-            deck: vec![(pure, 5), (31, 1)],
+            gear: at(30),
+            deck: vec![(pure, 5), (at(31), 1)],
         });
         let ev = d.poll();
         let s = station_views(&ev).pop().unwrap().forge.unwrap().session.unwrap();
-        assert_eq!(d.inv.get(30), None, "the gear went in");
+        assert_eq!(d.inv.get(30 * SMART), None, "the gear went in");
         assert_eq!(d.inv.get(pure as usize).unwrap().count, had - 5);
-        assert_eq!(d.inv.get(31).unwrap().count, 1);
+        assert_eq!(d.inv.get(31 * SMART).unwrap().count, 1);
         let forger = d.character.effects(&d.tree).forger();
         assert_eq!(s.stats, forger.stats(110, 0.0), "the character's own stats");
         assert_eq!(s.deck.len(), 2);

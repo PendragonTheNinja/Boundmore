@@ -747,7 +747,7 @@ impl Session {
                 seq,
                 at,
                 pos: self.world.shape.wrap_block(pos),
-                slot: slot as u8,
+                slot: self.items.at(slot),
             });
         }
         // A bare hand breaks nothing (Nathan, 2026-10-20: as in Boundless).
@@ -775,7 +775,7 @@ impl Session {
                 seq,
                 at,
                 pos: self.world.shape.wrap_block(pos),
-                slot: slot as u8,
+                slot: self.items.at(slot),
             });
         }
         let world = &self.world;
@@ -821,7 +821,7 @@ impl Session {
             seq,
             at,
             pos: self.world.shape.wrap_block(pos),
-            slot: slot as u8,
+            slot: self.items.at(slot),
         })
     }
 
@@ -1208,7 +1208,7 @@ pub struct App {
     /// The open atlas's map (milestone 27).
     atlas: Option<crate::atlas::AtlasMap>,
     /// The atlas in this slot was used this frame: its window opens.
-    atlas_request: Option<u8>,
+    atlas_request: Option<u16>,
     /// Prices being typed in the owner's price window, by slot.
     shop_prices: HashMap<u8, String>,
     /// The name being typed in the friends window.
@@ -2628,7 +2628,7 @@ impl App {
                                 at: s.me.seq,
                                 pos: hit.block,
                                 action: EditAction::Chisel {
-                                    slot: slot as u8,
+                                    slot: s.items.at(slot as usize),
                                     octants,
                                     restore,
                                 },
@@ -2696,7 +2696,7 @@ impl App {
             mouse[0] = false;
         }
         if atlas && pressed && !s.travelling() && !claim_mode {
-            self.atlas_request = Some(slot as u8);
+            self.atlas_request = Some(s.items.at(slot as usize));
         }
         if let Some(food) = food.filter(|_| pressed && !s.travelling() && !claim_mode) {
             match s.me.state.can_eat(&food) {
@@ -2704,7 +2704,10 @@ impl App {
                     // Right after the latest input, on both sides.
                     let at = s.me.seq;
                     s.me.eat(at, food, &s.movement, s.world.shape, &s.world);
-                    link.send(ClientMsg::Eat { at, slot: slot as u8 });
+                    link.send(ClientMsg::Eat {
+                        at,
+                        slot: s.items.at(slot as usize),
+                    });
                 }
                 Err(bm_core::food::Refusal::Full) => self.notices.push("You are full".into(), now_s),
                 Err(_) => {}
@@ -2719,7 +2722,7 @@ impl App {
                     .is_some_and(|b| world.flags.solid(b) || bm_core::PhysicsWorld::liquid(world, p))
             }) {
                 Some(hit) if bm_core::PhysicsWorld::liquid(world, hit.block) => link.send(ClientMsg::FillBucket {
-                    slot: slot as u8,
+                    slot: s.items.at(slot as usize),
                     pos: hit.block,
                 }),
                 _ => self.notices.push("Fill a bucket at water".into(), now_s),
@@ -2750,7 +2753,7 @@ impl App {
                 );
                 link.send(ClientMsg::Throw {
                     at: toss.at,
-                    slot: slot as u8,
+                    slot: s.items.at(slot as usize),
                     yaw: input.yaw,
                     pitch: input.pitch,
                     hold: toss.hold,
@@ -2787,7 +2790,7 @@ impl App {
                 );
                 link.send(ClientMsg::Shoot {
                     at: fire.at,
-                    slot: slot as u8,
+                    slot: s.items.at(slot as usize),
                     yaw: input.yaw,
                     pitch: input.pitch,
                     charge: fire.charge,
@@ -2832,7 +2835,7 @@ impl App {
                         link.send(ClientMsg::Strike {
                             at,
                             creature: id,
-                            slot: slot as u8,
+                            slot: s.items.at(slot as usize),
                         });
                     }
                 } else if !s.told_no_weapon {
@@ -2936,7 +2939,7 @@ impl App {
                     at: s.me.seq,
                     pos: at,
                     action: EditAction::Place {
-                        slot: slot as u8,
+                        slot: s.items.at(slot as usize),
                         mount,
                     },
                 });
@@ -3271,7 +3274,8 @@ impl App {
                         let name = |i: ItemId| s.items.registry.get(i).map_or_else(String::new, |d| d.display.clone());
                         let loaded = s
                             .items
-                            .slot(slot as usize)
+                            .inventory
+                            .get(slot as usize)
                             .and_then(|st| bm_core::atlas::loaded(st.tag))
                             .map(name);
                         // What an atlas can find: whatever some block drops.
@@ -3282,15 +3286,15 @@ impl App {
                             .filter(|(_, d)| bm_core::atlas::finds(d))
                             .filter_map(|(b, _)| s.items.registry.drop_of(b))
                             .collect();
-                        let mut loadable: Vec<(u8, String)> = Vec::new();
-                        for i in 0..bm_core::INVENTORY_SLOTS {
-                            if let Some(st) = s.items.slot(i)
+                        let mut loadable: Vec<(u16, String)> = Vec::new();
+                        for i in 0..s.items.inventory.slots.len() {
+                            if let Some(st) = s.items.inventory.get(i)
                                 && i != slot as usize
                                 && st.colour == Colour::NATURAL
                                 && found.contains(&st.item)
                                 && !loadable.iter().any(|(_, n)| *n == name(st.item))
                             {
-                                loadable.push((i as u8, name(st.item)));
+                                loadable.push((i as u16, name(st.item)));
                             }
                         }
                         let here = crate::atlas::Here {
@@ -4178,7 +4182,8 @@ impl App {
                 if let Some(s) = &mut self.session {
                     s.selected = 9;
                 }
-                self.atlas_request = Some(9);
+                // The demo's atlas: the last hotbar slot's first stack.
+                self.atlas_request = Some(9 * bm_core::inventory::SMART as u16);
             }
             "lights" => {
                 if let Some(Link::Demo(d)) = &mut self.link {

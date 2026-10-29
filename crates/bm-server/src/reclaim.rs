@@ -226,7 +226,7 @@ mod tests {
 
         // Three slots: the stone, first in the list, fills them all and
         // nothing else fits.
-        let mut inv = Inventory { slots: vec![None; 3] };
+        let mut inv = Inventory::row(vec![None; 3]);
         assert!(r.collect("alice", &mut inv, &items));
         assert_eq!(
             inv.slots,

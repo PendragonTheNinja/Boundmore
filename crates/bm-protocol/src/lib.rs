@@ -73,7 +73,12 @@ pub enum ClientMsg {
     /// blocks it only damages with `BlockHealth`. A refused swing is
     /// answered with `EditResult { accepted: false }` (the true block) and
     /// `BlockHealth` (its true damage) for the hit block.
-    Swing { seq: u32, at: u32, pos: BlockPos, slot: u8 },
+    Swing {
+        seq: u32,
+        at: u32,
+        pos: BlockPos,
+        slot: u16,
+    },
     /// `at` is the input sequence the edit follows: the server applies it
     /// right after simulating that input, exactly where the client's
     /// prediction put it, so both judge "is a player in the way" on the same
@@ -86,9 +91,12 @@ pub enum ClientMsg {
     },
     /// Move up to `count` items between inventory slots (merge, split, or a
     /// whole-stack swap; see `Inventory::move_items`).
-    MoveItems { from: u8, to: u8, count: u16 },
+    MoveItems { from: u16, to: u16, count: u16 },
+    /// Moves a whole smart stack (visible slot) onto another (milestone
+    /// 33; `Inventory::move_group`).
+    MoveGroup { from: u8, to: u8 },
     /// Throw a whole slot away.
-    Discard { slot: u8 },
+    Discard { slot: u16 },
     /// Craft recipe `recipe` (an index into `Welcome::recipes`) `count`
     /// times. Hand recipes need no station and finish at once; station
     /// recipes name a station block of the right kind within reach, where
@@ -128,7 +136,7 @@ pub enum ClientMsg {
     /// server answers with `Slots` and `Station` (milestone 11).
     StationFuel {
         pos: BlockPos,
-        slot: u8,
+        slot: u16,
         count: u16,
         into: bool,
     },
@@ -158,12 +166,12 @@ pub enum ClientMsg {
     /// we stand on if it is not bound yet, or close (None) the open one
     /// (milestone 27). Answered with `Atlas` and the discovered tiles
     /// (`AtlasTile`), sent again as they change while it is open.
-    OpenAtlas { slot: Option<u8> },
+    OpenAtlas { slot: Option<u16> },
     /// Put one of what is in inventory slot `from` into the atlas in `slot`
     /// (giving back what it held), or take what it holds out (`from` None).
     /// An open atlas is then sent the heat map of what it holds
     /// (`AtlasHeat`).
-    AtlasLoad { slot: u8, from: Option<u8> },
+    AtlasLoad { slot: u16, from: Option<u16> },
     /// Ask, accept, decline or end a friendship with the player of this
     /// name (milestone 25). Answered with `Friends`.
     Friend { name: String, action: FriendAction },
@@ -210,14 +218,14 @@ pub enum ClientMsg {
     /// clamps it). Energy is spent at `at` on both sides, as for swings.
     Shoot {
         at: u32,
-        slot: u8,
+        slot: u16,
         yaw: u16,
         pitch: i16,
         charge: u16,
     },
     /// Swings the tool in `slot` at a creature right after input `at`
     /// (tools and the hand stone hit creatures, on the swing timing).
-    Strike { at: u32, creature: u32, slot: u8 },
+    Strike { at: u32, creature: u32, slot: u16 },
     /// Hits a dead creature's body for your own drops (once per body).
     Loot { creature: u32 },
     /// Defeated: come back on safe ground near where you fell.
@@ -228,7 +236,7 @@ pub enum ClientMsg {
     /// its fuse ran from the light). Energy and one use are spent at `at`.
     Throw {
         at: u32,
-        slot: u8,
+        slot: u16,
         yaw: u16,
         pitch: i16,
         hold: u16,
@@ -240,10 +248,10 @@ pub enum ClientMsg {
     /// (milestone 16): its hunger off, its buff on, raw meat's sickness. The
     /// client applies the same at `at` (`PlayerState::eat`); the server
     /// answers with `Slots`, or nothing if it refuses.
-    Eat { at: u32, slot: u8 },
+    Eat { at: u32, slot: u16 },
     /// Fills one empty bucket from hotbar `slot` at the water block `pos`,
     /// within reach (milestone 16). Answered with `Slots`, or a `Notice`.
-    FillBucket { slot: u8, pos: BlockPos },
+    FillBucket { slot: u16, pos: BlockPos },
     /// What is the crop at `pos`? (milestone 16) Answered with `CropInfo`
     /// if it is one.
     LookCrop { pos: BlockPos },
@@ -253,8 +261,8 @@ pub enum ClientMsg {
     /// Answered with `Slots` and `Station`, or a `Notice`.
     ForgeBegin {
         pos: BlockPos,
-        gear: u8,
-        deck: Vec<(u8, u16)>,
+        gear: u16,
+        deck: Vec<(u16, u16)>,
     },
     /// Uses one ingredient from deck slot `slot` in the session at `pos`: one
     /// round. `round` is the number of rounds already played as the client
@@ -282,11 +290,11 @@ pub enum PortalAction {
     MakeToken,
     /// Link with the portal the token in this pack slot was made at, using
     /// the token up.
-    Link { slot: u8 },
+    Link { slot: u16 },
     /// Forget the link, closing both sides.
     Unlink,
     /// Up to `count` wayshards from this pack slot into the tank.
-    AddFuel { slot: u8, count: u16 },
+    AddFuel { slot: u16, count: u16 },
     /// Up to `count` wayshards from the tank into the pack.
     TakeFuel { count: u16 },
 }
@@ -313,7 +321,7 @@ pub enum SkillAction {
 /// A slot in the inventory or in an open storage block.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum SlotRef {
-    Inventory(u8),
+    Inventory(u16),
     Storage(u8),
 }
 
@@ -341,12 +349,12 @@ pub enum EditAction {
     /// clicked: `Floor` on top of the block below, a wall direction against
     /// that side neighbour (`ItemRegistry::prop_block` picks the variant).
     /// None for ordinary blocks.
-    Place { slot: u8, mount: Option<Mount> },
+    Place { slot: u16, mount: Option<Mount> },
     /// Cuts (or, with `restore`, fills back) the octants in `octants` of the
     /// block, with the chisel in hotbar `slot` (ADR-0008). A precise chisel
     /// moves exactly one octant, an ordinary one an edge pair
     /// (`bm_core::edge_pairs`).
-    Chisel { slot: u8, octants: u8, restore: bool },
+    Chisel { slot: u16, octants: u8, restore: bool },
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -580,7 +588,7 @@ pub enum ServerMsg {
     },
     /// Inventory slots that changed, with their new contents.
     Slots {
-        changes: Vec<(u8, Option<ItemStack>)>,
+        changes: Vec<(u16, Option<ItemStack>)>,
     },
     /// A watched station's state (sent on change, and while a job runs).
     Station(StationView),
@@ -1137,7 +1145,12 @@ pub enum ShopAction {
     /// Anyone else: sell up to `count` from pack slot `from` into a basket's
     /// slot, at the `price` a piece the seller was shown (refused if it
     /// changed).
-    Sell { slot: u8, from: u8, count: u16, price: u64 },
+    Sell {
+        slot: u8,
+        from: u16,
+        count: u16,
+        price: u64,
+    },
 }
 
 /// Which of the two.
@@ -1166,7 +1179,7 @@ pub struct SettlementView {
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct AtlasView {
     /// The inventory slot it was opened from.
-    pub slot: u8,
+    pub slot: u16,
     pub planet: u16,
     pub name: String,
     pub shape: PlanetShape,

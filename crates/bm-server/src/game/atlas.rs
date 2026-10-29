@@ -11,7 +11,7 @@ use bm_protocol::AtlasView;
 
 /// A player's open atlas.
 pub(super) struct OpenAtlas {
-    pub slot: u8,
+    pub slot: u16,
     pub planet: u16,
     /// Tiles sent (or found to hold nothing of theirs to see).
     pub sent: HashSet<(u16, u16)>,
@@ -34,7 +34,7 @@ const ATLAS_IDLE_TICKS: u64 = 5 * 60 * 60;
 
 impl Game {
     /// `ClientMsg::OpenAtlas`.
-    pub(super) fn open_atlas(&mut self, id: u32, slot: Option<u8>) {
+    pub(super) fn open_atlas(&mut self, id: u32, slot: Option<u16>) {
         let Some(slot) = slot else {
             if let Some(p) = self.players.get_mut(&id) {
                 p.atlas = None;
@@ -83,7 +83,7 @@ impl Game {
         });
     }
 
-    fn atlas_view(&self, pi: usize, account: &str, slot: u8, closed: bool) -> AtlasView {
+    fn atlas_view(&self, pi: usize, account: &str, slot: u16, closed: bool) -> AtlasView {
         let planet = &self.planets[pi];
         let sky = &self.skies[pi];
         AtlasView {
@@ -288,7 +288,7 @@ impl Game {
 
     /// `ClientMsg::AtlasLoad`: one of what is in `from` goes into the atlas
     /// in `slot` (what it held comes back), or what it holds comes out.
-    pub(super) fn atlas_load(&mut self, id: u32, slot: u8, from: Option<u8>) {
+    pub(super) fn atlas_load(&mut self, id: u32, slot: u16, from: Option<u16>) {
         let Some(p) = self.players.get(&id) else { return };
         let Some(atlas_stack) = p.inventory.get(slot as usize) else {
             return;

@@ -219,7 +219,7 @@ impl Game {
         at: u32,
         pos: BlockPos,
         canon: BlockPos,
-        slot: u8,
+        slot: u16,
         tool: bm_core::items::ToolStats,
     ) {
         let Some(p) = self.players.get(&id) else { return };

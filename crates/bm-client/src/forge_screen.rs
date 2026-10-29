@@ -14,7 +14,7 @@ use crate::menus::{
 use bm_core::forge::{
     Action, BuffKind, DECK_STACK, Forger, Gear, IngredientDef, POOL_MAX, SessionStats, TraitKind, ingredient,
 };
-use bm_core::{BlockPos, INVENTORY_SLOTS, ItemKind, ItemStack, Station};
+use bm_core::{BlockPos, ItemKind, ItemStack, Station};
 use bm_protocol::{ClientMsg, ForgeOutcome, ForgeView, SessionView};
 use egui::{Color32, CornerRadius, Rect, Sense, Stroke, StrokeKind, Ui, Vec2, pos2, vec2};
 
@@ -38,9 +38,9 @@ fn kind_colour(kind: TraitKind) -> Color32 {
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct ForgeUi {
     /// The inventory slot of the gear chosen.
-    pub gear: Option<u8>,
+    pub gear: Option<u16>,
     /// The deck: inventory slots and how many of each.
-    pub deck: Vec<(u8, u16)>,
+    pub deck: Vec<(u16, u16)>,
     /// `rounds` of the session when we last sent `ForgeUse`.
     pub sent: Option<u32>,
 }
@@ -61,29 +61,29 @@ pub fn ingredient_of(items: &Items, stack: &ItemStack) -> Option<&'static Ingred
 }
 
 /// Pack slots holding gear the forge takes, in slot order.
-pub fn gear_slots(items: &Items) -> Vec<u8> {
-    (0..INVENTORY_SLOTS)
+pub fn gear_slots(items: &Items) -> Vec<u16> {
+    (0..items.inventory.slots.len())
         .filter(|&i| items.inventory.get(i).is_some_and(|s| can_forge(items, &s)))
-        .map(|i| i as u8)
+        .map(|i| i as u16)
         .collect()
 }
 
 /// Pack slots holding forging ingredients, in slot order.
-pub fn ingredient_slots(items: &Items) -> Vec<u8> {
-    (0..INVENTORY_SLOTS)
+pub fn ingredient_slots(items: &Items) -> Vec<u16> {
+    (0..items.inventory.slots.len())
         .filter(|&i| {
             items
                 .inventory
                 .get(i)
                 .is_some_and(|s| ingredient_of(items, &s).is_some())
         })
-        .map(|i| i as u8)
+        .map(|i| i as u16)
         .collect()
 }
 
 /// What a session with the gear in `slot` would start with, from the
 /// character's own skills (no power: coils come later).
-pub fn preview(items: &Items, forger: &Forger, slot: u8) -> Option<SessionStats> {
+pub fn preview(items: &Items, forger: &Forger, slot: u16) -> Option<SessionStats> {
     let stack = items.inventory.get(slot as usize)?;
     let def = items.def(&stack)?;
     Gear::of(def)?;
@@ -118,7 +118,7 @@ impl ForgeUi {
 
     /// Puts the ingredient stack in `slot` into the deck (as many as it
     /// holds, up to 100), if there is room and it is not in already.
-    pub fn add(&mut self, items: &Items, slot: u8, slots: usize) {
+    pub fn add(&mut self, items: &Items, slot: u16, slots: usize) {
         let Some(s) = items.inventory.get(slot as usize) else {
             return;
         };

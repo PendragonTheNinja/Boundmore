@@ -16,45 +16,7 @@ use crate::store::{SavedSlots, load_slots, save_slots};
 use bm_core::{BlockPos, Inventory, ItemRegistry, ItemStack};
 use std::collections::{BTreeSet, HashMap};
 
-/// What a move leaves in its two slots, or None if nothing would move.
-/// `src` and `dst` are different slots (in one container or two).
-pub fn move_stack(
-    items: &ItemRegistry,
-    src: Option<ItemStack>,
-    dst: Option<ItemStack>,
-    count: u16,
-) -> Option<(Option<ItemStack>, Option<ItemStack>)> {
-    let src = src?;
-    if count == 0 {
-        return None;
-    }
-    let n = count.min(src.count);
-    let less = |n: u16| {
-        (src.count > n).then_some(ItemStack {
-            count: src.count - n,
-            ..src
-        })
-    };
-    match dst {
-        None => Some((less(n), Some(ItemStack { count: n, ..src }))),
-        Some(d) if d.stacks_with(&src) => {
-            let max = items.get(src.item).map_or(1, |def| def.stack);
-            let n = n.min(max.saturating_sub(d.count));
-            if n == 0 {
-                return None;
-            }
-            Some((
-                less(n),
-                Some(ItemStack {
-                    count: d.count + n,
-                    ..d
-                }),
-            ))
-        }
-        // Different items (or a worn tool): only a whole stack swaps.
-        Some(d) => (n == src.count).then_some((Some(d), Some(src))),
-    }
-}
+pub use bm_core::inventory::move_stack;
 
 /// Every storage block of one planet with something in it.
 #[derive(Default)]
@@ -138,7 +100,7 @@ impl Storages {
                 let saved = self
                     .map
                     .get(&pos)
-                    .map(|slots| save_slots(items, &Inventory { slots: slots.clone() }));
+                    .map(|slots| save_slots(items, &Inventory::row(slots.clone())));
                 (pos, saved)
             })
             .collect()
@@ -218,9 +180,7 @@ mod tests {
         for a in stacks {
             for b in stacks {
                 for count in [0, 1, 7, 40, 60, 100, 500] {
-                    let mut inv = Inventory::default();
-                    inv.slots[0] = a;
-                    inv.slots[1] = b;
+                    let mut inv = Inventory::row(vec![a, b]);
                     inv.move_items(&items, 0, 1, count);
                     let after = move_stack(&items, a, b, count).unwrap_or((a, b));
                     assert_eq!((inv.slots[0], inv.slots[1]), after, "{a:?} -> {b:?} x{count}");

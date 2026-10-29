@@ -3,68 +3,124 @@
 //! The server is the authority (ADR-0004): nothing here changes what the
 //! player sees. The window shows the last `Storage` and `Slots` the server
 //! sent; these functions only decide which moves are worth asking for, using
-//! the very rules the server runs (`Inventory::move_items` over the
-//! inventory and the chest as one row of slots), so an obviously refused
-//! drag is never sent. The offline demo answers with the same rules.
+//! the very rule the server runs (`bm_core::inventory::move_across`), so an
+//! obviously refused drag is never sent. The offline demo answers with the
+//! same rule.
+//!
+//! In the window, `SlotRef::Inventory(g)` names a *visible* slot, a smart
+//! stack (milestone 33); messages name stored indices, so every request
+//! turns the one into the other here.
 
-use crate::items::half;
+use crate::items::{Items, half};
+use bm_core::inventory::{Side, move_across};
 use bm_core::{BlockPos, Inventory, ItemRegistry, ItemStack};
 use bm_protocol::{ClientMsg, SlotRef};
 
-/// Applies a move between the inventory and a chest (or within either) the
-/// way the server does: merge, split, or a whole-stack swap. Returns whether
-/// anything moved; on false neither side changed.
+/// A protocol slot reference (stored indices) as the inventory rules name
+/// it.
+pub fn side(r: SlotRef) -> Side {
+    match r {
+        SlotRef::Inventory(i) => Side::Pack(i as usize),
+        SlotRef::Storage(i) => Side::Row(i as usize),
+    }
+}
+
+/// Applies a move (stored indices) between the inventory and a chest, or
+/// within either, the way the server does. Returns whether anything moved;
+/// on false neither side changed.
 pub fn apply_move(
     items: &ItemRegistry,
-    inv: &mut [Option<ItemStack>],
+    inv: &mut Inventory,
     chest: &mut [Option<ItemStack>],
     from: SlotRef,
     to: SlotRef,
     count: u16,
 ) -> bool {
-    let n = inv.len();
-    let index = |r: SlotRef| match r {
-        SlotRef::Inventory(i) => ((i as usize) < n).then_some(i as usize),
-        SlotRef::Storage(i) => ((i as usize) < chest.len()).then_some(n + i as usize),
-    };
-    let (Some(a), Some(b)) = (index(from), index(to)) else {
-        return false;
-    };
-    let mut all = Inventory {
-        slots: inv.iter().chain(chest.iter()).copied().collect(),
-    };
-    if all.move_items(items, a, b, count).is_none() {
-        return false;
-    }
-    let (left, right) = all.slots.split_at(n);
-    inv.copy_from_slice(left);
-    chest.copy_from_slice(right);
-    true
+    move_across(items, inv, chest, side(from), side(to), count)
 }
 
-/// What is in a slot of either side.
-pub fn stack_at(inv: &[Option<ItemStack>], chest: &[Option<ItemStack>], r: SlotRef) -> Option<ItemStack> {
+/// What a slot of either side shows: a visible inventory slot's active
+/// stack, or a chest slot's.
+pub fn stack_at(inv: &Inventory, chest: &[Option<ItemStack>], r: SlotRef) -> Option<ItemStack> {
     match r {
-        SlotRef::Inventory(i) => inv.get(i as usize).copied().flatten(),
+        SlotRef::Inventory(g) => inv.held(g as usize),
         SlotRef::Storage(i) => chest.get(i as usize).copied().flatten(),
     }
 }
 
-/// The message for dragging `from` onto `to` (the whole stack or half), or
-/// None when the server would refuse it. A move within the inventory is an
-/// ordinary `MoveItems`; anything touching the chest is a `StorageMove`.
+/// Where a stack (`src`, coming from `from`, a stored reference) dropped on
+/// window slot `to` lands, as a stored reference: in a visible inventory
+/// slot, a stack it tops up, else an empty sub-slot if the smart stack takes
+/// its family, else the active stack (a whole-stack swap); a chest slot is
+/// itself.
+fn landing(items: &ItemRegistry, inv: &Inventory, from: SlotRef, src: ItemStack, to: SlotRef) -> Option<SlotRef> {
+    let SlotRef::Inventory(g) = to else { return Some(to) };
+    let g = g as usize;
+    if g >= inv.groups() {
+        return None;
+    }
+    let max = items.get(src.item).map_or(1, |d| d.stack);
+    let range = inv.group_range(g);
+    let own = |i: usize| from == SlotRef::Inventory(i as u16);
+    let pick = range
+        .clone()
+        .find(|&i| !own(i) && inv.get(i).is_some_and(|d| d.stacks_with(&src) && d.count < max))
+        .or_else(|| {
+            inv.accepts(items, g, src.item, None)
+                .then(|| range.clone().find(|&i| inv.slots[i].is_none()))
+                .flatten()
+        })
+        .or_else(|| inv.active(g))?;
+    Some(SlotRef::Inventory(pick as u16))
+}
+
+/// A window slot as a stored reference to its active stack (a visible
+/// inventory slot's first filled sub-slot).
+fn stored(inv: &Inventory, r: SlotRef) -> Option<SlotRef> {
+    match r {
+        SlotRef::Inventory(g) => inv.active(g as usize).map(|i| SlotRef::Inventory(i as u16)),
+        other => Some(other),
+    }
+}
+
+/// The message for dragging window slot `from` onto `to` (the whole stack
+/// or half), or None when the server would refuse it. Within the inventory
+/// it is the inventory's own request (whole smart stacks move together);
+/// anything touching the chest is a `StorageMove` of the active stack.
 pub fn move_request(
-    items: &ItemRegistry,
-    inv: &[Option<ItemStack>],
+    items: &Items,
     chest: &[Option<ItemStack>],
     pos: BlockPos,
     from: SlotRef,
     to: SlotRef,
     half_stack: bool,
 ) -> Option<ClientMsg> {
-    let src = stack_at(inv, chest, from)?;
+    if let (SlotRef::Inventory(a), SlotRef::Inventory(b)) = (from, to) {
+        return items.move_request(a as usize, b as usize, half_stack);
+    }
+    let inv = &items.inventory;
+    let from = stored(inv, from)?;
+    move_stored(&items.registry, inv, chest, pos, from, to, half_stack)
+}
+
+/// As [`move_request`], for a stack named by its stored reference (a
+/// sub-slot of an opened smart stack, or a chest slot).
+pub fn move_stored(
+    items: &ItemRegistry,
+    inv: &Inventory,
+    chest: &[Option<ItemStack>],
+    pos: BlockPos,
+    from: SlotRef,
+    to: SlotRef,
+    half_stack: bool,
+) -> Option<ClientMsg> {
+    let src = match from {
+        SlotRef::Inventory(i) => inv.get(i as usize),
+        SlotRef::Storage(i) => chest.get(i as usize).copied().flatten(),
+    }?;
     let count = if half_stack { half(src.count) } else { src.count };
-    let (mut i, mut c) = (inv.to_vec(), chest.to_vec());
+    let to = landing(items, inv, from, src, to)?;
+    let (mut i, mut c) = (inv.clone(), chest.to_vec());
     if !apply_move(items, &mut i, &mut c, from, to, count) {
         return None;
     }
@@ -74,43 +130,75 @@ pub fn move_request(
     })
 }
 
-/// Where Shift-click sends a stack: across to the other side, onto the
-/// first stack it can join (same item and colour, unworn) with room, else
-/// the first empty slot.
-pub fn shift_target(
+/// The messages for Shift-clicking window slot `from`: everything in it
+/// across to the other side (milestone 33: every stack of a smart stack,
+/// each onto the first stack it can join with room, else the first empty
+/// slot), worked out one after another as the server will apply them.
+pub fn shift_requests(
     items: &ItemRegistry,
-    inv: &[Option<ItemStack>],
-    chest: &[Option<ItemStack>],
-    from: SlotRef,
-) -> Option<SlotRef> {
-    let src = stack_at(inv, chest, from)?;
-    let (other, across) = match from {
-        SlotRef::Inventory(_) => (chest, true),
-        SlotRef::Storage(_) => (inv, false),
-    };
-    let limit = items.get(src.item).map(|d| d.stack).unwrap_or(1);
-    let merge = other
-        .iter()
-        .position(|s| s.is_some_and(|d| d.stacks_with(&src) && d.count < limit));
-    let slot = merge.or_else(|| other.iter().position(|s| s.is_none()))?;
-    let slot = u8::try_from(slot).ok()?;
-    Some(if across {
-        SlotRef::Storage(slot)
-    } else {
-        SlotRef::Inventory(slot)
-    })
-}
-
-/// The message for Shift-clicking `from`: the whole stack across.
-pub fn shift_request(
-    items: &ItemRegistry,
-    inv: &[Option<ItemStack>],
+    inv: &Inventory,
     chest: &[Option<ItemStack>],
     pos: BlockPos,
     from: SlotRef,
-) -> Option<ClientMsg> {
-    let to = shift_target(items, inv, chest, from)?;
-    move_request(items, inv, chest, pos, from, to, false)
+) -> Vec<ClientMsg> {
+    let sources: Vec<SlotRef> = match from {
+        SlotRef::Inventory(g) => inv
+            .group_range(g as usize)
+            .filter(|&i| inv.slots[i].is_some())
+            .map(|i| SlotRef::Inventory(i as u16))
+            .collect(),
+        other => vec![other],
+    };
+    let (mut i, mut c) = (inv.clone(), chest.to_vec());
+    let mut out = Vec::new();
+    for src_ref in sources {
+        let Some(src) = (match src_ref {
+            SlotRef::Inventory(k) => i.get(k as usize),
+            SlotRef::Storage(k) => c.get(k as usize).copied().flatten(),
+        }) else {
+            continue;
+        };
+        let Some(to) = shift_target(items, &i, &c, src_ref, src) else {
+            continue;
+        };
+        if apply_move(items, &mut i, &mut c, src_ref, to, src.count) {
+            out.push(ClientMsg::StorageMove {
+                pos,
+                from: src_ref,
+                to,
+                count: src.count,
+            });
+        }
+    }
+    out
+}
+
+/// Where Shift-click sends a stack: across to the other side, onto the
+/// first stack it can join (same item and colour, unworn) with room, else
+/// (into the pack) where adding it would put it, else the first empty slot.
+fn shift_target(
+    items: &ItemRegistry,
+    inv: &Inventory,
+    chest: &[Option<ItemStack>],
+    from: SlotRef,
+    src: ItemStack,
+) -> Option<SlotRef> {
+    let limit = items.get(src.item).map(|d| d.stack).unwrap_or(1);
+    match from {
+        SlotRef::Inventory(_) => {
+            let merge = chest
+                .iter()
+                .position(|s| s.is_some_and(|d| d.stacks_with(&src) && d.count < limit));
+            let slot = merge.or_else(|| chest.iter().position(|s| s.is_none()))?;
+            Some(SlotRef::Storage(u8::try_from(slot).ok()?))
+        }
+        SlotRef::Storage(_) => {
+            let mut trial = inv.clone();
+            trial.add_stack(items, src);
+            let slot = (0..trial.slots.len()).find(|&i| trial.slots[i] != inv.slots[i])?;
+            Some(SlotRef::Inventory(slot as u16))
+        }
+    }
 }
 
 /// A storage view from the server, made safe to index and draw: unknown
@@ -127,7 +215,8 @@ pub fn sanitize(items: &ItemRegistry, slots: Vec<Option<ItemStack>>) -> Vec<Opti
 #[cfg(test)]
 mod tests {
     use super::*;
-    use bm_core::{BlockRegistry, INVENTORY_SLOTS};
+    use bm_core::inventory::SMART;
+    use bm_core::{BlockRegistry, Colour};
 
     fn reg() -> ItemRegistry {
         ItemRegistry::builtin(&BlockRegistry::builtin())
@@ -137,192 +226,108 @@ mod tests {
         Some(ItemStack::new(r.id(name).unwrap(), n))
     }
 
-    const POS: BlockPos = BlockPos { x: 1, y: 2, z: 3 };
+    fn items_with(inv: Inventory) -> Items {
+        let blocks = BlockRegistry::builtin();
+        let reg = reg();
+        Items::new(
+            reg.defs().to_vec(),
+            vec![],
+            inv,
+            bm_core::ColourPalette::builtin(),
+            &blocks,
+        )
+        .unwrap()
+    }
 
     #[test]
     fn moves_between_the_sides_follow_the_inventory_rules() {
         let r = reg();
-        let mut inv = vec![None; INVENTORY_SLOTS];
-        let mut chest = vec![None; 20];
-        inv[0] = st(&r, "stone", 80);
-        chest[0] = st(&r, "stone", 50);
-        chest[1] = st(&r, "soil", 3);
-        // Merge into the inventory up to the stack limit.
-        assert!(apply_move(
-            &r,
-            &mut inv,
-            &mut chest,
-            SlotRef::Storage(0),
-            SlotRef::Inventory(0),
-            50
-        ));
-        assert_eq!(inv[0].unwrap().count, 100);
-        assert_eq!(chest[0].unwrap().count, 30);
-        // Split into an empty chest slot.
-        assert!(apply_move(
-            &r,
-            &mut inv,
-            &mut chest,
-            SlotRef::Inventory(0),
-            SlotRef::Storage(5),
-            10
-        ));
-        assert_eq!((inv[0].unwrap().count, chest[5].unwrap().count), (90, 10));
-        // Different items swap whole stacks only.
-        let before = (inv.clone(), chest.clone());
-        assert!(!apply_move(
-            &r,
-            &mut inv,
-            &mut chest,
-            SlotRef::Storage(1),
-            SlotRef::Inventory(0),
-            1
-        ));
-        assert_eq!((inv.clone(), chest.clone()), before, "a refused move changes nothing");
-        assert!(apply_move(
-            &r,
-            &mut inv,
-            &mut chest,
-            SlotRef::Storage(1),
-            SlotRef::Inventory(0),
-            3
-        ));
-        assert_eq!(inv[0].unwrap().item, r.id("soil").unwrap());
-        assert_eq!(chest[1].unwrap().count, 90);
-        // Off either end.
-        assert!(!apply_move(
-            &r,
-            &mut inv,
-            &mut chest,
-            SlotRef::Storage(20),
-            SlotRef::Inventory(1),
-            1
-        ));
-        assert!(!apply_move(
-            &r,
-            &mut inv,
-            &mut chest,
-            SlotRef::Storage(1),
-            SlotRef::Inventory(40),
-            1
-        ));
+        let mut inv = Inventory::default();
+        inv.slots[0] = st(&r, "stone", 30);
+        let mut chest = vec![None; 4];
+        let (i, s) = (SlotRef::Inventory, SlotRef::Storage);
+        assert!(apply_move(&r, &mut inv, &mut chest, i(0), s(1), 10));
+        assert_eq!((inv.slots[0], chest[1]), (st(&r, "stone", 20), st(&r, "stone", 10)));
+        // Soil never joins the stone smart stack.
+        chest[2] = st(&r, "soil", 3);
+        assert!(!apply_move(&r, &mut inv, &mut chest, s(2), i(1), 3));
+        assert!(apply_move(&r, &mut inv, &mut chest, s(2), i(SMART as u16), 3));
+        assert_eq!(inv.held(1), st(&r, "soil", 3));
     }
 
     #[test]
     fn drags_are_checked_before_they_are_sent() {
         let r = reg();
-        let mut inv = vec![None; INVENTORY_SLOTS];
-        let mut chest = vec![None; 20];
-        inv[0] = st(&r, "stone", 9);
-        inv[1] = st(&r, "stone", 100);
-        chest[0] = st(&r, "soil", 4);
-        chest[1] = st(&r, "stone", 100);
-        let sm = |from, to, count| {
-            Some(ClientMsg::StorageMove {
-                pos: POS,
-                from,
-                to,
-                count,
-            })
-        };
+        let mut inv = Inventory::default();
+        inv.slots[0] = st(&r, "stone", 30);
+        inv.slots[SMART] = st(&r, "soil", 5);
+        let items = items_with(inv);
+        let chest = vec![None, st(&r, "stone", 95), st(&r, "sand", 2)];
+        let pos = BlockPos::new(1, 2, 3);
         let (i, s) = (SlotRef::Inventory, SlotRef::Storage);
-        // Whole and half stacks into an empty chest slot.
+        let mv = |from, to, count| Some(ClientMsg::StorageMove { pos, from, to, count });
+        // Into the chest: onto an empty slot, or topping up a stack.
+        assert_eq!(move_request(&items, &chest, pos, i(0), s(0), false), mv(i(0), s(0), 30));
+        assert_eq!(move_request(&items, &chest, pos, i(0), s(1), true), mv(i(0), s(1), 15));
+        // Out of the chest onto a visible slot: into its smart stack when
+        // it is of that family, never into another's (sand onto soil swaps
+        // whole stacks, which the soil's smart stack refuses no more than
+        // the stone's would).
+        assert_eq!(move_request(&items, &chest, pos, s(1), i(0), false), mv(s(1), i(0), 95));
         assert_eq!(
-            move_request(&r, &inv, &chest, POS, i(0), s(4), false),
-            sm(i(0), s(4), 9)
+            move_request(&items, &chest, pos, s(1), i(5), false),
+            mv(s(1), i(5 * SMART as u16), 95)
         );
-        assert_eq!(move_request(&r, &inv, &chest, POS, i(0), s(4), true), sm(i(0), s(4), 5));
-        // Whole stacks of different items swap; half stacks are never sent.
         assert_eq!(
-            move_request(&r, &inv, &chest, POS, i(0), s(0), false),
-            sm(i(0), s(0), 9)
+            move_request(&items, &chest, pos, s(2), i(1), false),
+            mv(s(2), i(SMART as u16), 2)
         );
-        assert_eq!(move_request(&r, &inv, &chest, POS, i(0), s(0), true), None);
-        // Onto a full stack, from an empty slot, onto itself, off the end.
-        assert_eq!(move_request(&r, &inv, &chest, POS, i(0), s(1), false), None);
-        assert_eq!(move_request(&r, &inv, &chest, POS, s(9), i(9), false), None);
-        assert_eq!(move_request(&r, &inv, &chest, POS, s(0), s(0), false), None);
-        assert_eq!(move_request(&r, &inv, &chest, POS, s(0), s(25), false), None);
-        // Within the chest is a StorageMove; within the inventory, MoveItems.
-        assert_eq!(move_request(&r, &inv, &chest, POS, s(0), s(7), true), sm(s(0), s(7), 2));
+        // Within the inventory, the inventory's own requests.
         assert_eq!(
-            move_request(&r, &inv, &chest, POS, i(0), i(7), false),
-            Some(ClientMsg::MoveItems {
-                from: 0,
-                to: 7,
-                count: 9
-            })
+            move_request(&items, &chest, pos, i(0), i(1), false),
+            Some(ClientMsg::MoveGroup { from: 0, to: 1 })
         );
+        // Nothing from nothing.
+        assert_eq!(move_request(&items, &chest, pos, s(0), i(3), false), None);
     }
 
     #[test]
-    fn shift_click_prefers_a_stack_with_room_then_an_empty_slot() {
-        let r = reg();
-        let mut inv = vec![None; INVENTORY_SLOTS];
-        let mut chest = vec![None; 20];
-        inv[3] = st(&r, "stone", 30);
-        chest[0] = st(&r, "soil", 5);
-        chest[2] = st(&r, "stone", 100);
-        chest[6] = st(&r, "stone", 60);
-        let (i, s) = (SlotRef::Inventory, SlotRef::Storage);
-        // The full stack in slot 2 is passed over for the one with room.
-        assert_eq!(shift_target(&r, &inv, &chest, i(3)), Some(s(6)));
-        assert_eq!(
-            shift_request(&r, &inv, &chest, POS, i(3)),
-            Some(ClientMsg::StorageMove {
-                pos: POS,
-                from: i(3),
-                to: s(6),
-                count: 30
-            })
-        );
-        // No soil in the inventory: the first empty slot (the hotbar's first).
-        assert_eq!(shift_target(&r, &inv, &chest, s(0)), Some(i(0)));
-        // A full chest with no room for the item sends nothing.
-        let full: Vec<_> = (0..20).map(|_| st(&r, "soil", 100)).collect();
-        assert_eq!(shift_target(&r, &inv, &full, i(3)), None);
-        assert_eq!(shift_request(&r, &inv, &full, POS, i(3)), None);
-        // Nothing to send from an empty slot.
-        assert_eq!(shift_target(&r, &inv, &chest, i(0)), None);
-        // Worn items never merge, whatever their stack size: an empty slot.
-        let mut worn = st(&r, "stone", 10).unwrap();
-        worn.wear = 5;
-        inv[4] = Some(worn);
-        assert_eq!(shift_target(&r, &inv, &chest, i(4)), Some(s(1)));
-    }
-
-    #[test]
-    fn shift_click_joins_only_a_stack_of_the_same_colour() {
-        use bm_core::Colour;
+    fn shift_click_sends_a_whole_smart_stack_across_and_sorts_it() {
         let r = reg();
         let stone = r.id("stone").unwrap();
-        let mut inv = vec![None; INVENTORY_SLOTS];
-        let mut chest = vec![None; 20];
-        inv[3] = Some(ItemStack::coloured(stone, Colour(12), 10));
-        chest[0] = Some(ItemStack::new(stone, 20));
-        chest[1] = Some(ItemStack::coloured(stone, Colour(40), 20));
-        chest[4] = Some(ItemStack::coloured(stone, Colour(12), 20));
-        let (i, s) = (SlotRef::Inventory, SlotRef::Storage);
-        // Natural and another colour are passed over for the matching stack.
-        assert_eq!(shift_target(&r, &inv, &chest, i(3)), Some(s(4)));
-        // With no stack of its colour, the first empty slot.
-        chest[4] = None;
-        assert_eq!(shift_target(&r, &inv, &chest, i(3)), Some(s(2)));
-        assert!(shift_request(&r, &inv, &chest, POS, i(3)).is_some());
+        let mut inv = Inventory::default();
+        inv.slots[0] = Some(ItemStack::coloured(stone, Colour(3), 10));
+        inv.slots[1] = Some(ItemStack::coloured(stone, Colour(5), 7));
+        inv.slots[2] = Some(ItemStack::new(stone, 4));
+        let chest = vec![None, Some(ItemStack::coloured(stone, Colour(5), 90)), None, None];
+        let pos = BlockPos::new(0, 0, 0);
+        let msgs = shift_requests(&r, &inv, &chest, pos, SlotRef::Inventory(0));
+        let to = |m: &ClientMsg| match m {
+            ClientMsg::StorageMove { to, .. } => *to,
+            _ => unreachable!(),
+        };
+        assert_eq!(msgs.len(), 3, "every stack goes");
+        // Colour 3 to the first empty slot, colour 5 onto its stack, natural
+        // to the next empty one.
+        assert_eq!(
+            msgs.iter().map(to).collect::<Vec<_>>(),
+            [SlotRef::Storage(0), SlotRef::Storage(1), SlotRef::Storage(2)]
+        );
+        // And back: into the pack where adding would put it.
+        let msgs = shift_requests(&r, &inv, &chest, pos, SlotRef::Storage(1));
+        assert_eq!(to(&msgs[0]), SlotRef::Inventory(1), "onto the matching stack");
     }
 
     #[test]
     fn views_from_the_server_are_sanitized() {
         let r = reg();
         let slots = vec![
-            st(&r, "stone", 5),
             Some(ItemStack::new(bm_core::ItemId(60000), 1)),
-            st(&r, "stone", 0),
-            None,
+            Some(ItemStack::new(r.id("stone").unwrap(), 0)),
+            st(&r, "stone", 3),
         ];
         let clean = sanitize(&r, slots);
-        assert_eq!(clean.len(), 4);
-        assert!(clean[0].is_some() && clean[1].is_none() && clean[2].is_none());
-        assert_eq!(sanitize(&r, vec![None; 1000]).len(), 256);
+        assert_eq!(clean, vec![None, None, st(&r, "stone", 3)]);
+        assert_eq!(sanitize(&r, vec![None; 400]).len(), 256);
     }
 }

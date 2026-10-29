@@ -83,7 +83,8 @@ pub enum Menu {
     /// 24 part 2).
     Shop(BlockPos),
     /// The atlas in this inventory slot (milestone 27).
-    Atlas(u8),
+    /// The atlas at this stored inventory slot.
+    Atlas(u16),
     /// The options window: mouse, view, frame rate (Esc with the mouse free).
     Options,
 }
@@ -101,8 +102,12 @@ pub struct LoginForm {
 /// An item being dragged in the inventory or an open storage block.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Drag {
+    /// A window slot (a visible inventory slot, or a chest slot); with
+    /// `sub`, the stored index of one stack inside an opened smart stack.
     pub from: SlotRef,
     pub half: bool,
+    /// Dragged out of an opened smart stack (milestone 33).
+    pub sub: bool,
 }
 
 /// A watched station's last state and when it came, to run its progress
@@ -2244,7 +2249,7 @@ struct SlotSource<'a> {
 
 impl SlotSource<'_> {
     fn stack(&self, r: SlotRef) -> Option<ItemStack> {
-        crate::storage::stack_at(&self.items.inventory.slots, self.chest, r)
+        crate::storage::stack_at(&self.items.inventory, self.chest, r)
     }
 }
 
@@ -2263,7 +2268,7 @@ fn item_slot(
         SlotRef::Inventory(i) => (i as usize) < HOTBAR_SLOTS,
         SlotRef::Storage(_) => false,
     };
-    let selected = r == SlotRef::Inventory(src.selected as u8);
+    let selected = r == SlotRef::Inventory(src.selected as u16);
     let hovering_drop = drag.is_some() && resp.contains_pointer();
     let rim = if hovering_drop || (hotbar && selected) {
         Stroke::new(2.5, GOLD)
@@ -2286,19 +2291,58 @@ fn item_slot(
         );
     }
     let Some(stack) = src.stack(r) else { return false };
-    let dragging_this = drag.is_some_and(|d| d.from == r);
+    let dragging_this = drag.is_some_and(|d| d.from == r && !d.sub);
+    // A smart stack (milestone 33): its active stack's icon, the count of
+    // everything in it, and a small 3 by 3 mark; right click opens it.
+    let smart = match r {
+        SlotRef::Inventory(g) => {
+            let n = src.items.inventory.group_stacks(g as usize).len();
+            (n > 1).then(|| (g as usize, src.items.inventory.group_count(g as usize)))
+        }
+        SlotRef::Storage(_) => None,
+    };
+    let shown = match smart {
+        Some((_, total)) => ItemStack {
+            count: total.min(u16::MAX as u32) as u16,
+            ..stack
+        },
+        None => stack,
+    };
     paint_stack(
         painter,
         rect,
-        &stack,
+        &shown,
         src.items,
         src.icons,
         if dragging_this { 0.35 } else { 1.0 },
     );
+    if smart.is_some() {
+        let o = rect.right_top() + vec2(-14.0, 5.0);
+        for k in 0..9 {
+            let p = o + vec2((k % 3) as f32 * 3.5, (k / 3) as f32 * 3.5);
+            painter.rect_filled(Rect::from_min_size(p, vec2(2.5, 2.5)), 0.0, GOLD.gamma_multiply(0.85));
+        }
+    }
+    if let SlotRef::Inventory(g) = r
+        && resp.secondary_clicked()
+    {
+        let id = Id::unique("open-smart-stack");
+        let was: Option<usize> = ui.ctx().data(|d| d.get_temp(id)).flatten();
+        let now = if was == Some(g as usize) {
+            None
+        } else {
+            Some(g as usize)
+        };
+        ui.ctx().data_mut(|d| d.insert_temp(id, now));
+    }
     let shift_click = resp.clicked() && ui.input(|i| i.modifiers.shift);
     if resp.drag_started() {
         let half = ui.input(|inp| inp.pointer.button_down(egui::PointerButton::Secondary) || inp.modifiers.shift);
-        *drag = Some(Drag { from: r, half });
+        *drag = Some(Drag {
+            from: r,
+            half,
+            sub: false,
+        });
     }
     if drag.is_none() {
         resp.on_hover_text(src.items.tooltip(&stack));
@@ -2329,7 +2373,7 @@ fn inventory_grid(
     let mut row = |ui: &mut Ui, first: usize, shifted: &mut Option<SlotRef>| {
         ui.horizontal(|ui| {
             for i in first..first + cols {
-                let r = SlotRef::Inventory(i as u8);
+                let r = SlotRef::Inventory(i as u16);
                 if item_slot(ui, src, r, drag, targets) {
                     *shifted = Some(r);
                 }
@@ -2342,8 +2386,63 @@ fn inventory_grid(
     for r in 1..INVENTORY_SLOTS / cols {
         row(ui, r * cols, &mut shifted);
     }
+    open_smart_stack(ui, src, drag, targets);
     ui.spacing_mut().item_spacing = vec2(8.0, 7.0);
     shifted
+}
+
+/// The smart stack opened with a right click (milestone 33): its nine
+/// stacks in a row, each dragged on its own. The first is what a hand
+/// holding the slot uses.
+fn open_smart_stack(ui: &mut Ui, src: &SlotSource, drag: &mut Option<Drag>, _targets: &mut [(Rect, Target)]) {
+    let id = Id::unique("open-smart-stack");
+    let Some(g) = ui.ctx().data(|d| d.get_temp::<Option<usize>>(id)).flatten() else {
+        return;
+    };
+    let inv = &src.items.inventory;
+    if g >= inv.groups() || inv.active(g).is_none() {
+        ui.ctx().data_mut(|d| d.insert_temp::<Option<usize>>(id, None));
+        return;
+    }
+    ui.add_space(8.0);
+    ui.label(
+        egui::RichText::new(format!(
+            "Slot {} holds {} stacks: the first is the one in your hand. Drag one out, or right click the slot to close.",
+            g + 1,
+            inv.group_stacks(g).len()
+        ))
+        .color(MUTED)
+        .small(),
+    );
+    ui.horizontal(|ui| {
+        for i in inv.group_range(g) {
+            let (rect, resp) = ui.allocate_exact_size(Vec2::splat(SLOT - 6.0), Sense::click_and_drag());
+            paint_slot_back(ui.painter(), rect, Stroke::new(1.5, GOLD_DIM));
+            let Some(stack) = inv.get(i) else { continue };
+            let r = SlotRef::Inventory(i as u16);
+            let dragging = drag.is_some_and(|d| d.sub && d.from == r);
+            paint_stack(
+                ui.painter(),
+                rect,
+                &stack,
+                src.items,
+                src.icons,
+                if dragging { 0.35 } else { 1.0 },
+            );
+            if resp.drag_started() {
+                let half =
+                    ui.input(|inp| inp.pointer.button_down(egui::PointerButton::Secondary) || inp.modifiers.shift);
+                *drag = Some(Drag {
+                    from: r,
+                    half,
+                    sub: true,
+                });
+            }
+            if drag.is_none() {
+                resp.on_hover_text(src.items.tooltip(&stack));
+            }
+        }
+    });
 }
 
 const GRID_WIDTH: f32 = HOTBAR_SLOTS as f32 * SLOT + (HOTBAR_SLOTS - 1) as f32 * GAP;
@@ -2357,8 +2456,12 @@ fn drag_and_drop(
     targets: &[(Rect, Target)],
 ) -> Option<(Drag, Option<Target>)> {
     let pointer = ctx.input(|i| i.pointer.latest_pos());
+    let stack_of = |d: Drag| match (d.sub, d.from) {
+        (true, SlotRef::Inventory(i)) => src.items.inventory.get(i as usize),
+        _ => src.stack(d.from),
+    };
     if let (Some(d), Some(p)) = (*drag, pointer)
-        && let Some(stack) = src.stack(d.from)
+        && let Some(stack) = stack_of(d)
     {
         let shown = ItemStack {
             count: if d.half {
@@ -2453,7 +2556,7 @@ pub fn inventory(
             );
             ui.vertical(|ui| {
                 ui.label(
-                    egui::RichText::new("Drag to move a stack. Right drag or Shift drag moves half.")
+                    egui::RichText::new("Drag to move a slot. Right drag or Shift drag moves half. Right click opens a slot of several stacks.")
                         .color(MUTED)
                         .small(),
                 );
@@ -2474,11 +2577,25 @@ pub fn inventory(
     let SlotRef::Inventory(from) = d.from else { return };
     match target {
         Some(Target::Slot(SlotRef::Inventory(to))) => {
-            if let Some(msg) = items.move_request(from as usize, to as usize, d.half) {
+            let msg = if d.sub {
+                items.move_stack_request(from as usize, to as usize)
+            } else {
+                items.move_request(from as usize, to as usize, d.half)
+            };
+            if let Some(msg) = msg {
                 actions.push(UiAction::Send(msg));
             }
         }
-        Some(Target::Discard) => actions.push(UiAction::Send(ClientMsg::Discard { slot: from })),
+        // Throwing away: one stack out of an opened smart stack, or the
+        // whole smart stack.
+        Some(Target::Discard) if d.sub => actions.push(UiAction::Send(ClientMsg::Discard { slot: from })),
+        Some(Target::Discard) => {
+            for i in items.inventory.group_range(from as usize) {
+                if items.inventory.slots[i].is_some() {
+                    actions.push(UiAction::Send(ClientMsg::Discard { slot: i as u16 }));
+                }
+            }
+        }
         _ => {}
     }
 }
@@ -2576,7 +2693,7 @@ pub fn storage(ctx: &egui::Context, v: &StorageWindow, drag: &mut Option<Drag>, 
         ui.add_space(6.0);
         ui.label(
             egui::RichText::new(
-                "Drag to move a stack. Shift click sends a whole stack across. Right drag or Shift drag moves half.",
+                "Drag to move a stack. Shift click sends a whole slot across. Right drag or Shift drag moves half. Right click opens a slot of several stacks.",
             )
             .color(MUTED)
             .small(),
@@ -2586,17 +2703,22 @@ pub fn storage(ctx: &egui::Context, v: &StorageWindow, drag: &mut Option<Drag>, 
         actions.push(UiAction::CloseMenu);
     }
     let Some(slots) = v.slots else { return };
-    let inv = &v.items.inventory.slots;
+    let inv = &v.items.inventory;
     let reg = &v.items.registry;
-    if let Some(from) = shifted
-        && let Some(msg) = crate::storage::shift_request(reg, inv, slots, v.pos, from)
-    {
-        actions.push(UiAction::Send(msg));
+    if let Some(from) = shifted {
+        for msg in crate::storage::shift_requests(reg, inv, slots, v.pos, from) {
+            actions.push(UiAction::Send(msg));
+        }
     }
-    if let Some((d, Some(Target::Slot(to)))) = drag_and_drop(ctx, &src, drag, &targets)
-        && let Some(msg) = crate::storage::move_request(reg, inv, slots, v.pos, d.from, to, d.half)
-    {
-        actions.push(UiAction::Send(msg));
+    if let Some((d, Some(Target::Slot(to)))) = drag_and_drop(ctx, &src, drag, &targets) {
+        let msg = if d.sub {
+            crate::storage::move_stored(reg, inv, slots, v.pos, d.from, to, d.half)
+        } else {
+            crate::storage::move_request(v.items, slots, v.pos, d.from, to, d.half)
+        };
+        if let Some(msg) = msg {
+            actions.push(UiAction::Send(msg));
+        }
     }
 }
 
@@ -2659,7 +2781,7 @@ pub fn same_machine(shape: PlanetShape, opened: BlockPos, view: BlockPos) -> boo
 /// What a fuel drag carries: a pack slot's fuel, or the furnace's own.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum FuelDrag {
-    Pack(u8),
+    Pack(u16),
     Furnace,
 }
 

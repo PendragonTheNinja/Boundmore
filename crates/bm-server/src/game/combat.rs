@@ -22,7 +22,7 @@ use bm_core::mining::{is_crit, skilled_tool_keen, swing_ticks};
 use bm_core::movement::{PhysicsWorld, look_dir};
 use bm_core::raycast::raycast_shaped;
 use bm_core::skills::defeat_debt;
-use bm_core::{BlockPos, HOTBAR_SLOTS, PlayerState};
+use bm_core::{BlockPos, PlayerState};
 use bm_protocol::{ServerMsg, ShotKind, ShotView, Target};
 use glam::DVec3;
 
@@ -151,9 +151,9 @@ impl Game {
     }
 
     /// Fires the sling in hotbar `slot` right after input `at`.
-    pub(super) fn shoot(&mut self, id: u32, at: u32, slot: u8, yaw: u16, pitch: i16, charge: u16) {
+    pub(super) fn shoot(&mut self, id: u32, at: u32, slot: u16, yaw: u16, pitch: i16, charge: u16) {
         let Some(p) = self.players.get(&id) else { return };
-        if p.state.down || slot as usize >= HOTBAR_SLOTS || !self.ready_at(id, at) {
+        if p.state.down || !bm_core::inventory::in_hotbar(slot as usize) || !self.ready_at(id, at) {
             return tracing::debug!("refused shot from #{id} at {at}");
         }
         // Through its traits (milestone 17), as the holder stands now.
@@ -413,9 +413,9 @@ impl Game {
 
     /// Swings the tool in hotbar `slot` at creature `cid`, right after input
     /// `at`: the cadence, energy and wear of a block swing.
-    pub(super) fn strike(&mut self, id: u32, at: u32, cid: u32, slot: u8) {
+    pub(super) fn strike(&mut self, id: u32, at: u32, cid: u32, slot: u16) {
         let Some(p) = self.players.get(&id) else { return };
-        if p.state.down || slot as usize >= HOTBAR_SLOTS || !self.ready_at(id, at) {
+        if p.state.down || !bm_core::inventory::in_hotbar(slot as usize) || !self.ready_at(id, at) {
             return tracing::debug!("refused strike from #{id} at {at}");
         }
         let pi = p.planet;

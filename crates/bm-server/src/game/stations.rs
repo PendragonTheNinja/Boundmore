@@ -11,7 +11,7 @@ use crate::machines::{self, Machine};
 use crate::planet::Planet;
 use crate::world::World;
 use bm_core::spark;
-use bm_core::{BlockId, BlockPos, INVENTORY_SLOTS, ItemStack, Station};
+use bm_core::{BlockId, BlockPos, ItemStack, Station};
 use bm_protocol::{PowerView, ServerMsg, SparkView, StationView};
 
 /// Whether placing a spark generator `id` at `canon` would join groups that
@@ -300,7 +300,7 @@ impl Game {
 
     /// Moves fuel between inventory `slot` and a furnace's or a spark
     /// generator's fuel slot.
-    pub(super) fn station_fuel(&mut self, id: u32, pos: BlockPos, slot: u8, count: u16, into: bool) {
+    pub(super) fn station_fuel(&mut self, id: u32, pos: BlockPos, slot: u16, count: u16, into: bool) {
         let (pi, m) = match self.machine_access(id, pos) {
             Ok(found) => found,
             Err(r) => return self.tell(id, r),
@@ -309,7 +309,7 @@ impl Game {
             return self.tell(id, "only a furnace or a spark generator takes fuel".into());
         }
         let slot = slot as usize;
-        if slot >= INVENTORY_SLOTS || count == 0 {
+        if slot >= bm_core::inventory::PACK_SLOTS || count == 0 {
             return self.tell(id, "no such slot".into());
         }
         let key = self.machine_record(pi, &m);

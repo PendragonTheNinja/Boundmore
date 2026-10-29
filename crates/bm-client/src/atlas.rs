@@ -35,7 +35,7 @@ pub struct Here<'a> {
     /// The resource the atlas holds, by name.
     pub loaded: Option<String>,
     /// Inventory slots holding something an atlas can show, with its name.
-    pub loadable: Vec<(u8, String)>,
+    pub loadable: Vec<(u16, String)>,
 }
 
 /// A heat map from the server.

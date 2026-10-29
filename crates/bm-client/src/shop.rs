@@ -46,7 +46,7 @@ pub struct Want {
     pub name: String,
     pub price: u64,
     /// The first pack slot holding what it wants, and how many are there.
-    pub have: Option<(u8, u16)>,
+    pub have: Option<(u16, u16)>,
 }
 
 /// What a basket buys, and where in the pack each is.
@@ -65,7 +65,7 @@ pub fn wants(view: &ShopView, items: &Items) -> Vec<Want> {
                 .slots
                 .iter()
                 .enumerate()
-                .find_map(|(j, p)| p.filter(|p| p.stacks_with(&s)).map(|p| (j as u8, p.count)));
+                .find_map(|(j, p)| p.filter(|p| p.stacks_with(&s)).map(|p| (j as u16, p.count)));
             Some(Want {
                 slot: i as u8,
                 stack: s,

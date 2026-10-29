@@ -12,7 +12,7 @@ use bm_core::mining::{
     swing_ticks,
 };
 use bm_core::movement::look_dir;
-use bm_core::{BlockId, BlockPos, BlockState, Colour, HOTBAR_SLOTS, ItemId, ItemRegistry, Mount, Shape};
+use bm_core::{BlockId, BlockPos, BlockState, Colour, ItemId, ItemRegistry, Mount, Shape};
 use bm_protocol::ServerMsg;
 
 /// Said when a swing is made with no tool in hand.
@@ -168,7 +168,7 @@ impl Game {
 
     /// One swing of the item in hotbar `slot` at `pos`, following input
     /// `at` (applied right after it, so the look is that input's).
-    pub(super) fn swing(&mut self, id: u32, seq: u32, at: u32, pos: BlockPos, slot: u8) {
+    pub(super) fn swing(&mut self, id: u32, seq: u32, at: u32, pos: BlockPos, slot: u16) {
         let Some(p) = self.players.get(&id) else { return };
         let pi = p.planet;
         if p.state.down {
@@ -180,7 +180,7 @@ impl Game {
         {
             return self.swing_refused(id, seq, pos, "swinging too fast".into());
         }
-        if slot as usize >= HOTBAR_SLOTS {
+        if !bm_core::inventory::in_hotbar(slot as usize) {
             return self.swing_refused(id, seq, pos, "not a hotbar slot".into());
         }
         let shape = self.planets[pi].world.shape;
@@ -301,7 +301,7 @@ impl Game {
 
     /// One durability per swing, whatever it hit, unless the durability epic
     /// spares it.
-    pub(super) fn wear_swung_tool(&mut self, id: u32, slot: u8, effects: &bm_core::skills::Effects) {
+    pub(super) fn wear_swung_tool(&mut self, id: u32, slot: u16, effects: &bm_core::skills::Effects) {
         let Some(p) = self.players.get_mut(&id) else { return };
         // The durability epic and Gentle food spare some wear.
         if roll(&mut self.rng) < p.state.wear_spared(effects.wear_saved()) {
@@ -327,7 +327,7 @@ impl Game {
         at: u32,
         pos: BlockPos,
         canon: BlockPos,
-        slot: u8,
+        slot: u16,
         tool: bm_core::items::ToolStats,
     ) {
         let Some(p) = self.players.get(&id) else { return };

@@ -11,9 +11,9 @@ impl Game {
     /// Eats one of the food in hotbar `slot` right after input `at`, as the
     /// client does (`PlayerState::eat`): a refusal changes nothing, and the
     /// client, which checks the same rules first, predicted nothing.
-    pub(super) fn eat(&mut self, id: u32, at: u32, slot: u8) {
+    pub(super) fn eat(&mut self, id: u32, at: u32, slot: u16) {
         let Some(p) = self.players.get_mut(&id) else { return };
-        if slot as usize >= HOTBAR_SLOTS {
+        if !bm_core::inventory::in_hotbar(slot as usize) {
             return;
         }
         let Some(food) = p
@@ -81,7 +81,7 @@ impl Game {
     /// Fills one empty bucket from hotbar `slot` at the water block `pos`.
     /// The water stays (Boundless's did, a **guess**). The full bucket keeps
     /// the empty one's wear (fills used).
-    pub(super) fn fill_bucket(&mut self, id: u32, slot: u8, pos: BlockPos) {
+    pub(super) fn fill_bucket(&mut self, id: u32, slot: u16, pos: BlockPos) {
         let Some(p) = self.players.get(&id) else { return };
         let Some(stack) = p.inventory.get(slot as usize) else {
             return;

@@ -7,7 +7,7 @@ use super::stations::PlanetEnv;
 use super::{Game, mining, send_slots};
 use crate::forging::{self, Forging};
 use bm_core::forge::{DECK_STACK, Ended, Gear, Refused, Session, queue_band};
-use bm_core::{BlockPos, INVENTORY_SLOTS, ItemStack, Station};
+use bm_core::{BlockPos, ItemStack, Station};
 use bm_protocol::{ForgeOutcome, ForgeView, ServerMsg, SessionView};
 
 impl Game {
@@ -18,7 +18,7 @@ impl Game {
         hi << 32 | lo
     }
 
-    pub(super) fn forge_begin(&mut self, id: u32, pos: BlockPos, gear_slot: u8, deck: Vec<(u8, u16)>) {
+    pub(super) fn forge_begin(&mut self, id: u32, pos: BlockPos, gear_slot: u16, deck: Vec<(u16, u16)>) {
         let (pi, m) = match self.machine_access(id, pos) {
             Ok(found) => found,
             Err(r) => return self.tell(id, r),
@@ -65,7 +65,7 @@ impl Game {
         let mut asked: Vec<(usize, u32)> = Vec::new();
         for &(slot, count) in &deck {
             let slot = slot as usize;
-            if slot >= INVENTORY_SLOTS || slot == gear_slot || count == 0 {
+            if slot >= bm_core::inventory::PACK_SLOTS || slot == gear_slot || count == 0 {
                 return self.notice(id, "That is not in your inventory");
             }
             match asked.iter_mut().find(|a| a.0 == slot) {

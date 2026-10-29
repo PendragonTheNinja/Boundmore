@@ -1600,7 +1600,7 @@ impl Game {
                             .into_iter()
                             .map(|slot| {
                                 p.inventory
-                                    .get(slot as usize)
+                                    .held(slot as usize)
                                     .filter(|_| (slot as usize) < bm_core::HOTBAR_SLOTS)
                                     .map_or(1.0, |s| s.forge.notice_scale())
                             })

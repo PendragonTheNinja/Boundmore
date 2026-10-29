@@ -23,7 +23,11 @@ use tokio::sync::mpsc;
 const PASSWORD: &str = "correct horse";
 /// The hand stone's slot: every player starts with one there (a bare hand
 /// breaks nothing), and `seed` puts one there unless told otherwise.
-const HAND: u8 = 9;
+const HAND: u16 = 9;
+
+/// Added to a stored index to name that exact stack rather than a visible
+/// slot (`TestClient::at`): tokens of different portals share a smart stack.
+const EXACT: u16 = 1000;
 
 struct TestClient {
     conn: Connection,
@@ -382,12 +386,156 @@ impl TestClient {
     }
 
     async fn send(&mut self, msg: ClientMsg) {
+        let msg = self.to_stored(msg);
         write_msg(&mut self.send, &msg).await.unwrap();
     }
 
+    /// The stored index of visible slot `g` (milestone 33: a slot is a smart
+    /// stack): its active stack, or its first sub-slot when it is empty.
+    fn at(&self, g: u16) -> u16 {
+        if g >= EXACT {
+            return g - EXACT;
+        }
+        self.inv
+            .active(g as usize)
+            .map_or(g as usize * bm_core::inventory::SMART, |i| i) as u16
+    }
+
+    /// Tests name slots as a player sees them (visible slots, 0 to 39);
+    /// the server takes stored indices. Turns every slot a message names.
+    fn to_stored(&self, msg: ClientMsg) -> ClientMsg {
+        use bm_protocol::{EditAction as E, PortalAction as P, ShopAction as S};
+        let r = |s: SlotRef| match s {
+            SlotRef::Inventory(g) => SlotRef::Inventory(self.at(g)),
+            other => other,
+        };
+        match msg {
+            ClientMsg::Swing { seq, at, pos, slot } => ClientMsg::Swing {
+                seq,
+                at,
+                pos,
+                slot: self.at(slot),
+            },
+            ClientMsg::MoveItems { from, to, count } => ClientMsg::MoveItems {
+                from: self.at(from),
+                to: self.at(to),
+                count,
+            },
+            ClientMsg::Discard { slot } => ClientMsg::Discard { slot: self.at(slot) },
+            ClientMsg::StationFuel { pos, slot, count, into } => ClientMsg::StationFuel {
+                pos,
+                slot: self.at(slot),
+                count,
+                into,
+            },
+            ClientMsg::AtlasLoad { slot, from } => ClientMsg::AtlasLoad {
+                slot: self.at(slot),
+                from: from.map(|f| self.at(f)),
+            },
+            ClientMsg::OpenAtlas { slot } => ClientMsg::OpenAtlas {
+                slot: slot.map(|s| self.at(s)),
+            },
+            ClientMsg::Shoot {
+                at,
+                slot,
+                yaw,
+                pitch,
+                charge,
+            } => ClientMsg::Shoot {
+                at,
+                slot: self.at(slot),
+                yaw,
+                pitch,
+                charge,
+            },
+            ClientMsg::Strike { at, creature, slot } => ClientMsg::Strike {
+                at,
+                creature,
+                slot: self.at(slot),
+            },
+            ClientMsg::Throw {
+                at,
+                slot,
+                yaw,
+                pitch,
+                hold,
+            } => ClientMsg::Throw {
+                at,
+                slot: self.at(slot),
+                yaw,
+                pitch,
+                hold,
+            },
+            ClientMsg::Eat { at, slot } => ClientMsg::Eat {
+                at,
+                slot: self.at(slot),
+            },
+            ClientMsg::FillBucket { slot, pos } => ClientMsg::FillBucket {
+                slot: self.at(slot),
+                pos,
+            },
+            ClientMsg::ForgeBegin { pos, gear, deck } => ClientMsg::ForgeBegin {
+                pos,
+                gear: self.at(gear),
+                deck: deck.into_iter().map(|(s, n)| (self.at(s), n)).collect(),
+            },
+            ClientMsg::Edit { seq, at, pos, action } => ClientMsg::Edit {
+                seq,
+                at,
+                pos,
+                action: match action {
+                    E::Place { slot, mount } => E::Place {
+                        slot: self.at(slot),
+                        mount,
+                    },
+                    E::Chisel { slot, octants, restore } => E::Chisel {
+                        slot: self.at(slot),
+                        octants,
+                        restore,
+                    },
+                },
+            },
+            ClientMsg::Portal { pos, action } => ClientMsg::Portal {
+                pos,
+                action: match action {
+                    P::Link { slot } => P::Link { slot: self.at(slot) },
+                    P::AddFuel { slot, count } => P::AddFuel {
+                        slot: self.at(slot),
+                        count,
+                    },
+                    other => other,
+                },
+            },
+            ClientMsg::Shop { pos, action } => ClientMsg::Shop {
+                pos,
+                action: match action {
+                    S::Sell {
+                        slot,
+                        from,
+                        count,
+                        price,
+                    } => S::Sell {
+                        slot,
+                        from: self.at(from),
+                        count,
+                        price,
+                    },
+                    other => other,
+                },
+            },
+            ClientMsg::StorageMove { pos, from, to, count } => ClientMsg::StorageMove {
+                pos,
+                from: r(from),
+                to: r(to),
+                count,
+            },
+            other => other,
+        }
+    }
+
     /// Ticks the item in hotbar `slot` needs between swings.
-    fn swing_ticks(&self, slot: u8) -> u32 {
-        let item = self.inv.get(slot as usize).map(|s| s.item);
+    fn swing_ticks(&self, slot: u16) -> u32 {
+        let item = self.inv.held(slot as usize).map(|s| s.item);
         // No tool: the swing is refused anyway; any cadence will do.
         self.items
             .swing_tool(item)
@@ -396,7 +544,7 @@ impl TestClient {
 
     /// One swing at `pos` with hotbar `slot`, following the last input sent,
     /// and what the server said of the block it hit.
-    async fn swing(&mut self, seq: u32, pos: BlockPos, slot: u8) -> Swung {
+    async fn swing(&mut self, seq: u32, pos: BlockPos, slot: u16) -> Swung {
         let at = self.seq;
         self.last_swing = Some((at, self.swing_ticks(slot)));
         self.send(ClientMsg::Swing { seq, at, pos, slot }).await;
@@ -440,7 +588,7 @@ impl TestClient {
     /// Swings hotbar `slot` at `pos` at the tool's cadence until it breaks
     /// (true) or a swing is refused (false); the block the server says is
     /// there.
-    async fn dig_with(&mut self, seq: u32, pos: BlockPos, slot: u8) -> (bool, BlockId) {
+    async fn dig_with(&mut self, seq: u32, pos: BlockPos, slot: u16) -> (bool, BlockId) {
         for _ in 0..200 {
             self.ready();
             match self.swing(seq, pos, slot).await {
@@ -643,14 +791,15 @@ fn seed_character(dir: &Path, name: &str, stacks: &[(usize, &str, u16, u16)], ch
 fn seed_hurt(dir: &Path, name: &str, stacks: &[(usize, &str, u16, u16)], character: Character, hurt: u32) {
     let store = Store::open(&planet_file(dir)).unwrap();
     let account = bm_server::accounts::register(&store, name, PASSWORD).unwrap();
-    let mut inventory = vec![None; bm_core::INVENTORY_SLOTS];
-    inventory[HAND as usize] = Some(SavedStack {
+    // `slot` is a visible slot: its stack goes first in that smart stack.
+    let mut inventory = vec![None; bm_core::inventory::PACK_SLOTS];
+    inventory[HAND as usize * bm_core::inventory::SMART] = Some(SavedStack {
         item: "hand_stone".into(),
         count: 1,
         wear: 0,
     });
     for &(slot, item, count, wear) in stacks {
-        inventory[slot] = Some(SavedStack {
+        inventory[slot * bm_core::inventory::SMART] = Some(SavedStack {
             item: item.into(),
             count,
             wear,
@@ -680,13 +829,14 @@ fn seed_hurt(dir: &Path, name: &str, stacks: &[(usize, &str, u16, u16)], charact
 /// hand breaks nothing).
 fn only_the_hand_stone(c: &TestClient) -> bool {
     c.welcome.inventory.slots.iter().enumerate().all(|(i, s)| match s {
-        Some(s) => i == HAND as usize && s.item == c.item("hand_stone"),
-        None => i != HAND as usize,
+        Some(s) => i == HAND as usize * bm_core::inventory::SMART && s.item == c.item("hand_stone"),
+        None => i != HAND as usize * bm_core::inventory::SMART,
     })
 }
 
+/// What visible slot `slot` holds: its active stack.
 fn stack(c: &TestClient, slot: usize) -> Option<ItemStack> {
-    c.inv.get(slot)
+    c.inv.held(slot)
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
@@ -779,7 +929,7 @@ async fn two_players_share_one_world() {
             4,
             feet,
             EditAction::Place {
-                slot: gathered_slot as u8,
+                slot: gathered_slot as u16,
                 mount: None,
             },
         )
@@ -1057,7 +1207,7 @@ async fn craft_at(c: &mut TestClient, recipe: u16, count: u16, station: Option<B
     .await;
 }
 
-async fn fuel(c: &mut TestClient, pos: BlockPos, slot: u8, count: u16, into: bool) {
+async fn fuel(c: &mut TestClient, pos: BlockPos, slot: u16, count: u16, into: bool) {
     c.send(ClientMsg::StationFuel { pos, slot, count, into }).await;
 }
 
@@ -1117,7 +1267,7 @@ async fn crafting_by_hand_at_a_table_and_at_a_four_block_workbench() {
     let table = shape.wrap_block(feet.offset(1, 1, 0));
     let slot = (0..10)
         .find(|&i| stack(&alice, i).is_some_and(|s| s.item == alice.item("crafting_table")))
-        .unwrap() as u8;
+        .unwrap() as u16;
     assert!(place(&mut alice, 1, table, slot, None).await.0);
     let empty = look_at_station(&mut alice, table, |_| true).await;
     assert_eq!(
@@ -2197,7 +2347,7 @@ async fn chests_on_a_claim_open_only_for_its_owner() {
             .slots
             .iter()
             .enumerate()
-            .all(|(i, s)| i == HAND as usize || s.is_none()),
+            .all(|(i, s)| i == HAND as usize * bm_core::inventory::SMART || s.is_none()),
         "nothing taken"
     );
 
@@ -2606,7 +2756,7 @@ async fn an_online_owner_never_lapses_and_leaving_starts_the_clock() {
 
 /// A chisel edit: `octants` cut (or filled back, with `restore`) with the
 /// chisel in hotbar `slot`.
-fn chisel(slot: u8, octants: u8, restore: bool) -> EditAction {
+fn chisel(slot: u16, octants: u8, restore: bool) -> EditAction {
     EditAction::Chisel { slot, octants, restore }
 }
 
@@ -2877,7 +3027,7 @@ async fn grapples_fire_stick_wear_and_need_a_grapple_in_hand() {
 /// Claims the plot under the player's feet with the claim stone in hotbar
 /// `slot`, and the plots around it and above, so the ground for a few
 /// blocks each way is theirs.
-async fn claim_around(c: &mut TestClient, seq: u32, slot: u8) {
+async fn claim_around(c: &mut TestClient, seq: u32, slot: u16) {
     let feet = c.feet();
     c.claim = None;
     assert!(c.dig(seq, feet).await.0);
@@ -2920,7 +3070,7 @@ async fn claim_around(c: &mut TestClient, seq: u32, slot: u8) {
 }
 
 /// A one-wide, two-tall portal of conduits (hotbar `slot`) standing on `ground`.
-async fn conduit_column(c: &mut TestClient, seq: u32, ground: BlockPos, slot: u8) {
+async fn conduit_column(c: &mut TestClient, seq: u32, ground: BlockPos, slot: u16) {
     for (i, dy) in [1, 2].into_iter().enumerate() {
         assert!(
             c.edit(
@@ -2974,13 +3124,14 @@ fn new_token(c: &TestClient, known: &[u32]) -> u32 {
 }
 
 /// The slot of the first portal token in the pack bound to `tag`.
-fn token_slot(c: &TestClient, tag: u32) -> u8 {
+fn token_slot(c: &TestClient, tag: u32) -> u16 {
     let token = c.item("portal_token");
     c.inv
         .slots
         .iter()
         .position(|s| s.is_some_and(|s| s.item == token && s.tag == tag))
-        .expect("token in the pack") as u8
+        .map(|i| EXACT + i as u16)
+        .expect("token in the pack")
 }
 
 /// Walks with heading `yaw` until a portal moves the player: the planet
@@ -3450,7 +3601,7 @@ async fn place(
     c: &mut TestClient,
     seq: u32,
     pos: BlockPos,
-    slot: u8,
+    slot: u16,
     mount: Option<bm_core::Mount>,
 ) -> (bool, BlockId) {
     c.edit(seq, pos, EditAction::Place { slot, mount }).await
@@ -3757,9 +3908,7 @@ async fn shop_stands_sell_and_request_baskets_buy() {
     let v = shop_until(&mut bob, basket, |v| v.till == 100).await;
     assert_eq!(v.kind, ShopKind::Basket);
     bob.settle().await;
-    let from = (0..bob.inv.slots.len())
-        .find(|&i| bob.inv.slots[i].is_some_and(|s| s.item == bob.item("stone")))
-        .unwrap() as u8;
+    let from = slot_of(&bob, "stone");
     bob.send(ClientMsg::Shop {
         pos: basket,
         action: ShopAction::Sell {
@@ -4517,7 +4666,7 @@ async fn torches_stand_and_hang_on_solid_blocks_and_fall_with_them() {
     let def = alice.items.get(alice.item("torch")).unwrap();
     let light = bm_core::light::emission(def.held_light, def.held_colour);
     assert!(light[0] > 0 && light[2] < light[0], "warm: {light:?}");
-    for (slot, want) in [(2, light), (HAND, [0; 3])] {
+    for (slot, want) in [(2u8, light), ((HAND / 9) as u8, [0; 3])] {
         alice.send_inputs(
             3,
             PlayerInput {
@@ -5420,7 +5569,7 @@ impl TestClient {
 
     /// Fires the sling in `slot` along `yaw` and `pitch` at the sling's
     /// cadence, following the last input sent.
-    async fn shoot(&mut self, slot: u8, yaw: u16, pitch: i16) {
+    async fn shoot(&mut self, slot: u16, yaw: u16, pitch: i16) {
         self.ready();
         if self.seq == 0 {
             self.send_inputs(1, PlayerInput::default());
@@ -5445,7 +5594,7 @@ impl TestClient {
 
     /// Throws a bomb from the bag in `slot`, held `hold` ticks, at the bag's
     /// cadence, following the last input sent.
-    async fn throw(&mut self, slot: u8, yaw: u16, pitch: i16, hold: u16) {
+    async fn throw(&mut self, slot: u16, yaw: u16, pitch: i16, hold: u16) {
         self.ready();
         if self.seq == 0 {
             self.send_inputs(1, PlayerInput::default());
@@ -5884,7 +6033,7 @@ async fn tools_strike_creatures_in_reach_on_the_swing_cadence() {
         .until(|m| matches!(m, ServerMsg::Creature(v) if v.id == near && v.damage == 400))
         .await;
     alice.settle().await;
-    assert_eq!(alice.inv.get(HAND as usize).unwrap().wear, 2, "a strike wears the tool");
+    assert_eq!(stack(&alice, HAND as usize).unwrap().wear, 2, "a strike wears the tool");
     server.stop();
 }
 
@@ -6276,7 +6425,7 @@ impl TestClient {
     /// Strikes every living creature that comes within reach with the tool
     /// in hotbar `melee` (they walk up to the player) until `done` says the
     /// fight is over. Idle inputs pass time, so energy comes back.
-    async fn fight_until(&mut self, melee: u8, mut done: impl FnMut(&TestClient) -> bool) {
+    async fn fight_until(&mut self, melee: u16, mut done: impl FnMut(&TestClient) -> bool) {
         let shape = self.shape();
         // What the last look saw, for the failure message.
         let mut seen = String::new();
@@ -6430,7 +6579,7 @@ async fn a_meteor_falls_fights_and_pays_each_player_once() {
 
 /// One spanner hit at `pos` with hotbar `slot`, at the tool's cadence: the
 /// machine's key, wear left and most, as the server reports them.
-async fn spanner_hit(c: &mut TestClient, seq: u32, pos: BlockPos, slot: u8) -> (BlockPos, u32, u32) {
+async fn spanner_hit(c: &mut TestClient, seq: u32, pos: BlockPos, slot: u16) -> (BlockPos, u32, u32) {
     c.ready();
     let at = c.seq;
     c.last_swing = Some((at, c.swing_ticks(slot)));
@@ -6707,7 +6856,7 @@ fn jumping() -> PlayerInput {
 }
 
 /// Eats the food in `slot` right after the latest input, as the client does.
-async fn eat(c: &mut TestClient, slot: u8) -> PlayerState {
+async fn eat(c: &mut TestClient, slot: u16) -> PlayerState {
     if c.seq == 0 {
         c.send_inputs(1, PlayerInput::default());
     }
@@ -6955,18 +7104,21 @@ fn forger() -> Character {
 }
 
 /// The first inventory slot holding `name`.
-fn slot_of(c: &TestClient, name: &str) -> u8 {
+/// The first visible slot holding `name`.
+fn slot_of(c: &TestClient, name: &str) -> u16 {
     let id = c.item(name);
-    c.inv
+    let i = c
+        .inv
         .slots
         .iter()
         .position(|s| s.is_some_and(|s| s.item == id))
-        .unwrap() as u8
+        .unwrap();
+    c.inv.group_of(i) as u16
 }
 
 /// Four forge blocks in a row beside the arrival point, from hotbar `slot`;
 /// the forge's key (its first block) and its blocks.
-async fn build_forge(c: &mut TestClient, slot: u8) -> Vec<BlockPos> {
+async fn build_forge(c: &mut TestClient, slot: u16) -> Vec<BlockPos> {
     let shape = c.shape();
     let feet = c.feet();
     for dx in 0..=4 {
@@ -6996,7 +7148,7 @@ async fn forge_view(
 /// Starts a session with the gear in `gear` and a deck of (item, count),
 /// taken from wherever the inventory holds them; the session as its forger
 /// sees it.
-async fn forge_begin(c: &mut TestClient, key: BlockPos, gear: u8, deck: &[(&str, u16)]) -> bm_protocol::SessionView {
+async fn forge_begin(c: &mut TestClient, key: BlockPos, gear: u16, deck: &[(&str, u16)]) -> bm_protocol::SessionView {
     let deck = deck.iter().map(|&(name, n)| (slot_of(c, name), n)).collect();
     c.send(ClientMsg::ForgeBegin { pos: key, gear, deck }).await;
     forge_view(c, key, |f| f.session.as_ref().is_some_and(|s| s.rounds == 0))
@@ -8237,7 +8389,7 @@ async fn an_atlas_maps_what_was_discovered_and_nothing_else() {
     let ServerMsg::Atlas(view) = alice.until(|m| matches!(m, ServerMsg::Atlas(_))).await else {
         unreachable!()
     };
-    assert_eq!((view.planet, view.slot, view.closed), (0, 1, false));
+    assert_eq!((view.planet, view.slot, view.closed), (0, alice.at(1), false));
     assert_eq!(view.discovered, vec![home]);
     alice.settle().await;
     assert_eq!(

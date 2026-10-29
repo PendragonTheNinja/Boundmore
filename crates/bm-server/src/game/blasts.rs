@@ -14,7 +14,7 @@ use bm_core::combat::{BOMB_FUSE_TICKS, BOMB_GRAVITY, DamageKind, SHOT_GRAVITY, b
 use bm_core::creatures::Attack;
 use bm_core::mining::{armour as block_armour, block_health, swing_ticks};
 use bm_core::movement::{MoveConfig, PhysicsWorld, TICK_HZ, look_dir};
-use bm_core::{BlockPos, BlockState, HOTBAR_SLOTS};
+use bm_core::{BlockPos, BlockState};
 use bm_protocol::{ServerMsg, ShotKind};
 use glam::DVec3;
 
@@ -49,9 +49,9 @@ impl Game {
     /// held `hold` ticks since it was lit: the shared cadence, the bag's
     /// energy (too tired: nothing, no wear), one use, and a bomb in flight
     /// with what is left of its fuse.
-    pub(super) fn throw(&mut self, id: u32, at: u32, slot: u8, yaw: u16, pitch: i16, hold: u16) {
+    pub(super) fn throw(&mut self, id: u32, at: u32, slot: u16, yaw: u16, pitch: i16, hold: u16) {
         let Some(p) = self.players.get(&id) else { return };
-        if p.state.down || slot as usize >= HOTBAR_SLOTS || !self.ready_at(id, at) {
+        if p.state.down || !bm_core::inventory::in_hotbar(slot as usize) || !self.ready_at(id, at) {
             return tracing::debug!("refused throw from #{id} at {at}");
         }
         // Through its traits (milestone 17), as the holder stands now.

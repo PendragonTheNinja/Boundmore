@@ -282,6 +282,11 @@ pub struct ItemDef {
     /// 21: astral tools); it wins over `element`.
     #[serde(default)]
     pub astral: Option<crate::creatures::Astral>,
+    /// A smart stack family wider than the item itself (milestone 33:
+    /// Boundless's related-item categories); None: the item alone, in any
+    /// colour.
+    #[serde(default)]
+    pub smart: Option<String>,
 }
 
 impl ItemDef {
@@ -527,6 +532,8 @@ struct ItemEntry {
     /// A forging ingredient's name in `forge::INGREDIENTS`.
     #[serde(default)]
     ingredient: Option<String>,
+    #[serde(default)]
+    smart: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -703,6 +710,7 @@ impl ItemRegistry {
                     rank: 0,
                     element: None,
                     astral: None,
+                    smart: None,
                 });
             }
         }
@@ -783,6 +791,7 @@ impl ItemRegistry {
                 rank: e.rank,
                 element: e.element,
                 astral: e.astral,
+                smart: e.smart,
             });
         }
         let reg = Self::from_defs(defs, blocks)?;

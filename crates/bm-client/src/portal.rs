@@ -66,7 +66,7 @@ fn size_in_name(name: &str) -> Option<(u8, u8)> {
 /// A portal token in the pack, as the Link list shows it.
 #[derive(Clone, Debug, PartialEq)]
 pub struct TokenChoice {
-    pub slot: u8,
+    pub slot: u16,
     pub name: String,
     /// None when it can be used here; otherwise why not.
     pub refused: Option<&'static str>,
@@ -95,7 +95,7 @@ pub fn tokens(items: &Items, v: &PortalView) -> Vec<TokenChoice> {
                 }
             };
             Some(TokenChoice {
-                slot: i as u8,
+                slot: i as u16,
                 name: name.unwrap_or_else(|| "A portal token".into()),
                 refused,
             })
@@ -155,7 +155,7 @@ pub fn buttons(items: &Items, v: &PortalView, pos: BlockPos) -> Buttons {
             let count = (s.count as u32).min(space);
             space -= count;
             add_fuel.push(act(PortalAction::AddFuel {
-                slot: i as u8,
+                slot: i as u16,
                 count: count as u16,
             }));
         }
@@ -185,7 +185,7 @@ pub fn buttons(items: &Items, v: &PortalView, pos: BlockPos) -> Buttons {
 }
 
 /// The message choosing the token in `slot`.
-pub fn link_request(pos: BlockPos, slot: u8) -> ClientMsg {
+pub fn link_request(pos: BlockPos, slot: u16) -> ClientMsg {
     ClientMsg::Portal {
         pos,
         action: PortalAction::Link { slot },

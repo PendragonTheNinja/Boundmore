@@ -167,7 +167,11 @@ const V2_STATIONS: TableDefinition<&[u8], &[u8]> = TableDefinition::new("station
 ///
 /// 15 (M22): a station saves each job's output colour
 /// ([`SavedStation::job_colours`]); older jobs finish natural.
-pub const SAVE_VERSION: u32 = 15;
+///
+/// 16 (M33): a player's inventory is smart stacks, 360 slots in groups of
+/// nine; one of 40 (older) is spread one stack to a group when the player
+/// is next loaded ([`player_inventory`]). Nothing is rewritten on opening.
+pub const SAVE_VERSION: u32 = 16;
 
 /// The universe file in the data directory.
 pub const UNIVERSE_FILE: &str = "universe.redb";
@@ -333,6 +337,19 @@ pub fn save_slots(items: &ItemRegistry, inv: &Inventory) -> SavedSlots {
         .iter()
         .map(|s| s.as_ref().and_then(|s| SavedStack::new(items, s)))
         .collect()
+}
+
+/// A player's inventory from its saved slots: 40 (before smart stacks,
+/// `SAVE_VERSION` 15 and older) spread one to a smart stack, else as saved.
+pub fn player_inventory(slots: Vec<Option<ItemStack>>) -> Inventory {
+    if slots.len() <= bm_core::INVENTORY_SLOTS {
+        Inventory::from_plain(&slots)
+    } else {
+        Inventory {
+            slots,
+            group: bm_core::inventory::SMART,
+        }
+    }
 }
 
 /// Slots back into stacks. Items no longer in the catalogue are dropped with
@@ -1391,6 +1408,8 @@ impl Store {
                         11 | 12 => upgrade_stations(&tx, from, |b| {
                             postcard::from_bytes::<v12::SavedStation>(b).map(Into::into)
                         })?,
+                        // 15 to 16 changed only how inventories load.
+                        15 => 0,
                         // 13 to 14 only rescaled wear (below); 15 adds job
                         // colours.
                         _ => upgrade_stations(&tx, from, |b| {
@@ -1421,7 +1440,12 @@ impl Store {
                     tx.open_table(META)?
                         .insert("universe", postcard::to_stdvec(&u)?.as_slice())?;
                     tx.commit()?;
-                    if from == 14 {
+                    if from == 15 {
+                        tracing::info!(
+                            "upgraded the universe from save version 15 to {SAVE_VERSION} (inventories become smart \
+                             stacks as players are loaded)"
+                        );
+                    } else if from == 14 {
                         tracing::info!(
                             "upgraded the universe from save version 14 to {SAVE_VERSION} ({stations} stations' \
                              queued jobs keep natural colour)"
