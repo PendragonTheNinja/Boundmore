@@ -1596,10 +1596,15 @@ impl Game {
                     // Loud (a forged quirk) on what they hold: noticed from
                     // further away.
                     noticed_at: p.effects.brewed(&p.state).noticed_at()
-                        * p.inventory
-                            .get(p.last_input.slot as usize)
-                            .filter(|_| (p.last_input.slot as usize) < bm_core::HOTBAR_SLOTS)
-                            .map_or(1.0, |s| s.forge.notice_scale()),
+                        * [p.last_input.slot, p.last_input.off]
+                            .into_iter()
+                            .map(|slot| {
+                                p.inventory
+                                    .get(slot as usize)
+                                    .filter(|_| (slot as usize) < bm_core::HOTBAR_SLOTS)
+                                    .map_or(1.0, |s| s.forge.notice_scale())
+                            })
+                            .fold(1.0, f64::max),
                 }
             }));
             let mut acts = std::mem::take(&mut self.acts_buf);

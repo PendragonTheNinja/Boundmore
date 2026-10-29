@@ -20,6 +20,8 @@ use std::collections::HashMap;
 
 pub const GOLD: Color32 = Color32::from_rgb(240, 186, 84);
 pub(crate) const GOLD_DIM: Color32 = Color32::from_rgb(150, 116, 62);
+/// The right hand's marker on the hotbar (milestone 28).
+pub(crate) const RIGHT_HAND: Color32 = Color32::from_rgb(110, 190, 255);
 pub(crate) const TEXT: Color32 = Color32::from_rgb(236, 228, 212);
 pub(crate) const MUTED: Color32 = Color32::from_rgb(170, 162, 150);
 pub(crate) const SHORT: Color32 = Color32::from_rgb(235, 104, 92);
@@ -466,6 +468,8 @@ pub struct Hud<'a> {
     pub items: &'a Items,
     pub icons: &'a ItemIcons,
     pub selected: usize,
+    /// The right hand's slot (milestone 28), marked in its own colour.
+    pub selected_off: usize,
     pub notices: Vec<(String, f32)>,
     /// Shown small at the top: whose land this is.
     pub owner: Option<(String, bool)>,
@@ -1578,13 +1582,19 @@ pub fn hud(ctx: &egui::Context, h: &Hud) {
             let (rect, _) = ui.allocate_exact_size(vec2(width, SLOT + 6.0), Sense::hover());
             let painter = ui.painter();
             for i in 0..HOTBAR_SLOTS {
-                let selected = i == h.selected;
+                let left = i == h.selected;
+                let right = i == h.selected_off;
+                let selected = left || right;
                 let x = rect.left() + i as f32 * (SLOT + GAP);
                 // The selected slot rises a little, like a card lifted from a hand.
                 let y = rect.top() + if selected { 0.0 } else { 6.0 };
                 let r = Rect::from_min_size(pos2(x, y), Vec2::splat(SLOT));
-                let rim = if selected {
+                // The left hand in gold, the right in blue (both: gold
+                // outside, blue inside).
+                let rim = if left {
                     Stroke::new(3.0, GOLD)
+                } else if right {
+                    Stroke::new(3.0, RIGHT_HAND)
                 } else {
                     Stroke::new(1.5, SLOT_RIM)
                 };
@@ -1594,10 +1604,40 @@ pub fn hud(ctx: &egui::Context, h: &Hud) {
                     Align2::LEFT_TOP,
                     ((i + 1) % 10).to_string(),
                     FontId::proportional(11.0),
-                    if selected { GOLD } else { MUTED.gamma_multiply(0.8) },
+                    if left {
+                        GOLD
+                    } else if right {
+                        RIGHT_HAND
+                    } else {
+                        MUTED.gamma_multiply(0.8)
+                    },
                 );
+                if left && right {
+                    painter.rect_stroke(
+                        r.shrink(3.5),
+                        CornerRadius::same(4),
+                        Stroke::new(2.0, RIGHT_HAND),
+                        egui::StrokeKind::Inside,
+                    );
+                }
                 if let Some(stack) = h.items.slot(i) {
                     paint_stack(painter, r, &stack, h.items, h.icons, 1.0);
+                }
+                // Which hand holds it: L and R in the top corner.
+                let tag = match (left, right) {
+                    (true, true) => "LR",
+                    (true, false) => "L",
+                    (false, true) => "R",
+                    _ => "",
+                };
+                if !tag.is_empty() {
+                    painter.text(
+                        r.right_top() + vec2(-5.0, 3.0),
+                        Align2::RIGHT_TOP,
+                        tag,
+                        FontId::proportional(11.0),
+                        if left { GOLD } else { RIGHT_HAND },
+                    );
                 }
             }
         });

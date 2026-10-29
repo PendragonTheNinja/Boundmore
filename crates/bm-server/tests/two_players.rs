@@ -7201,18 +7201,22 @@ async fn a_gnawing_hammer_in_hand_makes_you_hungry() {
     let mut alice = TestClient::login(&server, "Alice").await;
     let feet = alice.feet();
     alice.wait_for_chunk(feet.chunk()).await;
-    // Standing still holding the stone: no hunger.
+    // Standing still holding the stone (the right hand empty: either hand's
+    // quirks act, milestone 28): no hunger.
     let stone = PlayerInput {
         slot: 1,
+        off: 9,
         ..Default::default()
     };
     paced(&mut alice, 120, stone).await;
     let s = snapshot_after(&mut alice).await;
     assert_eq!(s.hunger, 0);
     assert_eq!(s.full_energy(), 600);
-    // Standing still holding the hammer: hungry, and the bar is 30% bigger.
+    // Standing still with the hammer in the right hand: hungry, and the bar
+    // is 30% bigger.
     let hammer = PlayerInput {
-        slot: 0,
+        slot: 1,
+        off: 0,
         ..Default::default()
     };
     paced(&mut alice, 300, hammer).await;

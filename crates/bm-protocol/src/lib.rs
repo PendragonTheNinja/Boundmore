@@ -25,7 +25,7 @@ use glam::DVec3;
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
 
 /// Bump on any change to a message below. Client and server must match.
-pub const PROTOCOL_VERSION: u32 = 55;
+pub const PROTOCOL_VERSION: u32 = 56;
 
 /// QUIC application protocol name; also refuses non-Boundmore peers early.
 pub const ALPN: &[u8] = b"boundmore/1";
@@ -1460,6 +1460,7 @@ mod tests {
                     rope: 1e3,
                     stuck: Some(BlockPos::new(i32::MAX as i64, i32::MIN as i64, i32::MAX as i64)),
                     reel: -40.0,
+                    hand: 0,
                 }),
             },
             others: vec![
@@ -1517,13 +1518,16 @@ mod tests {
                     fire: true,
                     reel: -1,
                     descend: true,
+                    off: 8,
+                    fire_off: true,
                 };
                 INPUT_REDUNDANCY
             ],
         };
-        // Sent 60 times a second: about 6 KB/s up at this size.
+        // Sent 60 times a second: about 6 KB/s up at this size (the right
+        // hand's slot and button, milestone 28, added 12 bytes).
         let n = encode(&d).len();
-        assert!(n <= 100, "{n} bytes");
+        assert!(n <= 104, "{n} bytes");
     }
 
     #[test]

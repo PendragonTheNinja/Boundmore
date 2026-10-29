@@ -224,7 +224,11 @@ struct Session {
     /// bought since add to it (milestone 12).
     plots_bought_then: u32,
     /// Hotbar slot, 0 to 9.
+    /// The hotbar slot in the left hand (the left button's).
     selected: usize,
+    /// The hotbar slot in the right hand (milestone 28; the right button's,
+    /// chosen with Alt).
+    selected_off: usize,
     edit_seq: u32,
     place_cooldown: f64,
     /// Builder's Buff (a guild buff): percent faster block placing.
@@ -358,6 +362,7 @@ impl Session {
             plot_allowance: w.plot_allowance,
             plots_bought_then: bought,
             selected: 0,
+            selected_off: 1,
             edit_seq: 0,
             place_cooldown: 0.0,
             place_percent: 0,
@@ -741,9 +746,11 @@ impl Session {
     /// Whether the selected hotbar item is a spanner, which repairs
     /// machines and breaks nothing: no block health bar for it.
     fn holding_spanner(&self) -> bool {
-        self.items
-            .tool_of(self.items.slot(self.selected).as_ref(), &Held::default())
-            .is_some_and(|t| t.class == Some(bm_core::items::ToolClass::Spanner))
+        [self.selected, self.selected_off].into_iter().any(|i| {
+            self.items
+                .tool_of(self.items.slot(i).as_ref(), &Held::default())
+                .is_some_and(|t| t.class == Some(bm_core::items::ToolClass::Spanner))
+        })
     }
 
     /// The aimed block's health for the HUD and the cracks: where it is,
@@ -891,7 +898,11 @@ impl Session {
     /// the hand (where the rope starts), everyone else's at their hands.
     fn held_lights(&self, remotes: &[(u32, RemoteSample)], camera: &Camera) -> Vec<(DVec3, [u8; 3])> {
         // A torch in its colour, or a Glowing tool (milestone 17).
-        let held = self.items.held_rgb_of(self.items.slot(self.selected).as_ref());
+        // Either hand (milestone 28): the brighter of the two, per channel.
+        let held = bm_core::light::brighter(
+            self.items.held_rgb_of(self.items.slot(self.selected).as_ref()),
+            self.items.held_rgb_of(self.items.slot(self.selected_off).as_ref()),
+        );
         // The light-source epic lights around us like a held torch.
         // A Glowing brew lights around us too (milestone 23 part 2).
         let mine = bm_core::light::brighter(
@@ -1074,6 +1085,13 @@ pub struct App {
     /// A left click not yet sent as a grapple shot (clicks between ticks
     /// wait for the next one).
     fire_pending: bool,
+    /// The right button's press, as `fire_pending` and `attack_pending`
+    /// are the left's (milestone 28).
+    fire_pending_off: bool,
+    attack_pending_off: bool,
+    /// The hand that acted last (0 left, 1 right): held both, the button
+    /// pressed last acts (one hand at a time).
+    last_hand: usize,
     /// A left click not yet seen by the attack code (a sling's click must
     /// count however short).
     attack_pending: bool,
@@ -1144,6 +1162,9 @@ impl App {
             keys: HashSet::new(),
             mouse: [false; 2],
             fire_pending: false,
+            fire_pending_off: false,
+            attack_pending_off: false,
+            last_hand: 0,
             attack_pending: false,
             demo_bombs: false,
             demo_was_held: false,
@@ -1983,6 +2004,8 @@ impl App {
             pitch,
             slot: self.session.as_ref().map_or(0, |s| s.selected as u8),
             fire: false,
+            off: self.session.as_ref().map_or(1, |s| s.selected_off as u8),
+            fire_off: false,
             reel: k(KeyCode::KeyR) as i8 - k(KeyCode::KeyF) as i8,
             // Swim down (Boundless's creep key was C, Boundmore's crafting).
             descend: k(KeyCode::KeyX),
@@ -2033,8 +2056,25 @@ impl App {
             [false; 2]
         };
         let claim_mode = self.claim_mode;
-        // A press of the attack button, however short (a sling's click).
-        let mut pressed = std::mem::take(&mut self.attack_pending) && playing && !claim_mode;
+        // Each button uses its own hand's item, one hand at a time
+        // (milestone 28): held both, the one pressed last acts.
+        let pressed_hands = [
+            std::mem::take(&mut self.attack_pending) && playing && !claim_mode,
+            std::mem::take(&mut self.attack_pending_off) && playing && !claim_mode,
+        ];
+        let hand = if pressed_hands[1] && !pressed_hands[0] {
+            1
+        } else if pressed_hands[0] {
+            0
+        } else if mouse[self.last_hand] || !mouse[1 - self.last_hand] {
+            self.last_hand
+        } else {
+            1 - self.last_hand
+        };
+        self.last_hand = hand;
+        let shift = self.keys.contains(&KeyCode::ShiftLeft) || self.keys.contains(&KeyCode::ShiftRight);
+        // A press of the acting hand's button, however short (a sling's click).
+        let mut pressed = pressed_hands[hand];
         let (yaw, pitch) = (self.yaw, self.pitch);
         let now_s = self.now();
         // `--demo-ui bombs`: a hand on the button, on a cycle.
@@ -2045,16 +2085,37 @@ impl App {
         let Some(link) = &mut self.link else { return };
         s.update_journey(now_s);
         // Nothing is broken or placed on the way between planets.
-        let mouse = if s.travelling() { [false; 2] } else { mouse };
-        // A grapple in hand fires (and lets go) with the left button, inside
-        // the simulation, instead of breaking or placing.
-        // Through its traits, as the server steps it (built again for each
-        // tick below, with the holder as they stand before that step).
-        let grapple = s.items.grapple_of(s.items.slot(s.selected).as_ref(), &Held::default());
-        if grapple.is_none() || !playing || claim_mode || s.travelling() {
+        let use_down = !s.travelling() && mouse[hand];
+        // A grapple in a hand fires (and lets go) with that hand's button,
+        // inside the simulation, instead of breaking or placing (milestone
+        // 28). Through its traits, as the server steps it (built again for
+        // each tick below, with the holder as they stand before that step).
+        let slots = [s.selected, s.selected_off];
+        let grapples = slots.map(|i| s.items.grapple_of(s.items.slot(i).as_ref(), &Held::default()));
+        let stopped = !playing || claim_mode || s.travelling();
+        if grapples[0].is_none() || stopped {
             self.fire_pending = false;
         }
-        let mouse = if grapple.is_some() { [false; 2] } else { mouse };
+        if grapples[1].is_none() || stopped {
+            self.fire_pending_off = false;
+        }
+        // The acting hand's button: what it does to the world. A grapple
+        // fires (above); a block places; a chisel cuts, or with Shift fills;
+        // anything else is used (swung, shot, eaten).
+        let acting = s.items.slot(slots[hand]);
+        let place_hand = acting.is_some_and(|h| s.place_choice(h.item).is_some());
+        let chisel_hand = acting
+            .and_then(|h| s.items.def(&h))
+            .is_some_and(|d| d.chisel().is_some());
+        let mouse = if grapples[hand].is_some() {
+            [false; 2]
+        } else if chisel_hand {
+            [use_down && !shift, use_down && shift]
+        } else if place_hand {
+            [false, use_down]
+        } else {
+            [use_down, false]
+        };
 
         // Fixed-rate simulation, decoupled from frame rate. Keeps ticking when
         // the window is hidden or a menu is open, so the server keeps
@@ -2081,15 +2142,16 @@ impl App {
             ticks += 1;
             let input = PlayerInput {
                 fire: std::mem::take(&mut self.fire_pending),
+                fire_off: std::mem::take(&mut self.fire_pending_off),
                 ..input
             };
-            let grapple = grapple.and_then(|_| {
-                let held = s.held_now(local);
-                s.items.grapple_of(s.items.slot(s.selected).as_ref(), &held)
-            });
-            // The body quirks of the item in hand (milestone 17), as the
+            let held = s.held_now(local);
+            let grapple =
+                [0, 1].map(|h| grapples[h].and_then(|_| s.items.grapple_of(s.items.slot(slots[h]).as_ref(), &held)));
+            // The body quirks of what both hands hold (milestone 17), as the
             // server sets them for this input.
-            let quirks = bm_core::forge::Quirks::of(s.items.slot(s.selected).as_ref());
+            let quirks =
+                bm_core::forge::Quirks::of_hands(s.items.slot(slots[0]).as_ref(), s.items.slot(slots[1]).as_ref());
             let seq = s.me.tick(input, grapple, quirks, &s.movement, s.world.shape, &s.world);
             link.send_datagram(ClientDatagram::Input {
                 latest: seq,
@@ -2176,7 +2238,7 @@ impl App {
             PlotPos::of(at, world.shape)
         });
 
-        let slot = s.selected;
+        let slot = slots[hand];
         let held = s.items.slot(slot);
         // What the held stack does goes through its traits (milestone 17),
         // with the quirks' conditions as the server will judge them.
@@ -2625,6 +2687,7 @@ impl App {
                     items: &s.items,
                     icons: &s.icons,
                     selected: s.selected,
+                    selected_off: s.selected_off,
                     notices: notices.clone(),
                     owner,
                     settlement,
@@ -3683,6 +3746,7 @@ impl App {
                             rope: 10.0,
                             stuck: Some(block),
                             reel: 0.0,
+                            hand: 0,
                         }),
                         ..Default::default()
                     });
@@ -4048,8 +4112,14 @@ impl ApplicationHandler for App {
                     }
                     _ => {}
                 }
+                // Alt and a number: the right hand's slot (milestone 28).
+                let alt = self.keys.contains(&KeyCode::AltLeft) || self.keys.contains(&KeyCode::AltRight);
                 if let (Some(d), Some(s)) = (digit_slot(code), &mut self.session) {
-                    s.selected = d;
+                    if alt {
+                        s.selected_off = d;
+                    } else {
+                        s.selected = d;
+                    }
                 }
                 if self.menu.is_none() {
                     self.keys.insert(code);
@@ -4085,7 +4155,11 @@ impl ApplicationHandler for App {
                         self.attack_pending |= down && !self.mouse[0];
                         self.mouse[0] = down;
                     }
-                    MouseButton::Right => self.mouse[1] = down,
+                    MouseButton::Right => {
+                        self.fire_pending_off |= down && !self.mouse[1];
+                        self.attack_pending_off |= down && !self.mouse[1];
+                        self.mouse[1] = down;
+                    }
                     _ => {}
                 }
                 if !down && let Some(s) = &mut self.session {
@@ -4101,8 +4175,10 @@ impl ApplicationHandler for App {
                     MouseScrollDelta::LineDelta(_, y) => y.signum() as i32,
                     MouseScrollDelta::PixelDelta(p) => p.y.signum() as i32,
                 };
+                let alt = self.keys.contains(&KeyCode::AltLeft) || self.keys.contains(&KeyCode::AltRight);
                 if let Some(s) = &mut self.session {
-                    s.selected = (s.selected as i32 - steps).rem_euclid(HOTBAR_SLOTS as i32) as usize;
+                    let hand = if alt { &mut s.selected_off } else { &mut s.selected };
+                    *hand = (*hand as i32 - steps).rem_euclid(HOTBAR_SLOTS as i32) as usize;
                 }
             }
             WindowEvent::RedrawRequested => {
@@ -4267,7 +4343,7 @@ mod tests {
         for _ in 0..12 {
             s.me.tick(
                 PlayerInput::default(),
-                None,
+                [None, None],
                 Default::default(),
                 &s.movement,
                 s.world.shape,

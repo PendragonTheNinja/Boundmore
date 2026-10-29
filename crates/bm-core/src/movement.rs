@@ -107,10 +107,17 @@ pub struct PlayerInput {
     /// Heading in 1/65536 turns. 0 faces -Z; a quarter turn faces +X.
     pub yaw: u16,
     pub pitch: i16,
-    /// The hotbar slot in hand this tick: a grapple there is what fires.
+    /// The hotbar slot in the left hand this tick (the left button's).
     pub slot: u8,
-    /// Fire the grapple this tick, or let go (or recall) if one is out.
+    /// Fire the left hand's grapple this tick, or let go (or recall) if one
+    /// is out.
     pub fire: bool,
+    /// The hotbar slot in the right hand (milestone 28; the right button's).
+    #[serde(default)]
+    pub off: u8,
+    /// Fire the right hand's grapple, or let go.
+    #[serde(default)]
+    pub fire_off: bool,
     /// Rope: 1 reels in, -1 pays out. Larger values are clamped.
     pub reel: i8,
     /// Swim down (milestone 23; Boundless's creep key). Also flies down in
@@ -203,6 +210,9 @@ pub struct Hook {
     /// second: it gathers speed at [`REEL_ACCEL`] up to the grapple's reel
     /// speed, and stops when the reel is let go.
     pub reel: f64,
+    /// The hand whose grapple fired it (milestone 28): 0 left, 1 right.
+    #[serde(default)]
+    pub hand: u8,
 }
 
 /// Where the rope meets the body, above the feet: the hands.
@@ -456,15 +466,27 @@ fn approach(v: DVec3, target: DVec3, max_delta: f64) -> DVec3 {
     }
 }
 
-/// Advances one tick. Deterministic: same state, input, grapple and world
-/// give the same result on every machine. `grapple` is what the item in
-/// `input.slot` can do, if it is a grapple; the caller looks it up in its own
-/// copy of the inventory.
+/// [`step_hands`] with a grapple (or nothing) in the left hand alone.
 pub fn step(
     s: &mut PlayerState,
     input: &PlayerInput,
     cfg: &MoveConfig,
     grapple: Option<&GrappleSpec>,
+    planet: PlanetShape,
+    world: &impl PhysicsWorld,
+) -> StepEvents {
+    step_hands(s, input, cfg, [grapple, None], planet, world)
+}
+
+/// Advances one tick. Deterministic: same state, input, grapples and world
+/// give the same result on every machine. `grapples` is what the items in
+/// `input.slot` (left hand) and `input.off` (right hand) can do, if they are
+/// grapples; the caller looks them up in its own copy of the inventory.
+pub fn step_hands(
+    s: &mut PlayerState,
+    input: &PlayerInput,
+    cfg: &MoveConfig,
+    grapples: [Option<&GrappleSpec>; 2],
     planet: PlanetShape,
     world: &impl PhysicsWorld,
 ) -> StepEvents {
@@ -475,37 +497,53 @@ pub fn step(
         yaw: input.yaw,
         pitch: input.pitch,
         slot: input.slot,
+        off: input.off,
         ..Default::default()
     };
     let input = if s.down { &still } else { input };
-    let grapple = if s.down { None } else { grapple };
+    let grapples = if s.down { [None, None] } else { grapples };
     let had_hook = s.hook.is_some();
     // Whether the grapple was used this tick (energy: a use restarts the
     // pause; a tick without one rests).
     let mut used = false;
     // Grapple mastery lengthens the rope and speeds the shot.
-    let skilled = grapple.map(|g| GrappleSpec {
-        range: g.range + s.body.grapple_range_bonus + s.body.guild_grapple_bonus,
-        shot_speed: g.shot_speed + s.body.grapple_shot_bonus,
-        ..*g
+    let skilled = grapples.map(|g| {
+        g.map(|g| GrappleSpec {
+            range: g.range + s.body.grapple_range_bonus + s.body.guild_grapple_bonus,
+            shot_speed: g.shot_speed + s.body.grapple_shot_bonus,
+            ..*g
+        })
     });
-    let grapple = skilled.as_ref();
+    let grapples = [skilled[0].as_ref(), skilled[1].as_ref()];
     // Twitchy: the item in hand goes off by itself now and then (Release
     // 209's wonky trigger; how often is a **guess**).
     let twitch = !s.down
         && s.quirks.has(crate::forge::Quirks::TWITCHY)
         && crate::forge::Quirks::roll(s.clock, 2) < TWITCHY_CHANCE;
     events.twitched = twitch;
-    let fire = input.fire || (twitch && s.hook.is_none());
-    match grapple {
-        // Nothing in hand holds the rope: putting the grapple away lets go.
-        None => s.hook = None,
-        // Firing again lets go of a stuck hook or recalls a flying one.
-        Some(_) if fire && s.hook.is_some() => {
+    // Twitchy sets off the first hand holding a grapple.
+    let twitch_hand = usize::from(grapples[0].is_none());
+    let fire = [
+        input.fire || (twitch && twitch_hand == 0 && s.hook.is_none()),
+        input.fire_off || (twitch && twitch_hand == 1 && s.hook.is_none()),
+    ];
+    // The hand holding the rope put its grapple away: that lets go.
+    if let Some(h) = s.hook
+        && grapples[(h.hand as usize).min(1)].is_none()
+    {
+        s.hook = None;
+    }
+    // One hook at a time (milestone 28 part 1): either hand's grapple fires
+    // with its button; firing again lets go of a stuck hook or recalls a
+    // flying one. The left hand goes first on a tick both fire.
+    for hand in 0..2 {
+        let Some(g) = grapples[hand].filter(|_| fire[hand]) else {
+            continue;
+        };
+        if s.hook.is_some() {
             s.hook = None;
             events.released = true;
-        }
-        Some(g) if fire => {
+        } else {
             used = true;
             // Too tired to fire: nothing happens but the pause starts again.
             if s.try_spend(g.energy, crate::food::Drain::Ranged) {
@@ -515,16 +553,19 @@ pub fn step(
                     rope: 0.0,
                     stuck: None,
                     reel: 0.0,
+                    hand: hand as u8,
                 });
                 events.fired = true;
             }
         }
-        Some(_) => {}
+        break;
     }
     if !used {
         s.recover();
     }
-    if let (Some(g), Some(h)) = (grapple, s.hook) {
+    if let Some(h) = s.hook
+        && let Some(g) = grapples[(h.hand as usize).min(1)]
+    {
         s.hook = hook_tick(h, g, s.hands(), input.reel, planet, world);
     }
     if had_hook && s.hook.is_none() {
@@ -2056,6 +2097,38 @@ mod tests {
         assert_eq!(s.hook, None, "nothing in hand holds the rope");
     }
 
+    /// Milestone 28: the right hand's grapple fires with its own button and
+    /// owns its hook; the left hand's button lets it go (one hook at a time);
+    /// putting the right hand's grapple away lets go, the left's does not.
+    #[test]
+    fn each_hand_fires_its_own_grapple() {
+        let mut w = world();
+        ceiling(&mut w, 22);
+        let mut s = standing(5.5, 10.0);
+        let step2 = |s: &mut PlayerState, input: PlayerInput, n: u32, hands: [Option<&GrappleSpec>; 2]| {
+            for _ in 0..n {
+                step_hands(s, &input, &MoveConfig::default(), hands, PlanetShape::new(4, 2), &w);
+            }
+        };
+        let right = PlayerInput { fire_off: true, ..up() };
+        step2(&mut s, right, 1, [None, Some(&GRAPPLE)]);
+        assert_eq!(s.hook.map(|h| h.hand), Some(1), "the right hand's hook");
+        step2(&mut s, up(), 20, [None, Some(&GRAPPLE)]);
+        assert!(s.anchor().is_some());
+        // The left hand holds nothing: its button does nothing to the rope.
+        step2(&mut s, fire(up()), 1, [None, Some(&GRAPPLE)]);
+        assert!(s.anchor().is_some(), "an empty hand's button is not a grapple's");
+        // A grapple in the left hand now too: its button lets go.
+        step2(&mut s, fire(up()), 1, [Some(&GRAPPLE), Some(&GRAPPLE)]);
+        assert_eq!(s.hook, None, "one hook at a time: firing lets go");
+        // Fired from the right again, then the right hand's grapple put away.
+        step2(&mut s, right, 1, [Some(&GRAPPLE), Some(&GRAPPLE)]);
+        step2(&mut s, up(), 20, [Some(&GRAPPLE), Some(&GRAPPLE)]);
+        assert_eq!(s.anchor().map(|_| s.hook.unwrap().hand), Some(1));
+        step2(&mut s, up(), 1, [Some(&GRAPPLE), None]);
+        assert_eq!(s.hook, None, "the hand holding the rope put its grapple away");
+    }
+
     #[test]
     fn reeling_in_lifts_and_the_rope_then_holds() {
         let mut w = world();
@@ -2164,6 +2237,7 @@ mod tests {
                 rope: 10.0,
                 stuck: Some(BlockPos::new(5, 40, 5)),
                 reel: 0.0,
+                hand: 0,
             }),
             ..Default::default()
         };

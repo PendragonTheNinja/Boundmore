@@ -1604,44 +1604,43 @@ impl Game {
                         ..p.last_input
                     }
                 };
-                // The grapple in the hand the input names, from our own copy
-                // of the inventory: the client's word is only which slot.
-                let slot = input.slot as usize;
+                // The grapples in the hands the input names (milestone 28:
+                // left and right), from our own copy of the inventory: the
+                // client's word is only which slots.
+                let hand = |slot: u8| {
+                    p.inventory
+                        .slots
+                        .get(slot as usize)
+                        .filter(|_| (slot as usize) < HOTBAR_SLOTS)
+                        .copied()
+                        .flatten()
+                };
+                let (left, right) = (hand(input.slot), hand(input.off));
                 // Through its traits (milestone 17): the spec as the client
                 // builds it, its energy by the holder as they stand before
                 // this input's step.
                 let held = Held::of(&p.state, &self.planets[p.planet].day, self.tick as f64);
-                let grapple = p
-                    .inventory
-                    .slots
-                    .get(slot)
-                    .filter(|_| slot < HOTBAR_SLOTS)
-                    .copied()
-                    .flatten()
-                    .and_then(|s| {
-                        let d = self.items.get(s.item)?;
-                        let mut g = d.grapple_of(&s, &Held::default())?;
-                        g.energy = d.energy_of(&s, &held).unwrap_or(g.energy);
-                        Some(g)
-                    });
-                // The body quirks of what is in that hand (milestone 17
+                let grapple_of = |s: Option<ItemStack>| {
+                    let s = s?;
+                    let d = self.items.get(s.item)?;
+                    let mut g = d.grapple_of(&s, &Held::default())?;
+                    g.energy = d.energy_of(&s, &held).unwrap_or(g.energy);
+                    Some(g)
+                };
+                let grapples = [grapple_of(left), grapple_of(right)];
+                // The body quirks of what is in both hands (milestone 17
                 // part 2), set the same way the client sets them.
-                p.state.quirks = bm_core::forge::Quirks::of(
-                    p.inventory
-                        .slots
-                        .get(slot)
-                        .filter(|_| slot < HOTBAR_SLOTS)
-                        .and_then(|s| s.as_ref()),
-                );
+                p.state.quirks = bm_core::forge::Quirks::of_hands(left.as_ref(), right.as_ref());
                 let world = &self.planets[p.planet].world;
                 // Held at a portal while its far side loads.
                 let held = p.trip.as_ref().map(|t| t.held);
                 let from = p.state.pos;
-                let events = movement::step(
+                let hand_before = p.state.hook.map(|h| h.hand);
+                let events = movement::step_hands(
                     &mut p.state,
                     &input,
                     &self.movement,
-                    grapple.as_ref(),
+                    [grapples[0].as_ref(), grapples[1].as_ref()],
                     world.shape,
                     world,
                 );
@@ -1676,6 +1675,13 @@ impl Game {
                 p.last_input = input;
                 p.bank -= 1.0;
                 let fell = p.state.down && !p.defeated;
+                // The grapple that fired, or held the hook let go, wears.
+                let used = if events.fired {
+                    p.state.hook.map(|h| h.hand)
+                } else {
+                    hand_before
+                };
+                let slot = if used == Some(1) { input.off } else { input.slot } as usize;
                 if (events.fired || events.released)
                     && mining::roll(&mut self.rng) >= p.state.wear_spared(p.effects.wear_saved())
                 {
@@ -2097,14 +2103,18 @@ impl Game {
                                     .state
                                     .hook
                                     .map(|h| RemotePlayer::pack_hook(shape.delta(o.state.pos, h.pos))),
-                                light: bm_core::light::brighter(
-                                    o.inventory
-                                        .get(o.last_input.slot as usize)
-                                        .filter(|_| (o.last_input.slot as usize) < HOTBAR_SLOTS)
-                                        .map_or([0; 3], |s| {
-                                            self.items.get(s.item).map_or([0; 3], |d| d.held_rgb_of(&s))
-                                        }),
+                                light: [o.last_input.slot, o.last_input.off].into_iter().fold(
                                     [if o.inner_light { skills::INNER_LIGHT } else { 0 }; 3],
+                                    |l, slot| {
+                                        let held = o
+                                            .inventory
+                                            .get(slot as usize)
+                                            .filter(|_| (slot as usize) < HOTBAR_SLOTS)
+                                            .map_or([0; 3], |s| {
+                                                self.items.get(s.item).map_or([0; 3], |d| d.held_rgb_of(&s))
+                                            });
+                                        bm_core::light::brighter(l, held)
+                                    },
                                 ),
                             },
                         ))

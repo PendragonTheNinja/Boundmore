@@ -457,6 +457,11 @@ impl Quirks {
         self.0 & flag != 0
     }
 
+    /// The body quirks of what both hands hold (milestone 28).
+    pub fn of_hands(left: Option<&ItemStack>, right: Option<&ItemStack>) -> Quirks {
+        Quirks(Self::of(left).0 | Self::of(right).0)
+    }
+
     /// The body quirks of a held stack (none for an empty hand).
     pub fn of(stack: Option<&ItemStack>) -> Quirks {
         let Some(s) = stack else { return Quirks(0) };
