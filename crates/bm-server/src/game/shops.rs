@@ -410,7 +410,10 @@ impl Game {
                     self.ledgers.insert(account.to_string(), l);
                 }
                 Err(e) => {
-                    return tracing::error!("{coin} coin owed to {account} could not be paid: {e:#}");
+                    // Kept and tried again at the next report, never lost.
+                    tracing::error!("{coin} coin owed to {account} could not be paid yet: {e:#}");
+                    *self.owed.entry(account.to_string()).or_default() += coin;
+                    return;
                 }
             }
         }

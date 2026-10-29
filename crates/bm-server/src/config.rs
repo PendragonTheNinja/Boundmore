@@ -168,6 +168,9 @@ pub struct ServerConfig {
     /// Seconds a sealed item waits in a forge's queue, instead of its
     /// rank's (tests).
     pub forge_queue_seconds: Option<u32>,
+    /// Tests only: the typed command `/panic` panics the game loop on
+    /// purpose (how a crash is handled: caught, saved, reported).
+    pub panic_command: bool,
     /// Wandering worlds (milestone 21): slots running the stream; 0 turns
     /// them off. Each slot brings a new world every `exo_slots *
     /// exo_every_hours`.
@@ -227,6 +230,7 @@ impl Default for ServerConfig {
             placed_meteor: None,
             machine_wear_start: None,
             forge_queue_seconds: None,
+            panic_command: false,
             exo_slots: 3,
             exo_every_hours: 48.0,
             exo_life_hours: [113.0, 128.0],

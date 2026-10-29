@@ -74,6 +74,17 @@ pub struct Outbox {
 impl Outbox {
     pub fn send(&self, msg: &ServerMsg) {
         let frame = bm_protocol::encode_frame(msg);
+        // The client drops the connection on a frame over the limit: better
+        // one message missing (and a loud log) than a player thrown out
+        // every time they open the thing.
+        if frame.len() > bm_protocol::MAX_FRAME + 4 {
+            let what = format!("{msg:?}");
+            let what = what.split(['(', ' ', '{']).next().unwrap_or("?");
+            return tracing::error!(
+                "not sending a {what} message of {} bytes: over the frame limit",
+                frame.len()
+            );
+        }
         self.queued.fetch_add(frame.len(), Ordering::Relaxed);
         let _ = self.tx.send(Out::Owned(frame));
     }
@@ -300,7 +311,13 @@ async fn serve(conn: Connection, id: u32, shared: &Shared) -> anyhow::Result<()>
     let dgram_conn = conn.clone();
     let dgram_events = events.clone();
     let datagrams = tokio::spawn(async move {
+        // Inputs come 60 a second, each carrying the last few again: more
+        // than this is a client misbehaving, and the excess is dropped.
+        let mut bucket = Bucket::new(DATAGRAM_RATE, DATAGRAM_BURST);
         while let Ok(bytes) = dgram_conn.read_datagram().await {
+            if !bucket.take(Instant::now()) {
+                continue;
+            }
             match bm_protocol::decode::<ClientDatagram>(&bytes) {
                 Ok(ClientDatagram::Input { latest, mut inputs }) => {
                     inputs.truncate(INPUT_REDUNDANCY);
@@ -316,7 +333,14 @@ async fn serve(conn: Connection, id: u32, shared: &Shared) -> anyhow::Result<()>
     });
 
     let result = async {
+        // A client sending reliable messages faster than this is slowed
+        // down (the stream's flow control then holds it back), never cut
+        // off, so one bad client cannot flood the game loop.
+        let mut bucket = Bucket::new(MESSAGE_RATE, MESSAGE_BURST);
         while let Some(msg) = read_msg::<ClientMsg>(&mut recv).await? {
+            while !bucket.take(Instant::now()) {
+                tokio::time::sleep(Duration::from_millis(20)).await;
+            }
             if events.send(Event::Msg { id, msg }).is_err() {
                 break;
             }
@@ -330,4 +354,67 @@ async fn serve(conn: Connection, id: u32, shared: &Shared) -> anyhow::Result<()>
     writer.abort();
     conn.close(quinn::VarInt::from_u32(0), b"bye");
     result
+}
+
+/// Reliable messages a second one client may send, and the burst allowed
+/// (a drag across the inventory, a shift-click run).
+const MESSAGE_RATE: f64 = 120.0;
+const MESSAGE_BURST: f64 = 240.0;
+/// Input datagrams a second (60 is normal), and the burst.
+const DATAGRAM_RATE: f64 = 180.0;
+const DATAGRAM_BURST: f64 = 120.0;
+
+/// A token bucket: `rate` a second, holding at most `burst`.
+struct Bucket {
+    rate: f64,
+    burst: f64,
+    tokens: f64,
+    at: Instant,
+}
+
+impl Bucket {
+    fn new(rate: f64, burst: f64) -> Self {
+        Bucket {
+            rate,
+            burst,
+            tokens: burst,
+            at: Instant::now(),
+        }
+    }
+
+    /// Takes one token if there is one.
+    fn take(&mut self, now: Instant) -> bool {
+        let dt = now.saturating_duration_since(self.at).as_secs_f64();
+        self.at = now;
+        self.tokens = (self.tokens + dt * self.rate).min(self.burst);
+        if self.tokens >= 1.0 {
+            self.tokens -= 1.0;
+            true
+        } else {
+            false
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_bucket_allows_its_burst_then_its_rate() {
+        let start = Instant::now();
+        let mut b = Bucket::new(10.0, 5.0);
+        b.at = start;
+        assert_eq!((0..8).filter(|_| b.take(start)).count(), 5, "the burst");
+        assert!(!b.take(start));
+        // A second later: ten more, no more.
+        let later = start + Duration::from_secs(1);
+        assert_eq!((0..20).filter(|_| b.take(later)).count(), 5, "capped at the burst");
+        let much_later = later + Duration::from_millis(300);
+        assert_eq!(
+            (0..20).filter(|_| b.take(much_later)).count(),
+            3,
+            "three tenths of a second: three"
+        );
+    }
 }

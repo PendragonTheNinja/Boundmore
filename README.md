@@ -71,7 +71,7 @@ cargo run --release -p bm-server
 cargo run --release -p bm-client
 ```
 
-Stop the running server (Ctrl+C in its window) and close the game before rebuilding: Windows will not let a running program be replaced, and the build fails with `failed to remove file ... bm-server.exe: Access is denied`. If a copy is still running somewhere, `taskkill /IM bm-server.exe /F` and `taskkill /IM boundmore.exe /F` stop them.
+Stop the running server (Ctrl+C in its window) and close the game before rebuilding: Windows will not let a running program be replaced, and the build fails with `failed to remove file ... bm-server.exe: Access is denied`. Closing the server's window also saves first. If a copy is still running somewhere, `taskkill /IM boundmore.exe /F` stops the game; for the server, prefer Ctrl+C or closing its window, since `taskkill /F` ends it without saving (use it only on a server that is stuck).
 
 ## Layout
 

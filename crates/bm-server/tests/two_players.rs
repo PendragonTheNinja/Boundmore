@@ -932,6 +932,47 @@ async fn edits_positions_and_inventories_survive_a_restart() {
     server.stop();
 }
 
+/// A panic in the game loop (audit 2026-10-29) is caught: players are
+/// told, the world is saved (a hole dug just before is still there), and
+/// `stop` reports the crash so the binary exits with an error.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn a_crash_in_the_game_loop_still_saves_the_world() {
+    let dir = tempfile::tempdir().unwrap();
+    let cfg = ServerConfig {
+        panic_command: true,
+        ..config(dir.path())
+    };
+    let feet = {
+        let server = bm_server::start(cfg.clone()).unwrap();
+        let mut alice = TestClient::register(&server, "Alice").await;
+        let feet = alice.feet();
+        alice.wait_for_chunk(feet.chunk()).await;
+        assert!(alice.dig(1, feet).await.0);
+        alice.send(ClientMsg::Command { text: "/panic".into() }).await;
+        alice
+            .notice("The server hit an error and is stopping. Your world is being saved.")
+            .await;
+        for _ in 0..100 {
+            if !server.is_running() {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(50)).await;
+        }
+        assert!(!server.is_running(), "the loop stopped");
+        assert!(server.stop(), "reported as a crash");
+        feet
+    };
+    let server = bm_server::start(config(dir.path())).unwrap();
+    let mut alice = TestClient::login(&server, "Alice").await;
+    alice.wait_for_chunk(feet.chunk()).await;
+    assert_eq!(
+        alice.chunks[&feet.chunk()].get(feet.local()),
+        BlockId::AIR,
+        "the hole was saved"
+    );
+    assert!(!server.stop(), "a clean stop is no crash");
+}
+
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn full_inventories_refuse_breaks_and_tools_hit_harder_and_wear_out() {
     let dir = tempfile::tempdir().unwrap();

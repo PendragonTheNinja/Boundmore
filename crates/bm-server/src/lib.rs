@@ -50,28 +50,34 @@ pub struct RunningServer {
     running: Arc<AtomicBool>,
     load: Arc<std::sync::Mutex<Vec<game::PlanetLoad>>>,
     endpoint: Endpoint,
-    game: Option<JoinHandle<()>>,
+    game: Option<JoinHandle<bool>>,
+    /// Whether the game loop stopped on a panic (see `Game::run`).
+    crashed: bool,
+    writer_health: Arc<store::WriterHealth>,
     net: Option<JoinHandle<()>>,
     writer: Option<JoinHandle<()>>,
     store: Option<Store>,
 }
 
 impl RunningServer {
-    /// Stops accepting players, saves everything, and waits for it to finish.
-    pub fn stop(mut self) {
+    /// Stops accepting players, saves everything, and waits for it to
+    /// finish. Returns whether the game loop had stopped on a panic.
+    pub fn stop(mut self) -> bool {
         self.shutdown();
+        self.crashed
     }
 
     fn shutdown(&mut self) {
         self.running.store(false, Ordering::Relaxed);
         if let Some(g) = self.game.take() {
-            let _ = g.join();
+            self.crashed |= g.join().unwrap_or(true);
         }
         self.endpoint.close(0u32.into(), b"server stopped");
         if let Some(n) = self.net.take() {
             let _ = n.join();
         }
         if let Some(w) = self.writer.take() {
+            self.writer_health.stopping.store(true, Ordering::Relaxed);
             let _ = w.join();
         }
         // Chunk loads still running on the thread pool hold the database;
@@ -214,12 +220,13 @@ pub fn start(cfg: ServerConfig) -> Result<RunningServer> {
         rt.shutdown_timeout(std::time::Duration::from_secs(1));
     })?;
 
-    let (writer_tx, writer) = store::spawn_writer(store.clone());
+    let (writer_tx, writer, writer_health) = store::spawn_writer(store.clone());
     let held = store.clone();
     let start = cfg.start_planet;
-    let game = game::Game::new(
+    let mut game = game::Game::new(
         cfg, planets, start, next_claim, items, recipes, creatures, store, writer_tx, events_rx, kinds,
     )?;
+    game.writer_health = writer_health.clone();
     let load = game.load_handle();
     let running = Arc::new(AtomicBool::new(true));
     let game_running = running.clone();
@@ -234,6 +241,8 @@ pub fn start(cfg: ServerConfig) -> Result<RunningServer> {
         load,
         endpoint,
         game: Some(game),
+        crashed: false,
+        writer_health,
         net: Some(net),
         writer: Some(writer),
         store: Some(held),

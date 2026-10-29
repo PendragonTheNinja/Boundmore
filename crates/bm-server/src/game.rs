@@ -354,6 +354,10 @@ enum Effect {
     },
 }
 
+/// Events (inputs, messages, joins) one tick handles at most; the rest wait
+/// for the next tick. About 40 a player a tick at 100 players.
+const MAX_EVENTS_PER_TICK: usize = 4000;
+
 pub struct Game {
     cfg: ServerConfig,
     planets: Vec<Planet>,
@@ -385,6 +389,14 @@ pub struct Game {
     far_offsets: HashMap<u32, Arc<Vec<FarOffset>>>,
     universe_sent: u64,
     load: Arc<Mutex<Vec<PlanetLoad>>>,
+    /// How saving goes (the writer thread's failures), for the report and
+    /// a warning to players.
+    pub(crate) writer_health: Arc<crate::store::WriterHealth>,
+    /// Whether players were told saving is failing (once a failing spell).
+    warned_saving: bool,
+    /// Coin that could not be paid yet (the payee's ledger would not load),
+    /// tried again at each report.
+    owed: HashMap<String, u64>,
     /// The last `chat::HISTORY` universe lines, oldest first (memory only).
     history: VecDeque<ChatLine>,
     ash: BlockId,
@@ -794,6 +806,9 @@ impl Game {
             far_offsets: HashMap::new(),
             universe_sent: 0,
             load: Arc::new(Mutex::new(Vec::new())),
+            writer_health: Default::default(),
+            warned_saving: false,
+            owed: HashMap::new(),
             history: VecDeque::new(),
             ash,
             last_seen,
@@ -860,13 +875,27 @@ impl Game {
     }
 
     /// Runs until `running` is cleared, then saves everything and returns.
-    pub fn run(mut self, running: Arc<AtomicBool>) {
+    /// The game loop, until `running` goes false. Returns whether it stopped
+    /// because a tick panicked: the panic is caught, everyone is told, and
+    /// the world is still saved on the way out (losing the last seconds of
+    /// everyone's work to one bug is worse than one tick half applied).
+    pub fn run(mut self, running: Arc<AtomicBool>) -> bool {
         let dt = Duration::from_secs_f64(TICK_DT);
         let mut next = Instant::now();
         let mut last_report = Instant::now();
+        let mut crashed = false;
         while running.load(Ordering::Relaxed) {
             let started = Instant::now();
-            self.step();
+            if std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| self.step())).is_err() {
+                tracing::error!("a game tick panicked (see above); saving and stopping");
+                for p in self.players.values() {
+                    p.out.send(&ServerMsg::Notice {
+                        text: "The server hit an error and is stopping. Your world is being saved.".into(),
+                    });
+                }
+                crashed = true;
+                break;
+            }
             let took = started.elapsed();
             if took > dt {
                 self.stats.slow_ticks += 1;
@@ -888,9 +917,32 @@ impl Game {
             }
         }
         self.shutdown();
+        crashed
+    }
+
+    /// Tells everyone once when saving keeps failing (a full disk, a lost
+    /// drive), so the server's owner hears of it; and once when it works
+    /// again.
+    fn watch_saving(&mut self) {
+        let failing = self.writer_health.failing.load(Ordering::Relaxed);
+        let text = if failing >= 3 && !self.warned_saving {
+            self.warned_saving = true;
+            "The server cannot save right now. Tell its owner (its log says why); your work is kept until it can."
+        } else if failing == 0 && self.warned_saving {
+            self.warned_saving = false;
+            "The server is saving again."
+        } else {
+            return;
+        };
+        for p in self.players.values() {
+            p.out.send(&ServerMsg::Notice { text: text.into() });
+        }
     }
 
     fn report(&mut self) {
+        for (account, coin) in std::mem::take(&mut self.owed) {
+            self.pay_account(&account, coin);
+        }
         let s = &self.stats;
         let planets: Vec<String> = self
             .planets
@@ -927,9 +979,10 @@ impl Game {
             .filter(|(id, _)| kinds[*id as usize] > 0)
             .map(|(id, d)| format!("{} {}", kinds[id as usize], d.name))
             .collect();
+        let failing = self.writer_health.failing.load(Ordering::Relaxed);
         tracing::info!(
             "tick {} ({:.2} ms a tick, worst {:.1} ms, far {:.0} us) | {} players | {} | sent {} chunks ({} KiB) | edits {} ok {} \
-             refused | {} slow ticks | {} creatures ({}), {} shots: {:.0} us a tick ({:.0} us views), worst {:.1} ms",
+             refused | {} slow ticks | {} creatures ({}), {} shots: {:.0} us a tick ({:.0} us views), worst {:.1} ms{}",
             self.tick,
             s.tick_time.as_secs_f64() * 1e3 / s.ticks.max(1) as f64,
             s.tick_worst.as_secs_f64() * 1e3,
@@ -947,6 +1000,11 @@ impl Game {
             s.creature_time.as_secs_f64() * 1e6 / s.creature_ticks.max(1) as f64,
             s.view_time.as_secs_f64() * 1e6 / s.creature_ticks.max(1) as f64,
             s.creature_worst.as_secs_f64() * 1e3,
+            if failing > 0 {
+                format!(" | SAVING FAILS ({failing} attempts at one save)")
+            } else {
+                String::new()
+            },
         );
         self.stats.tick_time = Duration::ZERO;
         self.stats.tick_worst = Duration::ZERO;
@@ -981,7 +1039,11 @@ impl Game {
     /// One tick. Public so tests can drive the loop without real time.
     pub fn step(&mut self) {
         self.tick += 1;
-        while let Ok(ev) = self.events.try_recv() {
+        self.watch_saving();
+        // A bounded drain: a flood waits for the next tick rather than
+        // stalling this one.
+        for _ in 0..MAX_EVENTS_PER_TICK {
+            let Ok(ev) = self.events.try_recv() else { break };
             self.handle(ev);
         }
         for p in &mut self.planets {
@@ -1143,6 +1205,9 @@ impl Game {
             Event::Msg { id, msg } => match msg {
                 ClientMsg::Skill { at, action } => self.queue(id, at, Queued::Skill { at, action }),
                 ClientMsg::Creative { at, on } => self.queue(id, at, Queued::Creative { at, on }),
+                ClientMsg::Command { text } if self.cfg.panic_command && text == "/panic" => {
+                    panic!("a test asked for a panic (/panic)")
+                }
                 ClientMsg::Command { text } => self.command(id, &text),
                 ClientMsg::Friend { name, action } => self.friend(id, &name, action),
                 ClientMsg::SetRights { claim, friend, rights } => self.set_rights(id, claim, &friend, rights),

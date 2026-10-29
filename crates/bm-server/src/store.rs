@@ -2789,10 +2789,29 @@ impl WriteBatch {
     }
 }
 
-/// The single writer thread. A failed commit is retried; the batch is never
-/// silently dropped, because the game loop has already cleared its dirty flags.
-pub fn spawn_writer(store: Store) -> (Sender<WriteBatch>, std::thread::JoinHandle<()>) {
+/// How the writer is doing, for the game's report and its players.
+#[derive(Default)]
+pub struct WriterHealth {
+    /// Failed attempts at the batch being written now (0: saving works).
+    pub failing: std::sync::atomic::AtomicU32,
+    /// Set while the server shuts down: a batch that keeps failing is then
+    /// given up after `GIVE_UP_ATTEMPTS`, so stopping cannot hang forever.
+    pub stopping: std::sync::atomic::AtomicBool,
+}
+
+/// Attempts at one batch before giving up, once the server is stopping
+/// (about a minute of retries).
+const GIVE_UP_ATTEMPTS: u32 = 15;
+
+/// The single writer thread. A failed commit is retried, never silently
+/// dropped (the game loop has already cleared its dirty flags); failures
+/// show in `WriterHealth`. Only while stopping does a batch that keeps
+/// failing get given up, loudly, so the process can still exit.
+pub fn spawn_writer(store: Store) -> (Sender<WriteBatch>, std::thread::JoinHandle<()>, Arc<WriterHealth>) {
+    use std::sync::atomic::Ordering;
     let (tx, rx): (Sender<WriteBatch>, Receiver<WriteBatch>) = crossbeam_channel::unbounded();
+    let health = Arc::new(WriterHealth::default());
+    let h = health.clone();
     let handle = std::thread::Builder::new()
         .name("store-writer".into())
         .spawn(move || {
@@ -2803,18 +2822,27 @@ pub fn spawn_writer(store: Store) -> (Sender<WriteBatch>, std::thread::JoinHandl
                         Ok(()) => break,
                         Err(e) => {
                             attempt += 1;
+                            h.failing.store(attempt, Ordering::Relaxed);
                             tracing::error!("save failed (attempt {attempt}): {e:#}");
-                            std::thread::sleep(std::time::Duration::from_millis(250 * attempt.min(20)));
+                            if h.stopping.load(Ordering::Relaxed) && attempt >= GIVE_UP_ATTEMPTS {
+                                tracing::error!(
+                                    "GIVING UP on a save while stopping: the changes in it are lost \
+                                     (check the disk and the data dir's permissions)"
+                                );
+                                break;
+                            }
+                            std::thread::sleep(std::time::Duration::from_millis(250 * attempt.min(20) as u64));
                         }
                     }
                 }
+                h.failing.store(0, Ordering::Relaxed);
                 for done in &batch.done {
                     let _ = done.send(());
                 }
             }
         })
         .expect("spawn store writer");
-    (tx, handle)
+    (tx, handle, health)
 }
 
 /// Test support: writes a single-planet save exactly as save versions 1 and
