@@ -50,6 +50,8 @@ pub enum UiAction {
         recipe: u16,
         colour: Colour,
     },
+    /// The options window's choices changed: apply and save them.
+    Options(crate::settings::Options),
 }
 
 /// Which screen holds the mouse, if any.
@@ -82,6 +84,8 @@ pub enum Menu {
     Shop(BlockPos),
     /// The atlas in this inventory slot (milestone 27).
     Atlas(u8),
+    /// The options window: mouse, view, frame rate (Esc with the mouse free).
+    Options,
 }
 
 #[derive(Default)]
@@ -601,6 +605,58 @@ pub fn feat_line(def: &bm_core::feats::FeatDef, ledger: &bm_core::feats::Ledger)
 
 /// The feats window (milestone 24): coin, then each group's feats with
 /// their tier and progress.
+/// The options window: each change is applied and saved at once.
+pub fn options(ctx: &egui::Context, current: &crate::settings::Options, actions: &mut Vec<UiAction>) {
+    let mut o = current.clone();
+    let mut open = true;
+    window("Options").open(&mut open).show(ctx, |ui| {
+        ui.set_width(360.0);
+        heading(ui, "Mouse");
+        ui.add(
+            egui::Slider::new(&mut o.sensitivity, 0.1..=5.0)
+                .logarithmic(true)
+                .text("Look speed"),
+        );
+        ui.checkbox(&mut o.invert_y, "Invert up and down");
+        ui.add_space(6.0);
+        heading(ui, "View");
+        ui.add(
+            egui::Slider::new(&mut o.fov, 50.0..=110.0)
+                .step_by(1.0)
+                .text("Field of view"),
+        );
+        ui.checkbox(&mut o.far_views, "Far views (the distant planet)");
+        ui.add_space(6.0);
+        heading(ui, "Frame rate");
+        ui.checkbox(&mut o.vsync, "Vsync (wait for the screen)");
+        let mut capped = o.frame_cap > 0;
+        ui.checkbox(&mut capped, "Cap the frame rate");
+        if capped {
+            if o.frame_cap == 0 {
+                o.frame_cap = 60;
+            }
+            ui.add(egui::Slider::new(&mut o.frame_cap, 20..=240).text("Frames a second"));
+        } else {
+            o.frame_cap = 0;
+        }
+        ui.add_space(6.0);
+        ui.label(
+            egui::RichText::new("F1 hides the HUD. Saved for next time.")
+                .color(MUTED)
+                .small(),
+        );
+        if ui.button("Defaults").clicked() {
+            o = crate::settings::Options::default();
+        }
+    });
+    if !open {
+        actions.push(UiAction::CloseMenu);
+    }
+    if o != *current {
+        actions.push(UiAction::Options(o));
+    }
+}
+
 pub fn feats(
     ctx: &egui::Context,
     book: &bm_core::feats::FeatBook,

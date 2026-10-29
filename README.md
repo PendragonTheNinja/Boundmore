@@ -23,7 +23,7 @@ cargo run --release -p bm-client
 The game opens on a login screen: pick a name and password and press **Create account** the first time, **Log in** after. The name and server are remembered (never the password).
 
 Controls:
-- Click to capture the mouse; Esc releases it or closes a menu.
+- Click to capture the mouse; Esc releases it or closes a menu, and Esc again opens **Options** (look speed, invert, field of view, far views, vsync, a frame cap; saved for next time). F1 hides the HUD.
 - WASD to move, Space to jump (and to swim up; push against a shore with Space held to climb out), X to swim down, Shift to sprint. Let go of both in water and you stay where you are, or float at the surface; the air bar runs while your head is under, and when it is empty you drown. Brews (made in the mixer) are drunk like food: left click.
 - **Two hands:** the hotbar has a left hand (gold, L) and a right hand (blue, R). 1 to 0 or the mouse wheel pick the left hand's slot; **Alt** with a number or the wheel picks the right hand's. Each mouse button uses its own hand's item, whatever it is: a tool swings, a block places, a grapple fires, food is eaten. One hand acts at a time.
 - **Hold** a button with a tool in that hand to break a block; it goes into your inventory.

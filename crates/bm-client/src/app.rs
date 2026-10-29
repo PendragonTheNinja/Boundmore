@@ -37,7 +37,7 @@ use glam::{DVec3, Vec3};
 use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 use std::sync::Arc;
-use std::time::Instant;
+use std::time::{Duration, Instant};
 use winit::application::ApplicationHandler;
 use winit::event::{DeviceEvent, DeviceId, ElementState, MouseButton, MouseScrollDelta, WindowEvent};
 use winit::event_loop::{ActiveEventLoop, ControlFlow};
@@ -92,6 +92,9 @@ impl CropView {
     }
 }
 
+/// Frames a second while the window is minimised or covered.
+const HIDDEN_FRAME_CAP: u32 = 10;
+
 /// Creative mode swings this often while the button is held (ticks).
 const CREATIVE_SWING_TICKS: u32 = 8;
 const NEED_A_TOOL: &str = "You need a tool to break blocks. A hand stone needs nothing to craft";
@@ -117,7 +120,6 @@ const MAX_TICKS_PER_FRAME: u32 = 8;
 const WEAR_BAR_SECONDS: f64 = 2.5;
 const PLAYER_VISUAL_HEIGHT: f32 = 2.0;
 /// The camera's vertical field of view.
-const FOV_Y: f32 = 75.0 * std::f32::consts::PI / 180.0;
 /// Claim mode aims this far at terrain, and this far into open air.
 const CLAIM_AIM: f64 = 48.0;
 const CLAIM_AIM_AIR: f64 = 10.0;
@@ -954,7 +956,7 @@ impl Session {
 
     /// Name plates to show: the creature aimed at, and hurt living ones
     /// within `fight_hud::PLATE_RANGE`.
-    fn plates(&self, eye: DVec3, forward: Vec3, screen: egui::Rect) -> Vec<crate::fight_hud::Plate> {
+    fn plates(&self, eye: DVec3, forward: Vec3, fov_y: f32, screen: egui::Rect) -> Vec<crate::fight_hud::Plate> {
         let shape = self.world.shape;
         let aimed = self.aim_creature.map(|a| a.0);
         let mut out = Vec::new();
@@ -966,7 +968,7 @@ impl Session {
                 continue;
             }
             let over = pos + DVec3::new(0.0, k.height as f64 + 0.55, 0.0);
-            let Some(at) = crate::fight_hud::to_screen((over - eye).as_vec3(), forward, FOV_Y, screen) else {
+            let Some(at) = crate::fight_hud::to_screen((over - eye).as_vec3(), forward, fov_y, screen) else {
                 continue;
             };
             let t = k.tier(c.tier);
@@ -985,7 +987,14 @@ impl Session {
     }
 
     /// The damage numbers on screen now.
-    fn numbers(&self, eye: DVec3, forward: Vec3, screen: egui::Rect, now: f64) -> Vec<crate::fight_hud::Number> {
+    fn numbers(
+        &self,
+        eye: DVec3,
+        forward: Vec3,
+        fov_y: f32,
+        screen: egui::Rect,
+        now: f64,
+    ) -> Vec<crate::fight_hud::Number> {
         let shape = self.world.shape;
         self.floaters
             .visible(now)
@@ -994,7 +1003,7 @@ impl Session {
                 let at = match f.at {
                     Anchor::World(p) => {
                         let p = shape.nearest_lap(eye, p) + DVec3::new(0.0, rise as f64 * 0.9, 0.0);
-                        crate::fight_hud::to_screen((p - eye).as_vec3(), forward, FOV_Y, screen)?
+                        crate::fight_hud::to_screen((p - eye).as_vec3(), forward, fov_y, screen)?
                             + egui::vec2(f.drift * 36.0, 0.0)
                     }
                     Anchor::Me => screen.center() + egui::vec2(28.0 + f.drift * 30.0, -36.0 - rise * 60.0),
@@ -1043,6 +1052,12 @@ pub struct App {
     link: Option<Link>,
     session: Option<Session>,
     settings: Settings,
+    /// F1: the HUD hidden (screenshots).
+    hide_hud: bool,
+    /// When the last frame was started (the frame cap).
+    frame_at: Instant,
+    /// The window is minimised or covered: frames are capped low.
+    hidden: bool,
     login: LoginForm,
     menu: Option<Menu>,
     drag: Option<Drag>,
@@ -1137,6 +1152,9 @@ impl App {
             link: None,
             session: None,
             settings,
+            hide_hud: false,
+            frame_at: Instant::now(),
+            hidden: false,
             login,
             menu: None,
             drag: None,
@@ -1352,6 +1370,16 @@ impl App {
         Menu::Crafting(station)
     }
 
+    /// Puts the options into effect (vsync and far views; the rest are
+    /// read where they are used).
+    fn apply_options(&mut self) {
+        let o = self.settings.options.clamped();
+        if let Some(r) = &mut self.renderer {
+            r.set_vsync(self.opts.vsync && o.vsync);
+            r.show_far = o.far_views;
+        }
+    }
+
     fn toggle(&mut self, menu: Menu) {
         if self
             .menu
@@ -1549,6 +1577,13 @@ impl App {
                 UiAction::LogIn { register } => self.start_login(register),
                 UiAction::CancelLogin => self.cancel_login(),
                 UiAction::CloseMenu => self.close_menu(true),
+                UiAction::Options(o) => {
+                    self.settings.options = o.clamped();
+                    self.apply_options();
+                    if let Err(e) = self.settings.save(&self.opts.settings_path) {
+                        tracing::warn!("cannot save the options: {e}");
+                    }
+                }
                 UiAction::CraftColour { recipe, colour } => {
                     if let Some(s) = &mut self.session {
                         s.craft_colours.insert(recipe, colour);
@@ -2623,6 +2658,8 @@ impl App {
 
     /// Runs this frame's menus and HUD and returns them tessellated.
     fn run_ui(&mut self) -> Option<(Vec<egui::ClippedPrimitive>, egui::TexturesDelta, f32)> {
+        // The player's field of view (options).
+        let fov_y = self.settings.options.clamped().fov.to_radians();
         self.ensure_coloured_icons();
         let local = self.local_ticks();
         let window = self.window.clone()?;
@@ -2653,6 +2690,8 @@ impl App {
             .map_or(0, |d| d.as_secs());
         let notices = self.notices.visible(now);
         let menu = self.menu;
+        let options = self.settings.options.clone();
+        let hide_hud = self.hide_hud;
         let login = &mut self.login;
         let drag = &mut self.drag;
         let session = self.session.as_ref();
@@ -2700,53 +2739,50 @@ impl App {
             } else {
                 None
             };
-            menus::hud(
-                &ctx,
-                &Hud {
-                    items: &s.items,
-                    icons: &s.icons,
-                    selected: s.selected,
-                    selected_off: s.selected_off,
-                    notices: notices.clone(),
-                    owner,
-                    settlement,
-                    claim_mode: claim_help,
-                    aim_hint,
-                    crop: s
-                        .crop_info
-                        .as_ref()
-                        .filter(|(v, _)| menu.is_none() && s.target.is_some_and(|t| t.block == v.pos))
-                        .map(|(v, at)| v.line(now - at)),
-                    reclaim_waiting: !s.reclaim.is_empty(),
-                    wear_bar: s
-                        .machine_wear
-                        .filter(|&(_, at)| menu.is_none() && now - at < WEAR_BAR_SECONDS)
-                        .map(|(w, _)| w),
-                    block_bar: (menu.is_none() && !claim_mode && s.chisel.is_none() && !s.holding_spanner())
-                        .then(|| s.target_health())
-                        .flatten()
-                        .map(|(_, left, shields)| BlockBar { left, shields }),
-                    energy: s.me.state.energy() as f32 / s.me.state.full_energy().max(1) as f32,
-                    hunger: s.me.state.hunger_points() as f32 / s.me.state.full_energy().max(1) as f32,
-                    food: crate::menus::food_tags(&s.me.state),
-                    level: Some(bm_core::skills::level_of(s.progress.character().xp)),
-                    health: (s.me.state.health(), s.me.state.max_health()),
-                    debt: s.progress.character().debt,
-                    region: s.sky_view.place(feet),
-                    meteor: s.sky_view.status(feet, shape, s.server_tick(local)),
-                    life: s.sky_view.life_text(),
-                    air: crate::menus::air_view(&s.me.state),
-                },
-            );
+            if !hide_hud {
+                menus::hud(
+                    &ctx,
+                    &Hud {
+                        items: &s.items,
+                        icons: &s.icons,
+                        selected: s.selected,
+                        selected_off: s.selected_off,
+                        notices: notices.clone(),
+                        owner,
+                        settlement,
+                        claim_mode: claim_help,
+                        aim_hint,
+                        crop: s
+                            .crop_info
+                            .as_ref()
+                            .filter(|(v, _)| menu.is_none() && s.target.is_some_and(|t| t.block == v.pos))
+                            .map(|(v, at)| v.line(now - at)),
+                        reclaim_waiting: !s.reclaim.is_empty(),
+                        wear_bar: s
+                            .machine_wear
+                            .filter(|&(_, at)| menu.is_none() && now - at < WEAR_BAR_SECONDS)
+                            .map(|(w, _)| w),
+                        block_bar: (menu.is_none() && !claim_mode && s.chisel.is_none() && !s.holding_spanner())
+                            .then(|| s.target_health())
+                            .flatten()
+                            .map(|(_, left, shields)| BlockBar { left, shields }),
+                        energy: s.me.state.energy() as f32 / s.me.state.full_energy().max(1) as f32,
+                        hunger: s.me.state.hunger_points() as f32 / s.me.state.full_energy().max(1) as f32,
+                        food: crate::menus::food_tags(&s.me.state),
+                        level: Some(bm_core::skills::level_of(s.progress.character().xp)),
+                        health: (s.me.state.health(), s.me.state.max_health()),
+                        debt: s.progress.character().debt,
+                        region: s.sky_view.place(feet),
+                        meteor: s.sky_view.status(feet, shape, s.server_tick(local)),
+                        life: s.sky_view.life_text(),
+                        air: crate::menus::air_view(&s.me.state),
+                    },
+                );
+            }
             // Written signs, drawn in their planes under every window.
             if !s.signs.is_empty() {
                 let eye = s.render_eye(alpha);
-                let camera = Camera {
-                    eye,
-                    yaw,
-                    pitch,
-                    fov_y: FOV_Y,
-                };
+                let camera = Camera { eye, yaw, pitch, fov_y };
                 crate::signs::draw(
                     &ctx.layer_painter(egui::LayerId::background()),
                     &s.signs,
@@ -2755,7 +2791,7 @@ impl App {
                         colours: &s.items.colours,
                         eye,
                         forward: camera.forward().as_vec3(),
-                        fov_y: FOV_Y,
+                        fov_y,
                         screen: ctx.content_rect(),
                         sky_light: s.planet.day.sky_light(s.sky_tick(local)),
                     },
@@ -2765,21 +2801,14 @@ impl App {
             // ring and the defeat screen.
             {
                 let eye = s.render_eye(alpha);
-                let forward = Camera {
-                    eye,
-                    yaw,
-                    pitch,
-                    fov_y: FOV_Y,
-                }
-                .forward()
-                .as_vec3();
+                let forward = Camera { eye, yaw, pitch, fov_y }.forward().as_vec3();
                 let screen = ctx.content_rect();
                 let plates = if menu.is_none() {
-                    s.plates(eye, forward, screen)
+                    s.plates(eye, forward, fov_y, screen)
                 } else {
                     Vec::new()
                 };
-                let numbers = s.numbers(eye, forward, screen, now);
+                let numbers = s.numbers(eye, forward, fov_y, screen, now);
                 let flash = (1.0 - (now - s.hurt_at) / crate::fight_hud::FLASH_SECONDS).clamp(0.0, 1.0) as f32;
                 return_pressed = crate::fight_hud::show(
                     &ctx,
@@ -2895,6 +2924,7 @@ impl App {
                     }
                 }
                 Some(Menu::Feats) => menus::feats(&ctx, &FEAT_BOOK, s.ledger.as_ref(), &mut actions),
+                Some(Menu::Options) => menus::options(&ctx, &options, &mut actions),
                 Some(Menu::Atlas(slot)) => match atlas.as_mut() {
                     Some(a) => {
                         let name = |i: ItemId| s.items.registry.get(i).map_or_else(String::new, |d| d.display.clone());
@@ -3082,6 +3112,8 @@ impl App {
     }
 
     fn render_frame(&mut self, ui: Option<&(Vec<egui::ClippedPrimitive>, egui::TexturesDelta, f32)>) {
+        // The player's field of view (options).
+        let fov_y = self.settings.options.clamped().fov.to_radians();
         let ui_frame = ui.map(|(p, t, ppp)| EguiFrame {
             primitives: p,
             textures: t,
@@ -3124,12 +3156,7 @@ impl App {
         let eye = s.render_eye(alpha);
         // A blast nearby shakes the camera.
         let eye = shape.wrap_point(eye + s.fx.shake(eye, shape, now));
-        let camera = Camera {
-            eye,
-            yaw,
-            pitch,
-            fov_y: FOV_Y,
-        };
+        let camera = Camera { eye, yaw, pitch, fov_y };
         let remotes = s.remotes.sample(local, shape);
         let mut boxes: Vec<BoxInstance> = remotes
             .iter()
@@ -3988,8 +4015,12 @@ impl ApplicationHandler for App {
                 return;
             }
         };
-        match pollster::block_on(Renderer::new(window.clone(), self.opts.vsync)) {
-            Ok(r) => self.renderer = Some(r),
+        let vsync = self.opts.vsync && self.settings.options.vsync;
+        match pollster::block_on(Renderer::new(window.clone(), vsync)) {
+            Ok(r) => {
+                self.renderer = Some(r);
+                self.apply_options();
+            }
             Err(e) => {
                 tracing::error!("cannot start the renderer: {e:#}");
                 event_loop.exit();
@@ -4039,10 +4070,13 @@ impl ApplicationHandler for App {
         match event {
             WindowEvent::CloseRequested => event_loop.exit(),
             WindowEvent::Resized(size) => {
+                // Minimised: a zero size.
+                self.hidden = size.width == 0 || size.height == 0;
                 if let Some(r) = &mut self.renderer {
                     r.resize(size.width, size.height);
                 }
             }
+            WindowEvent::Occluded(hidden) => self.hidden = hidden,
             WindowEvent::Focused(false) => {
                 self.keys.clear();
                 self.mouse = [false; 2];
@@ -4087,10 +4121,14 @@ impl ApplicationHandler for App {
                     KeyCode::Escape => {
                         if self.menu.is_some() {
                             self.close_menu(true);
-                        } else {
+                        } else if self.grabbed {
                             self.set_grab(false);
+                        } else {
+                            // Esc again with the mouse free: the options.
+                            self.open_menu(Menu::Options);
                         }
                     }
+                    KeyCode::F1 => self.hide_hud = !self.hide_hud,
                     KeyCode::KeyI | KeyCode::Tab => self.toggle(Menu::Inventory),
                     KeyCode::KeyK => self.toggle(Menu::Skills),
                     // Feats and coin (milestone 24).
@@ -4218,18 +4256,37 @@ impl ApplicationHandler for App {
     }
 
     fn device_event(&mut self, _el: &ActiveEventLoop, _id: DeviceId, event: DeviceEvent) {
+        let o = self.settings.options.clamped();
+        let look = MOUSE_SENSITIVITY * o.sensitivity;
+        let up = if o.invert_y { -look } else { look };
         if let DeviceEvent::MouseMotion { delta: (dx, dy) } = event
             && self.grabbed
             && self.menu.is_none()
             && !self.chat.open
         {
-            self.yaw = (self.yaw + dx * MOUSE_SENSITIVITY).rem_euclid(std::f64::consts::TAU);
+            self.yaw = (self.yaw + dx * look).rem_euclid(std::f64::consts::TAU);
             let limit = bm_core::movement::pitch_radians(bm_core::movement::PITCH_LIMIT);
-            self.pitch = (self.pitch - dy * MOUSE_SENSITIVITY).clamp(-limit, limit);
+            self.pitch = (self.pitch - dy * up).clamp(-limit, limit);
         }
     }
 
-    fn about_to_wait(&mut self, _el: &ActiveEventLoop) {
+    fn about_to_wait(&mut self, el: &ActiveEventLoop) {
+        // The frame cap (options), and a low one while the window is out of
+        // sight, so a minimised game does not spin a core.
+        let cap = if self.hidden {
+            HIDDEN_FRAME_CAP
+        } else {
+            self.settings.options.clamped().frame_cap
+        };
+        if cap > 0 {
+            let due = self.frame_at + Duration::from_secs_f64(1.0 / cap as f64);
+            if Instant::now() < due {
+                el.set_control_flow(ControlFlow::WaitUntil(due));
+                return;
+            }
+            el.set_control_flow(ControlFlow::Poll);
+        }
+        self.frame_at = Instant::now();
         self.update();
         if let Some(w) = &self.window {
             w.request_redraw();

@@ -247,6 +247,8 @@ pub struct Renderer {
     device: wgpu::Device,
     queue: wgpu::Queue,
     config: wgpu::SurfaceConfiguration,
+    /// Whether far views are drawn (the player's option).
+    pub show_far: bool,
     depth: wgpu::TextureView,
     globals: wgpu::Buffer,
     palette: wgpu::Buffer,
@@ -689,6 +691,7 @@ impl Renderer {
             device,
             queue,
             config,
+            show_far: true,
             depth,
             globals,
             palette,
@@ -804,6 +807,19 @@ impl Renderer {
     fn write_faces(&mut self) {
         let table = with_tints(&self.face_table, &self.tints);
         self.queue.write_buffer(&self.faces, 0, bytemuck::cast_slice(&table));
+    }
+
+    /// Vsync on or off, at once.
+    pub fn set_vsync(&mut self, on: bool) {
+        let mode = if on {
+            wgpu::PresentMode::AutoVsync
+        } else {
+            wgpu::PresentMode::AutoNoVsync
+        };
+        if self.config.present_mode != mode {
+            self.config.present_mode = mode;
+            self.surface.configure(&self.device, &self.config);
+        }
     }
 
     pub fn resize(&mut self, width: u32, height: u32) {
@@ -943,7 +959,10 @@ impl Renderer {
         let cull_dist = scene.fog_end as f64 + size * 1.8;
         let mut visible: Vec<(f64, &GpuChunk, ChunkInstance)> = Vec::new();
         let near = self.chunks.iter();
-        let far = self.far_chunks.iter().filter(|(p, _)| !self.near_meshed.contains(p));
+        let far = self
+            .far_chunks
+            .iter()
+            .filter(|(p, _)| self.show_far && !self.near_meshed.contains(p));
         for (pos, gpu) in near.chain(far) {
             let o = pos.origin();
             let origin = DVec3::new(o.x as f64, o.y as f64, o.z as f64);

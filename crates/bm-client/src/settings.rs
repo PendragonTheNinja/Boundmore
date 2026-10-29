@@ -1,18 +1,78 @@
-//! The few things the client remembers between runs: the last account name
-//! and server. Never the password: it is typed each time (or passed on the
-//! command line for testing) and lives only in memory and inside QUIC's TLS.
+//! What the client remembers between runs: the last account name and
+//! server, and the player's options (mouse, view, frame rate). Never the
+//! password: it is typed each time (or passed on the command line for
+//! testing) and lives only in memory and inside QUIC's TLS.
 
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 
 const FILE: &str = "client.toml";
 
-#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 pub struct Settings {
     #[serde(default)]
     pub name: String,
     #[serde(default)]
     pub server: String,
+    /// The options window's choices (missing in an older file: defaults).
+    #[serde(default)]
+    pub options: Options,
+}
+
+/// The player's options (Esc twice, or the options window).
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct Options {
+    /// Mouse look speed, times the default.
+    pub sensitivity: f64,
+    /// Mouse forward looks down.
+    pub invert_y: bool,
+    /// Vertical field of view, degrees.
+    pub fov: f32,
+    /// Draw the far views (the distant planet in coarse copies).
+    pub far_views: bool,
+    /// Wait for the screen's refresh (no tearing, steadier frames).
+    pub vsync: bool,
+    /// Most frames a second; 0 for no cap.
+    pub frame_cap: u32,
+}
+
+impl Default for Options {
+    fn default() -> Self {
+        Options {
+            sensitivity: 1.0,
+            invert_y: false,
+            fov: 75.0,
+            far_views: true,
+            vsync: true,
+            frame_cap: 0,
+        }
+    }
+}
+
+impl Options {
+    /// The choices held to what the game can use (a hand-edited file may
+    /// hold anything).
+    pub fn clamped(&self) -> Self {
+        Options {
+            sensitivity: if self.sensitivity.is_finite() {
+                self.sensitivity.clamp(0.1, 5.0)
+            } else {
+                1.0
+            },
+            fov: if self.fov.is_finite() {
+                self.fov.clamp(50.0, 110.0)
+            } else {
+                75.0
+            },
+            frame_cap: if self.frame_cap == 0 {
+                0
+            } else {
+                self.frame_cap.clamp(20, 500)
+            },
+            ..self.clone()
+        }
+    }
 }
 
 impl Settings {
@@ -66,12 +126,34 @@ mod tests {
     use super::*;
 
     #[test]
+    fn an_older_file_reads_with_default_options_and_odd_values_are_held_in() {
+        let s: Settings = toml::from_str("name = \"a\"\nserver = \"b\"\n").unwrap();
+        assert_eq!(s.options, Options::default());
+        let odd = Options {
+            sensitivity: f64::NAN,
+            fov: 400.0,
+            frame_cap: 3,
+            ..Options::default()
+        }
+        .clamped();
+        assert_eq!((odd.sensitivity, odd.fov, odd.frame_cap), (1.0, 110.0, 20));
+    }
+
+    #[test]
     fn settings_round_trip_and_never_hold_a_password() {
         let dir = std::env::temp_dir().join(format!("bm-settings-{}", std::process::id()));
         let path = dir.join("nested").join(FILE);
         let s = Settings {
             name: "Pen \"dragon\"".into(),
             server: "example.org:7777".into(),
+            options: Options {
+                sensitivity: 1.5,
+                invert_y: true,
+                fov: 90.0,
+                far_views: false,
+                vsync: false,
+                frame_cap: 144,
+            },
         };
         s.save(&path).unwrap();
         assert_eq!(Settings::load(&path), s);

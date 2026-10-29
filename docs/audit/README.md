@@ -77,6 +77,6 @@ Exploits, save loss and crash risks.
 ## Status
 
 - [x] Audits (2026-10-29)
-- [ ] Batch 1
+- [x] Batch 1 (2026-10-29): all eleven, each with a test; the dug-up mark needed a new save table (`planet_placed`, upgrade check from `main` done); protocol 58
 - [ ] Batch 2
 - [ ] Nathan's answers on batch 3
