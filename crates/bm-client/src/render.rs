@@ -98,6 +98,7 @@ macro_rules! shader_source {
 const TERRAIN_WGSL: &str = shader_source!("terrain.wgsl");
 const SIMPLE_WGSL: &str = shader_source!("simple.wgsl");
 const SKY_WGSL: &str = shader_source!("sky.wgsl");
+const HELD_WGSL: &str = shader_source!("held.wgsl");
 
 fn shader(device: &wgpu::Device, label: &str, source: &'static str) -> wgpu::ShaderModule {
     device.create_shader_module(wgpu::ShaderModuleDescriptor {
@@ -299,6 +300,8 @@ pub struct Renderer {
     box_capacity: usize,
     lines: wgpu::Buffer,
     line_capacity: usize,
+    /// Items held in first person (milestone 31).
+    held: HeldGpu,
     pub stats: FrameStats,
 }
 
@@ -673,6 +676,7 @@ impl Renderer {
         // Menus and HUD: egui, drawn in its own pass over the finished frame.
         let egui = egui_wgpu::Renderer::new(&device, format, egui_wgpu::RendererOptions::default());
 
+        let held = HeldGpu::new(&device, &layout, format);
         let (box_vertices, box_indices) = cube(&device);
         let quad_capacity = 1 << 16;
         let overlay = make_vertex_buffer(&device, "overlay", 36 * std::mem::size_of::<OverlayVertex>());
@@ -721,6 +725,7 @@ impl Renderer {
             near_meshed: Default::default(),
             far_chunks: HashMap::new(),
             point_lights: Vec::new(),
+            held,
             stats: FrameStats::default(),
         };
         r.write_palette(&BlockRegistry::builtin());
@@ -1161,6 +1166,15 @@ impl Renderer {
             pass.set_pipeline(&self.cross_pipeline);
             pass.draw(0..12, 0..1);
         }
+        // Held items over the finished world, never sinking into it.
+        self.held.draw(
+            &self.queue,
+            &mut encoder,
+            (&view, &self.depth),
+            &self.bind_group,
+            cam,
+            aspect,
+        );
         if let Some(ui) = &scene.ui {
             let pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("egui"),
@@ -1650,5 +1664,412 @@ mod tests {
         assert_eq!(t[1][..3], [1, 2, 3], "layers untouched");
         assert_eq!(t[1][3], 200 | 120 << 8 | 80 << 16 | 0xff << 24);
         assert_eq!(t[2][3], 0xffff_ffff, "a block past the list is untinted");
+    }
+}
+
+// ---- items held in first person (milestone 31) ----
+
+/// Texture layers kept for held models (a block takes 3, an item 1); the
+/// least recently drawn models give theirs up.
+const HELD_LAYERS: u32 = 24;
+/// Draws a frame: two hands and the lit bomb's boxes, and a spare.
+const HELD_SLOTS: usize = 4;
+/// A draw's uniforms sit this far apart (the guaranteed offset alignment).
+const HELD_STRIDE: u64 = 256;
+
+/// Must match `Held` in shaders/held.wgsl.
+#[repr(C)]
+#[derive(Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
+struct HeldUniform {
+    model: [[f32; 4]; 4],
+    to_world: [[f32; 4]; 4],
+    proj: [[f32; 4]; 4],
+    light: [f32; 4],
+    params: [f32; 4],
+}
+
+/// One uploaded model: its vertices then its mirror image's, its triangles
+/// then the mirror's, and its texture layers.
+struct HeldGpuModel {
+    vertices: wgpu::Buffer,
+    indices: wgpu::Buffer,
+    /// Indices of one side (the plain or the mirrored).
+    count: u32,
+    first_layer: u32,
+    layers: u32,
+    /// The frame it was last drawn in.
+    used: u64,
+}
+
+/// The held items' pipeline, texture layers and cached models.
+struct HeldGpu {
+    pipeline: wgpu::RenderPipeline,
+    bind_group: wgpu::BindGroup,
+    uniforms: wgpu::Buffer,
+    texture: wgpu::Texture,
+    models: HashMap<u64, HeldGpuModel>,
+    /// Which model holds each texture layer.
+    owners: Vec<Option<u64>>,
+    frame: u64,
+    draws: Vec<crate::held::HeldDraw>,
+    /// This frame's untextured boxes (view space): buffers and index count.
+    extra: Option<(wgpu::Buffer, wgpu::Buffer, u32)>,
+    extra_light: [f32; 4],
+}
+
+impl HeldGpu {
+    fn new(device: &wgpu::Device, globals: &wgpu::BindGroupLayout, format: wgpu::TextureFormat) -> Self {
+        let layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            label: Some("held"),
+            entries: &[
+                wgpu::BindGroupLayoutEntry {
+                    binding: 0,
+                    visibility: wgpu::ShaderStages::VERTEX_FRAGMENT,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Uniform,
+                        has_dynamic_offset: true,
+                        min_binding_size: wgpu::BufferSize::new(std::mem::size_of::<HeldUniform>() as u64),
+                    },
+                    count: None,
+                },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 1,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Texture {
+                        sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                        view_dimension: wgpu::TextureViewDimension::D2Array,
+                        multisampled: false,
+                    },
+                    count: None,
+                },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 2,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
+                    count: None,
+                },
+            ],
+        });
+        let uniforms = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("held uniforms"),
+            size: HELD_STRIDE * HELD_SLOTS as u64,
+            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+        let n = crate::icons::ICON_SIZE as u32;
+        let texture = device.create_texture(&wgpu::TextureDescriptor {
+            label: Some("held items"),
+            size: wgpu::Extent3d {
+                width: n,
+                height: n,
+                depth_or_array_layers: HELD_LAYERS,
+            },
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format: wgpu::TextureFormat::Rgba8UnormSrgb,
+            usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
+            view_formats: &[],
+        });
+        let view = texture.create_view(&wgpu::TextureViewDescriptor {
+            dimension: Some(wgpu::TextureViewDimension::D2Array),
+            ..Default::default()
+        });
+        // Every icon pixel crisp: the slab's edges are its pixels.
+        let sampler = device.create_sampler(&wgpu::SamplerDescriptor {
+            label: Some("held items"),
+            mag_filter: wgpu::FilterMode::Nearest,
+            min_filter: wgpu::FilterMode::Nearest,
+            ..Default::default()
+        });
+        let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("held"),
+            layout: &layout,
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: wgpu::BindingResource::Buffer(wgpu::BufferBinding {
+                        buffer: &uniforms,
+                        offset: 0,
+                        size: wgpu::BufferSize::new(std::mem::size_of::<HeldUniform>() as u64),
+                    }),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: wgpu::BindingResource::TextureView(&view),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 2,
+                    resource: wgpu::BindingResource::Sampler(&sampler),
+                },
+            ],
+        });
+        let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+            label: Some("held"),
+            bind_group_layouts: &[Some(globals), Some(&layout)],
+            immediate_size: 0,
+        });
+        let module = shader(device, "held", HELD_WGSL);
+        let pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+            label: Some("held"),
+            layout: Some(&pipeline_layout),
+            vertex: wgpu::VertexState {
+                module: &module,
+                entry_point: Some("vs_held"),
+                compilation_options: Default::default(),
+                buffers: &[Some(wgpu::VertexBufferLayout {
+                    array_stride: std::mem::size_of::<crate::held::HeldVertex>() as u64,
+                    step_mode: wgpu::VertexStepMode::Vertex,
+                    attributes: &wgpu::vertex_attr_array![0 => Float32x3, 1 => Float32x3, 2 => Float32x2, 3 => Uint32, 4 => Float32x4],
+                })],
+            },
+            primitive: wgpu::PrimitiveState {
+                topology: wgpu::PrimitiveTopology::TriangleList,
+                cull_mode: Some(wgpu::Face::Back),
+                front_face: wgpu::FrontFace::Ccw,
+                ..Default::default()
+            },
+            depth_stencil: Some(wgpu::DepthStencilState {
+                format: DEPTH_FORMAT,
+                depth_write_enabled: Some(true),
+                depth_compare: Some(wgpu::CompareFunction::Greater),
+                stencil: Default::default(),
+                bias: Default::default(),
+            }),
+            multisample: Default::default(),
+            fragment: Some(wgpu::FragmentState {
+                module: &module,
+                entry_point: Some("fs_held"),
+                compilation_options: Default::default(),
+                targets: &[Some(wgpu::ColorTargetState {
+                    format,
+                    blend: None,
+                    write_mask: wgpu::ColorWrites::ALL,
+                })],
+            }),
+            multiview_mask: None,
+            cache: None,
+        });
+        Self {
+            pipeline,
+            bind_group,
+            uniforms,
+            texture,
+            models: HashMap::new(),
+            owners: vec![None; HELD_LAYERS as usize],
+            frame: 0,
+            draws: Vec::new(),
+            extra: None,
+            extra_light: [0.0; 4],
+        }
+    }
+
+    /// A run of `n` free layers, giving up the least recently drawn
+    /// models' (never one drawn this frame) until there is one.
+    fn layers_for(&mut self, n: u32) -> Option<u32> {
+        loop {
+            if let Some(i) = free_run(&self.owners, n as usize) {
+                return Some(i as u32);
+            }
+            let key = self
+                .models
+                .iter()
+                .filter(|(_, m)| m.used < self.frame)
+                .min_by_key(|(_, m)| m.used)
+                .map(|(k, _)| *k)?;
+            self.forget(key);
+        }
+    }
+
+    fn forget(&mut self, key: u64) {
+        if let Some(m) = self.models.remove(&key) {
+            for o in &mut self.owners[m.first_layer as usize..(m.first_layer + m.layers) as usize] {
+                *o = None;
+            }
+        }
+    }
+
+    fn upload(&mut self, device: &wgpu::Device, queue: &wgpu::Queue, key: u64, mesh: &crate::held::HeldMesh) {
+        self.forget(key);
+        let n = mesh.layers.len() as u32;
+        let Some(first_layer) = self.layers_for(n) else {
+            tracing::warn!("no room for a held item's textures");
+            return;
+        };
+        let size = crate::icons::ICON_SIZE as u32;
+        for (i, layer) in mesh.layers.iter().enumerate() {
+            self.owners[(first_layer + i as u32) as usize] = Some(key);
+            queue.write_texture(
+                wgpu::TexelCopyTextureInfo {
+                    texture: &self.texture,
+                    mip_level: 0,
+                    origin: wgpu::Origin3d {
+                        x: 0,
+                        y: 0,
+                        z: first_layer + i as u32,
+                    },
+                    aspect: wgpu::TextureAspect::All,
+                },
+                layer,
+                wgpu::TexelCopyBufferLayout {
+                    offset: 0,
+                    bytes_per_row: Some(4 * size),
+                    rows_per_image: Some(size),
+                },
+                wgpu::Extent3d {
+                    width: size,
+                    height: size,
+                    depth_or_array_layers: 1,
+                },
+            );
+        }
+        if mesh.indices.is_empty() {
+            return;
+        }
+        let mirror = mesh.mirrored();
+        let mut vertices = mesh.vertices.clone();
+        vertices.extend_from_slice(&mirror.vertices);
+        let base = mesh.vertices.len() as u32;
+        let mut indices = mesh.indices.clone();
+        indices.extend(mirror.indices.iter().map(|i| i + base));
+        let (vertices, indices) = held_buffers(device, &vertices, &indices);
+        self.models.insert(
+            key,
+            HeldGpuModel {
+                vertices,
+                indices,
+                count: mesh.indices.len() as u32,
+                first_layer,
+                layers: n,
+                used: self.frame,
+            },
+        );
+    }
+
+    /// Draws this frame's held items over the finished world, depth cleared.
+    fn draw(
+        &mut self,
+        queue: &wgpu::Queue,
+        encoder: &mut wgpu::CommandEncoder,
+        target: (&wgpu::TextureView, &wgpu::TextureView),
+        globals: &wgpu::BindGroup,
+        cam: &Camera,
+        aspect: f32,
+    ) {
+        let draws: Vec<_> = std::mem::take(&mut self.draws)
+            .into_iter()
+            .filter(|d| self.models.contains_key(&d.key))
+            .take(HELD_SLOTS - 1)
+            .collect();
+        let extra = self.extra.take();
+        self.frame += 1;
+        if draws.is_empty() && extra.is_none() {
+            return;
+        }
+        let proj = projection(crate::held::HELD_FOV_DEG.to_radians(), aspect);
+        let to_world = view_rotation(cam.forward().as_vec3()).transpose();
+        let uniform = |model: Mat4, light: [f32; 4], first: u32| HeldUniform {
+            model: model.to_cols_array_2d(),
+            to_world: to_world.to_cols_array_2d(),
+            proj: proj.to_cols_array_2d(),
+            light,
+            params: [first as f32, 0.0, 0.0, 0.0],
+        };
+        for (i, d) in draws.iter().enumerate() {
+            let u = uniform(d.model, d.light, self.models[&d.key].first_layer);
+            queue.write_buffer(&self.uniforms, i as u64 * HELD_STRIDE, bytemuck::bytes_of(&u));
+        }
+        let extra_slot = (HELD_SLOTS - 1) as u64 * HELD_STRIDE;
+        if extra.is_some() {
+            let u = uniform(Mat4::IDENTITY, self.extra_light, 0);
+            queue.write_buffer(&self.uniforms, extra_slot, bytemuck::bytes_of(&u));
+        }
+        let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+            label: Some("held"),
+            color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                view: target.0,
+                depth_slice: None,
+                resolve_target: None,
+                ops: wgpu::Operations {
+                    load: wgpu::LoadOp::Load,
+                    store: wgpu::StoreOp::Store,
+                },
+            })],
+            depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
+                view: target.1,
+                depth_ops: Some(wgpu::Operations {
+                    load: wgpu::LoadOp::Clear(0.0),
+                    store: wgpu::StoreOp::Discard,
+                }),
+                stencil_ops: None,
+            }),
+            timestamp_writes: None,
+            occlusion_query_set: None,
+            multiview_mask: None,
+        });
+        pass.set_pipeline(&self.pipeline);
+        pass.set_bind_group(0, globals, &[]);
+        for (i, d) in draws.iter().enumerate() {
+            let m = self.models.get_mut(&d.key).expect("filtered above");
+            m.used = self.frame;
+            pass.set_bind_group(1, &self.bind_group, &[(i as u64 * HELD_STRIDE) as u32]);
+            pass.set_vertex_buffer(0, m.vertices.slice(..));
+            pass.set_index_buffer(m.indices.slice(..), wgpu::IndexFormat::Uint32);
+            let range = if d.mirror { m.count..m.count * 2 } else { 0..m.count };
+            pass.draw_indexed(range, 0, 0..1);
+        }
+        if let Some((vertices, indices, count)) = &extra {
+            pass.set_bind_group(1, &self.bind_group, &[extra_slot as u32]);
+            pass.set_vertex_buffer(0, vertices.slice(..));
+            pass.set_index_buffer(indices.slice(..), wgpu::IndexFormat::Uint32);
+            pass.draw_indexed(0..*count, 0, 0..1);
+        }
+    }
+}
+
+/// The first run of `n` free entries.
+fn free_run(owners: &[Option<u64>], n: usize) -> Option<usize> {
+    (0..=owners.len().checked_sub(n)?).find(|&i| owners[i..i + n].iter().all(|o| o.is_none()))
+}
+
+fn held_buffers(
+    device: &wgpu::Device,
+    vertices: &[crate::held::HeldVertex],
+    indices: &[u32],
+) -> (wgpu::Buffer, wgpu::Buffer) {
+    let v = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+        label: Some("held vertices"),
+        contents: bytemuck::cast_slice(vertices),
+        usage: wgpu::BufferUsages::VERTEX,
+    });
+    let i = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+        label: Some("held indices"),
+        contents: bytemuck::cast_slice(indices),
+        usage: wgpu::BufferUsages::INDEX,
+    });
+    (v, i)
+}
+
+impl Renderer {
+    /// Whether a held model is uploaded (`held::model_key`).
+    pub fn has_held(&self, key: u64) -> bool {
+        self.held.models.contains_key(&key)
+    }
+
+    /// Uploads a held model under `key` (once; it stays until its texture
+    /// layers are wanted by newer ones).
+    pub fn upload_held(&mut self, key: u64, mesh: &crate::held::HeldMesh) {
+        self.held.upload(&self.device, &self.queue, key, mesh);
+    }
+
+    /// The held items for the next frame: cached models placed in view
+    /// space, and boxes (view space: the lit bomb) in `light`.
+    pub fn set_held(&mut self, draws: &[crate::held::HeldDraw], boxes: &crate::held::HeldMesh, light: [f32; 4]) {
+        self.held.draws = draws.to_vec();
+        self.held.extra = (!boxes.indices.is_empty()).then(|| {
+            let (v, i) = held_buffers(&self.device, &boxes.vertices, &boxes.indices);
+            (v, i, boxes.indices.len() as u32)
+        });
+        self.held.extra_light = light;
     }
 }

@@ -61,7 +61,7 @@ pub fn icon_for(
     }
 }
 
-fn load_item_png(path: &Path) -> Option<Vec<u8>> {
+pub(crate) fn load_item_png(path: &Path) -> Option<Vec<u8>> {
     if !path.exists() {
         return None;
     }

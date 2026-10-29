@@ -581,82 +581,6 @@ pub fn bomb_boxes(
 /// half a block from the eye, so full size covered a quarter of the screen.
 pub const HELD_BOMB_SCALE: f32 = 0.4;
 
-/// The bag of bombs in hand: a tied pouch of the bag's metal colour, and
-/// while a bomb is lit, the bomb held up above it with its fuse burning.
-/// `turn` is the camera's, `hand` where the hand is (camera-relative).
-pub fn held_bombs(
-    name: &str,
-    burned: Option<f32>,
-    time: f32,
-    turn: Quat,
-    hand: Vec3,
-    light: [f32; 4],
-) -> Vec<BoxInstance> {
-    let metal = if name.contains("iron") {
-        srgb(0x9aa0aa)
-    } else {
-        srgb(0xc9773f)
-    };
-    let cloth = srgb(0x7a5a3a);
-    let cloth_dark = srgb(0x5a4028);
-    let turn = turn * Quat::from_rotation_x(0.15) * Quat::from_rotation_z(-0.2);
-    let k = 1.0;
-    let part = |at: Vec3, half: Vec3, rot: Quat, colour: Vec3| BoxInstance {
-        center: (hand + turn * (at * k)).to_array(),
-        half_size: (half * k).to_array(),
-        color: [colour.x, colour.y, colour.z, 1.0],
-        rotation: (turn * rot).normalize().to_array(),
-        light,
-    };
-    let mut out = vec![
-        // The pouch: a round sack, tied at the neck with a metal clasp.
-        part(
-            Vec3::new(0.0, -0.06, 0.0),
-            Vec3::new(0.085, 0.07, 0.085),
-            Quat::IDENTITY,
-            cloth,
-        ),
-        part(
-            Vec3::new(0.0, -0.06, 0.0),
-            Vec3::new(0.07, 0.085, 0.07),
-            Quat::IDENTITY,
-            cloth,
-        ),
-        part(
-            Vec3::new(0.0, 0.03, 0.0),
-            Vec3::new(0.045, 0.025, 0.045),
-            Quat::IDENTITY,
-            cloth_dark,
-        ),
-        part(
-            Vec3::new(0.0, 0.035, 0.0),
-            Vec3::new(0.05, 0.012, 0.05),
-            Quat::IDENTITY,
-            metal,
-        ),
-        part(
-            Vec3::new(0.0, 0.07, 0.0),
-            Vec3::new(0.04, 0.025, 0.035),
-            Quat::from_rotation_z(0.3),
-            cloth_dark,
-        ),
-        // A metal plate stitched to the front.
-        part(
-            Vec3::new(0.0, -0.06, -0.087),
-            Vec3::new(0.04, 0.035, 0.006),
-            Quat::IDENTITY,
-            metal,
-        ),
-    ];
-    if let Some(b) = burned {
-        // The lit bomb, held up and trembling more as the fuse runs down.
-        let shake = Vec3::new((time * 41.0).sin(), (time * 37.0).cos(), 0.0) * 0.004 * (1.0 + b * 3.0);
-        let at = hand + turn * (Vec3::new(-0.05, 0.1, -0.02) + shake);
-        bomb_boxes(&mut out, at, Some(b), time, light, turn, HELD_BOMB_SCALE);
-    }
-    out
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -691,22 +615,6 @@ mod tests {
         }
         assert_eq!(fx.chips.len(), MAX_CHIPS);
         assert_eq!(fx.boxes(eye, shape, 1.1, |_| None).len(), MAX_CHIPS * 3);
-    }
-
-    #[test]
-    fn a_lit_bomb_in_hand_stays_hand_sized() {
-        // Every box of the bag and its lit bomb lies within 0.3 of the hand
-        // and none is bigger than 0.1 across half its side (full size, the
-        // fuse rose 0.6 above the hand and covered a quarter of the screen).
-        let hand = Vec3::new(0.3, -0.3, -0.55);
-        for burned in [0.0, 0.5, 0.99] {
-            let boxes = held_bombs("copper_bombs", Some(burned), 1.3, Quat::IDENTITY, hand, [1.0; 4]);
-            for b in &boxes {
-                let c = Vec3::from_array(b.center);
-                assert!((c - hand).length() < 0.3, "a box {:?} from the hand", c - hand);
-                assert!(b.half_size.iter().all(|h| *h <= 0.1), "{:?}", b.half_size);
-            }
-        }
     }
 
     #[test]
@@ -775,28 +683,5 @@ mod tests {
         let mut out = Vec::new();
         blast_boxes(&mut out, Vec3::ZERO, 3.0, 1.0, 1);
         assert!(out.is_empty(), "over at the end of its life");
-    }
-
-    #[test]
-    fn the_bag_shows_a_lit_bomb_only_while_lit() {
-        let unlit = held_bombs(
-            "copper_bombs",
-            None,
-            0.0,
-            Quat::IDENTITY,
-            Vec3::ZERO,
-            [1.0, 0.0, 1.0, 0.0],
-        );
-        let lit = held_bombs(
-            "copper_bombs",
-            Some(0.5),
-            0.0,
-            Quat::IDENTITY,
-            Vec3::ZERO,
-            [1.0, 0.0, 1.0, 0.0],
-        );
-        assert!(lit.len() > unlit.len() + 5);
-        assert!(lit.iter().any(|b| b.light[3] >= 1.0), "the fuse glows");
-        assert!(unlit.iter().all(|b| b.light[3] == 0.0));
     }
 }

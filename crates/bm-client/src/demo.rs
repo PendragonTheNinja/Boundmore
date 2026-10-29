@@ -2933,6 +2933,20 @@ impl Demo {
     }
 
     /// Tests: puts `stack` in pack slot `slot`, telling the client.
+    /// `--demo-ui held` (milestone 31): the mining view, `left` in slot 1
+    /// and `right` in slot 2 (item names; an unknown name leaves it empty).
+    pub fn show_held(&mut self, left: &str, right: &str) {
+        self.show_mining();
+        let before = self.inv.clone();
+        for (slot, name) in [(0, left), (1, right)] {
+            self.inv.slots[slot] = self.items.id(name).ok().map(|id| {
+                let stack = self.items.get(id).map_or(1, |d| d.stack.min(40));
+                ItemStack::new(id, stack)
+            });
+        }
+        self.slots_since(&before);
+    }
+
     #[cfg(test)]
     pub fn put_slot(&mut self, slot: usize, stack: ItemStack) {
         let before = self.inv.clone();

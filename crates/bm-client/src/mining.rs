@@ -53,6 +53,12 @@ impl Swinger {
     pub fn swung(&mut self, at: u32, ticks: u32) {
         self.last = Some((at, ticks));
     }
+
+    /// The last swing: its input and cadence (the held item's swing
+    /// follows it, milestone 31).
+    pub fn last(&self) -> Option<(u32, u32)> {
+        self.last
+    }
 }
 
 /// What one swing does to one block.

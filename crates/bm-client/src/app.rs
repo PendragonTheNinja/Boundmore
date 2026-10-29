@@ -145,8 +145,6 @@ const DEMO_BOMB_CYCLE: f64 = 4.2;
 const CREATURE_AIM: f64 = 40.0;
 /// Where the eye sits above the feet while down (defeated).
 const DOWN_EYE: f64 = 0.35;
-/// A held sling is drawn at this scale.
-const HELD_SLING_SCALE: f32 = 0.7;
 
 const MOUSE_SENSITIVITY: f64 = 0.0022;
 /// Seconds between repeated places while the button is held.
@@ -1177,6 +1175,10 @@ pub struct App {
     creep_on: bool,
     /// How much the view is widened now for sprinting (degrees, eased).
     sprint_fov: f32,
+    /// Items held in first person (milestone 31): their motion, and when
+    /// the last frame drew them (seconds of `now`).
+    held: crate::held::HeldMotion,
+    held_at: Option<f64>,
     /// After a lost connection: when to try again (seconds of `now`), the
     /// tries so far, and why it was lost.
     reconnect: Option<(f64, u32, String)>,
@@ -1245,6 +1247,8 @@ pub struct App {
     /// `--demo-ui bombs`: the attack button is held on a cycle, and whether
     /// it was last frame.
     demo_bombs: bool,
+    /// `--demo-ui held`: the left button held down, playing or not.
+    demo_swing: bool,
     demo_was_held: bool,
     /// `--demo-ui`: where to put us once the block its hook holds exists.
     demo_pose: Option<bm_core::PlayerState>,
@@ -1288,6 +1292,8 @@ impl App {
             sprint_on: false,
             creep_on: false,
             sprint_fov: 0.0,
+            held: Default::default(),
+            held_at: None,
             reconnect: None,
             relogin: None,
             frame_at: Instant::now(),
@@ -1328,6 +1334,7 @@ impl App {
             last_hand: 0,
             attack_pending: false,
             demo_bombs: false,
+            demo_swing: false,
             demo_was_held: false,
             demo_pose: None,
             grabbed: false,
@@ -2302,7 +2309,10 @@ impl App {
 
         let input = self.sample_input();
         let playing = self.grabbed && self.menu.is_none() && !self.chat.open;
-        let mouse = if playing && !self.claim_mode {
+        if self.demo_swing {
+            self.mouse[0] = true;
+        }
+        let mouse = if (playing || self.demo_swing) && !self.claim_mode {
             self.mouse
         } else {
             [false; 2]
@@ -3563,33 +3573,57 @@ impl App {
             let k = s.creatures.kind(c.kind)?;
             Some(c.pos + DVec3::new(0.0, k.height as f64 * 0.45, 0.0))
         }));
-        // A sling or a bag of bombs in either hand, low in its own side of
-        // the view (milestone 28: the left hand's on the left). The same
-        // slot in both hands is the left hand's.
-        let held_slots = [
-            Some(s.selected),
-            (s.selected_off != s.selected).then_some(s.selected_off),
-        ];
-        for (side, slot) in [-1.0f32, 1.0].into_iter().zip(held_slots) {
-            let Some(def) = slot.and_then(|i| s.items.slot(i)).and_then(|h| s.items.def(&h)) else {
-                continue;
+        // What each hand holds, in its own corner of the view, moving with
+        // what we do (milestone 31, `held.rs`). The same slot in both hands
+        // is the left hand's.
+        {
+            let slots = [
+                Some(s.selected),
+                (s.selected_off != s.selected).then_some(s.selected_off),
+            ];
+            let hands = slots.map(|slot| {
+                let stack = slot.and_then(|i| s.items.slot(i)).filter(|_| !s.me.state.down)?;
+                Some(crate::held::Hand {
+                    stack,
+                    def: s.items.def(&stack)?,
+                })
+            });
+            let v = s.me.state.vel;
+            let speed = v.x.hypot(v.z) as f32;
+            let feet = s.me.state.pos + DVec3::new(0.0, 0.3, 0.0);
+            let scene = crate::held::Scene {
+                hands,
+                blocks: &s.world.registry,
+                textures: &s.textures,
+                assets: &self.opts.assets,
+                tints: &s.planet.tints,
+                palette: &s.items.colours,
+                light: light(eye),
+                hand: self.last_hand,
+                burned: s.fuse.burned(s.me.seq),
+                time,
+                tick: s.me.seq as f64 + alpha,
             };
-            if s.me.state.down {
-                break;
-            }
-            let turn = glam::Quat::from_rotation_y(-yaw as f32) * glam::Quat::from_rotation_x(pitch as f32);
-            let hand = turn * Vec3::new(0.3 * side, -0.3, -0.55);
-            if def.sling().is_some() {
-                boxes.extend(held_sling(&def.name, turn, hand, light(eye)));
-            } else if def.bomb().is_some() {
-                boxes.extend(crate::effects::held_bombs(
-                    &def.name,
-                    s.fuse.burned(s.me.seq),
-                    time,
-                    turn,
-                    hand,
-                    light(eye),
-                ));
+            let frame = crate::held::Frame {
+                tick: scene.tick,
+                dt: self.held_at.replace(now).map_or(0.0, |t| (now - t) as f32),
+                yaw,
+                pitch,
+                hand: self.last_hand,
+                looks: crate::held::looks(&scene),
+                swing: s.swinger.last(),
+                edits: s.edit_seq,
+                hooks: s.me.state.hooks.map(|h| h.is_some()),
+                chew: s.me.state.chew,
+                speed,
+                on_ground: s.me.state.on_ground,
+                sprinting: self.sample_input().sprint && speed as f64 > s.movement.walk_speed + 0.5,
+                swimming: s.me.state.submerged
+                    || bm_core::PhysicsWorld::liquid(&s.world, BlockPos::containing(feet.x, feet.y, feet.z)),
+            };
+            self.held.update(&frame);
+            if let Some(r) = &mut self.renderer {
+                crate::held::draw(&mut self.held, &scene, r);
             }
         }
         let (mut lines, xray) = self.claim_lines(eye);
@@ -4210,6 +4244,22 @@ impl App {
                 let [x, y, z] = crate::demo::PORTALS[0];
                 self.open_menu(Menu::Portal(BlockPos::new(x, y, z)));
             }
+            // Milestone 31: an iron hammer in the left hand swinging at a
+            // stone block on its cadence, a block in the right hand
+            // (`BOUNDMORE_HELD=left,right` names other items).
+            "held" => {
+                let names = std::env::var("BOUNDMORE_HELD").unwrap_or_else(|_| "iron_hammer,marble".into());
+                let mut names = names.split(',').map(str::trim);
+                let (left, right) = (names.next().unwrap_or(""), names.next().unwrap_or(""));
+                if let Some(Link::Demo(d)) = &mut self.link {
+                    d.show_held(left, right);
+                }
+                if let Some(s) = &mut self.session {
+                    (s.selected, s.selected_off) = (0, 1);
+                }
+                self.demo_swing = true;
+                (self.yaw, self.pitch) = (0.0, -0.5);
+            }
             // On a tier 3 world, a stone hammer in hand, looking at a half
             // broken stone block: its health bar and one shield.
             "mining" => {
@@ -4277,9 +4327,6 @@ impl App {
     }
 }
 
-/// A sling held in hand: a forked frame, its band and pouch, in the
-/// material the sling is made of; `turn` is the camera's, `hand` where it
-/// is held (camera-relative), `light` the light there.
 /// After a frame: the renderer has applied (or, with no renderer, skipped)
 /// egui's texture changes. egui asserts in debug builds that none is dropped
 /// unhandled, which crashed every debug build on its first UI frame.
@@ -4287,74 +4334,6 @@ fn release_ui_textures(ui: &mut Option<(Vec<egui::ClippedPrimitive>, egui::Textu
     if let Some((_, textures, _)) = ui {
         textures.clear();
     }
-}
-
-fn held_sling(name: &str, turn: glam::Quat, hand: Vec3, light: [f32; 4]) -> Vec<BoxInstance> {
-    use glam::Quat;
-    let srgb = |c: [u8; 3]| {
-        let l = crate::colour::srgb_to_linear(c);
-        [l[0], l[1], l[2], 1.0]
-    };
-    let frame = if name.contains("copper") {
-        srgb([214, 122, 70])
-    } else if name.contains("iron") {
-        srgb([150, 156, 166])
-    } else {
-        srgb([140, 94, 54])
-    };
-    let leather = srgb([92, 58, 34]);
-    let band = srgb([60, 44, 36]);
-    let k = HELD_SLING_SCALE;
-    let turn = turn * Quat::from_rotation_x(0.2) * Quat::from_rotation_z(-0.25);
-    let part = |at: Vec3, half: Vec3, rot: Quat, colour: [f32; 4]| BoxInstance {
-        center: (hand + turn * (at * k)).to_array(),
-        half_size: (half * k).to_array(),
-        color: colour,
-        rotation: (turn * rot).normalize().to_array(),
-        light,
-    };
-    let mut out = vec![
-        part(
-            Vec3::new(0.0, -0.1, 0.0),
-            Vec3::new(0.025, 0.1, 0.025),
-            Quat::IDENTITY,
-            frame,
-        ),
-        part(
-            Vec3::new(0.0, -0.13, 0.0),
-            Vec3::new(0.032, 0.045, 0.032),
-            Quat::IDENTITY,
-            leather,
-        ),
-    ];
-    for s in [-1.0f32, 1.0] {
-        out.push(part(
-            Vec3::new(s * 0.04, 0.06, 0.0),
-            Vec3::new(0.022, 0.075, 0.022),
-            Quat::from_rotation_z(-s * 0.5),
-            frame,
-        ));
-        out.push(part(
-            Vec3::new(s * 0.075, 0.13, 0.0),
-            Vec3::new(0.026, 0.02, 0.026),
-            Quat::IDENTITY,
-            frame,
-        ));
-        // A strand from the prong back to the pouch.
-        out.push(part(
-            Vec3::new(s * 0.04, 0.125, 0.06),
-            Vec3::new(0.007, 0.007, 0.07),
-            Quat::from_rotation_y(s * 0.55),
-            band,
-        ));
-    }
-    out.push(part(
-        Vec3::new(0.0, 0.12, 0.12),
-        Vec3::new(0.035, 0.028, 0.022),
-        Quat::IDENTITY,
-        leather,
-    ));
-    out
 }
 
 fn player_colour(id: u32) -> [f32; 4] {

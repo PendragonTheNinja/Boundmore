@@ -70,9 +70,9 @@ First-person arms (they come with the character models of M29), third-person hel
 ## Status
 
 - [x] Research and spec (2026-10-29)
-- [ ] Models: icon extrusion, block cubes, cache
-- [ ] Renderer: held pipeline, fixed projection, depth cleared after the world, lit like boxes
-- [ ] Motion: rest poses, bob, sway, uses on their cadence, lowered pose
-- [ ] Old box sling and bag replaced; lit bomb and fuse ring kept
+- [x] Models (2026-10-29): `bm-client/src/held.rs`. Icons extruded into 4-pixel slabs (front and back as greedy rectangles of opaque pixels, sides as runs of exposed edges, every face sampling the icon with nearest filtering; the iron hammer is about 300 quads for some 1,100 pixels), block items as cubes painted as their icons are (tint or colour), the left hand's model the mirror image of the right's. Built once per item, colour and tint; the renderer keeps 24 texture layers and gives the least recently drawn model's up.
+- [x] Renderer (2026-10-29): `HeldGpu` in `render.rs`, `shaders/held.wgsl`: its own pass after the world with depth cleared (reversed-Z, `render::projection` at a fixed 70 degrees, so the field of view option and the sprint widening never touch it), lit as boxes are (sky and coloured block light where we stand, held lights, the sun, face shading).
+- [x] Motion (2026-10-29): rest poses per kind (tool, block, sling, bombs, grapple, other), a bob with the stride on the ground, a sway that trails the view, a tool's swing over its own swing time (`Swinger::last`), a jab for a place or a chisel cut, a sling's draw and a bomb's throw on their cadence (drawn over at most 0.6 s), eating over the eating time, a grapple's kick as a hook flies, lowered while sprinting or swimming; nothing while down.
+- [x] Old box sling and bag replaced by their icons' slabs (`held_sling`, `effects::held_bombs` gone); the lit bomb and its fuse are drawn above the bag in the same pass.
 - [ ] `--demo-ui held` and `docs/media/m31-held.jpg`
 - [ ] Nathan's play-test and answers
