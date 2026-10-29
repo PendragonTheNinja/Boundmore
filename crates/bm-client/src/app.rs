@@ -118,6 +118,8 @@ const HURT_FROM_RANGE: f64 = 24.0;
 
 /// Frames a second while the window is minimised or covered.
 const HIDDEN_FRAME_CAP: u32 = 10;
+/// Seconds between saves of the chat history while lines arrive.
+const CHAT_SAVE_SECONDS: f64 = 30.0;
 
 /// Creative mode swings this often while the button is held (ticks).
 const CREATIVE_SWING_TICKS: u32 = 8;
@@ -1110,6 +1112,8 @@ pub struct App {
     relogin: Option<String>,
     /// When the last frame was started (the frame cap).
     frame_at: Instant,
+    /// When the chat history was last saved.
+    chat_saved_at: Instant,
     /// The window is minimised or covered: frames are capped low.
     hidden: bool,
     login: LoginForm,
@@ -1211,6 +1215,7 @@ impl App {
             reconnect: None,
             relogin: None,
             frame_at: Instant::now(),
+            chat_saved_at: Instant::now(),
             hidden: false,
             login,
             menu: None,
@@ -1737,6 +1742,11 @@ impl App {
         let icons = self.build_icons(&items, &registry, &set, &w.planet.tints);
         tracing::info!("welcomed to {} as {} (#{})", w.planet.name, w.account, w.player_id);
         self.chat.me = w.account.clone();
+        if self.opts.demo.is_none() {
+            let server = self.login.server.trim().to_string();
+            let lines = crate::chat::load_kept(&self.chat_path(), &w.account, &server);
+            self.chat.restore(lines);
+        }
         self.storage_closing.clear();
         self.status = format!("on {}", w.planet.name);
         // Remember who and where, never the password on disk; it is kept in
@@ -3237,7 +3247,27 @@ impl App {
                 tracing::warn!("cannot save the ignore list: {e}");
             }
         }
+        if self.chat.unsaved && self.chat_saved_at.elapsed().as_secs_f64() > CHAT_SAVE_SECONDS {
+            self.save_chat();
+        }
         Some((prims, out.textures_delta, ppp))
+    }
+
+    /// The chat history file, beside the settings.
+    fn chat_path(&self) -> PathBuf {
+        self.opts.settings_path.with_file_name("chat-history.toml")
+    }
+
+    /// Keeps the chat for next time (every so often, and on leaving).
+    fn save_chat(&mut self) {
+        self.chat_saved_at = Instant::now();
+        if !std::mem::take(&mut self.chat.unsaved) || self.opts.demo.is_some() || self.chat.me.is_empty() {
+            return;
+        }
+        let server = self.settings.server.clone();
+        if let Err(e) = crate::chat::save_kept(&self.chat_path(), &self.chat.me, &server, self.chat.kept()) {
+            tracing::warn!("cannot save the chat history: {e}");
+        }
     }
 
     /// Claim outlines for claim mode: (shown, through terrain).
@@ -4194,6 +4224,10 @@ fn digit_slot(code: KeyCode) -> Option<usize> {
 }
 
 impl ApplicationHandler for App {
+    fn exiting(&mut self, _event_loop: &ActiveEventLoop) {
+        self.save_chat();
+    }
+
     fn resumed(&mut self, event_loop: &ActiveEventLoop) {
         if self.window.is_some() {
             return;

@@ -9,10 +9,14 @@
 use crate::menus::GOLD;
 use bm_protocol::{Channel, ChatLine, ClientMsg, MAX_CHAT_LEN};
 use egui::{Align2, Color32, CornerRadius, FontId, Id, Stroke, Ui, text::LayoutJob, vec2};
+use serde::{Deserialize, Serialize};
 use std::collections::VecDeque;
+use std::path::Path;
 
 /// Lines kept for scrolling back.
 pub const HISTORY: usize = 200;
+/// Lines saved between runs (per account and server).
+pub const KEPT: usize = 100;
 /// Lines shown while the box is idle.
 pub const SHOWN: usize = 8;
 /// Seconds a line stays up while idle, the last `FADE` of them fading.
@@ -184,6 +188,8 @@ pub struct ChatBox {
     pub ignored: std::collections::BTreeSet<String>,
     /// The ignore list changed: the app saves it.
     pub ignore_changed: bool,
+    /// Lines arrived since the history was last saved.
+    pub unsaved: bool,
 }
 
 impl Default for ChatBox {
@@ -199,6 +205,7 @@ impl Default for ChatBox {
             creative_asked: false,
             ignored: Default::default(),
             ignore_changed: false,
+            unsaved: false,
         }
     }
 }
@@ -212,6 +219,47 @@ pub enum ChatAction {
     Creative,
 }
 
+/// The chat history file: whose and where, so one account never reads
+/// another's whispers.
+#[derive(Default, Serialize, Deserialize)]
+struct KeptFile {
+    account: String,
+    server: String,
+    lines: Vec<ChatLine>,
+}
+
+/// Last time's lines for this account on this server (none if the file is
+/// missing, unreadable or someone else's).
+pub fn load_kept(path: &Path, account: &str, server: &str) -> Vec<ChatLine> {
+    let Ok(text) = std::fs::read_to_string(path) else {
+        return Vec::new();
+    };
+    match toml::from_str::<KeptFile>(&text) {
+        Ok(f) if f.account.eq_ignore_ascii_case(account) && f.server == server => f.lines,
+        Ok(_) => Vec::new(),
+        Err(e) => {
+            tracing::warn!("ignoring unreadable chat history {}: {e}", path.display());
+            Vec::new()
+        }
+    }
+}
+
+/// Saves the lines (write then rename, so a crash leaves the old file).
+pub fn save_kept(path: &Path, account: &str, server: &str, lines: Vec<ChatLine>) -> std::io::Result<()> {
+    if let Some(dir) = path.parent() {
+        std::fs::create_dir_all(dir)?;
+    }
+    let file = KeptFile {
+        account: account.into(),
+        server: server.into(),
+        lines,
+    };
+    let text = toml::to_string(&file).map_err(std::io::Error::other)?;
+    let tmp = path.with_extension("toml.tmp");
+    std::fs::write(&tmp, text)?;
+    std::fs::rename(&tmp, path)
+}
+
 impl ChatBox {
     /// Lines from the server, oldest first.
     pub fn receive(&mut self, lines: Vec<ChatLine>, now: f64) {
@@ -223,6 +271,33 @@ impl ChatBox {
                 self.last_whisperer = Some(line.from.clone());
             }
             self.push(line, now);
+            self.unsaved = true;
+        }
+    }
+
+    /// The said lines worth keeping for next time, oldest first (not the
+    /// server's notes to this screen).
+    pub fn kept(&self) -> Vec<ChatLine> {
+        let said: Vec<&ChatLine> = self
+            .entries
+            .iter()
+            .map(|e| &e.line)
+            .filter(|l| !l.from.is_empty())
+            .collect();
+        said[said.len().saturating_sub(KEPT)..]
+            .iter()
+            .map(|l| (*l).clone())
+            .collect()
+    }
+
+    /// Lines from last time, put before anything new; only into an empty box
+    /// (a reconnect keeps what it has). They scroll back but never pop up.
+    pub fn restore(&mut self, lines: Vec<ChatLine>) {
+        if !self.entries.is_empty() {
+            return;
+        }
+        for line in lines.into_iter().rev().take(KEPT).rev() {
+            self.push(line, f64::NEG_INFINITY);
         }
     }
 
@@ -464,6 +539,41 @@ mod tests {
 
     /// `/ignore` hides a player's lines here (case aside); `/unignore`
     /// shows them again.
+    #[test]
+    fn history_is_kept_for_its_own_account_and_server_only() {
+        let mut c = ChatBox {
+            me: "Me".into(),
+            ..Default::default()
+        };
+        let said = |from: &str, text: &str| ChatLine {
+            channel: Channel::Planet,
+            from: from.into(),
+            text: text.into(),
+            time: 1,
+        };
+        c.receive((0..KEPT + 5).map(|i| said("Ann", &format!("line {i}"))).collect(), 0.0);
+        c.local("only for this screen".into(), 0.0);
+        let kept = c.kept();
+        assert_eq!(kept.len(), KEPT);
+        assert_eq!(kept.last().unwrap().text, format!("line {}", KEPT + 4));
+        let dir = std::env::temp_dir().join(format!("bm-chat-test-{}", std::process::id()));
+        let path = dir.join("chat-history.toml");
+        save_kept(&path, "Me", "host:1", kept.clone()).unwrap();
+        assert_eq!(load_kept(&path, "me", "host:1"), kept);
+        assert!(load_kept(&path, "Other", "host:1").is_empty());
+        assert!(load_kept(&path, "Me", "elsewhere:1").is_empty());
+        // Restored lines scroll back but do not pop up, and a box that
+        // already has lines (a reconnect) keeps its own.
+        let mut fresh = ChatBox::default();
+        fresh.restore(kept.clone());
+        assert!(fresh.recent(0.0).is_empty());
+        assert_eq!(fresh.kept(), kept);
+        let before = c.kept();
+        c.restore(vec![said("Bob", "old")]);
+        assert_eq!(c.kept(), before);
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
     #[test]
     fn ignored_players_lines_are_hidden() {
         let mut c = ChatBox {
