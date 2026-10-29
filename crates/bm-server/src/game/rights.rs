@@ -156,7 +156,10 @@ impl Game {
                 Asked::Sent => {
                     self.notice(id, &format!("Asked {their_name} to be your friend"));
                     if let Some(oid) = self.player_by_account(&them) {
-                        self.notice(oid, &format!("{my_name} asks to be your friend (O for friends)"));
+                        // Do Not Disturb: the ask waits in the friends window.
+                        if !self.players.get(&oid).is_some_and(|p| p.dnd) {
+                            self.notice(oid, &format!("{my_name} asks to be your friend (O for friends)"));
+                        }
                         self.send_friends(oid);
                     }
                 }

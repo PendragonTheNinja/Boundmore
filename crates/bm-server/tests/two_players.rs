@@ -2282,11 +2282,24 @@ async fn chat_reaches_whoever_the_channel_says() {
     alice.heard(|l| l.text == "psst").await;
     alice.say(Channel::Whisper("Nobody".into()), "hello?").await;
     alice.notice("Nobody called Nobody is here").await;
+    // Do Not Disturb turns whispers back, until it is ended.
+    dave.send(ClientMsg::Command { text: "/dnd".into() }).await;
+    dave.notice(
+        "Do not disturb: whispers are turned back and friend asks wait in the friends window (/dnd again to end it)",
+    )
+    .await;
+    far.say(Channel::Whisper("Dave".into()), "busy?").await;
+    far.notice("Dave does not want to be disturbed").await;
+    dave.send(ClientMsg::Command { text: "/dnd".into() }).await;
+    dave.notice("Do not disturb is off").await;
+    far.say(Channel::Whisper("Dave".into()), "free now?").await;
+    dave.heard(|l| l.text == "free now?").await;
 
     for c in [&mut alice, &mut bob, &mut far, &mut dave] {
         c.settle().await;
     }
     assert!(!far.has_heard("hello near"), "too far for local");
+    assert!(!dave.has_heard("busy?"), "turned back while not to be disturbed");
     assert!(
         !dave.has_heard("hello near") && !dave.has_heard("planet wide"),
         "another planet"

@@ -33,7 +33,7 @@ const WHISPER: Color32 = Color32::from_rgb(198, 150, 255);
 const GUILD: Color32 = Color32::from_rgb(110, 200, 220);
 const SERVER: Color32 = Color32::from_rgb(160, 156, 150);
 
-pub const HELP: &str = "Commands: /l local, /p planet, /u universe, /g guild, /w name text to whisper, /r text to reply, /friend name and /unfriend name (O for friends, G for guilds), /ignore name and /unignore name to hide or show someone's chat, /settlement name to name the settlement you are warden of. \
+pub const HELP: &str = "Commands: /l local, /p planet, /u universe, /g guild, /w name text to whisper, /r text to reply, /friend name and /unfriend name (O for friends, G for guilds), /ignore name and /unignore name to hide or show someone's chat, /dnd to turn whispers away, /settlement name to name the settlement you are warden of. \
                         Testing (servers started with --creative): /creative or F8, /give item count, /xp amount.";
 
 /// What a line typed into the box asks for.
@@ -105,7 +105,7 @@ pub fn parse(input: &str, default: &Channel, last_whisperer: Option<&str>) -> Ty
             }
             return Typed::Ignore(rest.to_string(), word.eq_ignore_ascii_case("ignore"));
         }
-        "give" | "xp" | "settlement" => return Typed::Command(input.to_string()),
+        "give" | "xp" | "settlement" | "dnd" => return Typed::Command(input.to_string()),
         "r" | "reply" => {
             let Some(name) = last_whisperer else {
                 return Typed::Local("Nobody has whispered to you yet.".into());

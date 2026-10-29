@@ -35,9 +35,20 @@ impl Game {
     pub(super) fn command(&mut self, id: u32, text: &str) {
         // Commands for everyone.
         let mut words = text.trim().trim_start_matches('/').split_whitespace();
-        if words.next().is_some_and(|w| w.eq_ignore_ascii_case("settlement")) {
+        let first = words.next().unwrap_or("");
+        if first.eq_ignore_ascii_case("settlement") {
             let rest: Vec<&str> = words.collect();
             return self.name_settlement(id, &rest);
+        }
+        if first.eq_ignore_ascii_case("dnd") {
+            let Some(p) = self.players.get_mut(&id) else { return };
+            p.dnd = !p.dnd;
+            let text = if p.dnd {
+                "Do not disturb: whispers are turned back and friend asks wait in the friends window (/dnd again to end it)"
+            } else {
+                "Do not disturb is off"
+            };
+            return self.notice(id, text);
         }
         if !self.cfg.creative {
             return self.notice(id, CREATIVE_OFF);

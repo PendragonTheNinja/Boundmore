@@ -256,6 +256,10 @@ struct Player {
     helix: Option<BlockPos>,
     boost: bm_core::guilds::Boost,
     chat: ChatLimit,
+    /// Do Not Disturb (`/dnd`, polish 2026-10-29): whispers are turned back
+    /// and friend asks wait in the friends window without a notice. For
+    /// this visit only.
+    dnd: bool,
     /// Edits and swings tagged with an input up to this one came from before
     /// the last travel (see `TRAVEL_GUARD_INPUTS`).
     travel_guard: Option<u32>,
@@ -1541,6 +1545,7 @@ impl Game {
                 helix: None,
                 boost: Default::default(),
                 chat: ChatLimit::new(self.tick),
+                dnd: false,
                 travel_guard: None,
                 portal: None,
                 portal_guard: false,
@@ -3263,10 +3268,13 @@ impl Game {
                     }
                     return self.notice(id, &format!("Nobody called {shown} is here"));
                 };
+                let sender = self.players[&id].account.clone();
+                if key != sender && self.players.values().any(|o| o.account == key && o.dnd) {
+                    return self.notice(id, &format!("{target} does not want to be disturbed"));
+                }
                 // Whispered text is private: only that it happened is logged.
                 tracing::info!("{from} whispered to {target}");
                 line.channel = Channel::Whisper(target);
-                let sender = self.players[&id].account.clone();
                 // The sender gets a copy (once, if they whisper to themselves).
                 self.send_line(line, |o| o.account == key || o.account == sender);
             }
