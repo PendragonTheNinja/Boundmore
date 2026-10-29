@@ -269,8 +269,8 @@ fn shade(in: VsOut, base: vec3<f32>) -> vec3<f32> {
     // torches do in the light map.
     let block = light_curve3(max(in.light.yzw, point_light(in.rel, n)));
     let sun = max(dot(n, g.sun_dir.xyz), 0.0) * g.sun_dir.w;
-    let sky_light = sky * g.sun_color.w * (0.82 + 0.18 * sun);
-    let light = max(vec3<f32>(sky_light), block) + AMBIENT;
+    let sky_light = sky_light_colour(sky, sun);
+    let light = max(sky_light, block) + AMBIENT;
     let c = base * face_shade(n) * light * in.ao;
     let d = length(in.rel);
     let fog = clamp((d - g.params.x) / max(g.params.y - g.params.x, 1.0), 0.0, 1.0);

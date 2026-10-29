@@ -92,3 +92,18 @@ fn point_light(rel: vec3<f32>, n: vec3<f32>) -> vec3<f32> {
     return clamp(best, vec3<f32>(0.0), vec3<f32>(15.0)) / 15.0;
 }
 
+
+// Sky light in colour (audit 2026-10-29: it used to be plain brightness, so
+// dawn, dusk and night only darkened). `sky` is the meshed sky level (after
+// the curve), `sun` how squarely a face meets the sun (0..1). The light
+// takes on some of the sky's own colour, more at dusk and night than by day,
+// and faces turned to the sun some of the sun's; brightness stays as it was.
+fn sky_light_colour(sky: f32, sun: f32) -> vec3<f32> {
+    let daylight = clamp(g.sun_dir.w, 0.0, 1.0);
+    let sky_col = mix(g.sky_horizon.rgb, g.sky_zenith.rgb, 0.5);
+    let sky_tint = sky_col / max(max(sky_col.r, max(sky_col.g, sky_col.b)), 0.001);
+    let sun_tint = g.sun_color.rgb / max(max(g.sun_color.r, max(g.sun_color.g, g.sun_color.b)), 0.001);
+    let ambient = mix(vec3<f32>(1.0), sky_tint, mix(0.65, 0.15, daylight));
+    let direct = mix(vec3<f32>(1.0), sun_tint, 0.55);
+    return sky * g.sun_color.w * (0.82 * ambient + 0.18 * sun * direct);
+}

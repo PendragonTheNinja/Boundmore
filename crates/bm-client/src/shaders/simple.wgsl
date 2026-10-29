@@ -60,8 +60,8 @@ fn fs_box(in: BoxOut) -> @location(0) vec4<f32> {
     let sky = light_curve(in.light.x);
     let block = light_curve3(max(box_block_light(in.light.y), point_light(in.rel, n)));
     let sun = max(dot(n, g.sun_dir.xyz), 0.0) * g.sun_dir.w;
-    let sky_light = sky * g.sun_color.w * (0.82 + 0.18 * sun);
-    let light = max(vec3<f32>(sky_light), block) + AMBIENT;
+    let sky_light = sky_light_colour(sky, sun);
+    let light = max(sky_light, block) + AMBIENT;
     let lit = in.color * face_shade(n) * light * in.light.z;
     let c = mix(lit, in.color, clamp(in.light.w, 0.0, 1.0));
     let d = length(in.rel);
