@@ -67,6 +67,9 @@ pub struct FightView<'a> {
     /// Defeated: by whom (empty if not yet told), the XP debt, and whether
     /// Return was pressed.
     pub defeat: Option<(&'a str, u64, bool)>,
+    /// Each hand's grapple, if it holds one: whether the aimed point is
+    /// within the hook's range (a bracket by the crosshair, lit when it is).
+    pub grapple: [Option<bool>; 2],
 }
 
 /// Where a camera-relative point lands on a screen of `screen` points,
@@ -90,6 +93,34 @@ pub fn show(ctx: &egui::Context, v: &FightView) -> bool {
     let screen = ctx.content_rect();
     if v.flash > 0.0 {
         flash(ctx, screen, v.flash);
+    }
+    if v.grapple.iter().any(Option::is_some) && v.defeat.is_none() {
+        egui::Area::new(Id::unique("grapple-cue"))
+            .fixed_pos(screen.min)
+            .interactable(false)
+            .order(egui::Order::Background)
+            .show(ctx, |ui| {
+                let p = ui.painter();
+                let c = screen.center();
+                for (hand, cue) in v.grapple.iter().enumerate() {
+                    let Some(in_range) = *cue else { continue };
+                    // A bracket on the hand's side: the left hand's gold,
+                    // the right's blue, as the hotbar marks them; grey and
+                    // faint when the hook would fall short.
+                    let colour = match (in_range, hand) {
+                        (true, 0) => crate::menus::GOLD,
+                        (true, _) => crate::menus::RIGHT_HAND,
+                        (false, _) => Color32::from_rgba_unmultiplied(200, 200, 200, 90),
+                    };
+                    let s = if hand == 0 { -1.0 } else { 1.0 };
+                    let stroke = egui::Stroke::new(if in_range { 2.0 } else { 1.5 }, colour);
+                    let x = c.x + s * 16.0;
+                    p.line_segment([pos2(x, c.y - 7.0), pos2(x, c.y + 7.0)], stroke);
+                    for dy in [-7.0, 7.0] {
+                        p.line_segment([pos2(x, c.y + dy), pos2(x - s * 4.0, c.y + dy)], stroke);
+                    }
+                }
+            });
     }
     if v.hit_marker > 0.0 || v.hurt_dir.is_some() {
         egui::Area::new(Id::unique("fight-markers"))

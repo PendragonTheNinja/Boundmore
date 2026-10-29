@@ -158,8 +158,10 @@ const TARGET_LINE: [f32; 4] = [0.95, 0.95, 0.88, 1.0];
 /// Chisel previews: what a left click cuts, what a right click fills back.
 const CUT_LINE: [f32; 4] = [1.0, 0.82, 0.18, 1.0];
 const FILL_LINE: [f32; 4] = [0.45, 0.85, 1.0, 0.9];
-/// Grapple rope and hook (linear RGBA).
-const ROPE_LINE: [f32; 4] = [0.30, 0.20, 0.10, 1.0];
+/// Grapple rope and hook (linear RGBA), and the rope's thickness (half its
+/// width, blocks): a 2.4 cm cord, about 20 pixels where it leaves the hand.
+const ROPE_COLOUR: [f32; 4] = [0.46, 0.32, 0.17, 1.0];
+const ROPE_RADIUS: f32 = 0.012;
 const HOOK_COLOUR: [f32; 4] = [0.22, 0.22, 0.25, 1.0];
 const XRAY_ALPHA: f32 = 0.22;
 /// The travelling screen stays at least this long (seconds), so a quick
@@ -486,6 +488,28 @@ impl Session {
         self.target = None;
         self.use_target = None;
         self.chisel = None;
+    }
+
+    /// The crosshair's grapple cue (polish, 2026-10-29): for each hand
+    /// holding a grapple, whether a hook fired now would strike a block
+    /// before its range runs out (as the movement step flies it: from the
+    /// eye, stopped by solid blocks by their kept octants).
+    fn grapple_cue(&self, eye: DVec3, forward: DVec3) -> [Option<bool>; 2] {
+        if self.travelling() {
+            return [None, None];
+        }
+        let slots = [self.selected, self.selected_off];
+        let worn = [true, slots[1] != slots[0]];
+        let world = &self.world;
+        [0, 1].map(|h| {
+            let g = self
+                .items
+                .grapple_of(self.items.slot(slots[h]).filter(|_| worn[h]).as_ref(), &Held::default())?;
+            let hit = raycast_shaped(eye, forward, g.range, |p| {
+                bm_core::PhysicsWorld::solid(world, p).then(|| bm_core::PhysicsWorld::shape(world, p))
+            });
+            Some(hit.is_some())
+        })
     }
 
     /// Aims from `eye` along `dir`, within reach: `target` for breaking and
@@ -3011,6 +3035,11 @@ impl App {
                             (burned, power)
                         }),
                         defeat: s.defeat.details(),
+                        grapple: if menu.is_none() {
+                            s.grapple_cue(s.render_eye(alpha), forward.as_dvec3())
+                        } else {
+                            [None, None]
+                        },
                     },
                 );
             }
@@ -3472,24 +3501,29 @@ impl App {
             let side = if hand == 0 { -0.3 } else { 0.3 };
             ropes.push((eye + right * side - DVec3::Y * 0.35 + forward * 0.4, to));
         }
-        // Lines are a pixel wide: a few strands side by side give the rope
-        // some body, thick near the eye and thin far off.
-        let strands = {
-            let forward = camera.forward();
-            let right = forward.cross(DVec3::Y).normalize_or_zero();
-            let up = right.cross(forward);
-            [DVec3::ZERO, right * 0.006, up * 0.006, (right + up) * 0.006]
-        };
+        // Each rope is a thin cord (a long box turned along it), lit where
+        // it hangs like any other box (the M7 follow-up: it used to be four
+        // one-pixel lines).
         for (from, to) in ropes {
-            for off in strands {
-                let (a, b) = ((from + off - eye).as_vec3(), (to + off - eye).as_vec3());
-                lines.push(LineVertex {
-                    pos: a.to_array(),
-                    color: ROPE_LINE,
-                });
-                lines.push(LineVertex {
-                    pos: b.to_array(),
-                    color: ROPE_LINE,
+            let (a, b) = ((from - eye).as_vec3(), (to - eye).as_vec3());
+            let along = b - a;
+            if along.length() > 0.01 {
+                let mid = shape.wrap_point(from + (to - from) * 0.5);
+                // Turned so one flat face looks at the camera: a cord a few
+                // pixels wide drawn across two differently lit faces
+                // speckles.
+                let y = along.normalize();
+                let to_eye = -(a + b) * 0.5;
+                let z = (to_eye - y * to_eye.dot(y)).normalize_or(y.any_orthonormal_vector());
+                let x = y.cross(z);
+                boxes.push(BoxInstance {
+                    rotation: glam::Quat::from_mat3(&glam::Mat3::from_cols(x, y, z)).to_array(),
+                    ..BoxInstance::new(
+                        (a + b) * 0.5,
+                        Vec3::new(ROPE_RADIUS, along.length() * 0.5, ROPE_RADIUS),
+                        ROPE_COLOUR,
+                        BoxInstance::light_of(s.world.light_at(mid)),
+                    )
                 });
             }
             let b = (to - eye).as_vec3();
@@ -4319,6 +4353,12 @@ impl ApplicationHandler for App {
                     self.keys.remove(&code);
                     return;
                 }
+                // Held keys are tracked whatever has the keyboard (movement
+                // reads them only while playing), so W held while the chat
+                // closes walks on.
+                if !event.repeat {
+                    self.keys.insert(code);
+                }
                 if code == KeyCode::F11 {
                     if let Some(w) = &self.window {
                         let full = w.fullscreen().is_some();
@@ -4462,7 +4502,9 @@ impl ApplicationHandler for App {
                 }
             }
             WindowEvent::MouseWheel { delta, .. } => {
-                if self.menu.is_some() || self.chat.open {
+                // Only while playing: scrolling over a freed window must not
+                // change what the hands hold unseen.
+                if self.menu.is_some() || self.chat.open || !self.grabbed {
                     return;
                 }
                 let steps = match delta {

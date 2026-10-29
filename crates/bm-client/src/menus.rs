@@ -1801,6 +1801,39 @@ pub fn hud(ctx: &egui::Context, h: &Hud) {
                 let shade = Rect::from_min_size(pos2(energy.right() - w, energy.top()), vec2(w, energy.height()));
                 painter.rect_filled(shade, CornerRadius::same(3), HUNGER);
             }
+            // What the bars are, beside them (new players read the HUD).
+            // A dark shadow under each keeps them readable on a bright sky.
+            let label = Color32::from_rgb(235, 228, 214);
+            let shadowed = |at: egui::Pos2, align: Align2, text: String, colour: Color32| {
+                painter.text(
+                    at + vec2(1.0, 1.0),
+                    align,
+                    &text,
+                    FontId::proportional(11.0),
+                    Color32::from_black_alpha(200),
+                );
+                painter.text(at, align, text, FontId::proportional(11.0), colour)
+            };
+            shadowed(
+                pos2(row.left() - 8.0, health.center().y),
+                Align2::RIGHT_CENTER,
+                "Health".into(),
+                label,
+            );
+            let r = shadowed(
+                pos2(row.right() + 8.0, energy.center().y),
+                Align2::LEFT_CENTER,
+                "Energy".into(),
+                label,
+            );
+            if h.hunger > 0.0 {
+                shadowed(
+                    pos2(r.right() + 6.0, energy.center().y),
+                    Align2::LEFT_CENTER,
+                    format!("Hunger {:.0}%", h.hunger.clamp(0.0, 1.0) * 100.0),
+                    Color32::from_rgb(232, 172, 118),
+                );
+            }
             // Food tags over the energy bar, right-aligned.
             let mut x = energy.right();
             for (text, colour) in h.food.iter().rev() {
@@ -1914,8 +1947,17 @@ pub fn hud(ctx: &egui::Context, h: &Hud) {
     }
 
     if !h.notices.is_empty() {
+        // Above whatever sits over the bars: the air bar and its tag, or the
+        // food tags (they used to overlap by a few pixels).
+        let lift = if h.air.is_some() {
+            50.0
+        } else if !h.food.is_empty() {
+            40.0
+        } else {
+            34.0
+        };
         egui::Area::new(Id::unique("notices"))
-            .anchor(Align2::CENTER_BOTTOM, vec2(0.0, -(18.0 + SLOT + 34.0)))
+            .anchor(Align2::CENTER_BOTTOM, vec2(0.0, -(18.0 + SLOT + lift)))
             .interactable(false)
             .order(egui::Order::Background)
             .show(ctx, |ui| {

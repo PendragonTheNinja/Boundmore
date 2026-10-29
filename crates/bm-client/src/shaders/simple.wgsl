@@ -23,7 +23,10 @@ struct BoxOut {
     @location(0) color: vec3<f32>,
     @location(1) rel: vec3<f32>,
     @location(2) normal: vec3<f32>,
-    @location(3) light: vec4<f32>,
+    // Flat: the same for the whole box, and its packed block light must
+    // not be interpolated (on a long thin box, 16.0 came out 15.9999 and
+    // read as full white light, speckling the rope).
+    @location(3) @interpolate(flat) light: vec4<f32>,
 };
 
 // A box's block light per channel, 0..1 (`BoxInstance::light_of`).
