@@ -588,10 +588,270 @@ def build():
     char = join(allparts, "raptor")
     char.data.color_attributes.active_color = char.data.color_attributes["mask"]
     animate(rig)
-    tris = sum(len(p.vertices) - 2 for p in char.data.polygons)
-    print(f"raptor: {tris} triangles")
-    bpy.ops.export_scene.gltf(filepath=str(OUT / "raptor.glb"), export_format="GLB", export_animations=True)
+    low = bake(char, rig)
+    bpy.ops.object.select_all(action="DESELECT")
+    low.select_set(True)
+    rig.select_set(True)
+    bpy.ops.export_scene.gltf(
+        filepath=str(OUT / "raptor.glb"), export_format="GLB", export_animations=True, use_selection=True
+    )
     return rig
+
+
+# ---- the game model: fewer triangles, the sculpt baked into textures ---------
+
+TEX = 1024
+GAME_TRIANGLES = 10000
+
+
+def triangles(o):
+    return sum(len(p.vertices) - 2 for p in o.data.polygons)
+
+
+def emit_material(name, build):
+    """A material that only glows `build(nodes, links)`'s colour: what a bake
+    pass reads off the sculpt."""
+    m = bpy.data.materials.new(name)
+    m.use_nodes = True
+    nt = m.node_tree
+    for n in list(nt.nodes):
+        nt.nodes.remove(n)
+    out = nt.nodes.new("ShaderNodeOutputMaterial")
+    emit = nt.nodes.new("ShaderNodeEmission")
+    nt.links.new(emit.outputs[0], out.inputs[0])
+    nt.links.new(build(nt), emit.inputs["Color"])
+    return m
+
+
+def mask_pass(nt):
+    attr = nt.nodes.new("ShaderNodeAttribute")
+    attr.attribute_name = "mask"
+    return attr.outputs["Color"]
+
+
+def detail_pass(nt):
+    """The painted detail as brightness (1 untouched): fine grain, mottling,
+    scales where the claw colour shows, streaks where the marking shows."""
+    attr = nt.nodes.new("ShaderNodeAttribute")
+    attr.attribute_name = "mask"
+    sep = nt.nodes.new("ShaderNodeSeparateColor")
+    nt.links.new(attr.outputs["Color"], sep.inputs["Color"])
+    coord = nt.nodes.new("ShaderNodeTexCoord").outputs["Object"]
+
+    def noise(scale, stretch=(1, 1, 1), detail=4.0):
+        mp = nt.nodes.new("ShaderNodeMapping")
+        mp.inputs["Scale"].default_value = stretch
+        nt.links.new(coord, mp.inputs["Vector"])
+        n = nt.nodes.new("ShaderNodeTexNoise")
+        n.inputs["Scale"].default_value = scale
+        n.inputs["Detail"].default_value = detail
+        nt.links.new(mp.outputs["Vector"], n.inputs["Vector"])
+        return n.outputs["Fac"]
+
+    def remap(x, a, b, lo, hi):
+        n = nt.nodes.new("ShaderNodeMapRange")
+        n.inputs["From Min"].default_value = a
+        n.inputs["From Max"].default_value = b
+        n.inputs["To Min"].default_value = lo
+        n.inputs["To Max"].default_value = hi
+        nt.links.new(x, n.inputs["Value"])
+        return n.outputs["Result"]
+
+    def mul(a, b):
+        n = nt.nodes.new("ShaderNodeMath")
+        n.operation = "MULTIPLY"
+        nt.links.new(a, n.inputs[0])
+        if isinstance(b, float):
+            n.inputs[1].default_value = b
+        else:
+            nt.links.new(b, n.inputs[1])
+        return n.outputs[0]
+
+    def lerp1(f, x):
+        """1 where f is 0, x where f is 1."""
+        n = nt.nodes.new("ShaderNodeMix")
+        n.data_type = "FLOAT"
+        nt.links.new(f, n.inputs["Factor"])
+        n.inputs[2].default_value = 1.0
+        nt.links.new(x, n.inputs[3])
+        return n.outputs[0]
+
+    grain = remap(noise(140.0), 0.3, 0.7, 0.8, 1.0)
+    blotch = remap(attr.outputs["Alpha"], 0.2, 0.9, 1.0, 0.5)
+    # Painted light from above: tops brighter, undersides darker.
+    geo = nt.nodes.new("ShaderNodeNewGeometry")
+    sepn = nt.nodes.new("ShaderNodeSeparateXYZ")
+    nt.links.new(geo.outputs["Normal"], sepn.inputs[0])
+    top = remap(sepn.outputs["Z"], -1.0, 1.0, 0.62, 1.0)
+    vor = nt.nodes.new("ShaderNodeTexVoronoi")
+    vor.feature = "DISTANCE_TO_EDGE"
+    vor.inputs["Scale"].default_value = 85.0
+    nt.links.new(coord, vor.inputs["Vector"])
+    scales = remap(vor.outputs["Distance"], 0.0, 0.12, 0.35, 1.0)
+    streaks = remap(noise(70.0, (1.0, 1.0, 0.12), 2.0), 0.35, 0.65, 0.55, 1.0)
+    # Darker spots scattered over the skin (not the belly or scales).
+    spots_v = nt.nodes.new("ShaderNodeTexVoronoi")
+    spots_v.inputs["Scale"].default_value = 22.0
+    spots_v.inputs["Randomness"].default_value = 1.0
+    nt.links.new(coord, spots_v.inputs["Vector"])
+    spots = remap(spots_v.outputs["Distance"], 0.12, 0.30, 0.62, 1.0)
+    skin_only = nt.nodes.new("ShaderNodeMath")
+    skin_only.operation = "SUBTRACT"
+    skin_only.inputs[0].default_value = 1.0
+    nt.links.new(sep.outputs[0], skin_only.inputs[1])
+    d = mul(grain, blotch)
+    d = mul(d, top)
+    d = mul(d, lerp1(skin_only.outputs[0], spots))
+    d = mul(d, lerp1(sep.outputs[2], scales))
+    d = mul(d, lerp1(sep.outputs[1], streaks))
+    c = nt.nodes.new("ShaderNodeCombineColor")
+    for i in range(3):
+        nt.links.new(d, c.inputs[i])
+    return c.outputs[0]
+
+
+def pixels(img):
+    import numpy as np
+
+    a = np.empty(img.size[0] * img.size[1] * 4, dtype=np.float32)
+    img.pixels.foreach_get(a)
+    return a.reshape(-1, 4)
+
+
+def bake(high, rig):
+    import numpy as np
+
+    rig.data.pose_position = "REST"
+    bpy.context.view_layer.update()
+    scene = bpy.context.scene
+    scene.render.engine = "CYCLES"
+    scene.cycles.device = "CPU"
+    scene.cycles.samples = 16
+
+    low = high.copy()
+    low.data = high.data.copy()
+    bpy.context.collection.objects.link(low)
+    high.name, low.name = "raptor.sculpt", "raptor"
+    for i, m in enumerate(low.data.materials):
+        low.data.materials[i] = m.copy()
+    dec = low.modifiers.new("decimate", "DECIMATE")
+    dec.ratio = GAME_TRIANGLES / triangles(high)
+    bpy.context.view_layer.objects.active = low
+    bpy.ops.object.modifier_move_to_index(modifier="decimate", index=0)
+    bpy.ops.object.modifier_apply(modifier="decimate")
+    print(f"raptor: {triangles(high)} triangles sculpted, {triangles(low)} in the game model")
+
+    bpy.ops.object.select_all(action="DESELECT")
+    low.select_set(True)
+    bpy.ops.object.mode_set(mode="EDIT")
+    bpy.ops.mesh.select_all(action="SELECT")
+    bpy.ops.uv.smart_project(angle_limit=math.radians(66), island_margin=0.004)
+    bpy.ops.object.mode_set(mode="OBJECT")
+
+    images = {}
+    for name, colour in (("mask", False), ("detail", False), ("ao", False), ("normal", True)):
+        img = bpy.data.images.new(f"raptor.{name}", TEX, TEX)
+        if colour:
+            img.colorspace_settings.name = "Non-Color"
+        images[name] = img
+    # Every material on the game model bakes into the same image.
+    targets = []
+    for m in low.data.materials:
+        node = m.node_tree.nodes.new("ShaderNodeTexImage")
+        m.node_tree.nodes.active = node
+        targets.append(node)
+    originals = list(high.data.materials)
+    passes = {"mask": emit_material("pass.mask", mask_pass), "detail": emit_material("pass.detail", detail_pass)}
+
+    def run(name, kind, source=None):
+        for t in targets:
+            t.image = images[name]
+        if source:
+            for i in range(len(high.data.materials)):
+                high.data.materials[i] = source
+        bpy.ops.object.select_all(action="DESELECT")
+        high.select_set(True)
+        low.select_set(True)
+        bpy.context.view_layer.objects.active = low
+        bpy.ops.object.bake(
+            type=kind, use_selected_to_active=True, cage_extrusion=0.006, max_ray_distance=0.015, margin=6
+        )
+        for i, m in enumerate(originals):
+            high.data.materials[i] = m
+
+    run("mask", "EMIT", passes["mask"])
+    run("detail", "EMIT", passes["detail"])
+    run("ao", "AO")
+    run("normal", "NORMAL")
+
+    # One painted texture: red, green, blue the belly, marking and claw
+    # weights; alpha the painted shading (detail times ambient occlusion).
+    mask, detail, ao = pixels(images["mask"]), pixels(images["detail"]), pixels(images["ao"])
+    paint = bpy.data.images.new("raptor.paint", TEX, TEX, alpha=True)
+    out = np.empty_like(mask)
+    out[:, :3] = mask[:, :3]
+    out[:, 3] = detail[:, 0] * (0.15 + 0.85 * ao[:, 0])
+    paint.pixels.foreach_set(out.ravel())
+    for img, name in ((paint, "paint"), (images["normal"], "normal")):
+        img.filepath_raw = str(OUT / f"raptor.{name}.png")
+        img.file_format = "PNG"
+        img.save()
+
+    bpy.data.objects.remove(high)
+    for t in targets:
+        t.id_data.nodes.remove(t)
+    game_material(low, paint, images["normal"])
+    rig.data.pose_position = "POSE"
+    return low
+
+
+def game_material(low, paint, normal):
+    """How the game draws it: the four tints mixed by the texture's weights,
+    shaded by its alpha, with the sculpt's normal map."""
+    m = bpy.data.materials.new("raptor.game")
+    m.use_nodes = True
+    nt = m.node_tree
+    bsdf = nt.nodes["Principled BSDF"]
+    bsdf.inputs["Roughness"].default_value = 0.6
+    tex = nt.nodes.new("ShaderNodeTexImage")
+    tex.image = paint
+    paint.alpha_mode = "CHANNEL_PACKED"
+    sep = nt.nodes.new("ShaderNodeSeparateColor")
+    nt.links.new(tex.outputs["Color"], sep.inputs["Color"])
+
+    def rgb(c):
+        n = nt.nodes.new("ShaderNodeRGB")
+        n.outputs[0].default_value = (*c, 1.0)
+        return n.outputs[0]
+
+    def mix(a, b, f):
+        n = nt.nodes.new("ShaderNodeMix")
+        n.data_type = "RGBA"
+        nt.links.new(f, n.inputs["Factor"])
+        nt.links.new(a, n.inputs[6])
+        nt.links.new(b, n.inputs[7])
+        return n.outputs[2]
+
+    c = mix(rgb(SKIN), rgb(BELLY), sep.outputs[0])
+    c = mix(c, rgb(MARK), sep.outputs[1])
+    c = mix(c, rgb(CLAW), sep.outputs[2])
+    shade = nt.nodes.new("ShaderNodeMix")
+    shade.data_type = "RGBA"
+    shade.blend_type = "MULTIPLY"
+    shade.inputs["Factor"].default_value = 1.0
+    nt.links.new(c, shade.inputs[6])
+    nt.links.new(tex.outputs["Alpha"], shade.inputs[7])
+    nt.links.new(shade.outputs[2], bsdf.inputs["Base Color"])
+    ntex = nt.nodes.new("ShaderNodeTexImage")
+    ntex.image = normal
+    nmap = nt.nodes.new("ShaderNodeNormalMap")
+    nt.links.new(ntex.outputs["Color"], nmap.inputs["Color"])
+    nt.links.new(nmap.outputs["Normal"], bsdf.inputs["Normal"])
+    # The tinted surfaces take the game material; eyes, cloth and metal keep
+    # theirs (the painted shading is on them too, through the bake).
+    for i, old in enumerate(low.data.materials):
+        if old.name.startswith("body"):
+            low.data.materials[i] = m
 
 
 # ---- previews ---------------------------------------------------------------
