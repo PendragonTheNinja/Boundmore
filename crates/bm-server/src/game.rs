@@ -1280,6 +1280,7 @@ impl Game {
                 } => self.craft(id, recipe, count, station, colour),
                 ClientMsg::WatchStation { pos } => self.watch(id, pos),
                 ClientMsg::CollectStation { pos } => self.collect(id, pos),
+                ClientMsg::Arrange { pos, deposit } => self.arrange(id, pos, deposit),
                 ClientMsg::StationJob { pos, index, up } => self.station_job(id, pos, index as usize, up),
                 ClientMsg::ClaimPlot { claim, plot } => self.claim_plot(id, claim, plot),
                 ClientMsg::ReleasePlot { plot } => self.release_plot(id, plot),
@@ -3093,6 +3094,48 @@ impl Game {
     /// Answered with `Slots` for the pack and `Storage` (to every viewer) for
     /// the block; a move that changes nothing is answered with the block's
     /// contents, so a client that guessed can put things back.
+    /// Sorts the pack beyond the hotbar, or the open storage block, or
+    /// deposits matching stacks into it (`ClientMsg::Arrange`).
+    fn arrange(&mut self, id: u32, pos: Option<BlockPos>, deposit: bool) {
+        let Some(pos) = pos else {
+            let Some(p) = self.players.get_mut(&id) else { return };
+            let before = p.inventory.clone();
+            bm_core::inventory::sort_slots(&self.items, &mut p.inventory.slots[HOTBAR_SLOTS..]);
+            return send_slots(p, &before);
+        };
+        let (canon, size) = match self.storage_access(id, pos) {
+            Ok(a) => a,
+            Err(r) => return self.tell(id, r),
+        };
+        let Some(p) = self.players.get(&id) else { return };
+        if p.storage != Some(canon) {
+            return;
+        }
+        let pi = p.planet;
+        // A shop's prices belong to its slots: never shuffle them.
+        if self.planets[pi]
+            .world
+            .block(canon)
+            .is_some_and(|b| self.shop_kind(b).is_some())
+        {
+            return self.notice(id, "A shop's prices belong to its slots: arrange it by hand");
+        }
+        let mut slots = self.planets[pi].storage.slots(canon, size);
+        let stored = slots.clone();
+        let p = self.players.get_mut(&id).expect("present");
+        let before = p.inventory.clone();
+        if deposit {
+            bm_core::inventory::deposit_matching(&self.items, &mut p.inventory.slots[HOTBAR_SLOTS..], &mut slots);
+        } else {
+            bm_core::inventory::sort_slots(&self.items, &mut slots);
+        }
+        send_slots(p, &before);
+        if slots != stored {
+            self.planets[pi].storage.set(canon, slots);
+            self.push_storage(pi, canon, size);
+        }
+    }
+
     fn storage_move(&mut self, id: u32, pos: BlockPos, from: SlotRef, to: SlotRef, count: u16) {
         let (canon, size) = match self.storage_access(id, pos) {
             Ok(a) => a,

@@ -2189,11 +2189,23 @@ pub fn inventory(
     let mut targets: Vec<(Rect, Target)> = Vec::new();
     let mut open = true;
     window("Inventory").open(&mut open).show(ctx, |ui| {
-        // Coin (milestone 24).
-        if let Some(c) = coin {
-            ui.label(egui::RichText::new(coin_text(c)).color(COIN));
-            ui.add_space(4.0);
-        }
+        ui.horizontal(|ui| {
+            // Coin (milestone 24).
+            if let Some(c) = coin {
+                ui.label(egui::RichText::new(coin_text(c)).color(COIN));
+            }
+            if ui
+                .small_button("Sort")
+                .on_hover_text("Sort the pack below the hotbar (the hotbar stays as it is)")
+                .clicked()
+            {
+                actions.push(UiAction::Send(ClientMsg::Arrange {
+                    pos: None,
+                    deposit: false,
+                }));
+            }
+        });
+        ui.add_space(4.0);
         inventory_grid(ui, &src, drag, &mut targets);
         ui.add_space(8.0);
         ui.horizontal(|ui| {
@@ -2305,11 +2317,33 @@ pub fn storage(ctx: &egui::Context, v: &StorageWindow, drag: &mut Option<Drag>, 
                     });
                     return;
                 }
-                ui.label(
-                    egui::RichText::new(format!("{} slots", chest.len()))
-                        .color(MUTED)
-                        .small(),
-                );
+                ui.horizontal(|ui| {
+                    ui.label(
+                        egui::RichText::new(format!("{} slots", chest.len()))
+                            .color(MUTED)
+                            .small(),
+                    );
+                    if ui
+                        .small_button("Sort")
+                        .on_hover_text("Merge stacks and put like with like")
+                        .clicked()
+                    {
+                        actions.push(UiAction::Send(ClientMsg::Arrange {
+                            pos: Some(v.pos),
+                            deposit: false,
+                        }));
+                    }
+                    if ui
+                        .small_button("Put in matching")
+                        .on_hover_text("Everything you carry (beyond the hotbar) that this already holds goes in")
+                        .clicked()
+                    {
+                        actions.push(UiAction::Send(ClientMsg::Arrange {
+                            pos: Some(v.pos),
+                            deposit: true,
+                        }));
+                    }
+                });
                 ui.spacing_mut().item_spacing = vec2(GAP, GAP);
                 for first in (0..chest.len()).step_by(cols) {
                     ui.horizontal(|ui| {

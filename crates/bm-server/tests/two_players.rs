@@ -1899,6 +1899,85 @@ async fn warp_shrines_take_players_between_planets() {
 /// Storage chests: placed, opened by two players who both see every change,
 /// moves in, out and within, refused moves answered with the contents, no
 /// breaking while anything is inside, and closed for everyone when broken.
+/// Tidying (audit 2026-10-29): "Put in matching" moves pack stacks the box
+/// already holds the kind of (never the hotbar's); "Sort" merges the box's
+/// stacks; the pack sorts below the hotbar.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn storage_sorts_and_takes_matching_stacks() {
+    let dir = tempfile::tempdir().unwrap();
+    seed(
+        dir.path(),
+        "Alice",
+        &[
+            (5, "storage_chest", 1, 0),
+            (1, "stone", 10, 0),
+            (12, "stone", 20, 0),
+            (14, "sand", 7, 0),
+            (16, "stone", 5, 0),
+        ],
+    );
+    let server = bm_server::start(config(dir.path())).unwrap();
+    let mut alice = TestClient::login(&server, "Alice").await;
+    let feet = alice.feet();
+    alice.wait_for_chunk(feet.chunk()).await;
+    assert!(alice.dig(1, feet).await.0);
+    assert!(alice.edit(2, feet, EditAction::Place { slot: 5, mount: None }).await.0);
+    alice.send(ClientMsg::OpenStorage { pos: Some(feet) }).await;
+    alice.storage(|v| v.pos == feet && !v.closed).await;
+    // One stone in, from the hotbar, so the box holds the kind.
+    alice
+        .send(ClientMsg::StorageMove {
+            pos: feet,
+            from: SlotRef::Inventory(1),
+            to: SlotRef::Storage(3),
+            count: 1,
+        })
+        .await;
+    alice.storage(|v| v.slots[3].is_some()).await;
+    alice
+        .send(ClientMsg::Arrange {
+            pos: Some(feet),
+            deposit: true,
+        })
+        .await;
+    let stone = alice.item("stone");
+    let v = alice
+        .storage(|v| {
+            v.slots
+                .iter()
+                .flatten()
+                .filter(|s| s.item == stone)
+                .map(|s| s.count)
+                .sum::<u16>()
+                == 26
+        })
+        .await;
+    assert!(v.slots.iter().flatten().all(|s| s.item == stone), "no sand went in");
+    alice.settle().await;
+    assert_eq!(stack(&alice, 1).map(|s| s.count), Some(9), "the hotbar keeps its stone");
+    assert_eq!((stack(&alice, 12), stack(&alice, 16)), (None, None));
+    assert_eq!(alice.count("sand"), 7);
+    // Sorted: one stack of 26 in the first slot.
+    alice
+        .send(ClientMsg::Arrange {
+            pos: Some(feet),
+            deposit: false,
+        })
+        .await;
+    let v = alice.storage(|v| v.slots[0].is_some_and(|s| s.count == 26)).await;
+    assert!(v.slots[1..].iter().all(Option::is_none));
+    // The pack sorts below the hotbar: the sand to the first slot there.
+    alice
+        .send(ClientMsg::Arrange {
+            pos: None,
+            deposit: false,
+        })
+        .await;
+    alice.settle().await;
+    assert_eq!(stack(&alice, bm_core::HOTBAR_SLOTS).map(|s| s.count), Some(7));
+    server.stop();
+}
+
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn storage_chests_hold_items_for_everyone_who_opens_them() {
     let dir = tempfile::tempdir().unwrap();

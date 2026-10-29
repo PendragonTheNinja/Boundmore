@@ -29,7 +29,7 @@ use serde::{Deserialize, Serialize, de::DeserializeOwned};
 pub const MAX_CRAFT_COUNT: u16 = 100;
 
 /// Bump on any change to a message below. Client and server must match.
-pub const PROTOCOL_VERSION: u32 = 59;
+pub const PROTOCOL_VERSION: u32 = 60;
 
 /// QUIC application protocol name; also refuses non-Boundmore peers early.
 pub const ALPN: &[u8] = b"boundmore/1";
@@ -188,6 +188,11 @@ pub enum ClientMsg {
         to: SlotRef,
         count: u16,
     },
+    /// Tidies items: with `pos` None, sorts our pack beyond the hotbar; at
+    /// the open storage block `pos`, sorts it, or with `deposit` moves into
+    /// it every pack stack (beyond the hotbar) it already holds the kind of.
+    /// Answered with `Slots` and `Storage`.
+    Arrange { pos: Option<BlockPos>, deposit: bool },
     /// A chat line. `Whisper` goes to one player by name, anywhere.
     Chat { channel: Channel, text: String },
     /// Take reclaimed items (from a lapsed claim) into the inventory, as many

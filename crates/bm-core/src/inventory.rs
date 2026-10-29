@@ -296,6 +296,55 @@ impl Inventory {
     }
 }
 
+/// Sorts a row of slots in place (a storage block, or the pack beyond the
+/// hotbar): stacks that stack together are merged (up to a full stack),
+/// then ordered by item and colour, empty slots last. Nothing is lost: the
+/// row holds the same items after.
+pub fn sort_slots(items: &ItemRegistry, slots: &mut [Option<ItemStack>]) {
+    let mut held: Vec<ItemStack> = slots.iter_mut().filter_map(Option::take).collect();
+    held.sort_by_key(|s| (s.item, s.colour.0, s.tag, s.wear));
+    let mut merged: Vec<ItemStack> = Vec::new();
+    for s in held {
+        let max = limit(items, s.item);
+        let mut left = s.count;
+        if let Some(last) = merged.last_mut().filter(|l| l.stacks_with(&s) && l.count < max) {
+            let n = left.min(max - last.count);
+            last.count += n;
+            left -= n;
+        }
+        if left > 0 {
+            merged.push(ItemStack { count: left, ..s });
+        }
+    }
+    for (slot, s) in slots
+        .iter_mut()
+        .zip(merged.into_iter().map(Some).chain(std::iter::repeat(None)))
+    {
+        *slot = s;
+    }
+}
+
+/// Moves every stack in `from` whose kind `into` already holds into `into`
+/// (onto those stacks first, then empty slots): Boundless's "deposit
+/// matching". Returns whether anything moved.
+pub fn deposit_matching(items: &ItemRegistry, from: &mut [Option<ItemStack>], into: &mut [Option<ItemStack>]) -> bool {
+    let mut moved = false;
+    for slot in from.iter_mut() {
+        let Some(stack) = *slot else { continue };
+        if !into.iter().flatten().any(|s| s.stacks_with(&stack)) {
+            continue;
+        }
+        let mut row = Inventory { slots: into.to_vec() };
+        let left = row.add_stack(items, stack);
+        if left < stack.count {
+            into.copy_from_slice(&row.slots);
+            *slot = (left > 0).then_some(ItemStack { count: left, ..stack });
+            moved = true;
+        }
+    }
+    moved
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -303,6 +352,55 @@ mod tests {
 
     fn items() -> ItemRegistry {
         ItemRegistry::builtin(&BlockRegistry::builtin())
+    }
+
+    #[test]
+    fn sorting_merges_orders_and_keeps_everything() {
+        let i = items();
+        let (stone, trunk) = (i.id("stone").unwrap(), i.id("trunk").unwrap());
+        let mut row = vec![
+            None,
+            Some(ItemStack::new(trunk, 3)),
+            Some(ItemStack::new(stone, 60)),
+            None,
+            Some(ItemStack::new(stone, 70)),
+        ];
+        sort_slots(&i, &mut row);
+        let max = limit(&i, stone);
+        let stone_first = stone < trunk;
+        let stones: Vec<u16> = row
+            .iter()
+            .flatten()
+            .filter(|s| s.item == stone)
+            .map(|s| s.count)
+            .collect();
+        assert_eq!(stones.iter().sum::<u16>(), 130, "nothing lost");
+        assert_eq!(stones[0], max.min(130), "merged into full stacks first");
+        assert_eq!(
+            row.iter()
+                .flatten()
+                .filter(|s| s.item == trunk)
+                .map(|s| s.count)
+                .sum::<u16>(),
+            3
+        );
+        assert_eq!(row[0].unwrap().item, if stone_first { stone } else { trunk });
+        assert!(
+            row.iter().rev().take_while(|s| s.is_none()).count() >= 2,
+            "empties last"
+        );
+    }
+
+    #[test]
+    fn deposit_matching_moves_only_what_the_box_already_holds() {
+        let i = items();
+        let (stone, trunk) = (i.id("stone").unwrap(), i.id("trunk").unwrap());
+        let mut pack = vec![Some(ItemStack::new(stone, 20)), Some(ItemStack::new(trunk, 4))];
+        let mut chest = vec![Some(ItemStack::new(stone, 5)), None];
+        assert!(deposit_matching(&i, &mut pack, &mut chest));
+        assert_eq!(pack, vec![None, Some(ItemStack::new(trunk, 4))]);
+        assert_eq!(chest[0], Some(ItemStack::new(stone, 25)));
+        assert!(!deposit_matching(&i, &mut pack, &mut chest), "nothing else matches");
     }
 
     #[test]
