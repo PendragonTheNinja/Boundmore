@@ -29,7 +29,7 @@ const WHISPER: Color32 = Color32::from_rgb(198, 150, 255);
 const GUILD: Color32 = Color32::from_rgb(110, 200, 220);
 const SERVER: Color32 = Color32::from_rgb(160, 156, 150);
 
-pub const HELP: &str = "Commands: /l local, /p planet, /u universe, /g guild, /w name text to whisper, /r text to reply, /friend name and /unfriend name (O for friends, G for guilds), /settlement name to name the settlement you are warden of. \
+pub const HELP: &str = "Commands: /l local, /p planet, /u universe, /g guild, /w name text to whisper, /r text to reply, /friend name and /unfriend name (O for friends, G for guilds), /ignore name and /unignore name to hide or show someone's chat, /settlement name to name the settlement you are warden of. \
                         Testing (servers started with --creative): /creative or F8, /give item count, /xp amount.";
 
 /// What a line typed into the box asks for.
@@ -51,6 +51,9 @@ pub enum Typed {
     Command(String),
     /// Ask (`/friend name`) or end (`/unfriend name`) a friendship.
     Friend(String, bm_protocol::FriendAction),
+    /// Hide (`/ignore name`, true) or show again (`/unignore name`) a
+    /// player's lines on this screen.
+    Ignore(String, bool),
 }
 
 /// Reads one typed line. Plain text goes to `default`. `/l`, `/p` and `/u`
@@ -91,6 +94,12 @@ pub fn parse(input: &str, default: &Channel, last_whisperer: Option<&str>) -> Ty
                 bm_protocol::FriendAction::Remove
             };
             return Typed::Friend(rest.to_string(), action);
+        }
+        "ignore" | "unignore" => {
+            if rest.is_empty() {
+                return Typed::Local(format!("Name them: /{} name", word.to_lowercase()));
+            }
+            return Typed::Ignore(rest.to_string(), word.eq_ignore_ascii_case("ignore"));
         }
         "give" | "xp" | "settlement" => return Typed::Command(input.to_string()),
         "r" | "reply" => {
@@ -171,6 +180,10 @@ pub struct ChatBox {
     pub swallow: bool,
     /// `/creative` was typed: the app switches creative mode.
     creative_asked: bool,
+    /// Players whose lines are hidden here (lower case; `/ignore`).
+    pub ignored: std::collections::BTreeSet<String>,
+    /// The ignore list changed: the app saves it.
+    pub ignore_changed: bool,
 }
 
 impl Default for ChatBox {
@@ -184,6 +197,8 @@ impl Default for ChatBox {
             open: false,
             swallow: false,
             creative_asked: false,
+            ignored: Default::default(),
+            ignore_changed: false,
         }
     }
 }
@@ -201,6 +216,9 @@ impl ChatBox {
     /// Lines from the server, oldest first.
     pub fn receive(&mut self, lines: Vec<ChatLine>, now: f64) {
         for line in lines {
+            if !line.from.is_empty() && line.from != self.me && self.ignored.contains(&line.from.to_lowercase()) {
+                continue;
+            }
             if matches!(line.channel, Channel::Whisper(_)) && !line.from.is_empty() && line.from != self.me {
                 self.last_whisperer = Some(line.from.clone());
             }
@@ -261,6 +279,20 @@ impl ChatBox {
             }
             Typed::Command(text) => Some(ClientMsg::Command { text }),
             Typed::Friend(name, action) => Some(ClientMsg::Friend { name, action }),
+            Typed::Ignore(name, on) => {
+                let key = name.to_lowercase();
+                let text = if on {
+                    self.ignored.insert(key);
+                    format!("You no longer see {name}'s lines (/unignore {name} to undo)")
+                } else if self.ignored.remove(&key) {
+                    format!("You see {name}'s lines again")
+                } else {
+                    format!("{name} was not ignored")
+                };
+                self.ignore_changed = true;
+                self.local(text, now);
+                None
+            }
         }
     }
 
@@ -429,6 +461,29 @@ fn line_label(ui: &mut Ui, line: &ChatLine, me: &str, alpha: f32) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// `/ignore` hides a player's lines here (case aside); `/unignore`
+    /// shows them again.
+    #[test]
+    fn ignored_players_lines_are_hidden() {
+        let mut c = ChatBox {
+            me: "Me".into(),
+            ..Default::default()
+        };
+        assert_eq!(
+            parse("/ignore Pest", &Channel::Local, None),
+            Typed::Ignore("Pest".into(), true)
+        );
+        c.ignored.insert("pest".into());
+        let line = |from: &str| ChatLine {
+            channel: Channel::Universe,
+            from: from.into(),
+            text: "hi".into(),
+            time: 0,
+        };
+        c.receive(vec![line("PEST"), line("Friend")], 0.0);
+        assert_eq!(c.entries.len(), 1, "only the friend's line");
+    }
 
     fn line(channel: Channel, from: &str, text: &str) -> ChatLine {
         ChatLine {

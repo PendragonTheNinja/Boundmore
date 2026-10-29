@@ -17,6 +17,9 @@ pub struct Settings {
     /// The options window's choices (missing in an older file: defaults).
     #[serde(default)]
     pub options: Options,
+    /// Players whose chat is hidden here (`/ignore`), lower case.
+    #[serde(default)]
+    pub ignored: Vec<String>,
 }
 
 /// The player's options (Esc twice, or the options window).
@@ -154,6 +157,7 @@ mod tests {
                 vsync: false,
                 frame_cap: 144,
             },
+            ignored: vec!["pest".into()],
         };
         s.save(&path).unwrap();
         assert_eq!(Settings::load(&path), s);

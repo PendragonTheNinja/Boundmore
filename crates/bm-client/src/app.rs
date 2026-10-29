@@ -1184,6 +1184,7 @@ impl App {
     pub fn new(opts: Options) -> Self {
         let now = Instant::now();
         let settings = Settings::load(&opts.settings_path);
+        let settings_ignored = settings.ignored.iter().map(|n| n.to_lowercase()).collect();
         let login = LoginForm {
             name: opts.name.clone().unwrap_or_else(|| settings.name.clone()),
             password: String::new(),
@@ -1227,7 +1228,11 @@ impl App {
             skill_ui: SkillUi::default(),
             forge_ui: ForgeUi::default(),
             storage_closing: Vec::new(),
-            chat: ChatBox::default(),
+            chat: {
+                let mut c = ChatBox::default();
+                c.ignored = settings_ignored;
+                c
+            },
             claim_mode: false,
             notices: Notices::default(),
             status: "logging in".into(),
@@ -3190,6 +3195,13 @@ impl App {
                 ChatAction::Send(m) => self.send(m),
                 ChatAction::Close => self.close_chat(),
                 ChatAction::Creative => self.toggle_creative(),
+            }
+        }
+        // `/ignore` and `/unignore`: kept for next time.
+        if std::mem::take(&mut self.chat.ignore_changed) {
+            self.settings.ignored = self.chat.ignored.iter().cloned().collect();
+            if let Err(e) = self.settings.save(&self.opts.settings_path) {
+                tracing::warn!("cannot save the ignore list: {e}");
             }
         }
         Some((prims, out.textures_delta, ppp))
