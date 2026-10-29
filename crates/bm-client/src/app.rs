@@ -2694,6 +2694,21 @@ impl App {
             let at = hit.adjacent();
             let free = s.world.block(at).is_some_and(|b| b.is_air() || s.world.flags.liquid(b));
             let blocks_me = s.world.registry.get(block).solid && s.me.state.overlaps_block(&s.movement, at);
+            // Predicted only where the server will allow it (something solid
+            // beside it, our right to build there), so a refused block never
+            // flickers in and out; refused, it is still sent, for the
+            // server's word on why.
+            let supported = [(1, 0, 0), (-1, 0, 0), (0, 1, 0), (0, -1, 0), (0, 0, 1), (0, 0, -1)]
+                .iter()
+                .any(|&(dx, dy, dz)| {
+                    s.world
+                        .block(at.offset(dx, dy, dz))
+                        .is_some_and(|b| s.world.flags.solid(b))
+                });
+            let ours = s
+                .claims
+                .at(PlotPos::of(at, s.world.shape))
+                .is_none_or(|c| crate::claims::may(c, &s.account, &s.guilds, bm_core::rights::Act::Build));
             if free && !blocks_me && s.world.shape.contains_y(at.y) {
                 s.edit_seq += 1;
                 // The block takes the stack's colour, as the server will.
@@ -2712,7 +2727,9 @@ impl App {
                     });
                     placed.shape = bm_core::forms::placed_shape(def, mount, support, d.x, d.z);
                 }
-                s.world.predict_edit(s.edit_seq, at, placed);
+                if supported && ours {
+                    s.world.predict_edit(s.edit_seq, at, placed);
+                }
                 link.send(ClientMsg::Edit {
                     seq: s.edit_seq,
                     at: s.me.seq,
