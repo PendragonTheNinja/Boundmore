@@ -78,5 +78,5 @@ Exploits, save loss and crash risks.
 
 - [x] Audits (2026-10-29)
 - [x] Batch 1 (2026-10-29): all eleven, each with a test; the dug-up mark needed a new save table (`planet_placed`, upgrade check from `main` done); protocol 58
-- [ ] Batch 2
+- [ ] Batch 2 (2026-10-29): items 1 to 13 built, each pushed with tests and screenshots (`docs/media/polish-*.jpg`): options window (Esc twice), F1 hides the HUD, reconnect, hit marker and hurt direction, E hints, place prediction, craft search and job controls, sorting, drag to claim, break chips, pickup lines, bar labels, grapple range cue, a solid lit rope, `/ignore`, `/dnd`, chat kept across restarts, Windows paths and a minimised frame cap, tinted sky light. Also fixed: box light was interpolated (long boxes speckled white), worn tools read as pickups, a load-dependent demo test. Left: Twitchy's hand (a known gap), a spark where shots land, item 14 (icons, in progress), item 15 (waits on Nathan's frame rate)
 - [ ] Nathan's answers on batch 3
