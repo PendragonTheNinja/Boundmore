@@ -475,10 +475,12 @@ name = "cog"
 name = "cotton_cloth"
 
 # What a broken spark generator gives back: 1,000 spark each (Boundless's
-# Unused Spark).
+# Unused Spark). A generator takes it back as fuel, all at once; nothing else
+# burns it.
 [[item]]
 name = "spark"
 display = "Unused Spark"
+fuel = 1000
 
 # Spanners repair machines (Boundless's stats: action speed, durability,
 # energy as Burst Stamina Drain, wear removed per hit).

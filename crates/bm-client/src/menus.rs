@@ -1237,7 +1237,12 @@ pub fn shop(
                                 format!("{want}")
                             };
                             if action_button(ui, &label, n == want.min(o.stack.count) && n > 0, "Not enough coin") {
-                                actions.push(act(ShopAction::Buy { slot: o.slot, count: n }));
+                                actions.push(act(ShopAction::Buy {
+                                    slot: o.slot,
+                                    count: n,
+                                    price: o.price,
+                                    expect: o.stack,
+                                }));
                             }
                         }
                     });
@@ -1268,6 +1273,7 @@ pub fn shop(
                                 slot: w.slot,
                                 from,
                                 count,
+                                price: w.price,
                             }));
                         }
                     });
@@ -2421,10 +2427,12 @@ fn recipe_row(
     // A tinted recipe is made in one colour (milestone 22): the counts are
     // that colour's.
     let colour = chosen_colour(v, index, recipe);
+    // No more than one order may ask for (the server refuses more).
     let max = match colour {
         Some(c) => recipe.max_crafts_in(&v.items.inventory, Some(c)).min(u16::MAX as u32) as u16,
         None => v.items.craft_max(recipe),
-    };
+    }
+    .min(bm_protocol::MAX_CRAFT_COUNT);
     // Hand recipes are made in the hands, at a table too; the rest queue at
     // the machine, which must be working.
     let in_hand = recipe.station == Station::Hand;

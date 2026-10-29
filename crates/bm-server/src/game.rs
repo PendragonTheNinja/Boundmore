@@ -1154,6 +1154,7 @@ impl Game {
                 ClientMsg::LookCrop { pos } => self.look_crop(id, pos),
                 ClientMsg::ForgeBegin { pos, gear, deck } => self.forge_begin(id, pos, gear, deck),
                 ClientMsg::ForgeUse { pos, slot, round } => self.forge_use(id, pos, slot, round),
+                ClientMsg::ForgeGiveUp { pos } => self.forge_give_up(id, pos),
                 ClientMsg::Throw {
                     at,
                     slot,
@@ -2809,6 +2810,15 @@ impl Game {
     fn storage_access(&self, id: u32, pos: BlockPos) -> Result<(BlockPos, usize), Refusal> {
         let (canon, block) = self.block_access(id, pos)?;
         let planet = &self.planets[self.planet_of(id).ok_or("no such player")?];
+        // A shop stand or request basket opens as storage for its owner
+        // alone (milestone 24), whatever rights others have on the claim:
+        // otherwise a Worker could take stock without paying, or sell into
+        // a basket and take the items back.
+        if self.shop_kind(block).is_some()
+            && planet.claims.at_block(canon).map(|c| c.owner.as_str()) != Some(self.players[&id].account.as_str())
+        {
+            return Err(Refusal::Told("Only its owner stocks this".into()));
+        }
         match planet.world.registry.get(block).storage {
             0 => Err("not a storage block".into()),
             n => Ok((canon, n as usize)),

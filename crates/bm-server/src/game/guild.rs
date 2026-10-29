@@ -483,12 +483,19 @@ impl Game {
                 self.guild_changed(guild, Some(&who));
             }
             GuildAction::Leave { guild } => {
+                let coin = self.guilds.get(guild).map_or(0, |g| g.coin);
                 let ended = self
                     .guilds
                     .change(guild, |g| g.leave(&account, now))
                     .ok_or("There is no such guild")??;
                 self.guilds.after_leaving(&account, guild);
                 if ended {
+                    // The last member out takes the treasury with them
+                    // (it used to vanish with the guild).
+                    if coin > 0 {
+                        self.pay_account(&account, coin);
+                        self.notice(id, &format!("The guild's {coin} coin is yours"));
+                    }
                     self.guild_ended(guild);
                 } else {
                     self.guild_changed(guild, Some(&account));

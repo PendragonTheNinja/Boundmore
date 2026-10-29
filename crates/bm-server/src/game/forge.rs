@@ -201,6 +201,56 @@ impl Game {
         self.push_station(pi, key);
     }
 
+    /// Ends a session without sealing it (no forge is ever locked for good):
+    /// its forger gets the gear back unchanged and what is left of the deck;
+    /// while the forger is away, the claim's owner may free the forge, and
+    /// all of it waits in the forger's reclaim.
+    pub(super) fn forge_give_up(&mut self, id: u32, pos: BlockPos) {
+        let (pi, m) = match self.machine_access(id, pos) {
+            Ok(found) => found,
+            Err(r) => return self.tell(id, r),
+        };
+        if m.kind != Station::Forge {
+            return;
+        }
+        let key = self.machine_record(pi, &m);
+        let Some(account) = self.players.get(&id).map(|p| p.account.clone()) else {
+            return;
+        };
+        let Some(f) = self.planets[pi].stations.forge(key).and_then(|f| f.session.as_ref()) else {
+            return self.notice(id, "Nothing is being forged here");
+        };
+        let forger = f.account.clone();
+        if forger != account {
+            let owner = self.planets[pi].claims.at_block(key).map(|c| c.owner.clone());
+            if self.player_by_account(&forger).is_some() || owner.as_deref() != Some(account.as_str()) {
+                let text = format!("{} is forging here", f.name);
+                return self.notice(id, &text);
+            }
+        }
+        let f = self.planets[pi].stations.end_forge(key).expect("a session was running");
+        let s = f.session;
+        let mut back = vec![s.item];
+        back.extend(s.leftovers());
+        if forger == account {
+            self.give_back(id, pi, key, back);
+            if let Some(p) = self.players.get(&id) {
+                p.out.send(&ServerMsg::Forged {
+                    pos: key,
+                    outcome: ForgeOutcome::Unmade {
+                        gear: s.item,
+                        returned: Vec::new(),
+                    },
+                });
+            }
+        } else {
+            self.reclaims.add(&forger, back);
+            let text = format!("The forge is free; {}'s gear waits in their reclaim", f.name);
+            self.notice(id, &text);
+        }
+        self.push_station(pi, key);
+    }
+
     /// Gives what a session returns to its forger: into the inventory, what
     /// does not fit into the forge's output, and anything left after that
     /// into their reclaim (never lost).

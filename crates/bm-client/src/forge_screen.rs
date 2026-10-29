@@ -311,12 +311,25 @@ pub fn forge(ctx: &egui::Context, v: &ForgeWindow, state: &mut ForgeUi, actions:
         if let Some(name) = &forge.forger {
             ui.label(egui::RichText::new(format!("{name} is forging")).color(TEXT).strong());
             ui.label(
-                egui::RichText::new("One session at a time; only its forger can go on with it.")
-                    .color(MUTED)
-                    .small(),
+                egui::RichText::new(
+                    "One session at a time; only its forger can go on with it. While they are away, the claim's owner can free the forge (their gear goes to their reclaim).",
+                )
+                .color(MUTED)
+                .small(),
             );
+            if ui.button("Free the forge").clicked() {
+                actions.push(UiAction::Send(ClientMsg::ForgeGiveUp { pos }));
+            }
         } else if let Some(session) = &forge.session {
             session_panel(ui, v, session, pos, state, actions);
+            ui.add_space(6.0);
+            if ui
+                .button("Give up")
+                .on_hover_text("Stop forging: the gear comes back unchanged, with the ingredients not yet used")
+                .clicked()
+            {
+                actions.push(UiAction::Send(ClientMsg::ForgeGiveUp { pos }));
+            }
         } else if forge.queued.is_none() && live.view.output.is_empty() {
             setup_panel(ui, v, pos, live.view.idle.is_some(), state, actions);
         }

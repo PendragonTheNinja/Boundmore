@@ -19,7 +19,7 @@ struct ShopAt {
 }
 
 impl Game {
-    fn shop_kind(&self, block: BlockId) -> Option<ShopKind> {
+    pub(super) fn shop_kind(&self, block: BlockId) -> Option<ShopKind> {
         if block == self.shop_stand {
             Some(ShopKind::Stand)
         } else if block == self.request_basket {
@@ -169,10 +169,18 @@ impl Game {
             ShopAction::SetPrice { slot, price } if mine => self.set_price(&at, slot, price),
             ShopAction::TakeTill if mine => self.take_till(id, &at),
             ShopAction::Charge { amount } if mine && at.kind == ShopKind::Basket => self.charge(id, &at, amount),
-            ShopAction::Buy { slot, count } if !mine && at.kind == ShopKind::Stand => self.buy(id, &at, slot, count),
-            ShopAction::Sell { slot, from, count } if !mine && at.kind == ShopKind::Basket => {
-                self.sell(id, &at, slot, from, count)
-            }
+            ShopAction::Buy {
+                slot,
+                count,
+                price,
+                expect,
+            } if !mine && at.kind == ShopKind::Stand => self.buy(id, &at, slot, count, price, expect),
+            ShopAction::Sell {
+                slot,
+                from,
+                count,
+                price,
+            } if !mine && at.kind == ShopKind::Basket => self.sell(id, &at, slot, from, count, price),
             _ => Err(Refusal::Quiet("that is not for this shop and viewer")),
         };
         if let Err(r) = result {
@@ -226,7 +234,15 @@ impl Game {
         Ok(())
     }
 
-    fn buy(&mut self, id: u32, at: &ShopAt, slot: u8, count: u16) -> Result<(), Refusal> {
+    fn buy(
+        &mut self,
+        id: u32,
+        at: &ShopAt,
+        slot: u8,
+        count: u16,
+        shown: u64,
+        expect: ItemStack,
+    ) -> Result<(), Refusal> {
         let slot = slot as usize;
         let price = self.planets[at.pi].shops.get(at.canon).price(slot);
         if price == 0 {
@@ -236,6 +252,11 @@ impl Game {
         let Some(stack) = slots.get(slot).copied().flatten() else {
             return Err(Refusal::Told("Sold out".into()));
         };
+        // What the buyer saw is what they get: the owner may have changed
+        // the price or the stock since (no bait and switch).
+        if price != shown || !stack.stacks_with(&expect) {
+            return Err(Refusal::Told("The price or the stock changed: look again".into()));
+        }
         let n = count.min(stack.count);
         if n == 0 {
             return Ok(());
@@ -279,10 +300,13 @@ impl Game {
         Ok(())
     }
 
-    fn sell(&mut self, id: u32, at: &ShopAt, slot: u8, from: u8, count: u16) -> Result<(), Refusal> {
+    fn sell(&mut self, id: u32, at: &ShopAt, slot: u8, from: u8, count: u16, shown: u64) -> Result<(), Refusal> {
         let slot = slot as usize;
         let rec = self.planets[at.pi].shops.get(at.canon);
         let price = rec.price(slot);
+        if price != shown {
+            return Err(Refusal::Told("The price changed: look again".into()));
+        }
         let mut slots = self.planets[at.pi].storage.slots(at.canon, at.size);
         let Some(wanted) = slots.get(slot).copied().flatten().filter(|_| price > 0) else {
             return Err(Refusal::Told("That is not wanted here".into()));

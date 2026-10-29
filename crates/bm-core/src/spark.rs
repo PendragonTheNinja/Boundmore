@@ -206,6 +206,8 @@ pub fn burn_seconds(spark: u16) -> f32 {
         150 => 15.0,
         250 => 20.0,
         800 => 30.0,
+        // Unused Spark (what a broken generator gives back) pours in at once.
+        1000 => 1.0,
         // Compacted coal (milestone 18): soft 1,500 in 150 s, medium 4,500
         // in 300, hard 15,000 in 500.
         1500 => 150.0,

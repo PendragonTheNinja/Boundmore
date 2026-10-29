@@ -3556,9 +3556,28 @@ async fn shop_stands_sell_and_request_baskets_buy() {
         (10, 0),
         "the till is the owner's to see"
     );
+    // A buy at a price other than the stand's (the owner changed it after
+    // the buyer looked) is refused: no bait and switch.
+    let shown = v.slots[0].unwrap();
     bob.send(ClientMsg::Shop {
         pos: stand,
-        action: ShopAction::Buy { slot: 0, count: 3 },
+        action: ShopAction::Buy {
+            slot: 0,
+            count: 3,
+            price: 40,
+            expect: shown,
+        },
+    })
+    .await;
+    bob.notice("The price or the stock changed: look again").await;
+    bob.send(ClientMsg::Shop {
+        pos: stand,
+        action: ShopAction::Buy {
+            slot: 0,
+            count: 3,
+            price: 50,
+            expect: shown,
+        },
     })
     .await;
     shop_until(&mut bob, stand, |v| v.slots[0].is_some_and(|s| s.count == 7)).await;
@@ -3615,6 +3634,7 @@ async fn shop_stands_sell_and_request_baskets_buy() {
             slot: 0,
             from,
             count: 16,
+            price: 10,
         },
     })
     .await;
@@ -3789,7 +3809,11 @@ async fn friends_build_on_a_claim_only_with_the_right_given() {
     use bm_core::rights::BUILDER;
     use bm_protocol::FriendAction;
     let dir = tempfile::tempdir().unwrap();
-    seed(dir.path(), "Alice", &[(5, "claim_stone", 1, 0)]);
+    seed(
+        dir.path(),
+        "Alice",
+        &[(5, "claim_stone", 1, 0), (6, "shop_stand", 1, 0), (7, "stone", 5, 0)],
+    );
     seed(dir.path(), "Bob", &[(0, "stone", 10, 0)]);
     let server = bm_server::start(config(dir.path())).unwrap();
     let mut alice = TestClient::login(&server, "Alice").await;
@@ -3856,6 +3880,48 @@ async fn friends_build_on_a_claim_only_with_the_right_given() {
     bob.until(|m| matches!(m, ServerMsg::Claim(c) if c.id == claim && c.rights == vec![("Bob".to_string(), BUILDER)]))
         .await;
     assert!(place(&mut bob, 3, spot, 0, None).await.0, "a builder builds");
+    // A shop stand opens as storage for its owner alone, even to a friend
+    // with every right (milestone 24): stock is bought, never taken.
+    let stall = feet.offset(0, 0, side(feet.z));
+    assert_eq!(PlotPos::of(stall, shape), PlotPos::of(feet, shape));
+    if alice.block_at(stall) != air {
+        assert!(alice.dig(21, stall).await.0);
+    }
+    assert!(place(&mut alice, 22, stall, 6, None).await.0);
+    alice
+        .send(ClientMsg::StorageMove {
+            pos: stall,
+            from: SlotRef::Inventory(7),
+            to: SlotRef::Storage(0),
+            count: 5,
+        })
+        .await;
+    alice
+        .send(ClientMsg::SetRights {
+            claim,
+            friend: "Bob".into(),
+            rights: 15,
+        })
+        .await;
+    bob.until(|m| matches!(m, ServerMsg::Claim(c) if c.id == claim && c.rights == vec![("Bob".to_string(), 15)]))
+        .await;
+    bob.send(ClientMsg::StorageMove {
+        pos: stall,
+        from: SlotRef::Storage(0),
+        to: SlotRef::Inventory(5),
+        count: 5,
+    })
+    .await;
+    bob.notice("Only its owner stocks this").await;
+    bob.settle().await;
+    assert_eq!(bob.inv.slots[5], None, "nothing taken");
+    alice
+        .send(ClientMsg::SetRights {
+            claim,
+            friend: "Bob".into(),
+            rights: BUILDER,
+        })
+        .await;
     // Only the owner removes the claim.
     let (broke, _) = bob.dig(4, feet).await;
     assert!(!broke);
@@ -4005,6 +4071,10 @@ async fn a_guild_is_founded_joined_and_builds_on_its_claims() {
     bob.send(ClientMsg::Guild(A::Leave { guild: gid })).await;
     guilds_until(&mut bob, |g| g.guilds.is_empty()).await;
     assert!(!bob.dig(5, spot).await.0, "no longer a member");
+    // The last member out takes the treasury (it used to vanish).
+    alice.send(ClientMsg::Guild(A::Leave { guild: gid })).await;
+    alice.notice("The guild's 100 coin is yours").await;
+    guilds_until(&mut alice, |g| g.guilds.is_empty()).await;
     server.stop();
 }
 
@@ -7213,6 +7283,47 @@ async fn stability_running_out_destroys_the_gear_and_returns_the_rest() {
     assert!(v.session.is_none() && v.queued.is_none());
     // Nothing in it: the forge breaks.
     assert!(alice.dig(20, forge[3]).await.0);
+    server.stop();
+}
+
+/// A forging session can be given up (audit 2026-10-29: an abandoned
+/// session locked the forge for good): the gear comes back unchanged with
+/// the unused ingredients, and the forge is free again.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn a_forge_session_can_be_given_up() {
+    let dir = tempfile::tempdir().unwrap();
+    seed(
+        dir.path(),
+        "Alice",
+        &[
+            (0, "forge", 4, 0),
+            (1, "iron_hammer", 1, 0),
+            (10, "pure_tincture_1", 10, 0),
+        ],
+    );
+    let server = bm_server::start(config(dir.path())).unwrap();
+    let mut alice = TestClient::login(&server, "Alice").await;
+    let forge = build_forge(&mut alice, 0).await;
+    let key = forge[0];
+    look_at_station(&mut alice, key, |v| v.pos == key).await;
+    let s = forge_begin(&mut alice, key, 1, &[("pure_tincture_1", 5)]).await;
+    let s = forge_use(&mut alice, key, 0, s.rounds).await.expect("one round");
+    assert_eq!(s.rounds, 1);
+    alice.send(ClientMsg::ForgeGiveUp { pos: key }).await;
+    let outcome = match alice.until(|m| matches!(m, ServerMsg::Forged { .. })).await {
+        ServerMsg::Forged { outcome, .. } => outcome,
+        _ => unreachable!(),
+    };
+    let bm_protocol::ForgeOutcome::Unmade { gear, .. } = outcome else {
+        panic!("{outcome:?}")
+    };
+    assert_eq!(gear.forge, Default::default(), "unchanged");
+    alice.settle().await;
+    assert_eq!(alice.count("iron_hammer"), 1, "the gear back");
+    assert_eq!(alice.count("pure_tincture_1"), 9, "all but the one used");
+    let v = look_at_station(&mut alice, key, |v| v.pos == key).await.forge.unwrap();
+    assert!(v.session.is_none());
+    assert!(alice.dig(20, forge[3]).await.0, "a free forge breaks");
     server.stop();
 }
 

@@ -24,8 +24,12 @@ use bm_core::{
 use glam::DVec3;
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
 
+/// The most crafts one craft order may ask for (the craft window's Max
+/// stops here).
+pub const MAX_CRAFT_COUNT: u16 = 100;
+
 /// Bump on any change to a message below. Client and server must match.
-pub const PROTOCOL_VERSION: u32 = 57;
+pub const PROTOCOL_VERSION: u32 = 58;
 
 /// QUIC application protocol name; also refuses non-Boundmore peers early.
 pub const ALPN: &[u8] = b"boundmore/1";
@@ -248,6 +252,11 @@ pub enum ClientMsg {
     /// saw it; a mismatch (a double click) is ignored. Answered with
     /// `Station`, and `Forged` if the session ended.
     ForgeUse { pos: BlockPos, slot: u8, round: u32 },
+    /// Ends the session at the forge at `pos` without sealing it: its forger
+    /// gets the gear back unchanged and the unused ingredients (answered with
+    /// `Forged`, `Unmade`); or, while the forger is away, the claim's owner
+    /// frees the forge and it all waits in the forger's reclaim.
+    ForgeGiveUp { pos: BlockPos },
     /// Creative mode on or off, right after input `at` (a testing aid; the
     /// server allows it only when started with `--creative`). Predicted at
     /// once; answered with `Creative`, which says what holds.
@@ -1096,11 +1105,19 @@ pub enum ShopAction {
     TakeTill,
     /// Owner of a basket: put this much of their coin into its till.
     Charge { amount: u64 },
-    /// Anyone else: buy `count` from a stand's slot.
-    Buy { slot: u8, count: u16 },
+    /// Anyone else: buy `count` from a stand's slot, at the `price` a piece
+    /// and of the item (`expect`, its count ignored) the buyer was shown:
+    /// refused if either changed meanwhile.
+    Buy {
+        slot: u8,
+        count: u16,
+        price: u64,
+        expect: ItemStack,
+    },
     /// Anyone else: sell up to `count` from pack slot `from` into a basket's
-    /// slot.
-    Sell { slot: u8, from: u8, count: u16 },
+    /// slot, at the `price` a piece the seller was shown (refused if it
+    /// changed).
+    Sell { slot: u8, from: u8, count: u16, price: u64 },
 }
 
 /// Which of the two.

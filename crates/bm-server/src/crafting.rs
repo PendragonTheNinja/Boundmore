@@ -48,7 +48,7 @@ pub const OUTPUT_STACKS: usize = 10;
 /// Jobs one station queues at most.
 pub const MAX_JOBS: usize = 8;
 /// Crafts one request may ask for.
-pub const MAX_CRAFT_COUNT: u16 = 100;
+pub use bm_protocol::MAX_CRAFT_COUNT;
 /// Crafts waiting for spark try again this often (ticks).
 pub const RETRY_EVERY: u64 = 30;
 
@@ -954,6 +954,11 @@ impl Stations {
         let Some(def) = items.get(stack.item).filter(|d| d.fuel > 0) else {
             return 0;
         };
+        // Unused Spark is spark, not something that burns: only a generator
+        // takes it.
+        if def.name == "spark" && kind != Station::SparkGenerator {
+            return 0;
+        }
         let fresh = self.fresh(kind);
         let st = self.map.entry(pos).or_insert(fresh);
         let put = match &mut st.fuel {
@@ -2428,6 +2433,27 @@ mod tests {
 
     /// Soft coal gives 100 spark over 10 s (tuning 4.7), one item at a time;
     /// a full store pauses the burn and loses nothing.
+    #[test]
+    fn unused_spark_goes_back_into_a_generator_and_nowhere_else() {
+        let (items, recipes) = setup();
+        let spark_item = ItemStack::new(items.id("spark").unwrap(), 2);
+        let mut s = Stations::new();
+        let f = BlockPos::new(5, 30, 0);
+        assert_eq!(
+            s.add_fuel(f, Station::Furnace, spark_item, 0, &items, &recipes, &Nowhere),
+            0,
+            "a furnace does not burn spark"
+        );
+        let g = BlockPos::new(0, 30, 0);
+        assert_eq!(
+            s.add_fuel(g, Station::SparkGenerator, spark_item, 0, &items, &recipes, &Nowhere),
+            2
+        );
+        s.set_generator_blocks(g, 4);
+        run(&mut s, 1, 300, &items, &recipes, &Nowhere);
+        assert_eq!(s.get(g).unwrap().spark, 2 * spark::SPARK_PER_ITEM, "a second each");
+    }
+
     #[test]
     fn generators_burn_fuel_into_spark_over_its_burn_time() {
         let (items, recipes) = setup();
