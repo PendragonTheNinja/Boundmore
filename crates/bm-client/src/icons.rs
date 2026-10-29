@@ -15,8 +15,9 @@ use crate::textures::{self, NO_TEXTURE, TextureSet};
 use bm_core::{BlockDef, BlockRegistry, ItemDef, ItemKind, NO_TINT};
 use std::path::Path;
 
-/// Icon images are this many pixels square (shown at ~40 px, so a little
-/// over 1.5x supersampled).
+/// Icon images are this many pixels square: the size bm-texgen paints
+/// item icons at, and the size a slot shows them 1:1 at when the screen's
+/// scale allows (`menus::icon_pixels`).
 pub const ICON_SIZE: usize = 64;
 
 #[derive(Clone, Debug, PartialEq)]
@@ -65,22 +66,76 @@ fn load_item_png(path: &Path) -> Option<Vec<u8>> {
         return None;
     }
     match image::open(path) {
-        Ok(img) => {
-            let img = img.to_rgba8();
-            let n = ICON_SIZE as u32;
-            let img = if img.dimensions() == (n, n) {
-                img
-            } else {
-                // Nearest keeps hand-painted pixel art crisp.
-                image::imageops::resize(&img, n, n, image::imageops::FilterType::Nearest)
-            };
-            Some(img.into_raw())
-        }
+        Ok(img) => Some(fit_icon(img.to_rgba8())),
         Err(e) => {
             tracing::warn!("item icon {}: {e}", path.display());
             None
         }
     }
+}
+
+/// Brings a picture of any size to `ICON_SIZE` square. The painted icons
+/// are made at that size and pass through untouched. A smaller picture
+/// that divides it (16 or 32 px pixel art) is enlarged by whole pixels so
+/// it stays crisp; any other size is filtered smoothly, with alpha
+/// premultiplied so edges do not pick up a dark fringe.
+pub fn fit_icon(img: image::RgbaImage) -> Vec<u8> {
+    use image::imageops::{FilterType, resize};
+    let n = ICON_SIZE as u32;
+    let (w, h) = img.dimensions();
+    if (w, h) == (n, n) {
+        return img.into_raw();
+    }
+    if w == h && w < n && n % w == 0 {
+        return resize(&img, n, n, FilterType::Nearest).into_raw();
+    }
+    let mut pre = img;
+    for p in pre.pixels_mut() {
+        let a = p.0[3] as u32;
+        for c in &mut p.0[..3] {
+            *c = ((*c as u32 * a + 127) / 255) as u8;
+        }
+    }
+    // Triangle is a box-like area filter when shrinking and plain linear
+    // when enlarging.
+    let mut out = resize(&pre, n, n, FilterType::Triangle);
+    for p in out.pixels_mut() {
+        let a = p.0[3] as u32;
+        for c in &mut p.0[..3] {
+            if let Some(v) = (*c as u32 * 255 + a / 2).checked_div(a) {
+                *c = v.min(255) as u8;
+            }
+        }
+    }
+    out.into_raw()
+}
+
+/// Halves an `ICON_SIZE` icon (straight RGBA) with a 2 x 2 box filter in
+/// premultiplied alpha: the copy small slots draw, since the menus' textures
+/// have no mipmaps.
+pub fn half_icon(rgba: &[u8]) -> Vec<u8> {
+    let n = ICON_SIZE;
+    let h = n / 2;
+    let mut out = Vec::with_capacity(h * h * 4);
+    for y in 0..h {
+        for x in 0..h {
+            let mut acc = [0u32; 4];
+            for (dx, dy) in [(0, 0), (1, 0), (0, 1), (1, 1)] {
+                let i = ((y * 2 + dy) * n + x * 2 + dx) * 4;
+                let a = rgba[i + 3] as u32;
+                for c in 0..3 {
+                    acc[c] += rgba[i + c] as u32 * a;
+                }
+                acc[3] += a;
+            }
+            for c in 0..3 {
+                let v = (acc[c] + acc[3] / 2).checked_div(acc[3]).unwrap_or(0);
+                out.push(v.min(255) as u8);
+            }
+            out.push(((acc[3] + 2) / 4) as u8);
+        }
+    }
+    out
 }
 
 /// One face as a parallelogram `a + u (b - a) + v (d - a)`, u and v in 0..1,
@@ -318,6 +373,55 @@ mod tests {
         assert!(hi - lo > 25, "light and shade survive: {lo} to {hi}");
         let plain = block_icon(stone, entry, std::slice::from_ref(&layer), NO_TINT, None);
         assert_ne!(a, plain);
+    }
+
+    #[test]
+    fn dropped_in_pictures_of_any_size_fit_cleanly() {
+        let n = ICON_SIZE as u32;
+        // The painted size passes through untouched.
+        let own = image::RgbaImage::from_fn(n, n, |x, y| image::Rgba([x as u8, y as u8, 7, 255]));
+        assert_eq!(fit_icon(own.clone()), own.into_raw());
+        // Pixel art that divides the size is enlarged by whole pixels.
+        let art = image::RgbaImage::from_fn(32, 32, |x, _| {
+            image::Rgba(if x % 2 == 0 { [255, 0, 0, 255] } else { [0, 0, 255, 255] })
+        });
+        let img = fit_icon(art);
+        assert_eq!(px(&img, 0, 0), [255, 0, 0, 255]);
+        assert_eq!(px(&img, 1, 5), [255, 0, 0, 255]);
+        assert_eq!(px(&img, 2, 5), [0, 0, 255, 255]);
+        // A large picture is shrunk smoothly, and a red dot on clear keeps
+        // its red at its soft edge rather than darkening.
+        let big = image::RgbaImage::from_fn(256, 256, |x, y| {
+            let d = (x as f32 - 128.0).hypot(y as f32 - 128.0);
+            image::Rgba(if d < 80.0 { [220, 40, 30, 255] } else { [0, 0, 0, 0] })
+        });
+        let img = fit_icon(big);
+        assert_eq!(img.len(), ICON_SIZE * ICON_SIZE * 4);
+        let c = ICON_SIZE / 2;
+        assert_eq!(px(&img, c, c), [220, 40, 30, 255]);
+        let edge = (0..ICON_SIZE)
+            .map(|x| px(&img, x, c))
+            .find(|p| p[3] > 0 && p[3] < 255)
+            .expect("a soft edge");
+        assert!(edge[0] > 200 && edge[1] < 60, "no dark fringe: {edge:?}");
+        // An odd size is filtered, not dropped.
+        let odd = image::RgbaImage::from_pixel(48, 48, image::Rgba([9, 9, 9, 255]));
+        assert_eq!(px(&fit_icon(odd), c, c), [9, 9, 9, 255]);
+    }
+
+    #[test]
+    fn the_half_size_copy_averages_without_a_fringe() {
+        let n = ICON_SIZE;
+        let mut img = vec![0u8; n * n * 4];
+        // Opaque green in the left half of each 2 x 2 block, clear beside it.
+        for y in 0..n {
+            for x in (0..n).step_by(2) {
+                img[(y * n + x) * 4..][..4].copy_from_slice(&[20, 200, 40, 255]);
+            }
+        }
+        let half = half_icon(&img);
+        assert_eq!(half.len(), n * n);
+        assert_eq!(&half[..4], &[20, 200, 40, 128]);
     }
 
     #[test]

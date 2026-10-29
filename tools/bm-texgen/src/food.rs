@@ -5,10 +5,10 @@
 //! (its colour, broth or chunks) says which.
 
 use crate::gathered::{blob, ramp};
-use crate::icons::{Icon, P, seg_dist};
+use crate::icons::{Icon, P, seg_dist, speck};
 use crate::materials::{plank_ramp, steel_ramp};
 use crate::noise::{hash2, seed, unit};
-use crate::tex::{Tex, c};
+use crate::tex::{Tex, c, grid, smoothstep};
 
 /// Three berries on a stalk with a leaf: dewberries, raw or cooked.
 fn berries(rgb: u32, cooked: bool, name: &str) -> Tex {
@@ -545,7 +545,7 @@ fn sack(cloth: u32, fill: u32, heap: Heap, stripe: Option<u32>, name: &str) -> T
             return None;
         }
         let t = 0.6 - u * 0.2 - v * 0.1;
-        let h = unit(hash2(salt, (x / 2 + y * 16) as u32));
+        let h = unit(hash2(salt, (grid(x) / 2 + grid(y) * 16) as u32));
         Some(match heap {
             Heap::Flakes => content.pick(
                 t + if h > 0.6 {
@@ -558,7 +558,7 @@ fn sack(cloth: u32, fill: u32, heap: Heap, stripe: Option<u32>, name: &str) -> T
                 x,
                 y,
             ),
-            Heap::Grains => content.pick(t + if (x / 2 + y) % 2 == 0 { 0.12 } else { -0.14 }, x, y),
+            Heap::Grains => content.pick(t + if (grid(x) / 2 + grid(y)) % 2 == 0 { 0.12 } else { -0.14 }, x, y),
             Heap::Powder => content.pick(t, x, y),
         })
     });
@@ -603,13 +603,13 @@ fn loaf(line: u32, raw: bool, name: &str) -> Tex {
                 return Some(crumb.pick(0.6, x, y));
             }
         }
-        let cell = (((p.0 * 0.4) as i32) * 11 + (p.1 * 0.4) as i32) as u32;
-        if unit(hash2(salt, cell)) > 0.88 {
+        if speck(salt, p, 2.6, 0.9, 0.22) > 0.0 {
             return Some(fleck.pick(0.5 + lit * 0.3, x, y));
         }
         // Raw dough has a dusting of flour on top, in soft patches.
-        if raw && dy < -4.0 && unit(hash2(salt ^ 3, cell)) > 0.6 {
-            t += 0.25;
+        if raw && dy < -3.0 {
+            let flour = crate::noise::value(salt ^ 3, 8, 8, p.0, p.1);
+            t += smoothstep(0.5, 0.7, flour) * 0.25 * smoothstep(-3.0, -5.0, dy);
         }
         Some(crust.pick(t, x, y))
     });

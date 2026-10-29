@@ -4,6 +4,7 @@
 
 use crate::canvas::Canvas;
 use crate::color::Rgba;
+use crate::icons::{ICON_SIZE, downsample};
 use crate::tex::{SIZE, Tex};
 use crate::{Family, find};
 
@@ -128,12 +129,14 @@ pub fn contact_sheet(families: &[Family], cracks: &[Tex], icons: &[(String, Tex)
             checker: true,
         });
     }
-    // Item icons, each over slot colours and common blocks.
+    // Item icons, each over slot colours and common blocks, filtered down to
+    // the block size so they sit in the same grid.
     for (name, icon) in icons {
+        let icon = downsample(icon, icon.n / SIZE);
         entries.push(Entry {
             label: format!("item {name}"),
-            tex: icon.clone(),
-            tiles: icon_tiles(families, icon),
+            tiles: icon_tiles(families, &icon),
+            tex: icon,
             checker: true,
         });
     }
@@ -171,13 +174,36 @@ pub fn contact_sheet(families: &[Family], cracks: &[Tex], icons: &[(String, Tex)
 }
 
 const ICON_BG: u32 = 0x343746;
-const ICON_CELL_W: usize = SIZE * BIG + GAP + SIZE * 2 + GAP + 16 * 4 + PAD;
-const ICON_CELL_H: usize = LABEL + SIZE * BIG + PAD;
+const ICON_CELL_W: usize = ICON_SIZE * 2 + GAP + ICON_SIZE + GAP + SIZE * 2 + PAD;
+const ICON_CELL_H: usize = LABEL + ICON_SIZE * 2 + PAD;
 const ICON_COLUMNS: usize = 3;
 
-/// Every item icon at 4x on a mid-dark ground, and beside it the icon at its
-/// real size, at 16 x 16, and that 16 x 16 enlarged so its pixels can be
-/// judged, with a row of each icon over common blocks.
+/// Resamples `tex` to `m` x `m` with a linear filter, as a slot shows it.
+fn resample(tex: &Tex, m: usize) -> Tex {
+    let n = tex.n as f32;
+    let at = |x: i32, y: i32| {
+        tex.get(
+            x.clamp(0, tex.n as i32 - 1) as usize,
+            y.clamp(0, tex.n as i32 - 1) as usize,
+        )
+    };
+    let px = (0..m * m)
+        .map(|i| {
+            let fx = ((i % m) as f32 + 0.5) * n / m as f32 - 0.5;
+            let fy = ((i / m) as f32 + 0.5) * n / m as f32 - 0.5;
+            let (x, y) = (fx.floor() as i32, fy.floor() as i32);
+            let (tx, ty) = (fx - x as f32, fy - y as f32);
+            let top = at(x, y).mix(at(x + 1, y), tx);
+            let bottom = at(x, y + 1).mix(at(x + 1, y + 1), tx);
+            top.mix(bottom, ty)
+        })
+        .collect();
+    Tex { px, n: m }
+}
+
+/// Every item icon at 2x on a mid-dark ground; beside it the icon at its
+/// real size and at 48 (a slot at 100% scale), then at 32 over a pale slot
+/// and over three common blocks.
 pub fn icon_sheet(families: &[Family], icons: &[(String, Tex)]) -> Canvas {
     let rows = icons.len().div_ceil(ICON_COLUMNS);
     let mut sheet = Canvas::new(
@@ -190,23 +216,17 @@ pub fn icon_sheet(families: &[Family], icons: &[(String, Tex)]) -> Canvas {
         let y0 = (PAD + (n / ICON_COLUMNS) * ICON_CELL_H) as i64;
         sheet.text(name, x0, y0, 2, Rgba::hex(0xe8e4d8));
         let y = y0 + LABEL as i64;
-        sheet.blit(icon, x0, y, BIG);
-        // Real size, then 16 x 16 at real size.
-        let sx = x0 + (SIZE * BIG + GAP) as i64;
+        sheet.blit(icon, x0, y, 2);
+        // Real size, then as a slot at 100% scale shows it.
+        let sx = x0 + (ICON_SIZE * 2 + GAP) as i64;
         sheet.blit(icon, sx, y, 1);
-        let half = shrink(icon, 16);
-        for ty in 0..16 {
-            for tx in 0..16 {
-                sheet.blend(sx + tx as i64, y + 40 + ty as i64, half.get(tx * 2, ty * 2));
-            }
+        sheet.blit(&resample(icon, 48), sx + 8, y + ICON_SIZE as i64 + 8, 1);
+        // At 32, over the pale slot colour and three common blocks.
+        let small = downsample(icon, icon.n / SIZE);
+        let bx = sx + (ICON_SIZE + GAP) as i64;
+        for (i, t) in icon_tiles(families, &small).iter().skip(2).take(4).enumerate() {
+            sheet.blit(t, bx + (i as i64 % 2) * 32, y + (i as i64 / 2) * 40, 1);
         }
-        // Over three common blocks, at real size.
-        for (i, t) in icon_tiles(families, icon).iter().skip(3).take(3).enumerate() {
-            sheet.blit(t, sx + (i as i64 % 2) * 32, y + 64 + (i as i64 / 2) * 32, 1);
-        }
-        // The 16 x 16 version enlarged 4x.
-        let bx = sx + (SIZE * 2 + GAP) as i64;
-        sheet.blit(&half, bx, y, 2);
     }
     sheet
 }

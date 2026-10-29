@@ -14,7 +14,7 @@ use crate::icons::{Icon, Lump, P, blade, inside_poly, seg_dist};
 use crate::machines::{relic_light_ramp, relic_ramp};
 use crate::materials::stone_ramp;
 use crate::noise::{hash2, seed, unit, value};
-use crate::tex::{Tex, c};
+use crate::tex::{Tex, c, grid};
 
 pub(crate) fn ramp(rgb: u32, dark: f32, light: f32) -> Ramp {
     RampSpec::new(Rgba::hex(rgb), 7, dark, light)
@@ -136,6 +136,18 @@ fn glue() -> Tex {
     icon.finish()
 }
 
+/// A two-by-two basket weave: each thread rounded across its width, lit in
+/// its middle and shaded where it dives under its neighbour. A tone offset
+/// of up to `depth` either way.
+fn weave(p: P, depth: f32) -> f32 {
+    let (i, j) = ((p.0 / 2.0).floor() as i32, (p.1 / 2.0).floor() as i32);
+    let (fx, fy) = (p.0 / 2.0 - i as f32, p.1 / 2.0 - j as f32);
+    let along_x = (i + j).rem_euclid(2) == 0;
+    let across = if along_x { fy } else { fx };
+    let round = (across * std::f32::consts::PI).sin();
+    depth * (round - 0.55) + if along_x { depth * 0.3 } else { -depth * 0.3 }
+}
+
 /// Sackcloth: a folded square of coarse woven cloth, its weave showing,
 /// one corner turned back and the edge frayed.
 fn sackcloth() -> Tex {
@@ -148,9 +160,7 @@ fn sackcloth() -> Tex {
         if !inside_poly(&quad, p.0, p.1) {
             return None;
         }
-        // The weave: a two-by-two basket of light and dark threads.
-        let over = ((x / 2) + (y / 2)) % 2 == 0;
-        let mut t = 0.56 + if over { 0.1 } else { -0.1 } - (p.0 + p.1 - 30.0) / 40.0 * 0.2;
+        let mut t = 0.56 + weave(p, 0.2) - (p.0 + p.1 - 30.0) / 40.0 * 0.2;
         if seg_dist(quad[0], quad[1], p) < 1.0 || seg_dist(quad[3], quad[0], p) < 1.0 {
             t += 0.15;
         }
@@ -159,16 +169,13 @@ fn sackcloth() -> Tex {
     // The turned-back corner, its underside in shade.
     icon.layer(true, |x, y| {
         let p = (c(x), c(y));
-        inside_poly(&fold, p.0, p.1).then(|| {
-            let over = ((x / 2) + (y / 2)) % 2 == 0;
-            cloth.pick(0.3 + if over { 0.06 } else { -0.06 }, x, y)
-        })
+        inside_poly(&fold, p.0, p.1).then(|| cloth.pick(0.3 + weave(p, 0.12), x, y))
     });
     // Frayed threads along the bottom edge.
     icon.layer(false, |x, y| {
         let p = (c(x), c(y));
         let near = seg_dist(quad[2], quad[3], p);
-        (near < 1.6 && !inside_poly(&quad, p.0, p.1) && (x * 7 + y * 3) % 4 == 0).then(|| cloth.at(4))
+        (near < 1.6 && !inside_poly(&quad, p.0, p.1) && (grid(x) * 7 + grid(y) * 3) % 4 == 0).then(|| cloth.at(4))
     });
     icon.finish()
 }
@@ -303,7 +310,7 @@ fn fleshy_leaf() -> Tex {
         if seg_dist(wedge[2], wedge[3], p) < 1.2 {
             t -= 0.2;
         }
-        if unit(hash2(seed("fleshy_leaf"), (x / 2 + y / 2 * 16) as u32)) > 0.86 {
+        if unit(hash2(seed("fleshy_leaf"), (grid(x) / 2 + grid(y) / 2 * 16) as u32)) > 0.86 {
             t += 0.3;
         }
         Some(skin.pick(t, x, y))
@@ -546,7 +553,7 @@ fn lamella(rgb: u32, glow: bool, name: &str) -> Tex {
             let d = dx.hypot(dy);
             let a = (-dy).atan2(dx);
             let on = (-0.1..1.67).contains(&a) && d < 21.0 && d > 4.0;
-            (on && (x * 5 + y * 3) % 11 == 0).then(|| Rgba::hex(0xf0fffc))
+            (on && (grid(x) * 5 + grid(y) * 3) % 11 == 0).then(|| Rgba::hex(0xf0fffc))
         });
     }
     icon.finish()

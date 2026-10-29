@@ -19,7 +19,7 @@ use crate::materials::{bark_ramp, coal_ramp, copper_ramp, stone, stone_ramp};
 use crate::noise::{Rng, hash2, seed, unit, wrap_delta, wrap_i};
 use crate::spark::{compact, dark_iron_ramp, iron_plates};
 use crate::stations::{furnace_side_in, furnace_top_in, iron_ramp, rivet};
-use crate::tex::{Ctx, SIZE, Tex, c};
+use crate::tex::{Ctx, SIZE, Tex, c, grid};
 
 // ---------------------------------------------------------------- the gems
 
@@ -783,10 +783,10 @@ fn leather_in(rgb: u32, lo: f32, hi: f32, name: &str) -> Tex {
             .iter()
             .map(|&(a, b)| seg_dist(sheet[a], sheet[b], p))
             .fold(f32::MAX, f32::min);
-        if (1.4..2.2).contains(&edge) && (x + y) % 3 != 0 {
+        if (1.4..2.2).contains(&edge) && (grid(x) + grid(y)) % 3 != 0 {
             return Some(stitch.pick(0.6, x, y));
         }
-        let grain = unit(hash2(seed(name), ((x / 2) + (y / 2) * 16) as u32));
+        let grain = unit(hash2(seed(name), ((grid(x) / 2) + (grid(y) / 2) * 16) as u32));
         let mut t = 0.56 - (p.0 + p.1 - 30.0) / 40.0 * 0.2 + (grain - 0.5) * 0.08;
         if seg_dist(sheet[0], sheet[1], p) < 1.0 || seg_dist(sheet[3], sheet[0], p) < 1.0 {
             t += 0.14;

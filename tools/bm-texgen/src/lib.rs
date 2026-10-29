@@ -181,13 +181,26 @@ pub fn icon_names() -> Vec<String> {
     names
 }
 
-/// Paints every item icon. An error names any icon the catalogue wants that
-/// no painter knows.
+/// Paints every item icon ([`icons::render`]), spread over the machine's
+/// cores. An error names any icon the catalogue wants that no painter knows.
 pub fn item_icons() -> Result<Vec<(String, Tex)>, String> {
-    icon_names()
+    let names = icon_names();
+    let threads = std::thread::available_parallelism().map_or(4, |n| n.get());
+    let per = names.len().div_ceil(threads).max(1);
+    let painted: Vec<Option<Tex>> = std::thread::scope(|s| {
+        let jobs: Vec<_> = names
+            .chunks(per)
+            .map(|chunk| s.spawn(move || chunk.iter().map(|n| icons::render(n)).collect::<Vec<_>>()))
+            .collect();
+        jobs.into_iter()
+            .flat_map(|j| j.join().expect("an icon painter panicked"))
+            .collect()
+    });
+    names
         .into_iter()
-        .map(|name| {
-            let tex = icons::paint_icon(&name)
+        .zip(painted)
+        .map(|(name, tex)| {
+            let tex = tex
                 .ok_or_else(|| format!("the item catalogue names icon `{name}` but bm-texgen has no painter for it"))?;
             Ok((name, tex))
         })
@@ -244,22 +257,49 @@ mod tests {
     }
 
     #[test]
-    fn icons_are_32_by_32_on_clear_ground_and_deterministic() {
+    fn icons_are_64_by_64_soft_edged_haloed_and_deterministic() {
         let a = item_icons().unwrap();
         let b = item_icons().unwrap();
+        let n = icons::ICON_SIZE;
+        let luma = |p: &color::Rgba| 0.3 * p.r + 0.59 * p.g + 0.11 * p.b;
         for ((name, icon), (_, again)) in a.iter().zip(&b) {
             assert_eq!(icon, again, "icon {name} differs between runs");
-            assert_eq!(to_image(icon).dimensions(), (32, 32), "{name}");
+            assert_eq!(to_image(icon).dimensions(), (n as u32, n as u32), "{name}");
             // The corners are background, and the sprite is a solid shape.
-            for (x, y) in [(0, 0), (31, 0), (0, 31), (31, 31)] {
-                assert_eq!(icon.get(x, y).a, 0.0, "icon {name} corner ({x}, {y}) is not clear");
+            for (x, y) in [(0, 0), (n - 1, 0), (0, n - 1), (n - 1, n - 1)] {
+                assert!(icon.get(x, y).a < 0.1, "icon {name} corner ({x}, {y}) is not clear");
             }
-            assert!(
-                icon.px.iter().all(|p| p.a == 0.0 || p.a == 1.0),
-                "icon {name} has partial alpha"
-            );
-            let filled = icon.px.iter().filter(|p| p.a > 0.0).count();
-            assert!(filled > 150, "icon {name} covers only {filled} pixels");
+            let solid = icon.px.iter().filter(|p| p.a > 0.99).count();
+            assert!(solid > 300, "icon {name} covers only {solid} pixels");
+            // Edges are anti-aliased, and a dark halo round the sprite
+            // lets it read on a pale slot.
+            let soft = icon.px.iter().filter(|p| p.a > 0.05 && p.a < 0.95).count();
+            assert!(soft > 40, "icon {name} has hard edges ({soft} soft pixels)");
+            let halo = icon
+                .px
+                .iter()
+                .filter(|p| p.a > 0.2 && p.a < 0.95 && luma(p) < 0.2)
+                .count();
+            assert!(halo > 40, "icon {name} has no dark halo ({halo} pixels)");
+        }
+    }
+
+    #[test]
+    fn icon_painters_draw_the_same_shape_at_any_resolution() {
+        // Painters work in units, so the supersampled icon filtered down to
+        // 32 covers what the same painter covers at 32.
+        for name in ["iron_hammer", "coal", "sackcloth", "dewberry_loaf", "ruby_grapple"] {
+            let lo = icons::paint_icon(name).unwrap();
+            let hi = tex::at_res(256, || icons::paint_icon(name).unwrap());
+            assert_eq!(hi.n, 256, "{name}");
+            let down = icons::downsample(&hi, 8);
+            let differ = lo
+                .px
+                .iter()
+                .zip(&down.px)
+                .filter(|(a, b)| (a.a - b.a).abs() > 0.6)
+                .count();
+            assert!(differ < 40, "{name}: {differ} pixels differ in coverage");
         }
     }
 

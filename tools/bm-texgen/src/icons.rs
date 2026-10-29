@@ -11,12 +11,12 @@
 
 use std::f32::consts::FRAC_1_SQRT_2;
 
-use crate::color::{Ramp, Rgba};
+use crate::color::{Ramp, Rgba, to_linear, to_srgb};
 use crate::materials::{
     coal_ramp, copper_ramp, end_grain_ramp, flame_ramp, native_iron_ramp, plank_ramp, rust_ramp, steel_ramp, stone_ramp,
 };
 use crate::noise::{Rng, hash2, seed, unit};
-use crate::tex::{SIZE, Tex, c};
+use crate::tex::{Tex, at_res, c, grid, scale};
 
 /// The outline round every icon, and the contact line where one part
 /// overlaps another: a deep purple-black rather than flat black.
@@ -42,6 +42,20 @@ pub(crate) fn leather_ramp() -> Ramp {
 
 // ----------------------------------------------------------------- drawing
 
+/// Pixels across an item icon as written to `assets/textures/items/`. The
+/// painters work in the same 32-unit square as the block textures, so this
+/// is a separate number from the block texture size.
+pub const ICON_SIZE: usize = 64;
+
+/// Samples per icon pixel along each axis: icons are painted at
+/// `ICON_SIZE * SUPERSAMPLE` and box-filtered down, which gives every edge
+/// and every tone boundary a smooth, anti-aliased fall-off.
+pub const SUPERSAMPLE: usize = 4;
+
+/// Width of a contact shadow where one part overlaps another, in units (a
+/// little over one icon pixel).
+const CONTACT: f32 = 0.75;
+
 /// An icon being drawn, layer by layer, back to front.
 pub(crate) struct Icon {
     tex: Tex,
@@ -54,70 +68,239 @@ impl Icon {
         }
     }
 
-    pub(crate) fn opaque(&self, x: i32, y: i32) -> bool {
-        (0..SIZE as i32).contains(&x) && (0..SIZE as i32).contains(&y) && self.tex.get(x as usize, y as usize).a > 0.0
-    }
-
     /// Draws one part. `f` gives the colour of each pixel the part covers.
-    /// Where it lies over earlier parts, they get a dark contact line along
-    /// its edge: strong below and right of it (its shadow), softer above and
-    /// left. `contact: false` joins faces of one solid without a line.
+    /// Where it lies over earlier parts, they get a soft contact shadow
+    /// along its edge: stronger below and right of it (its shadow), softer
+    /// above and left. `contact: false` joins faces of one solid without one.
     pub(crate) fn layer(&mut self, contact: bool, f: impl Fn(usize, usize) -> Option<Rgba>) {
-        let cover: Vec<Option<Rgba>> = (0..SIZE * SIZE).map(|i| f(i % SIZE, i / SIZE)).collect();
-        let covered = |x: i32, y: i32| {
-            (0..SIZE as i32).contains(&x)
-                && (0..SIZE as i32).contains(&y)
-                && cover[y as usize * SIZE + x as usize].is_some()
-        };
+        let n = self.tex.n;
+        let cover: Vec<Option<Rgba>> = (0..n * n).map(|i| f(i % n, i / n)).collect();
         if contact {
-            let before = self.tex.clone();
-            for y in 0..SIZE {
-                for x in 0..SIZE {
-                    let (ix, iy) = (x as i32, y as i32);
-                    if covered(ix, iy) || !self.opaque(ix, iy) {
-                        continue;
-                    }
-                    let k = if covered(ix - 1, iy) || covered(ix, iy - 1) {
-                        0.7
-                    } else if covered(ix + 1, iy) || covered(ix, iy + 1) {
-                        0.45
-                    } else {
-                        continue;
-                    };
-                    self.tex.set(x, y, before.get(x, y).mix(OUTLINE, k));
+            let mask: Vec<bool> = cover.iter().map(Option::is_some).collect();
+            let reach = (CONTACT * scale()).max(1.0);
+            // Distance in pixels to the part, looking up and left (the
+            // part lies there: this pixel is in its shadow) and down and
+            // right.
+            let behind = run_lengths(&mask, n, true);
+            let ahead = run_lengths(&mask, n, false);
+            for i in 0..n * n {
+                if mask[i] || self.tex.px[i].a <= 0.0 {
+                    continue;
                 }
+                let (db, da) = (behind[i] as f32, ahead[i] as f32);
+                let k = if db <= reach {
+                    0.62 * (1.0 - (db - 1.0) / reach).powf(0.8)
+                } else if da <= reach {
+                    0.36 * (1.0 - (da - 1.0) / reach).powf(0.8)
+                } else {
+                    continue;
+                };
+                self.tex.px[i] = self.tex.px[i].mix(OUTLINE, k.clamp(0.0, 1.0));
             }
         }
         for (i, col) in cover.into_iter().enumerate() {
             if let Some(col) = col {
-                self.tex.set(i % SIZE, i / SIZE, col);
+                self.tex.px[i] = col;
             }
         }
     }
 
-    /// Outlines the sprite: every clear pixel beside an opaque one.
+    /// The finished sprite at the resolution it was painted at. The soft
+    /// halo that lets it read on any slot colour is added by [`render`],
+    /// once it has been filtered down.
     pub(crate) fn finish(self) -> Tex {
-        let mut out = self.tex.clone();
-        for y in 0..SIZE {
-            for x in 0..SIZE {
-                let (ix, iy) = (x as i32, y as i32);
-                if self.opaque(ix, iy) {
-                    continue;
-                }
-                if self.opaque(ix - 1, iy)
-                    || self.opaque(ix + 1, iy)
-                    || self.opaque(ix, iy - 1)
-                    || self.opaque(ix, iy + 1)
-                {
-                    out.set(x, y, OUTLINE);
-                }
-            }
-        }
-        out
+        self.tex
     }
 }
 
+/// For each pixel, the distance in pixels to the nearest masked pixel
+/// straight left or straight up (`back`), or straight right or down
+/// (a large number where there is none).
+fn run_lengths(mask: &[bool], n: usize, back: bool) -> Vec<u32> {
+    const NONE: u32 = u32::MAX / 2;
+    let mut h = vec![NONE; n * n];
+    let mut v = vec![NONE; n * n];
+    for y in 0..n {
+        let mut d = NONE;
+        for k in 0..n {
+            let x = if back { k } else { n - 1 - k };
+            let i = y * n + x;
+            d = if mask[i] { 0 } else { d.saturating_add(1) };
+            h[i] = d;
+        }
+    }
+    for x in 0..n {
+        let mut d = NONE;
+        for k in 0..n {
+            let y = if back { k } else { n - 1 - k };
+            let i = y * n + x;
+            d = if mask[i] { 0 } else { d.saturating_add(1) };
+            v[i] = d;
+        }
+    }
+    h.iter().zip(&v).map(|(a, b)| (*a).min(*b)).collect()
+}
+
+/// Paints the icon called `name` as it is written out: supersampled,
+/// filtered down to [`ICON_SIZE`], with a soft dark halo, or `None` if no
+/// painter knows it.
+pub fn render(name: &str) -> Option<Tex> {
+    let hi = at_res(ICON_SIZE * SUPERSAMPLE, || paint_icon(name))?;
+    Some(halo(&volume(&downsample(&hi, hi.n / ICON_SIZE))))
+}
+
+/// The broad light a painter lays over a finished sprite: its silhouette's
+/// edges that face the top left catch a warm light, the ones facing the
+/// bottom right fall into a cool shade, fading a few pixels inwards.
+pub fn volume(tex: &Tex) -> Tex {
+    let n = tex.n;
+    let px = n as f32 / ICON_SIZE as f32;
+    let alpha: Vec<f32> = tex.px.iter().map(|p| p.a).collect();
+    let soft = blur_alpha(&alpha, n, 1.6 * px);
+    let at = |x: i32, y: i32| soft[(y.clamp(0, n as i32 - 1) as usize) * n + x.clamp(0, n as i32 - 1) as usize];
+    let warm = Rgba::hex(0xfff0c8);
+    let cool = Rgba::hex(0x2c2450);
+    let mut out = tex.clone();
+    for y in 0..n {
+        for x in 0..n {
+            let p = tex.get(x, y);
+            if p.a <= 0.0 {
+                continue;
+            }
+            let (ix, iy) = (x as i32, y as i32);
+            // The alpha rises into the sprite: its gradient points inwards.
+            let gx = at(ix + 1, iy) - at(ix - 1, iy);
+            let gy = at(ix, iy + 1) - at(ix, iy - 1);
+            // Inwards towards the bottom right means the edge faces the
+            // top left, into the light.
+            let facing = (gx + gy) * FRAC_1_SQRT_2 * 1.6 / px;
+            let k = facing.clamp(-1.0, 1.0);
+            let c = if k > 0.0 {
+                p.mix(warm, k * 0.22)
+            } else {
+                p.mix(cool, -k * 0.3)
+            };
+            out.set(x, y, c.with_alpha(p.a));
+        }
+    }
+    out
+}
+
+/// Box-filters `tex` down by `k` along each axis, averaging colour in
+/// linear light weighted by alpha, so edges fade without a dark fringe.
+pub fn downsample(tex: &Tex, k: usize) -> Tex {
+    if k <= 1 {
+        return tex.clone();
+    }
+    let n = tex.n / k;
+    let mut px = Vec::with_capacity(n * n);
+    for y in 0..n {
+        for x in 0..n {
+            let mut acc = [0.0f32; 4];
+            for j in 0..k {
+                for i in 0..k {
+                    let p = tex.get(x * k + i, y * k + j);
+                    acc[0] += to_linear(p.r) * p.a;
+                    acc[1] += to_linear(p.g) * p.a;
+                    acc[2] += to_linear(p.b) * p.a;
+                    acc[3] += p.a;
+                }
+            }
+            let a = acc[3].max(1e-6);
+            px.push(Rgba::new(
+                to_srgb(acc[0] / a),
+                to_srgb(acc[1] / a),
+                to_srgb(acc[2] / a),
+                acc[3] / (k * k) as f32,
+            ));
+        }
+    }
+    Tex { px, n }
+}
+
+/// A separable blur of an alpha mask with a small Gaussian.
+fn blur_alpha(a: &[f32], n: usize, sigma: f32) -> Vec<f32> {
+    let r = (sigma * 2.5).ceil() as i32;
+    let w: Vec<f32> = (-r..=r)
+        .map(|i| (-(i * i) as f32 / (2.0 * sigma * sigma)).exp())
+        .collect();
+    let sum: f32 = w.iter().sum();
+    let ni = n as i32;
+    let pass = |src: &[f32], horizontal: bool| -> Vec<f32> {
+        let mut out = vec![0.0; n * n];
+        for y in 0..ni {
+            for x in 0..ni {
+                let mut s = 0.0;
+                for (k, wk) in w.iter().enumerate() {
+                    let o = k as i32 - r;
+                    let (sx, sy) = if horizontal { (x + o, y) } else { (x, y + o) };
+                    if (0..ni).contains(&sx) && (0..ni).contains(&sy) {
+                        s += src[(sy * ni + sx) as usize] * wk;
+                    }
+                }
+                out[(y * ni + x) as usize] = s / sum;
+            }
+        }
+        out
+    };
+    pass(&pass(a, true), false)
+}
+
+/// Puts a soft dark halo under the sprite: a tight rim all round, so it
+/// reads on a pale slot, and a wider shadow falling to the bottom right,
+/// away from the light.
+pub fn halo(tex: &Tex) -> Tex {
+    let n = tex.n;
+    let px = n as f32 / ICON_SIZE as f32;
+    let alpha: Vec<f32> = tex.px.iter().map(|p| p.a).collect();
+    let rim = blur_alpha(&alpha, n, 0.75 * px);
+    let o = px.round().max(1.0) as usize;
+    let shifted: Vec<f32> = (0..n * n)
+        .map(|i| {
+            let (x, y) = (i % n, i / n);
+            if x >= o && y >= o {
+                alpha[(y - o) * n + x - o]
+            } else {
+                0.0
+            }
+        })
+        .collect();
+    let drop = blur_alpha(&shifted, n, 1.4 * px);
+    let out = tex
+        .px
+        .iter()
+        .enumerate()
+        .map(|(i, p)| {
+            let a = ((rim[i] * 2.2).min(1.0) * 0.78).max((drop[i] * 1.5).min(1.0) * 0.55);
+            OUTLINE.with_alpha(a).over(*p)
+        })
+        .collect();
+    Tex { px: out, n }
+}
+
 pub(crate) type P = (f32, f32);
+
+/// Round specks scattered at most one to each `spacing`-unit cell, each
+/// cell holding one with probability `chance`: how far into a speck `p`
+/// lies (0 outside, 1 at its centre).
+pub(crate) fn speck(salt: u32, p: P, spacing: f32, radius: f32, chance: f32) -> f32 {
+    let (i, j) = ((p.0 / spacing).floor() as i32, (p.1 / spacing).floor() as i32);
+    let mut best = 0.0f32;
+    for dj in -1..=1 {
+        for di in -1..=1 {
+            let (ci, cj) = (i + di, j + dj);
+            let h = hash2(salt, (ci.wrapping_mul(73) ^ cj.wrapping_mul(9151)) as u32);
+            if unit(h) > chance {
+                continue;
+            }
+            let sx = (ci as f32 + 0.2 + 0.6 * unit(hash2(h, 1))) * spacing;
+            let sy = (cj as f32 + 0.2 + 0.6 * unit(hash2(h, 2))) * spacing;
+            let r = radius * (0.7 + 0.5 * unit(hash2(h, 3)));
+            best = best.max(1.0 - (p.0 - sx).hypot(p.1 - sy) / r);
+        }
+    }
+    best
+}
 
 pub(crate) fn inside_poly(poly: &[P], x: f32, y: f32) -> bool {
     let mut inside = false;
@@ -292,7 +475,7 @@ fn lashing(icon: &mut Icon, f: Frame, metal: Metal, uc: f32, half_u: f32, half_v
         if (u - uc).abs() > half_u || v.abs() > half_v {
             return None;
         }
-        let turn = ((x + y) / 2) % 2 == 0;
+        let turn = ((grid(x) + grid(y)) / 2) % 2 == 0;
         let t = 0.6 - v / half_v * 0.25 + if turn { 0.15 } else { -0.2 };
         Some(cord.pick(t, x, y))
     });
@@ -910,7 +1093,7 @@ fn torch_icon(tallow: bool) -> Tex {
             }
             let side = -v / 3.0;
             if u < 11.8 {
-                let turn = (x + y) % 2 == 0;
+                let turn = (grid(x) + grid(y)) % 2 == 0;
                 return Some(cord.pick(0.5 + side * 0.25 + if turn { 0.15 } else { -0.15 }, x, y));
             }
             let band = ((u - 11.8) / 1.9).floor() as i32 % 2 == 0;
@@ -938,7 +1121,7 @@ fn torch_icon(tallow: bool) -> Tex {
             return None;
         }
         let heat = 1.0 - lean.hypot(dy - 1.5) / (size + 0.3);
-        let wave = (unit(hash2(salt, (y / 2) as u32)) - 0.5) * 0.08;
+        let wave = (unit(hash2(salt, (grid(y) / 2) as u32)) - 0.5) * 0.08;
         Some(fire.pick(0.12 + hot + heat.max(0.0) * 0.95 + wave, x, y))
     });
     icon.finish()
@@ -1294,7 +1477,7 @@ fn portal_token() -> Tex {
             return Some(copper.pick(t, x, y));
         }
         // Stone face, a little mottled, shaded under the frame's top lip.
-        let mut t = 0.5 + (unit(hash2(salt, (x / 3 + y / 3 * 11) as u32)) - 0.5) * 0.12;
+        let mut t = 0.5 + (unit(hash2(salt, (grid(x) / 3 + grid(y) / 3 * 11) as u32)) - 0.5) * 0.12;
         if near(-3.0, 0.0) || near(0.0, -3.0) {
             t -= 0.18;
         }

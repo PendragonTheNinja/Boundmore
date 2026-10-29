@@ -13,7 +13,7 @@ use crate::icons::{Icon, blade};
 use crate::materials::{crystal_ramp, plank_ramp};
 use crate::noise::{hash2, seed, unit};
 use crate::spark::dark_iron_ramp;
-use crate::tex::{Ctx, SIZEF, Tex, c};
+use crate::tex::{Ctx, SIZEF, Tex, c, grid};
 
 /// The gem torches, by name (`<gem>_torch`).
 pub const GEM_TORCHES: [&str; 6] = [
@@ -75,7 +75,7 @@ fn atlas_icon() -> Tex {
         let v = dy / r;
         let shore = (u * 3.1 + 0.4).sin() * (v * 2.7 - 0.6).cos()
             + (u * 5.3 - v * 4.1).sin() * 0.35
-            + (unit(hash2(salt, (x * 32 + y) as u32)) - 0.5) * 0.15;
+            + (unit(hash2(salt, (grid(x) * 32 + grid(y)) as u32)) - 0.5) * 0.15;
         let glint = (dx + 3.5).hypot(dy + 4.0) < 1.6;
         Some(if glint {
             crate::color::Rgba::hex(0xf4fbff)
@@ -176,7 +176,7 @@ fn gem_torch_icon(gem: Gem) -> Tex {
         }
         let side = -v / 1.5;
         if u > 12.5 {
-            let turn = (x + y) % 2 == 0;
+            let turn = (grid(x) + grid(y)) % 2 == 0;
             return Some(cord.pick(0.5 + side * 0.25 + if turn { 0.15 } else { -0.15 }, x, y));
         }
         let clump = unit(hash2(salt, (u * 0.5).floor() as i32 as u32)) - 0.5;

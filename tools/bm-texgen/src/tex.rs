@@ -284,3 +284,9 @@ pub fn smoothstep(e0: f32, e1: f32, x: f32) -> f32 {
 pub fn c(v: usize) -> f32 {
     (v as f32 + 0.5) / scale()
 }
+
+/// The unit cell a pixel falls in (the pixel itself at 32), for patterns
+/// laid out on the 32-unit grid: checks, turns, clumps.
+pub fn grid(v: usize) -> usize {
+    (v as f32 / scale()) as usize
+}

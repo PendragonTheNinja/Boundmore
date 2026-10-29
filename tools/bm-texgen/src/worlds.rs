@@ -16,7 +16,7 @@ use crate::icons::{Icon, Lump, blade, ingot};
 use crate::materials::{deep_stone_ramp, end_grain_ramp, stone_ramp};
 use crate::noise::{hash2, seed, unit};
 use crate::spark::{compact, machined, refined};
-use crate::tex::{Tex, c};
+use crate::tex::{Tex, c, grid};
 
 // ---------------------------------------------------------------- palettes
 
@@ -219,7 +219,7 @@ fn bonding_agent_in(paste: Ramp, swirl: Ramp, name: &str) -> Tex {
             if (p.0 - 16.0).abs() > 6.5 || !(9.0..11.0).contains(&p.1) {
                 return None;
             }
-            let twist = (x + y) % 2 == 0;
+            let twist = (grid(x) + grid(y)) % 2 == 0;
             Some(copper.pick(if twist { 0.85 } else { 0.5 }, x, y))
         });
     }

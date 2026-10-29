@@ -5,7 +5,7 @@
 //! `docs/art-direction.md`: dark translucent panels, warm gold accents,
 //! rounded corners. Player-facing text uses no em dashes.
 
-use crate::icons::{ICON_SIZE, IconSource};
+use crate::icons::{ICON_SIZE, IconSource, half_icon};
 use crate::items::Items;
 use crate::skill_screen::grouped;
 use bm_core::block::Assembly;
@@ -113,8 +113,17 @@ pub struct LiveStation {
 }
 
 pub enum Icon {
-    Texture(egui::TextureHandle),
-    Initials { text: String, color: Color32 },
+    /// The icon at `ICON_SIZE`, and a half-size copy for small draws (the
+    /// menus' textures have no mipmaps, so shrinking the full one far
+    /// would alias).
+    Texture {
+        full: egui::TextureHandle,
+        half: egui::TextureHandle,
+    },
+    Initials {
+        text: String,
+        color: Color32,
+    },
 }
 
 /// One icon per item id, plus one per (item, colour) for coloured stacks,
@@ -127,11 +136,21 @@ pub struct ItemIcons {
 
 fn icon_from(ctx: &egui::Context, name: String, source: IconSource) -> Icon {
     match source {
-        IconSource::Image(rgba) => Icon::Texture(ctx.load_texture(
-            name,
-            egui::ColorImage::from_rgba_unmultiplied([ICON_SIZE, ICON_SIZE], &rgba),
-            egui::TextureOptions::LINEAR,
-        )),
+        IconSource::Image(rgba) => {
+            let h = ICON_SIZE / 2;
+            Icon::Texture {
+                half: ctx.load_texture(
+                    format!("{name}-half"),
+                    egui::ColorImage::from_rgba_unmultiplied([h, h], &half_icon(&rgba)),
+                    egui::TextureOptions::LINEAR,
+                ),
+                full: ctx.load_texture(
+                    name,
+                    egui::ColorImage::from_rgba_unmultiplied([ICON_SIZE, ICON_SIZE], &rgba),
+                    egui::TextureOptions::LINEAR,
+                ),
+            }
+        }
         IconSource::Initials { text, color } => Icon::Initials {
             text,
             color: Color32::from_rgb(color[0], color[1], color[2]),
@@ -428,7 +447,11 @@ pub fn login(ctx: &egui::Context, form: &mut LoginForm, actions: &mut Vec<UiActi
 fn paint_icon(painter: &egui::Painter, rect: Rect, icon: Option<&Icon>, tint: f32) {
     let alpha = (tint * 255.0) as u8;
     match icon {
-        Some(Icon::Texture(t)) => {
+        Some(Icon::Texture { full, half }) => {
+            // Small draws read the half-size copy: shrinking 64 px far
+            // without mipmaps would drop texels and shimmer.
+            let shown = rect.width() * painter.pixels_per_point();
+            let t = if shown <= ICON_SIZE as f32 * 0.6 { half } else { full };
             painter.image(
                 t.id(),
                 rect,
@@ -459,6 +482,27 @@ fn paint_icon(painter: &egui::Painter, rect: Rect, icon: Option<&Icon>, tint: f3
     }
 }
 
+/// How many screen pixels an icon is drawn across in a slot `slot_px`
+/// screen pixels wide: about nine tenths of it, a whole number of pixels,
+/// and exactly the icon's own size when that is near, so it shows 1:1.
+fn icon_pixels(slot_px: f32) -> f32 {
+    let want = slot_px * 0.89;
+    let n = ICON_SIZE as f32;
+    if (want - n).abs() <= n * 0.15 {
+        n
+    } else {
+        want.round().max(1.0)
+    }
+}
+
+/// The rect an icon is drawn in, centred in `slot` and lined up with the
+/// screen's pixels, so the filter from the icon's 64 pixels lands evenly.
+fn icon_rect(slot: Rect, ppp: f32) -> Rect {
+    let side = icon_pixels(slot.width() * ppp);
+    let min = ((slot.center().to_vec2() * ppp) - vec2(side, side) / 2.0).round();
+    Rect::from_min_size(pos2(min.x, min.y) / ppp, vec2(side, side) / ppp)
+}
+
 /// Draws one stack in a slot-sized rect: icon, count and wear.
 pub(crate) fn paint_stack(
     painter: &egui::Painter,
@@ -468,8 +512,12 @@ pub(crate) fn paint_stack(
     icons: &ItemIcons,
     tint: f32,
 ) {
-    let inset = rect.width() * 0.13;
-    paint_icon(painter, rect.shrink(inset), icons.get(stack), tint);
+    paint_icon(
+        painter,
+        icon_rect(rect, painter.pixels_per_point()),
+        icons.get(stack),
+        tint,
+    );
     if stack.count > 1 {
         let font = FontId::proportional((rect.height() * 0.3).max(11.0));
         let at = rect.right_bottom() - vec2(4.0, 2.0);
@@ -3740,6 +3788,20 @@ fn paint_planet_faded(painter: &egui::Painter, centre: egui::Pos2, radius: f32, 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A slot's icon covers whole screen pixels, starts on one, and is
+    /// shown 1:1 at the scales where 64 pixels is about the right size.
+    #[test]
+    fn slot_icons_land_on_whole_pixels() {
+        for (ppp, want) in [(1.0, 48.0), (1.25, 64.0), (1.5, 64.0), (2.0, 96.0)] {
+            let slot = Rect::from_min_size(pos2(10.3, 20.7), vec2(54.0, 54.0));
+            let r = icon_rect(slot, ppp);
+            let (min, side) = (r.min * ppp, r.width() * ppp);
+            assert!((side - want).abs() < 1e-3, "{ppp}: {side}");
+            assert!((min.x - min.x.round()).abs() < 1e-3 && (min.y - min.y.round()).abs() < 1e-3);
+            assert!((r.center() - slot.center()).length() * ppp <= 0.75, "centred");
+        }
+    }
 
     /// Pickups count what came in, not what moved inside the pack.
     #[test]

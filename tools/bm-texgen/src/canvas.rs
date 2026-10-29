@@ -2,7 +2,7 @@
 //! neighbour blits and a tiny 3 x 5 pixel font for labels.
 
 use crate::color::Rgba;
-use crate::tex::{SIZE, Tex};
+use crate::tex::Tex;
 
 pub struct Canvas {
     pub w: usize,
@@ -54,8 +54,8 @@ impl Canvas {
 
     /// Draws `tex` at `scale` with its top-left at (x, y).
     pub fn blit(&mut self, tex: &Tex, x: i64, y: i64, scale: usize) {
-        for ty in 0..SIZE {
-            for tx in 0..SIZE {
+        for ty in 0..tex.n {
+            for tx in 0..tex.n {
                 let c = tex.get(tx, ty);
                 self.rect(x + (tx * scale) as i64, y + (ty * scale) as i64, scale, scale, c);
             }

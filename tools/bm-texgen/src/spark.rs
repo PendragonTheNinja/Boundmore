@@ -19,7 +19,7 @@ use crate::machines::{
 use crate::materials::{copper_ramp, steel_ramp, stone, stone_ramp};
 use crate::noise::{fbm, hash2, seed, unit, value};
 use crate::stations::{Mask, SOOT, cast_shadow, furnace_side_in, furnace_top_in, iron_ramp, masonry, plate, rivet};
-use crate::tex::{Ctx, SIZE, Tex, c};
+use crate::tex::{Ctx, SIZE, Tex, c, grid};
 
 // ---------------------------------------------------------------- palettes
 
@@ -1048,10 +1048,10 @@ fn cotton_cloth() -> Tex {
         let edge = (0..4)
             .map(|i| seg_dist(quad[i], quad[(i + 1) % 4], p))
             .fold(f32::MAX, f32::min);
-        if (1.3..2.3).contains(&edge) && (x + y) % 3 != 0 {
+        if (1.3..2.3).contains(&edge) && (grid(x) + grid(y)) % 3 != 0 {
             return Some(hem.pick(0.6, x, y));
         }
-        let over = (x + y) % 2 == 0;
+        let over = (grid(x) + grid(y)) % 2 == 0;
         let mut t = 0.62 + if over { 0.05 } else { -0.05 } - (p.0 + p.1 - 30.0) / 40.0 * 0.22;
         if seg_dist(quad[0], quad[1], p) < 1.0 || seg_dist(quad[3], quad[0], p) < 1.0 {
             t += 0.12;
@@ -1060,7 +1060,8 @@ fn cotton_cloth() -> Tex {
     });
     icon.layer(true, |x, y| {
         let p = (c(x), c(y));
-        inside_poly(&fold, p.0, p.1).then(|| cloth.pick(0.32 + if (x + y) % 2 == 0 { 0.04 } else { -0.04 }, x, y))
+        inside_poly(&fold, p.0, p.1)
+            .then(|| cloth.pick(0.32 + if (grid(x) + grid(y)) % 2 == 0 { 0.04 } else { -0.04 }, x, y))
     });
     icon.finish()
 }

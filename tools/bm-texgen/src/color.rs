@@ -78,7 +78,7 @@ impl Rgba {
     }
 }
 
-fn to_linear(c: f32) -> f32 {
+pub(crate) fn to_linear(c: f32) -> f32 {
     if c <= 0.04045 {
         c / 12.92
     } else {
@@ -86,7 +86,7 @@ fn to_linear(c: f32) -> f32 {
     }
 }
 
-fn to_srgb(c: f32) -> f32 {
+pub(crate) fn to_srgb(c: f32) -> f32 {
     let c = c.clamp(0.0, 1.0);
     if c <= 0.003_130_8 {
         c * 12.92

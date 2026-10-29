@@ -14,7 +14,7 @@ use crate::flora::{Blade, P, Profile, Sprite, fan, leaf_ramp, ramp};
 use crate::gathered::blob;
 use crate::icons::{Icon, cord_ramp, seg_dist};
 use crate::noise::{Rng, hash2, seed, unit};
-use crate::tex::{Tex, c};
+use crate::tex::{Tex, c, grid};
 
 const FOOT: P = (16.0, 31.5);
 
@@ -716,7 +716,7 @@ fn sheaf(stalk_rgb: u32, head_rgb: u32, head: Head, name: &str) -> Tex {
         icon.layer(true, |x, y| {
             let p = (c(x), c(y));
             let d = seg_dist(foot, waist, p).min(seg_dist(waist, top, p));
-            (d < 0.85).then(|| st.pick(0.55 - f * 0.06 + unit(hash2(salt, (y / 3) as u32)) * 0.1, x, y))
+            (d < 0.85).then(|| st.pick(0.55 - f * 0.06 + unit(hash2(salt, (grid(y) / 3) as u32)) * 0.1, x, y))
         });
     }
     for (i, &top) in tops.iter().enumerate() {

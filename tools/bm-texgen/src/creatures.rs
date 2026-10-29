@@ -16,7 +16,7 @@ use crate::gathered::{blob, ramp};
 use crate::icons::{Icon, Lump, P, cord_ramp, inside_poly, leather_ramp, seg_dist, vine_ramp};
 use crate::materials::{copper_ramp, end_grain_ramp, plank_ramp, steel_ramp, stone_ramp};
 use crate::noise::{hash2, seed, unit, value};
-use crate::tex::{Tex, c};
+use crate::tex::{Tex, c, grid};
 
 /// How much a point at offset (dx, dy) from a round shape's centre faces
 /// the top-left light, -1..1 at radius `r`.
@@ -321,21 +321,21 @@ fn hide() -> Tex {
             .map(|i| seg_dist(pelt[i], pelt[(i + 1) % pelt.len()], p))
             .fold(f32::MAX, f32::min);
         // A ragged fringe of fur round the edge.
-        let fringe = edge < 1.2 && unit(hash2(salt ^ 0x33, (x + y * 32) as u32)) > 0.5;
+        let fringe = edge < 1.2 && unit(hash2(salt ^ 0x33, (grid(x) + grid(y) * 32) as u32)) > 0.5;
         if !inside_poly(&pelt, p.0, p.1) && !fringe {
             return None;
         }
         // Tufts: short diagonal strokes of lighter and darker fur.
-        let cell = hash2(salt, ((x + y) / 3 + (y / 2) * 16) as u32);
+        let cell = hash2(salt, ((grid(x) + grid(y)) / 3 + (grid(y) / 2) * 16) as u32);
         let mut t = 0.52 - (p.0 + p.1 - 32.0) / 40.0 * 0.22 + (unit(cell) - 0.5) * 0.24;
         // A darker stripe down the back.
         if (p.0 - p.1 * 0.05 - 15.0).abs() < 2.0 {
             t -= 0.16;
         }
-        let stroke = hash2(salt ^ 0x9, ((x + 2 * y) / 4 + (y / 3) * 13) as u32);
-        if (x + 2 * y) % 4 == 0 && unit(stroke) > 0.4 {
+        let stroke = hash2(salt ^ 0x9, ((grid(x) + 2 * grid(y)) / 4 + (grid(y) / 3) * 13) as u32);
+        if (grid(x) + 2 * grid(y)) % 4 == 0 && unit(stroke) > 0.4 {
             t += 0.2;
-        } else if (x + 2 * y) % 4 == 2 && unit(stroke) > 0.55 {
+        } else if (grid(x) + 2 * grid(y)) % 4 == 2 && unit(stroke) > 0.55 {
             t -= 0.16;
         }
         if edge < 1.2 {
@@ -424,7 +424,7 @@ fn vial(liquid: &Ramp, fill: Fill) -> Tex {
             }
             return Some(liquid.pick(t, x, y));
         }
-        if thick && body && !rim && py > meniscus - 3.0 && (x * 3 + y) % 5 < 2 {
+        if thick && body && !rim && py > meniscus - 3.0 && (grid(x) * 3 + grid(y)) % 5 < 2 {
             return Some(liquid.pick(0.35, x, y));
         }
         let t = if rim { 0.35 - dx * 0.02 } else { 0.62 - dx / 7.0 * 0.2 };
@@ -615,7 +615,7 @@ fn quick_gland() -> Tex {
             t -= 0.24;
         }
         // Freckles.
-        if unit(hash2(salt, (x / 2 + (y / 2) * 16) as u32)) > 0.86 {
+        if unit(hash2(salt, (grid(x) / 2 + (grid(y) / 2) * 16) as u32)) > 0.86 {
             t += 0.3;
         }
         // The gloss.
@@ -795,7 +795,7 @@ fn eye(sclera: u32, iris: &Ramp, iris_r: f32, pupil: Pupil, name: &str) -> Tex {
             return Some(if k > 0.86 {
                 Rgba::hex(0x2a0a06)
             } else if k > 0.5 {
-                if unit(hash2(salt ^ 0xe, (x + y * 32) as u32)) > 0.72 {
+                if unit(hash2(salt ^ 0xe, (grid(x) + grid(y) * 32) as u32)) > 0.72 {
                     Rgba::hex(0xffd060)
                 } else {
                     Rgba::hex(0xe8300c)
@@ -1073,7 +1073,8 @@ fn sling(frame: Frame) -> Tex {
     for tip in tips {
         let (a, b) = (xy(tip.0, tip.1), xy(pouch_u + 1.0, 0.0));
         icon.layer(false, |x, y| {
-            (seg_dist(a, b, (c(x), c(y))) < 0.75).then(|| band.pick(if (x + y) % 3 == 0 { 0.7 } else { 0.45 }, x, y))
+            (seg_dist(a, b, (c(x), c(y))) < 0.75)
+                .then(|| band.pick(if (grid(x) + grid(y)) % 3 == 0 { 0.7 } else { 0.45 }, x, y))
         });
     }
     // The grip and handle.
@@ -1134,7 +1135,7 @@ fn sling(frame: Frame) -> Tex {
                 if (u - (crotch - 1.5)).abs() > 1.6 || v.abs() > 2.2 {
                     return None;
                 }
-                let turn = ((x + y) / 2) % 2 == 0;
+                let turn = ((grid(x) + grid(y)) / 2) % 2 == 0;
                 Some(vine.pick(0.55 - v / 2.2 * 0.25 + if turn { 0.15 } else { -0.2 }, x, y))
             });
             for (lu, lv, dir) in [(crotch - 2.5, 2.2, 1.0f32), (crotch - 4.0, -2.0, -1.0)] {
@@ -1166,7 +1167,8 @@ fn sling(frame: Frame) -> Tex {
     // The near band and the pouch with its pebble.
     let (pa, pb) = (xy(tips[1].0, tips[1].1), xy(pouch_u + 1.0, 0.0));
     icon.layer(false, |x, y| {
-        (seg_dist(pa, pb, (c(x), c(y))) < 0.75).then(|| band.pick(if (x + y) % 3 == 0 { 0.75 } else { 0.5 }, x, y))
+        (seg_dist(pa, pb, (c(x), c(y))) < 0.75)
+            .then(|| band.pick(if (grid(x) + grid(y)) % 3 == 0 { 0.75 } else { 0.5 }, x, y))
     });
     icon.layer(true, |x, y| {
         let (u, v) = uv(c(x), c(y));
@@ -1216,7 +1218,7 @@ fn prime_meat() -> Tex {
         let down = down as f32;
         let shade = -(px - cx) / rx * 0.12;
         if tied(px) {
-            return Some(twine.pick(0.45 + shade + if y % 2 == 0 { 0.12 } else { 0.0 }, x, y));
+            return Some(twine.pick(0.45 + shade + if grid(y) % 2 == 0 { 0.12 } else { 0.0 }, x, y));
         }
         if down < 1.5 {
             return Some(fat.pick(0.5 + shade, x, y));
@@ -1543,7 +1545,7 @@ fn bomb_charge() -> Tex {
             Some(if s > 0.88 {
                 Rgba::hex(0xff9a2a)
             } else {
-                fuse.pick(0.5 + if (x + y) % 2 == 0 { 0.3 } else { 0.0 }, x, y)
+                fuse.pick(0.5 + if (grid(x) + grid(y)) % 2 == 0 { 0.3 } else { 0.0 }, x, y)
             })
         },
     );
@@ -1560,7 +1562,7 @@ fn bomb_charge() -> Tex {
             let e = s.min(1.0 - s);
             if e < 0.07 {
                 // The twisted end.
-                t += if (x + y) % 2 == 0 { 0.12 } else { -0.12 };
+                t += if (grid(x) + grid(y)) % 2 == 0 { 0.12 } else { -0.12 };
             }
             // Twine either side of the band.
             if (s - 0.36).abs() < 0.035 || (s - 0.64).abs() < 0.035 {
@@ -1645,7 +1647,7 @@ fn bombs(metal: Frame) -> Tex {
             // A seam round its middle with rivets.
             if (dy - 0.5).abs() < 0.6 {
                 t -= 0.22;
-                if unit(hash2(salt, (x + i * 7) as u32)) > 0.7 {
+                if unit(hash2(salt, (grid(x) + i * 7) as u32)) > 0.7 {
                     t += 0.4;
                 }
             }
@@ -1674,7 +1676,7 @@ fn bombs(metal: Frame) -> Tex {
         }
         // The drawstring along under the lip.
         if (py - (lip + 3.4)).abs() < 0.6 {
-            return Some(cord.pick(0.55 + if x % 2 == 0 { 0.15 } else { 0.0 }, x, y));
+            return Some(cord.pick(0.55 + if grid(x) % 2 == 0 { 0.15 } else { 0.0 }, x, y));
         }
         let mut t = 0.55 - dx / 12.5 * 0.3 - dy.max(0.0) / 8.5 * 0.12;
         // The rolled lip.
@@ -1684,7 +1686,7 @@ fn bombs(metal: Frame) -> Tex {
             t -= 0.18;
         }
         // Stitching down the sides.
-        if (dx.abs() - 8.5).abs() < 0.5 && py > lip + 3.0 && y % 2 == 0 {
+        if (dx.abs() - 8.5).abs() < 0.5 && py > lip + 3.0 && grid(y) % 2 == 0 {
             t += 0.25;
         }
         Some(leather.pick(t, x, y))
