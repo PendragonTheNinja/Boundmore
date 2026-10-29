@@ -90,6 +90,25 @@ impl Items {
         self.inventory.get(slot)
     }
 
+    /// The first hotbar slot holding a tool that breaks blocks, if any.
+    pub fn first_tool_slot(&self) -> Option<usize> {
+        (0..bm_core::HOTBAR_SLOTS).find(|&i| {
+            self.tool_of(self.slot(i).as_ref(), &Held::default())
+                .is_some_and(|t| t.class != Some(bm_core::items::ToolClass::Spanner))
+        })
+    }
+
+    /// The slot the left hand starts on: the first slot, unless it is empty
+    /// and a tool sits elsewhere on the hotbar (a new character's hand stone
+    /// in slot 10), so the first click breaks something.
+    pub fn starting_hand(&self) -> usize {
+        if self.slot(0).is_some() {
+            0
+        } else {
+            self.first_tool_slot().unwrap_or(0)
+        }
+    }
+
     /// The message for dragging slot `from` onto `to` (the whole stack, or
     /// half of it), or None when the server would refuse it anyway: onto
     /// itself, from an empty slot, onto a full stack, or part of a stack onto
@@ -712,6 +731,18 @@ mod tests {
 
     fn stack(i: &Items, name: &str, count: u16) -> Option<ItemStack> {
         Some(ItemStack::new(i.registry.id(name).unwrap(), count))
+    }
+
+    /// A new character's first click breaks something (audit 2026-10-29):
+    /// with slot 1 empty, the left hand starts on the hand stone in slot 10.
+    #[test]
+    fn the_left_hand_starts_on_a_tool() {
+        let mut i = items();
+        assert_eq!(i.starting_hand(), 0, "nothing carried: slot 1");
+        i.inventory.slots[9] = stack(&i, "hand_stone", 1);
+        assert_eq!((i.starting_hand(), i.first_tool_slot()), (9, Some(9)));
+        i.inventory.slots[0] = stack(&i, "stone", 5);
+        assert_eq!(i.starting_hand(), 0, "something in slot 1 stays chosen");
     }
 
     #[test]

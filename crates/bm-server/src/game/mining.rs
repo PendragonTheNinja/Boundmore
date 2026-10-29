@@ -403,6 +403,9 @@ impl Game {
             return true;
         }
         let drop = drop_of(self, pi, state);
+        // A block a player placed gives back its drop alone: no bonus, no
+        // XP, no feats (Boundless's "dug up" rule).
+        let placed = self.planets[pi].placed.contains(canon);
         let Some(p) = self.players.get_mut(&id) else {
             return false;
         };
@@ -424,12 +427,18 @@ impl Game {
         }
         let tier = self.planets[pi].tier;
         let luck = p.effects.luck_multiplier();
-        for (item, n) in bonus_yield(&self.items, state.id, tier, luck, &mut self.rng) {
-            // What does not fit is not given.
-            p.inventory.add(&self.items, item, n);
+        if !placed {
+            for (item, n) in bonus_yield(&self.items, state.id, tier, luck, &mut self.rng) {
+                // What does not fit is not given.
+                p.inventory.add(&self.items, item, n);
+            }
         }
         send_slots(p, &before);
-        let xp = super::skills::break_xp(self.planets[pi].world.registry.get(state.id), tier);
+        let xp = if placed {
+            0
+        } else {
+            super::skills::break_xp(self.planets[pi].world.registry.get(state.id), tier)
+        };
         self.block_gone(pi, canon, state.id, Some(id));
         if state.id == self.meteor_shell_id {
             self.meteor_shell_broken(id, pi, canon);
@@ -438,7 +447,7 @@ impl Game {
         // Feats (milestone 24): what was mined or gathered, and each kind
         // the first time.
         let def = self.planets[pi].world.registry.get(state.id);
-        if let Some(k) = bm_core::feats::mined_key(def) {
+        if let Some(k) = bm_core::feats::mined_key(def).filter(|_| !placed) {
             let first = format!("mined:{}", def.name);
             self.count(id, k, 1);
             let new_kind = self
@@ -458,6 +467,7 @@ impl Game {
     /// becomes air for everyone, a claim stone's claim goes, a storage block
     /// closes, a conduit's portal goes, and props it held fall.
     pub(super) fn block_gone(&mut self, pi: usize, canon: BlockPos, old: BlockId, by: Option<u32>) {
+        self.planets[pi].placed.clear(canon);
         let storage_gone = self.planets[pi].world.registry.get(old).storage > 0;
         let claim_removed = if old == self.claim_stone {
             self.planets[pi].claims.remove_by_stone(canon)

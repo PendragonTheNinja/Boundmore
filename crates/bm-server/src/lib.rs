@@ -17,6 +17,7 @@ pub mod guilds;
 pub mod lapse;
 pub mod machines;
 pub mod net;
+pub mod placed;
 pub mod planet;
 pub mod portals;
 pub mod reclaim;

@@ -70,6 +70,9 @@ const CROPS: TableDefinition<&[u8], &[u8]> = TableDefinition::new("planet_crops"
 /// Written signs by anchor (milestone 22 part 4; `crate::signs::SavedSign`,
 /// versioned within). A new table: older universes have none.
 const SIGNS: TableDefinition<&[u8], &[u8]> = TableDefinition::new("planet_signs");
+/// Planet id and chunk ([`chunk_key`]) -> the chunk-local indices of the
+/// blocks players placed there (`crate::placed`; postcard `Vec<u16>`).
+const PLACED: TableDefinition<&[u8], &[u8]> = TableDefinition::new("planet_placed");
 /// Each account's brews (milestone 23 part 2): account -> [`SavedBrews`].
 /// A new table: older universes have none, and a missing row is no brew.
 const BREWS: TableDefinition<&str, &[u8]> = TableDefinition::new("player_brews");
@@ -1166,6 +1169,12 @@ fn block_key(planet: u16, p: BlockPos) -> [u8; 26] {
     k
 }
 
+fn chunk_from_key(k: &[u8]) -> Option<ChunkPos> {
+    let part = |i: usize| Some(i32::from_be_bytes(k.get(i..i + 4)?.try_into().ok()?));
+    (k.len() == 14).then_some(())?;
+    Some(ChunkPos::new(part(2)?, part(6)?, part(10)?))
+}
+
 fn block_from_key(k: &[u8]) -> Option<BlockPos> {
     let part = |i: usize| Some(i64::from_be_bytes(k.get(i..i + 8)?.try_into().ok()?));
     (k.len() == 26).then_some(())?;
@@ -1179,7 +1188,7 @@ fn forget_planet(tx: &WriteTransaction, id: u16) -> Result<()> {
     tx.open_table(PLANETS)?.remove(id)?;
     tx.open_table(SKIES)?.remove(id)?;
     let (lo, hi) = planet_range(id);
-    for table in [CHUNKS, FAR, STATIONS, STORAGE, CROPS, SIGNS] {
+    for table in [CHUNKS, FAR, STATIONS, STORAGE, CROPS, SIGNS, PLACED] {
         let mut t = tx.open_table(table)?;
         let keys: Vec<Vec<u8>> = t
             .range(lo.as_slice()..hi.as_slice())?
@@ -1310,6 +1319,7 @@ impl Store {
         tx.open_table(SKIES)?;
         tx.open_table(CROPS)?;
         tx.open_table(SIGNS)?;
+        tx.open_table(PLACED)?;
         tx.open_table(EXOS)?;
         tx.open_table(EXO_GONE)?;
         tx.commit()?;
@@ -1782,6 +1792,28 @@ impl Store {
         Ok(out)
     }
 
+    /// The blocks players placed on a planet, by chunk (none before the
+    /// table existed: older builds count as natural). A corrupt row is
+    /// reported and skipped.
+    pub fn placed(&self, planet: u16) -> Result<Vec<(ChunkPos, Vec<u16>)>> {
+        let tx = self.db.begin_read()?;
+        let t = match tx.open_table(PLACED) {
+            Ok(t) => t,
+            Err(redb::TableError::TableDoesNotExist(_)) => return Ok(Vec::new()),
+            Err(e) => return Err(e.into()),
+        };
+        let (lo, hi) = planet_range(planet);
+        let mut out = Vec::new();
+        for row in t.range(lo.as_slice()..hi.as_slice())? {
+            let (k, v) = row?;
+            match (chunk_from_key(k.value()), postcard::from_bytes(v.value())) {
+                (Some(c), Ok(cells)) => out.push((c, cells)),
+                _ => tracing::error!("a saved placed-blocks row is corrupt; skipped"),
+            }
+        }
+        Ok(out)
+    }
+
     /// A planet's growing crops (none before save version 10). A corrupt
     /// record is reported and skipped (its block reads as wild).
     pub fn crops(&self, planet: u16) -> Result<Vec<(BlockPos, SavedCrop)>> {
@@ -2080,6 +2112,15 @@ impl Store {
                     None => stations.remove(key.as_slice())?,
                 };
             }
+            let mut placed = tx.open_table(PLACED)?;
+            for (planet, c, cells) in &batch.placed {
+                let key = chunk_key(*planet, *c);
+                match cells {
+                    Some(cells) => placed.insert(key.as_slice(), postcard::to_stdvec(cells)?.as_slice())?,
+                    None => placed.remove(key.as_slice())?,
+                };
+            }
+            drop(placed);
             let mut crops = tx.open_table(CROPS)?;
             for (planet, p, c) in &batch.crops {
                 let key = block_key(*planet, *p);
@@ -2332,7 +2373,7 @@ impl Store {
             out.insert(row?.0.value());
         }
         let lo = first.to_be_bytes().to_vec();
-        for table in [CHUNKS, FAR, STATIONS, STORAGE, CROPS, SIGNS] {
+        for table in [CHUNKS, FAR, STATIONS, STORAGE, CROPS, SIGNS, PLACED] {
             let t = tx.open_table(table)?;
             let mut from = lo.clone();
             // One probe per id: jump to the next id after each found.
@@ -2715,6 +2756,8 @@ pub struct WriteBatch {
     pub claims: Vec<(u32, Option<SavedClaim>)>,
     /// Crops by planet id; None deletes (harvested away or broken).
     pub crops: Vec<(u16, BlockPos, Option<SavedCrop>)>,
+    /// Blocks players placed, by chunk (`crate::placed`); None: none left.
+    pub placed: Vec<(u16, ChunkPos, Option<Vec<u16>>)>,
     /// Written signs by planet id and anchor; None deletes (unwritten).
     pub signs: Vec<(u16, BlockPos, Option<crate::signs::SavedSign>)>,
     /// Storage block slots by planet id; None deletes (it was emptied).
@@ -2770,6 +2813,7 @@ impl WriteBatch {
             && self.claims.is_empty()
             && self.storage.is_empty()
             && self.crops.is_empty()
+            && self.placed.is_empty()
             && self.signs.is_empty()
             && self.reclaim.is_empty()
             && self.portals.is_empty()
@@ -3215,6 +3259,7 @@ mod tests {
                         epic: false,
                     }),
                 )],
+                placed: vec![(2, ChunkPos::new(-1, 2, 3), Some(vec![5, 900]))],
                 signs: vec![(2, spot, Some(sign.clone()))],
                 reclaim: vec![(
                     "pendragon".into(),
@@ -3358,6 +3403,8 @@ mod tests {
                 }
             )]
         );
+        assert_eq!(s.placed(2).unwrap(), vec![(ChunkPos::new(-1, 2, 3), vec![5, 900])]);
+        assert!(s.placed(3).unwrap().is_empty());
         assert!(s.crops(3).unwrap().is_empty());
         assert!(s.storage(3).unwrap().is_empty());
         assert!(s.stations(1).unwrap().is_empty() && s.stations(3).unwrap().is_empty());

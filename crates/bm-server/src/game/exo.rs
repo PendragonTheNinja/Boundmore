@@ -219,6 +219,7 @@ impl Game {
     /// sky. Nobody may be on the old one.
     fn install_planet(&mut self, i: usize, mut planet: Planet) {
         planet.farm = crate::farm::Farm::load(self.store.crops(planet.id).unwrap_or_default(), &self.crops);
+        planet.placed = crate::placed::Placed::load(self.store.placed(planet.id).unwrap_or_default());
         planet.stations.forge_seconds = self.cfg.forge_queue_seconds;
         if let Some(wear) = self.cfg.machine_wear_start {
             planet.stations.start_wear = wear.min(bm_core::spark::MACHINE_WEAR);

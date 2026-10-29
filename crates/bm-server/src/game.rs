@@ -722,6 +722,7 @@ impl Game {
         let tilled_soil = registry.id("tilled_soil")?;
         for p in &mut planets {
             p.farm = crate::farm::Farm::load(store.crops(p.id)?, &crops);
+            p.placed = crate::placed::Placed::load(store.placed(p.id)?);
             p.signs = crate::signs::Signs::load(store.signs(p.id)?);
         }
         let (saved_portals, next_portal) = store.portals()?;
@@ -2317,6 +2318,7 @@ impl Game {
         match accepted.effect {
             Effect::Placed { slot } => {
                 p.inventory.take_one(slot);
+                planet.placed.mark(canon);
                 if new.id == self.claim_stone {
                     match planet
                         .claims
@@ -3587,6 +3589,7 @@ impl Game {
         let mut claims = Vec::new();
         let mut storage = Vec::new();
         let mut crops = Vec::new();
+        let mut placed = Vec::new();
         let mut signs = Vec::new();
         let mut shops = Vec::new();
         for p in &mut self.planets {
@@ -3606,6 +3609,7 @@ impl Game {
             );
             claims.extend(p.claims.take_dirty());
             crops.extend(p.farm.take_dirty(&self.crops).into_iter().map(|(pos, c)| (id, pos, c)));
+            placed.extend(p.placed.take_dirty().into_iter().map(|(c, cells)| (id, c, cells)));
             signs.extend(p.signs.take_dirty().into_iter().map(|(pos, s)| (id, pos, s)));
             shops.extend(p.shops.take_dirty().into_iter().map(|(pos, s)| (id, pos, s)));
             storage.extend(
@@ -3656,6 +3660,7 @@ impl Game {
             claims,
             storage,
             crops,
+            placed,
             signs,
             reclaim: self.reclaims.take_dirty(&self.items),
             portals,

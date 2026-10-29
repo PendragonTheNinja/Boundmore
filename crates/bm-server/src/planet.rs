@@ -60,6 +60,9 @@ pub struct Planet {
     pub shops: crate::shops::Shops,
     /// Growing crops (milestone 16 part 2); filled by `Game::new`.
     pub farm: crate::farm::Farm,
+    /// Blocks players placed (Boundless's "dug up" mark): they give no XP
+    /// or bonus yield when broken.
+    pub placed: crate::placed::Placed,
     /// Written signs (milestone 22 part 4); filled by `Game::new`.
     pub signs: crate::signs::Signs,
     pub claims: Claims,
@@ -397,6 +400,7 @@ pub fn open(
         storage,
         shops,
         farm: Default::default(),
+        placed: Default::default(),
         signs: Default::default(),
         claims,
         shrine,

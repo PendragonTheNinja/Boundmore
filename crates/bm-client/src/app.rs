@@ -324,6 +324,7 @@ impl Session {
         let hurt = w.spawn.hurt;
         let mut losses = Losses::default();
         losses.reset(hurt);
+        let hand = items.starting_hand();
         Ok(Self {
             creatures: Creatures::new(w.creatures),
             seen: Vec::new(),
@@ -361,8 +362,8 @@ impl Session {
             icons,
             plot_allowance: w.plot_allowance,
             plots_bought_then: bought,
-            selected: 0,
-            selected_off: 1,
+            selected: hand,
+            selected_off: if hand == 1 { 2 } else { 1 },
             edit_seq: 0,
             place_cooldown: 0.0,
             place_percent: 0,
@@ -2531,7 +2532,20 @@ impl App {
             s.told_no_tool = false;
         } else if !has_tool && s.target.is_some() && !s.told_no_tool {
             s.told_no_tool = true;
-            self.notices.push(NEED_A_TOOL.into(), now_s);
+            // Name the key when a tool is carried (a new player's hand stone
+            // sits in slot 10, and they may have moved off it).
+            let text = match s.items.first_tool_slot() {
+                Some(i) => format!(
+                    "That needs a tool in hand: press {} for your {}",
+                    (i + 1) % 10,
+                    s.items
+                        .slot(i)
+                        .and_then(|t| s.items.def(&t))
+                        .map_or("tool".to_string(), |d| d.display.to_lowercase())
+                ),
+                None => NEED_A_TOOL.into(),
+            };
+            self.notices.push(text, now_s);
         }
         if mouse[0]
             && let Some(hit) = s.target

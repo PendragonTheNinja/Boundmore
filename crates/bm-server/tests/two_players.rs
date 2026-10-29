@@ -3457,22 +3457,18 @@ async fn feats_count_pay_coin_and_are_kept() {
         let s = alice.feet().offset(1, 1, 0);
         alice.wait_for_chunk(s.chunk()).await;
         assert!(place(&mut alice, 1, s, 1, None).await.0);
-        for seq in 2..5 {
-            alice.ready();
-            alice.swing(seq, s, 0).await;
-        }
+        // Broken again: a placed block counts for no mining feat and gives
+        // no XP (Boundless's "dug up" rule).
+        assert!(alice.dig_with(2, s, 0).await.0);
+        alice.settle().await;
+        assert_eq!(alice.character.xp, xp_for_level(9) - 1);
+        // The natural ground under it: its XP takes her to level 9.
+        assert!(alice.dig_with(10, s.offset(0, -1, 0), 0).await.0);
+        let l = ledger_until(&mut alice, |l| l.coin == bm_core::feats::STARTING_COIN + 100).await;
         alice.notice("Feat: Seasoned I, 100 coin").await;
-        let l = loop {
-            let m = alice.until(|m| matches!(m, ServerMsg::Ledger(_))).await;
-            if let ServerMsg::Ledger(l) = m
-                && l.count("mine:rock") == 1
-            {
-                break l;
-            }
-        };
         assert_eq!(l.count("placed"), 1);
         assert_eq!(l.count("placed:rock"), 1);
-        assert_eq!(l.count("mined_kinds"), 1);
+        assert_eq!(l.count("mine:rock"), 0, "the placed stone did not count");
         assert_eq!(l.coin, bm_core::feats::STARTING_COIN + 100);
         assert_eq!(l.paid.get("level"), Some(&1));
         drop(alice);
@@ -3506,6 +3502,9 @@ async fn shop_until(
 
 /// Waits for a `Ledger` that `pred` accepts.
 async fn ledger_until(c: &mut TestClient, pred: impl Fn(&bm_core::feats::Ledger) -> bool) -> bm_core::feats::Ledger {
+    if let Some(l) = c.ledger.as_ref().filter(|l| pred(l)) {
+        return l.clone();
+    }
     match c.until(|m| matches!(m, ServerMsg::Ledger(l) if pred(l))).await {
         ServerMsg::Ledger(l) => l,
         _ => unreachable!(),
@@ -4562,18 +4561,29 @@ async fn xp_comes_from_breaking_building_and_crafting_and_levels_up() {
     assert!(place(&mut alice, 1, out, 1, None).await.0);
     alice.settle().await;
     assert_eq!(alice.character.xp, 480, "no build XP outside a claim");
-    // Broken: its mine XP.
+    // Broken again: a block a player placed gives no XP (Boundless's "dug
+    // up" rule: placing and breaking one block over and over earns
+    // nothing), though it comes back.
     assert!(alice.dig(2, out).await.0);
-    alice.until_xp(482).await;
+    alice.settle().await;
+    assert_eq!(alice.character.xp, 480, "a placed block gives no XP when broken");
+    assert_eq!(alice.count("stone"), 10, "but it comes back");
+    // The natural ground under it: its mine XP.
+    let under = out.offset(0, -1, 0);
+    let natural = alice.mine_xp(alice.block_at(under));
+    assert!(natural > 0);
+    assert!(alice.dig(3, under).await.0);
+    let base = 480 + natural;
+    alice.until_xp(base).await;
     // A hand craft gives its recipe's XP at once (timber's is 0).
     let timber = alice.recipe("timber");
     craft_at(&mut alice, timber, 1, None).await;
     alice.settle().await;
-    assert_eq!((alice.count("timber"), alice.character.xp), (2, 482));
+    assert_eq!((alice.count("timber"), alice.character.xp), (2, base));
 
     // Her claim: the ground she digs and the stone she claims with.
     let ground = alice.chunks[&feet.chunk()].get(feet.local());
-    let claimed = 482 + alice.mine_xp(ground) + alice.build_xp("claim_stone");
+    let claimed = base + alice.mine_xp(ground) + alice.build_xp("claim_stone");
     claim_around(&mut alice, 10, 5).await;
     alice.until_xp(claimed).await;
     assert_eq!(alice.character.level(), 1);
