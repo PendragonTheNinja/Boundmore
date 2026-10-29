@@ -227,11 +227,24 @@ impl TestClient {
     /// changes, slots and notices are applied as they pass).
     async fn until(&mut self, mut pred: impl FnMut(&ServerMsg) -> bool) -> ServerMsg {
         let deadline = tokio::time::Instant::now() + Duration::from_secs(20);
+        // The last messages seen, to say on a timeout what came instead.
+        let mut seen: std::collections::VecDeque<String> = Default::default();
         loop {
-            let m = tokio::time::timeout_at(deadline, self.msgs.recv())
-                .await
-                .expect("timed out waiting for a message")
-                .expect("stream closed");
+            let Ok(m) = tokio::time::timeout_at(deadline, self.msgs.recv()).await else {
+                panic!(
+                    "timed out waiting for a message; chat heard: {:?}; last seen: {seen:#?}",
+                    self.chat.iter().map(|l| l.text.as_str()).collect::<Vec<_>>()
+                );
+            };
+            let m = m.expect("stream closed");
+            if !matches!(m, ServerMsg::Chunk { .. }) {
+                let mut d = format!("{m:?}");
+                d.truncate(160);
+                seen.push_back(d);
+                if seen.len() > 8 {
+                    seen.pop_front();
+                }
+            }
             self.apply(&m);
             if pred(&m) {
                 return m;
