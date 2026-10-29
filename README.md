@@ -32,7 +32,7 @@ Controls:
 - **G** opens your guilds (coin, members, your primary guild, giving the claim you stand in to a guild); **E** on a guild control founds a guild, asks to join one, or runs it. `/g text` talks to your primary guild. **E** on a helix machine (on a claim given to a guild) starts a guild buff for a week.
 - **O** opens your friends: ask someone by name (or type `/friend name` in chat), accept requests, and, standing in your own claim, tick what each friend may do there (Builder, Worker, Engineer, Farmhand).
 - **C** opens crafting: things you make by hand, or, looking at a workbench or furnace, what it makes. Stations keep working while you are away; collect from them later.
-- **P** toggles claim mode: left click a plot beside your claim to add it, right click to give it up. Place a claim stone to start a claim. A claim stays yours as long as you visit at least once every 6 months.
+- **P** toggles claim mode: left click a plot beside your claim to add it (hold and sweep to add several), right click to give it up. Place a claim stone to start a claim. A claim stays yours as long as you visit at least once every 6 months.
 - **E** at a warp shrine (the glowing violet block at each planet's spawn) opens the travel menu: pick a planet to go there.
 - **E** on a storage chest (workbench, 8 timber) opens it beside your inventory: drag between them, or Shift-click to send a whole stack across.
 - Blocks have colours: what you break keeps its colour in your pack (stacks of different colours stay apart) and is placed in it. New planets colour their ground, rock and trees from a palette of 255 colours, in large patches worth exploring for.

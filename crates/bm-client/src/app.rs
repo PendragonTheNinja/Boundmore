@@ -313,6 +313,8 @@ struct Session {
     losses: Losses,
     /// When we last lost health (seconds), for the red flash.
     hurt_at: f64,
+    /// A claim-mode drag: the claim it grows and the plots asked for so far.
+    claim_drag: Option<(u32, HashSet<PlotPos>)>,
     /// What just came into the pack, shown by the hotbar.
     pickups: crate::menus::Pickups,
     /// Where the last hurt likely came from (the nearest creature) and when.
@@ -369,6 +371,7 @@ impl Session {
             floaters: Floaters::default(),
             losses,
             hurt_at: f64::NEG_INFINITY,
+            claim_drag: None,
             pickups: Default::default(),
             hurt_from: None,
             hit_marker_at: f64::NEG_INFINITY,
@@ -2088,6 +2091,10 @@ impl App {
                     if s.claims.plots_owned_by(&s.account) as u32 >= s.allowance() {
                         Err(format!("You hold all {} plots you may claim.", s.allowance()))
                     } else {
+                        // Holding the button on drags on from here.
+                        if let Some(s) = self.session.as_mut() {
+                            s.claim_drag = Some((claim, HashSet::from([plot])));
+                        }
                         Ok(ClientMsg::ClaimPlot { claim, plot })
                     }
                 }
@@ -2377,6 +2384,32 @@ impl App {
             };
             PlotPos::of(at, world.shape)
         });
+        // Dragging in claim mode (the left button held): each new plot the
+        // aim crosses joins the claim if it touches it, or a plot already
+        // asked for in this drag (audit 2026-10-29: one click a plot made
+        // a large claim slow). The server rules each one.
+        if claim_mode && self.mouse[0] {
+            if let Some(plot) = s.claim_target
+                && s.claim_drag.as_ref().is_some_and(|d| !d.1.contains(&plot))
+                && s.claims.at(plot).is_none()
+            {
+                let shape = s.world.shape;
+                let limit = s.allowance() as usize;
+                let owned = s.claims.plots_owned_by(&s.account);
+                let (claim, asked) = s.claim_drag.as_mut().expect("checked");
+                let touches = plot
+                    .neighbours(shape)
+                    .iter()
+                    .any(|n| asked.contains(n) || s.claims.at(*n).is_some_and(|c| c.id == *claim));
+                let room = owned + asked.len() < limit;
+                if touches && room {
+                    asked.insert(plot);
+                    link.send(ClientMsg::ClaimPlot { claim: *claim, plot });
+                }
+            }
+        } else {
+            s.claim_drag = None;
+        }
 
         let slot = slots[hand];
         let held = s.items.slot(slot).filter(|_| worn[hand]);
