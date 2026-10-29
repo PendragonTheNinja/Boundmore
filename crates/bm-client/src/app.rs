@@ -118,6 +118,13 @@ const HURT_FROM_RANGE: f64 = 24.0;
 
 /// Frames a second while the window is minimised or covered.
 const HIDDEN_FRAME_CAP: u32 = 10;
+/// Which hand's item went off by itself (Twitchy): the one that has the
+/// quirk, the left if both do or neither does.
+fn twitchy_hand(left: Option<&ItemStack>, right: Option<&ItemStack>) -> usize {
+    let twitchy = |s: Option<&ItemStack>| bm_core::forge::Quirks::of(s).has(bm_core::forge::Quirks::TWITCHY);
+    if !twitchy(left) && twitchy(right) { 1 } else { 0 }
+}
+
 /// The view widens this many degrees while sprinting, over this long.
 const SPRINT_FOV: f32 = 5.0;
 const SPRINT_FOV_SECONDS: f32 = 0.25;
@@ -252,6 +259,9 @@ struct Session {
     items: Items,
     icons: ItemIcons,
     claims: Claims,
+    /// A Twitchy item in the hand not acting went off: it acts next frame
+    /// with its own hand.
+    twitch_next: Option<usize>,
     plot_allowance: u32,
     /// Plots bought with marks when the allowance above was said: plots
     /// bought since add to it (milestone 12).
@@ -398,6 +408,7 @@ impl Session {
             far: crate::far::FarWorld::new(shape, registry.flags()).with_colours(&w.colours),
             progress: Progress::new(tree, w.character),
             claims: Claims::new(shape, w.claims),
+            twitch_next: None,
             signs: crate::signs::Signs::default(),
             world: ClientWorld::new(shape, registry, &w.colours),
             me: Predictor::new(w.spawn),
@@ -2296,7 +2307,12 @@ impl App {
             std::mem::take(&mut self.attack_pending) && playing && !claim_mode,
             std::mem::take(&mut self.attack_pending_off) && playing && !claim_mode,
         ];
-        let hand = if pressed_hands[1] && !pressed_hands[0] {
+        // A twitch of the other hand's item last frame acts now, with that
+        // hand (audit B3).
+        let twitch_now = self.session.as_mut().and_then(|s| s.twitch_next.take());
+        let hand = if let Some(h) = twitch_now {
+            h
+        } else if pressed_hands[1] && !pressed_hands[0] {
             1
         } else if pressed_hands[0] {
             0
@@ -2601,9 +2617,18 @@ impl App {
         let mut mouse = if chisel.is_some() { [false; 2] } else { mouse };
         // Twitchy (milestone 17): an item in hand that went off by itself is
         // used once, as a click would. A grapple went off inside the step.
-        if std::mem::take(&mut s.me.twitched) && playing && !claim_mode && !s.travelling() {
-            mouse[0] = true;
-            pressed = true;
+        let twitched = std::mem::take(&mut s.me.twitched);
+        if (twitched || twitch_now.is_some()) && playing && !claim_mode && !s.travelling() {
+            // The hand whose item twitched; if the other hand is acting, it
+            // goes off next frame with its own hand.
+            let in_hand = [0, 1].map(|h| s.items.slot(slots[h]).filter(|_| worn[h]));
+            let th = twitch_now.unwrap_or_else(|| twitchy_hand(in_hand[0].as_ref(), in_hand[1].as_ref()));
+            if th == hand {
+                mouse[0] = true;
+                pressed = true;
+            } else {
+                s.twitch_next = Some(th);
+            }
         }
         // Fighting (milestone 13). A creature nearer than the terrain is
         // what we aim at. A sling shoots (never breaking blocks); a tool or
@@ -4963,6 +4988,19 @@ mod tests {
         demo.send(msg);
         deliver(&mut s, demo.poll());
         assert_eq!(s.damage.damage(pos), predicted, "the answer agrees");
+    }
+
+    #[test]
+    fn a_twitch_uses_the_hand_holding_the_twitchy_item() {
+        let plain = ItemStack::new(bm_core::ItemId(5), 1);
+        let twitchy = ItemStack {
+            forge: bm_core::forge::Forged::from_suffix("twitchy1"),
+            ..plain
+        };
+        assert_eq!(twitchy_hand(Some(&plain), Some(&twitchy)), 1);
+        assert_eq!(twitchy_hand(Some(&twitchy), Some(&plain)), 0);
+        assert_eq!(twitchy_hand(Some(&twitchy), Some(&twitchy)), 0);
+        assert_eq!(twitchy_hand(None, None), 0);
     }
 
     #[test]
