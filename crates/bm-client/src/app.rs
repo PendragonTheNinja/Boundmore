@@ -92,6 +92,26 @@ impl CropView {
     }
 }
 
+/// Tries at reconnecting after a lost connection before giving up.
+const RECONNECT_TRIES: u32 = 10;
+
+/// Seconds before try `n` (from 0): 2, 3, 5, 8, 13, 20, then 30.
+fn reconnect_delay(n: u32) -> f64 {
+    [2.0, 3.0, 5.0, 8.0, 13.0, 20.0]
+        .get(n as usize)
+        .copied()
+        .unwrap_or(30.0)
+}
+
+/// Whether a lost connection is worth trying again: not when the server
+/// said no for good (another login, a wrong password, another version).
+fn worth_retrying(reason: &str) -> bool {
+    let r = reason.to_lowercase();
+    !["somewhere else", "password", "protocol", "name", "failed logins"]
+        .iter()
+        .any(|w| r.contains(w))
+}
+
 /// Frames a second while the window is minimised or covered.
 const HIDDEN_FRAME_CAP: u32 = 10;
 
@@ -1054,6 +1074,12 @@ pub struct App {
     settings: Settings,
     /// F1: the HUD hidden (screenshots).
     hide_hud: bool,
+    /// After a lost connection: when to try again (seconds of `now`), the
+    /// tries so far, and why it was lost.
+    reconnect: Option<(f64, u32, String)>,
+    /// The password of the session we are in, in memory only (never
+    /// saved), to log back in after a lost connection.
+    relogin: Option<String>,
     /// When the last frame was started (the frame cap).
     frame_at: Instant,
     /// The window is minimised or covered: frames are capped low.
@@ -1153,6 +1179,8 @@ impl App {
             session: None,
             settings,
             hide_hud: false,
+            reconnect: None,
+            relogin: None,
             frame_at: Instant::now(),
             hidden: false,
             login,
@@ -1277,6 +1305,8 @@ impl App {
     }
 
     fn cancel_login(&mut self) {
+        self.reconnect = None;
+        self.relogin = None;
         self.link = None;
         self.login.busy = false;
         self.status = "logging in".into();
@@ -1614,6 +1644,14 @@ impl App {
                 NetEvent::Disconnected(reason) => {
                     tracing::warn!("disconnected: {reason}");
                     let was_playing = self.session.is_some();
+                    // Lost while playing (a server restart, a network blip):
+                    // try again by itself, a little later each time.
+                    let tries = self.reconnect.as_ref().map_or(0, |r| r.1);
+                    let again = (was_playing || self.reconnect.is_some())
+                        && worth_retrying(&reason)
+                        && self.relogin.as_ref().is_some_and(|p| !p.is_empty())
+                        && tries < RECONNECT_TRIES;
+                    self.reconnect = again.then(|| (self.now() + reconnect_delay(tries), tries, reason.clone()));
                     self.close_menu(false);
                     self.chat.close();
                     self.claim_mode = false;
@@ -1622,7 +1660,7 @@ impl App {
                     if let Some(r) = &mut self.renderer {
                         r.clear_chunks();
                     }
-                    self.login.busy = false;
+                    self.login.busy = self.reconnect.is_some();
                     self.login.error = Some(if was_playing {
                         format!("Disconnected: {reason}")
                     } else {
@@ -1637,6 +1675,7 @@ impl App {
     }
 
     fn welcome(&mut self, w: bm_protocol::Welcome) {
+        self.reconnect = None;
         let registry = match BlockRegistry::from_defs(w.blocks.clone()) {
             Ok(r) => r,
             Err(e) => return self.refuse_catalogue(format!("the server sent a bad block catalogue: {e}")),
@@ -1667,10 +1706,11 @@ impl App {
         self.chat.me = w.account.clone();
         self.storage_closing.clear();
         self.status = format!("on {}", w.planet.name);
-        // Remember who and where, never the password; and forget it here too.
+        // Remember who and where, never the password on disk; it is kept in
+        // memory only, to log back in by itself after a lost connection.
         self.login.busy = false;
         self.login.error = None;
-        self.login.password.clear();
+        self.relogin = Some(std::mem::take(&mut self.login.password));
         if self.opts.demo.is_none() {
             self.settings.name = w.account.clone();
             self.settings.server = self.login.server.trim().to_string();
@@ -2063,7 +2103,32 @@ impl App {
         }
     }
 
+    /// A lost connection waiting to be tried again: say when, and try.
+    fn tick_reconnect(&mut self) {
+        let now = self.now();
+        let Some((at, tries, reason)) = self.reconnect.clone() else {
+            return;
+        };
+        if self.link.is_some() {
+            return;
+        }
+        if now < at {
+            self.login.busy = true;
+            self.login.error = Some(format!(
+                "Connection lost ({reason}). Trying again in {} s.",
+                (at - now).ceil() as u32
+            ));
+            return;
+        }
+        self.reconnect = Some((at, tries + 1, reason));
+        if let Some(p) = &self.relogin {
+            self.login.password = p.clone();
+        }
+        self.start_login(false);
+    }
+
     fn update(&mut self) {
+        self.tick_reconnect();
         let now = Instant::now();
         let dt = (now - self.last_frame).as_secs_f64().min(0.25);
         self.last_frame = now;
@@ -4296,6 +4361,20 @@ impl ApplicationHandler for App {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn lost_connections_are_tried_again_unless_refused_for_good() {
+        assert!(super::worth_retrying("the server is shutting down"));
+        assert!(super::worth_retrying("connection lost: timed out"));
+        assert!(super::worth_retrying("this server is full"));
+        assert!(!super::worth_retrying("you logged in from somewhere else"));
+        assert!(!super::worth_retrying("Wrong name or password"));
+        assert!(!super::worth_retrying(
+            "this server speaks protocol 58, your game speaks 57; update"
+        ));
+        assert_eq!(super::reconnect_delay(0), 2.0);
+        assert_eq!(super::reconnect_delay(50), 30.0);
+    }
+
     #[test]
     fn crop_lines_count_down_and_say_what_helps() {
         let v = CropView {
