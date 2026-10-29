@@ -774,7 +774,7 @@ impl Game {
             pos: spot.unwrap_or(arrival.pos),
             vel: DVec3::ZERO,
             on_ground: true,
-            hook: None,
+            hooks: [None; 2],
             ..p.state
         };
         // Boundless's hunger penalty for a defeat (milestone 16), and the
@@ -787,7 +787,7 @@ impl Game {
         p.defeated = false;
         tracing::info!("{} returned at {:.1?}", p.name, s.pos);
         p.out.send(&ServerMsg::Teleport {
-            spawn: s,
+            spawn: Box::new(s),
             tick: self.tick,
             yaw: None,
         });

@@ -375,7 +375,7 @@ impl From<SavedBody> for PlayerState {
             pos: b.pos,
             vel: b.vel,
             on_ground: b.on_ground,
-            hook: None,
+            hooks: [None; 2],
             // Energy is never saved: a player arrives rested. The body
             // (skills) is set from the character on joining.
             ..Default::default()

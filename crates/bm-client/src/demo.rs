@@ -519,7 +519,7 @@ impl Demo {
                 pos: DVec3::from_array(SPAWN),
                 vel: DVec3::ZERO,
                 on_ground: true,
-                hook: None,
+                hooks: [None; 2],
                 ..Default::default()
             },
             tick: 0,
@@ -646,7 +646,7 @@ impl Demo {
                 pos: DVec3::from_array(SPAWN),
                 vel: DVec3::ZERO,
                 on_ground: true,
-                hook: None,
+                hooks: [None; 2],
                 ..Default::default()
             },
             tick: 0,
@@ -3486,7 +3486,7 @@ impl Demo {
         };
         spawn.revive(spawn.max_health() / 2);
         self.events.push_back(NetEvent::Msg(ServerMsg::Teleport {
-            spawn,
+            spawn: Box::new(spawn),
             tick: self.fight.tick,
             yaw: None,
         }));
@@ -4256,7 +4256,7 @@ mod tests {
         )));
         d.send(ClientMsg::Return);
         let back = d.poll().into_iter().find_map(|e| match e {
-            NetEvent::Msg(ServerMsg::Teleport { spawn, .. }) => Some(spawn),
+            NetEvent::Msg(ServerMsg::Teleport { spawn, .. }) => Some(*spawn),
             _ => None,
         });
         let spawn = back.expect("a teleport back");

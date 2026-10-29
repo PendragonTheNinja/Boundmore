@@ -215,6 +215,9 @@ pub struct Hook {
     pub hand: u8,
 }
 
+/// How many times two taut ropes are satisfied in turn each tick.
+const ROPE_PASSES: usize = 4;
+
 /// Where the rope meets the body, above the feet: the hands.
 pub const ROPE_HEIGHT: f64 = 1.2;
 /// The shortest rope: reeling in stops here.
@@ -231,9 +234,10 @@ pub struct PlayerState {
     pub pos: DVec3,
     pub vel: DVec3,
     pub on_ground: bool,
-    /// The grapple hook, while one is out. Never saved: a player who leaves
-    /// lets go.
-    pub hook: Option<Hook>,
+    /// The grapple hooks out, one a hand (milestone 28 part 2: a grapple in
+    /// each hand, both hooks out at once, as in Boundless), indexed by the
+    /// hand that fired it. Never saved: a player who leaves lets go.
+    pub hooks: [Option<Hook>; 2],
     /// Energy used, out of `energy::MAX_ENERGY` (0: rested). Never saved:
     /// a player arrives rested.
     pub spent: u16,
@@ -393,6 +397,8 @@ pub struct StepEvents {
     /// A grapple was let go by firing again (it wears by one too, as in
     /// Boundless; putting it away costs nothing).
     pub released: bool,
+    /// The hand whose grapple fired or let go (0 left, 1 right).
+    pub hand: u8,
 }
 
 impl PlayerState {
@@ -405,9 +411,29 @@ impl PlayerState {
         self.pos + DVec3::new(0.0, ROPE_HEIGHT, 0.0)
     }
 
-    /// The hook, if it is stuck: where, and the rope's length.
+    /// A stuck hook, if any (the left hand's first): where, and the rope's
+    /// length.
     pub fn anchor(&self) -> Option<(DVec3, f64)> {
-        self.hook.filter(|h| h.stuck.is_some()).map(|h| (h.pos, h.rope))
+        self.anchors().next()
+    }
+
+    /// Every stuck hook: where, and the rope's length.
+    pub fn anchors(&self) -> impl Iterator<Item = (DVec3, f64)> + '_ {
+        self.hooks
+            .iter()
+            .flatten()
+            .filter(|h| h.stuck.is_some())
+            .map(|h| (h.pos, h.rope))
+    }
+
+    /// Whether any hook is out, flying or stuck.
+    pub fn hooked_any(&self) -> bool {
+        self.hooks.iter().any(Option::is_some)
+    }
+
+    /// Lets go of every rope (defeat, travel).
+    pub fn let_go(&mut self) {
+        self.hooks = [None; 2];
     }
 
     /// Whether the body overlaps a block (used to refuse placing into players).
@@ -502,7 +528,7 @@ pub fn step_hands(
     };
     let input = if s.down { &still } else { input };
     let grapples = if s.down { [None, None] } else { grapples };
-    let had_hook = s.hook.is_some();
+    let had_hook = s.hooked_any();
     // Whether the grapple was used this tick (energy: a use restarts the
     // pause; a tick without one rests).
     let mut used = false;
@@ -524,30 +550,32 @@ pub fn step_hands(
     // Twitchy sets off the first hand holding a grapple.
     let twitch_hand = usize::from(grapples[0].is_none());
     let fire = [
-        input.fire || (twitch && twitch_hand == 0 && s.hook.is_none()),
-        input.fire_off || (twitch && twitch_hand == 1 && s.hook.is_none()),
+        input.fire || (twitch && twitch_hand == 0 && s.hooks[0].is_none()),
+        input.fire_off || (twitch && twitch_hand == 1 && s.hooks[1].is_none()),
     ];
-    // The hand holding the rope put its grapple away: that lets go.
-    if let Some(h) = s.hook
-        && grapples[(h.hand as usize).min(1)].is_none()
-    {
-        s.hook = None;
+    // A hand that put its grapple away lets go of its rope.
+    for (hook, g) in s.hooks.iter_mut().zip(grapples) {
+        if g.is_none() {
+            *hook = None;
+        }
     }
-    // One hook at a time (milestone 28 part 1): either hand's grapple fires
-    // with its button; firing again lets go of a stuck hook or recalls a
-    // flying one. The left hand goes first on a tick both fire.
+    // Each hand's grapple fires with its button and owns its hook; firing
+    // again lets go of that hand's stuck hook or recalls its flying one.
+    // Both hooks may be out at once (milestone 28 part 2). One hand acts a
+    // tick: the left first on a tick both fire.
     for hand in 0..2 {
         let Some(g) = grapples[hand].filter(|_| fire[hand]) else {
             continue;
         };
-        if s.hook.is_some() {
-            s.hook = None;
+        events.hand = hand as u8;
+        if s.hooks[hand].is_some() {
+            s.hooks[hand] = None;
             events.released = true;
         } else {
             used = true;
             // Too tired to fire: nothing happens but the pause starts again.
             if s.try_spend(g.energy, crate::food::Drain::Ranged) {
-                s.hook = Some(Hook {
+                s.hooks[hand] = Some(Hook {
                     pos: s.eye(cfg),
                     vel: look_dir(input.yaw, input.pitch) * g.shot_speed,
                     rope: 0.0,
@@ -563,14 +591,17 @@ pub fn step_hands(
     if !used {
         s.recover();
     }
-    if let Some(h) = s.hook
-        && let Some(g) = grapples[(h.hand as usize).min(1)]
-    {
-        s.hook = hook_tick(h, g, s.hands(), input.reel, planet, world);
+    let hands = s.hands();
+    for (hook, g) in s.hooks.iter_mut().zip(grapples) {
+        if let Some(h) = *hook
+            && let Some(g) = g
+        {
+            *hook = hook_tick(h, g, hands, input.reel, planet, world);
+        }
     }
-    if had_hook && s.hook.is_none() {
+    if had_hook && !s.hooked_any() {
         s.loose = 0;
-    } else if s.hook.is_none() {
+    } else if !s.hooked_any() {
         s.loose = s.loose.saturating_add(1);
     }
     s.beat = (s.beat + 1) % crate::combat::REGEN_PERIOD_TICKS;
@@ -701,7 +732,7 @@ pub fn step_hands(
                 cfg.jump_velocity
             };
             s.add_hunger(crate::food::JUMP_HUNGER);
-        } else if fresh && (s.body.double_jump || jumpy) && !s.air_jumped && s.hook.is_none() {
+        } else if fresh && (s.body.double_jump || jumpy) && !s.air_jumped && !s.hooked_any() {
             s.vel.y = cfg.jump_velocity * DOUBLE_JUMP_FRACTION;
             s.air_jumped = true;
             s.add_hunger(crate::food::JUMP_HUNGER);
@@ -711,22 +742,34 @@ pub fn step_hands(
 
     // The rope: once taut it takes away any speed outwards from the hook and
     // gives back what it takes to end the tick exactly at its length.
-    // Gravity turns into swing, and a shortened rope pulls.
-    if let Some((anchor, rope)) = s.anchor() {
-        let r = planet.delta(anchor, s.hands());
-        let dist = r.length();
-        if dist > 1e-9 {
-            let n = r / dist;
-            let out = s.vel.dot(n);
-            if dist + out * dt > rope {
-                let wanted = ((rope - dist) / dt).max(-cfg.max_speed);
-                s.vel += n * (wanted - out);
+    // Gravity turns into swing, and a shortened rope pulls. Two ropes are
+    // satisfied in turn, a few passes over both so neither undoes the other
+    // much (always the same passes: deterministic).
+    let anchors: [Option<(DVec3, f64)>; 2] = s
+        .hooks
+        .map(|h| h.filter(|h| h.stuck.is_some()).map(|h| (h.pos, h.rope)));
+    let passes = if anchors.iter().all(Option::is_some) {
+        ROPE_PASSES
+    } else {
+        1
+    };
+    for _ in 0..passes {
+        for (anchor, rope) in anchors.iter().flatten().copied() {
+            let r = planet.delta(anchor, s.hands());
+            let dist = r.length();
+            if dist > 1e-9 {
+                let n = r / dist;
+                let out = s.vel.dot(n);
+                if dist + out * dt > rope {
+                    let wanted = ((rope - dist) / dt).max(-cfg.max_speed);
+                    s.vel += n * (wanted - out);
+                }
             }
         }
     }
     // Creative flight: straight where the player looks (Space rises,
     // descend sinks), no gravity and no drift.
-    let flying = s.body.creative && !s.down && s.hook.is_none();
+    let flying = s.body.creative && !s.down && !s.hooked_any();
     if flying {
         let look = look_dir(input.yaw, input.pitch);
         let mut dir = look * f + right * r;
@@ -2031,9 +2074,9 @@ mod tests {
         ceiling(&mut w, 22);
         let mut s = standing(5.5, 10.0);
         assert_eq!(hold(&mut s, fire(up()), 1, Some(&GRAPPLE), &w), 1);
-        assert!(s.hook.is_some_and(|h| h.stuck.is_none()), "flying after one tick");
+        assert!(s.hooks[0].is_some_and(|h| h.stuck.is_none()), "flying after one tick");
         hold(&mut s, up(), 20, Some(&GRAPPLE), &w);
-        let h = s.hook.expect("still out");
+        let h = s.hooks[0].expect("still out");
         assert_eq!(h.stuck.map(|b| b.y), Some(22));
         assert!((h.pos.y - 22.0).abs() < 1e-9, "on the ceiling's face: {}", h.pos.y);
         assert!((h.rope - (22.0 - 11.2)).abs() < 0.2, "rope is the distance: {}", h.rope);
@@ -2046,7 +2089,7 @@ mod tests {
         hold(&mut s, fire(up()), 1, Some(&GRAPPLE), &w);
         // 26 blocks at 65 per second: gone within half a second.
         hold(&mut s, up(), 30, Some(&GRAPPLE), &w);
-        assert_eq!(s.hook, None);
+        assert_eq!(s.hooks[0], None);
     }
 
     #[test]
@@ -2061,7 +2104,7 @@ mod tests {
             };
             hold(&mut s, fire(up()), 1, Some(&GRAPPLE), &w);
             hold(&mut s, up(), 40, Some(&GRAPPLE), &w);
-            s.hook.and_then(|h| h.stuck)
+            s.hooks[0].and_then(|h| h.stuck)
         };
         // A faster shot alone still stops at the grapple's range.
         let fast = Body {
@@ -2090,16 +2133,17 @@ mod tests {
             0,
             "letting go is not a shot"
         );
-        assert_eq!(s.hook, None);
+        assert_eq!(s.hooks[0], None);
         hold(&mut s, fire(up()), 1, Some(&GRAPPLE), &w);
         hold(&mut s, up(), 20, Some(&GRAPPLE), &w);
         hold(&mut s, up(), 1, None, &w);
-        assert_eq!(s.hook, None, "nothing in hand holds the rope");
+        assert_eq!(s.hooks[0], None, "nothing in hand holds the rope");
     }
 
-    /// Milestone 28: the right hand's grapple fires with its own button and
-    /// owns its hook; the left hand's button lets it go (one hook at a time);
-    /// putting the right hand's grapple away lets go, the left's does not.
+    /// Milestone 28: each hand's grapple fires with its own button and owns
+    /// its hook; both hooks may be out at once (part 2); a hand's button
+    /// lets go of its own hook only; putting a grapple away lets go of that
+    /// hand's rope.
     #[test]
     fn each_hand_fires_its_own_grapple() {
         let mut w = world();
@@ -2110,23 +2154,78 @@ mod tests {
                 step_hands(s, &input, &MoveConfig::default(), hands, PlanetShape::new(4, 2), &w);
             }
         };
+        let both = [Some(&GRAPPLE), Some(&GRAPPLE)];
         let right = PlayerInput { fire_off: true, ..up() };
         step2(&mut s, right, 1, [None, Some(&GRAPPLE)]);
-        assert_eq!(s.hook.map(|h| h.hand), Some(1), "the right hand's hook");
+        assert!(
+            s.hooks[0].is_none() && s.hooks[1].is_some_and(|h| h.hand == 1),
+            "the right hand's hook"
+        );
         step2(&mut s, up(), 20, [None, Some(&GRAPPLE)]);
         assert!(s.anchor().is_some());
         // The left hand holds nothing: its button does nothing to the rope.
         step2(&mut s, fire(up()), 1, [None, Some(&GRAPPLE)]);
-        assert!(s.anchor().is_some(), "an empty hand's button is not a grapple's");
-        // A grapple in the left hand now too: its button lets go.
-        step2(&mut s, fire(up()), 1, [Some(&GRAPPLE), Some(&GRAPPLE)]);
-        assert_eq!(s.hook, None, "one hook at a time: firing lets go");
-        // Fired from the right again, then the right hand's grapple put away.
-        step2(&mut s, right, 1, [Some(&GRAPPLE), Some(&GRAPPLE)]);
-        step2(&mut s, up(), 20, [Some(&GRAPPLE), Some(&GRAPPLE)]);
-        assert_eq!(s.anchor().map(|_| s.hook.unwrap().hand), Some(1));
+        assert!(
+            s.hooks[0].is_none() && s.anchor().is_some(),
+            "an empty hand's button is not a grapple's"
+        );
+        // A grapple in the left hand now too: its button fires a second hook.
+        step2(&mut s, fire(up()), 1, both);
+        step2(&mut s, up(), 20, both);
+        assert_eq!(s.anchors().count(), 2, "both hooks out at once");
+        // The left button lets go of the left hook only.
+        let events = step_hands(&mut s, &fire(up()), &MoveConfig::default(), both, planet(), &w);
+        assert!(events.released && events.hand == 0);
+        assert!(s.hooks[0].is_none() && s.hooks[1].is_some());
+        // The right hand's grapple put away: its rope goes.
         step2(&mut s, up(), 1, [Some(&GRAPPLE), None]);
-        assert_eq!(s.hook, None, "the hand holding the rope put its grapple away");
+        assert!(!s.hooked_any(), "the hand holding the rope put its grapple away");
+    }
+
+    /// Milestone 28 part 2: hanging from two ropes, neither stretches and
+    /// the body comes to rest between them, below both.
+    #[test]
+    fn two_ropes_hold_the_body_between_them() {
+        let mut w = world();
+        w.floor = -100;
+        for x in [0, 10] {
+            w.solid.insert(BlockPos::new(x, 40, 5));
+        }
+        let hook = |x: f64, hand: u8| Hook {
+            pos: DVec3::new(x, 40.0, 5.5),
+            vel: DVec3::ZERO,
+            rope: 8.0,
+            stuck: Some(BlockPos::new(x as i64, 40, 5)),
+            reel: 0.0,
+            hand,
+        };
+        let mut s = PlayerState {
+            pos: DVec3::new(5.0, 36.0 - ROPE_HEIGHT, 5.5),
+            hooks: [Some(hook(0.5, 0)), Some(hook(10.5, 1))],
+            ..Default::default()
+        };
+        let both = [Some(&GRAPPLE), Some(&GRAPPLE)];
+        for _ in 0..600 {
+            step_hands(
+                &mut s,
+                &PlayerInput::default(),
+                &MoveConfig::default(),
+                both,
+                planet(),
+                &w,
+            );
+            for (anchor, rope) in s.anchors() {
+                let d = planet().delta(anchor, s.hands()).length();
+                assert!(d < rope + 0.1, "a rope never stretches: {d}");
+            }
+        }
+        assert_eq!(s.anchors().count(), 2);
+        // Settled at the bottom of the two ropes' meeting: x 5.5, about
+        // sqrt(64 - 25) = 6.2 below the hooks.
+        let hands = s.hands();
+        assert!((hands.x - 5.5).abs() < 0.3, "between them: {hands}");
+        assert!((40.0 - hands.y - 39f64.sqrt()).abs() < 0.3, "hanging low: {hands}");
+        assert!(s.vel.length() < 0.5, "at rest: {}", s.vel);
     }
 
     #[test]
@@ -2163,7 +2262,7 @@ mod tests {
         hold(&mut s, up(), 20, Some(&GRAPPLE), &w);
         let reel_in = PlayerInput { reel: 1, ..up() };
         hold(&mut s, reel_in, 1, Some(&GRAPPLE), &w);
-        let h = s.hook.unwrap();
+        let h = s.hooks[0].unwrap();
         assert!(
             (h.reel - REEL_ACCEL * TICK_DT).abs() < 1e-12,
             "one tick of gathering: {}",
@@ -2171,12 +2270,12 @@ mod tests {
         );
         hold(&mut s, reel_in, 60, Some(&GRAPPLE), &w);
         assert_eq!(
-            s.hook.unwrap().reel,
+            s.hooks[0].unwrap().reel,
             GRAPPLE.reel_in_speed,
             "up to the grapple's reel speed"
         );
         hold(&mut s, up(), 1, Some(&GRAPPLE), &w);
-        assert_eq!(s.hook.unwrap().reel, 0.0);
+        assert_eq!(s.hooks[0].unwrap().reel, 0.0);
     }
 
     #[test]
@@ -2231,14 +2330,17 @@ mod tests {
         let anchor = DVec3::new(5.5, 40.0, 5.5);
         let mut s = PlayerState {
             pos: DVec3::new(15.5, 40.0 - ROPE_HEIGHT, 5.5),
-            hook: Some(Hook {
-                pos: anchor,
-                vel: DVec3::ZERO,
-                rope: 10.0,
-                stuck: Some(BlockPos::new(5, 40, 5)),
-                reel: 0.0,
-                hand: 0,
-            }),
+            hooks: [
+                Some(Hook {
+                    pos: anchor,
+                    vel: DVec3::ZERO,
+                    rope: 10.0,
+                    stuck: Some(BlockPos::new(5, 40, 5)),
+                    reel: 0.0,
+                    hand: 0,
+                }),
+                None,
+            ],
             ..Default::default()
         };
         let mut lowest = f64::MAX;
@@ -2264,10 +2366,10 @@ mod tests {
         let mut s = standing(5.5, 10.0);
         hold(&mut s, fire(up()), 1, Some(&GRAPPLE), &w);
         hold(&mut s, up(), 20, Some(&GRAPPLE), &w);
-        let block = s.hook.and_then(|h| h.stuck).expect("stuck");
+        let block = s.hooks[0].and_then(|h| h.stuck).expect("stuck");
         w.solid.remove(&block);
         hold(&mut s, up(), 1, Some(&GRAPPLE), &w);
-        assert_eq!(s.hook, None);
+        assert_eq!(s.hooks[0], None);
     }
 
     #[test]
@@ -2316,7 +2418,7 @@ mod tests {
             let mut trace = Vec::new();
             for inp in &inputs {
                 step(&mut s, inp, &cfg, Some(&GRAPPLE), planet(), &w);
-                let h = s.hook.map(|h| (h.pos.x.to_bits(), h.pos.y.to_bits(), h.rope.to_bits()));
+                let h = s.hooks[0].map(|h| (h.pos.x.to_bits(), h.pos.y.to_bits(), h.rope.to_bits()));
                 trace.push((s.pos.x.to_bits(), s.pos.y.to_bits(), s.pos.z.to_bits(), h));
             }
             trace

@@ -25,7 +25,7 @@ use glam::DVec3;
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
 
 /// Bump on any change to a message below. Client and server must match.
-pub const PROTOCOL_VERSION: u32 = 56;
+pub const PROTOCOL_VERSION: u32 = 57;
 
 /// QUIC application protocol name; also refuses non-Boundmore peers early.
 pub const ALPN: &[u8] = b"boundmore/1";
@@ -657,7 +657,7 @@ pub enum ServerMsg {
     /// are at `tick`, a jump rather than a correction. Chunks, claims and
     /// views carry on.
     Teleport {
-        spawn: PlayerState,
+        spawn: Box<PlayerState>,
         tick: u64,
         /// The way to face on arriving (radians, `movement::heading`'s
         /// convention): out of the portal. None keeps the facing.
@@ -1229,25 +1229,27 @@ pub struct RemotePlayer {
     pub pos: [f32; 3],
     pub yaw: u16,
     pub pitch: i16,
-    /// Their grapple hook while one is out, from their feet in 1/256 blocks
-    /// (a hook never flies further than a grapple's range, well under 128).
-    pub hook: Option<[i16; 3]>,
+    /// Their grapple hooks while out, one a hand (milestone 28), from their
+    /// feet in 1/256 blocks (a hook never flies further than a grapple's
+    /// range, well under 128).
+    pub hooks: [Option<[i16; 3]>; 2],
     /// Light from what they hold in hand (a torch), per channel (red,
     /// green, blue; milestone 26), 0 for none.
     pub light: [u8; 3],
 }
 
 impl RemotePlayer {
-    /// Packs a hook at `offset` blocks from the feet for [`RemotePlayer::hook`].
+    /// Packs a hook at `offset` blocks from the feet for [`RemotePlayer::hooks`].
     pub fn pack_hook(offset: DVec3) -> [i16; 3] {
         offset
             .to_array()
             .map(|v| (v * 256.0).round().clamp(i16::MIN as f64, i16::MAX as f64) as i16)
     }
 
-    /// The hook's offset from the feet, in blocks.
-    pub fn hook_offset(&self) -> Option<DVec3> {
-        self.hook.map(|h| DVec3::from_array(h.map(|v| v as f64 / 256.0)))
+    /// Each hand's hook's offset from the feet, in blocks.
+    pub fn hook_offsets(&self) -> [Option<DVec3>; 2] {
+        self.hooks
+            .map(|h| h.map(|h| DVec3::from_array(h.map(|v| v as f64 / 256.0))))
     }
 }
 
@@ -1299,13 +1301,15 @@ pub struct RemoteCreature {
     pub pose: Pose,
 }
 
-pub const CREATURES_PER_SNAPSHOT: usize = 40;
+/// 36 since milestone 28 put a second hook in our own state.
+pub const CREATURES_PER_SNAPSHOT: usize = 36;
 
 /// Remote players per snapshot datagram, keeping each under the ~1200-byte
 /// path MTU QUIC assumes even when every one of them has a grapple out
 /// (25 since milestone 23 put the brews in our own state; 23 since
-/// milestone 26 gave held light three channels).
-pub const PLAYERS_PER_SNAPSHOT: usize = 23;
+/// milestone 26 gave held light three channels; 16 since milestone 28 gave
+/// every player two hooks).
+pub const PLAYERS_PER_SNAPSHOT: usize = 16;
 
 #[derive(Debug, thiserror::Error)]
 pub enum DecodeError {
@@ -1454,14 +1458,14 @@ mod tests {
                     left: u32::MAX,
                 },
                 revive: u32::MAX,
-                hook: Some(bm_core::Hook {
+                hooks: [Some(bm_core::Hook {
                     pos: DVec3::new(1e6, 1e3, 1e6),
                     vel: DVec3::splat(-50.0),
                     rope: 1e3,
                     stuck: Some(BlockPos::new(i32::MAX as i64, i32::MIN as i64, i32::MAX as i64)),
                     reel: -40.0,
                     hand: 0,
-                }),
+                }); 2],
             },
             others: vec![
                 RemotePlayer {
@@ -1469,7 +1473,7 @@ mod tests {
                     pos: [1e6; 3],
                     yaw: u16::MAX,
                     pitch: i16::MIN,
-                    hook: Some([i16::MIN; 3]),
+                    hooks: [Some([i16::MIN; 3]); 2],
                     light: [u8::MAX; 3],
                 };
                 PLAYERS_PER_SNAPSHOT

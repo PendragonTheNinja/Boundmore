@@ -857,7 +857,7 @@ impl Session {
                         pos: DVec3::new(o.pos[0] as f64, o.pos[1] as f64, o.pos[2] as f64),
                         yaw: o.yaw,
                         pitch: o.pitch,
-                        hook: o.hook_offset(),
+                        hooks: o.hook_offsets(),
                     },
                 )
             }),
@@ -1802,7 +1802,7 @@ impl App {
                     self.yaw = yaw;
                 }
                 if let Some(s) = &mut self.session {
-                    s.teleport(spawn, tick);
+                    s.teleport(*spawn, tick);
                 }
                 return;
             }
@@ -2091,7 +2091,13 @@ impl App {
         // 28). Through its traits, as the server steps it (built again for
         // each tick below, with the holder as they stand before that step).
         let slots = [s.selected, s.selected_off];
-        let grapples = slots.map(|i| s.items.grapple_of(s.items.slot(i).as_ref(), &Held::default()));
+        // One item is never in both hands (as the server reads it): the same
+        // slot in both is the left hand's, and the right hand is empty.
+        let worn = [true, slots[1] != slots[0]];
+        let grapples = [0, 1].map(|h| {
+            s.items
+                .grapple_of(s.items.slot(slots[h]).filter(|_| worn[h]).as_ref(), &Held::default())
+        });
         let stopped = !playing || claim_mode || s.travelling();
         if grapples[0].is_none() || stopped {
             self.fire_pending = false;
@@ -2102,7 +2108,7 @@ impl App {
         // The acting hand's button: what it does to the world. A grapple
         // fires (above); a block places; a chisel cuts, or with Shift fills;
         // anything else is used (swung, shot, eaten).
-        let acting = s.items.slot(slots[hand]);
+        let acting = s.items.slot(slots[hand]).filter(|_| worn[hand]);
         let place_hand = acting.is_some_and(|h| s.place_choice(h.item).is_some());
         let chisel_hand = acting
             .and_then(|h| s.items.def(&h))
@@ -2128,7 +2134,7 @@ impl App {
             self.accumulator = 0.0;
         }
         if let Some(pose) = self.demo_pose.take_if(|p| {
-            p.hook
+            p.hooks[0]
                 .and_then(|h| h.stuck)
                 .is_some_and(|b| s.world.block(b).is_some_and(|id| s.world.flags.solid(id)))
         }) {
@@ -2146,12 +2152,11 @@ impl App {
                 ..input
             };
             let held = s.held_now(local);
-            let grapple =
-                [0, 1].map(|h| grapples[h].and_then(|_| s.items.grapple_of(s.items.slot(slots[h]).as_ref(), &held)));
+            let in_hand = [0, 1].map(|h| s.items.slot(slots[h]).filter(|_| worn[h]));
+            let grapple = [0, 1].map(|h| grapples[h].and_then(|_| s.items.grapple_of(in_hand[h].as_ref(), &held)));
             // The body quirks of what both hands hold (milestone 17), as the
             // server sets them for this input.
-            let quirks =
-                bm_core::forge::Quirks::of_hands(s.items.slot(slots[0]).as_ref(), s.items.slot(slots[1]).as_ref());
+            let quirks = bm_core::forge::Quirks::of_hands(in_hand[0].as_ref(), in_hand[1].as_ref());
             let seq = s.me.tick(input, grapple, quirks, &s.movement, s.world.shape, &s.world);
             link.send_datagram(ClientDatagram::Input {
                 latest: seq,
@@ -2239,7 +2244,7 @@ impl App {
         });
 
         let slot = slots[hand];
-        let held = s.items.slot(slot);
+        let held = s.items.slot(slot).filter(|_| worn[hand]);
         // What the held stack does goes through its traits (milestone 17),
         // with the quirks' conditions as the server will judge them.
         let held_by = s.held_now(local);
@@ -3176,16 +3181,21 @@ impl App {
         // hand would be), everyone else's from their hands.
         let mut ropes: Vec<(DVec3, DVec3)> = remotes
             .iter()
-            .filter_map(|(_, smp)| {
+            .flat_map(|(_, smp)| {
                 let hands = shape.nearest_lap(eye, smp.pos) + DVec3::new(0.0, bm_core::movement::ROPE_HEIGHT, 0.0);
-                smp.hook
-                    .map(|h| (hands, hands + h - DVec3::new(0.0, bm_core::movement::ROPE_HEIGHT, 0.0)))
+                smp.hooks
+                    .into_iter()
+                    .flatten()
+                    .map(move |h| (hands, hands + h - DVec3::new(0.0, bm_core::movement::ROPE_HEIGHT, 0.0)))
             })
             .collect();
-        if let Some(hook) = s.me.state.hook {
+        // Ours: the left hand's rope from the left of the view, the right's
+        // from the right.
+        for (hand, hook) in s.me.state.hooks.into_iter().enumerate() {
+            let Some(hook) = hook else { continue };
             let to = shape.nearest_lap(eye, hook.pos);
             // A flying hook is drawn between ticks, like the body.
-            let to = match s.me.previous.hook {
+            let to = match s.me.previous.hooks[hand] {
                 Some(was) if hook.stuck.is_none() => {
                     let was = shape.nearest_lap(to, was.pos);
                     was + (to - was) * alpha
@@ -3194,7 +3204,8 @@ impl App {
             };
             let forward = camera.forward();
             let right = forward.cross(DVec3::Y).normalize_or_zero();
-            ropes.push((eye + right * 0.3 - DVec3::Y * 0.35 + forward * 0.4, to));
+            let side = if hand == 0 { -0.3 } else { 0.3 };
+            ropes.push((eye + right * side - DVec3::Y * 0.35 + forward * 0.4, to));
         }
         // Lines are a pixel wide: a few strands side by side give the rope
         // some body, thick near the eye and thin far off.
@@ -3430,7 +3441,7 @@ impl App {
                         pos: DVec3::from_array(crate::demo::METEOR_VIEW),
                         vel: DVec3::ZERO,
                         on_ground: true,
-                        hook: None,
+                        hooks: [None; 2],
                         ..Default::default()
                     });
                 }
@@ -3453,7 +3464,7 @@ impl App {
                         pos: DVec3::new(128.5, 44.0, 126.5),
                         vel: DVec3::ZERO,
                         on_ground: true,
-                        hook: None,
+                        hooks: [None; 2],
                         ..Default::default()
                     });
                     s.selected = 1;
@@ -3473,7 +3484,7 @@ impl App {
                         pos: DVec3::from_array(crate::demo::SPARK_VIEW),
                         vel: DVec3::ZERO,
                         on_ground: true,
-                        hook: None,
+                        hooks: [None; 2],
                         ..Default::default()
                     });
                     s.selected = 9;
@@ -3492,7 +3503,7 @@ impl App {
                         pos: DVec3::from_array(crate::demo::TEXTURES_VIEW),
                         vel: DVec3::ZERO,
                         on_ground: true,
-                        hook: None,
+                        hooks: [None; 2],
                         ..Default::default()
                     });
                 }
@@ -3509,7 +3520,7 @@ impl App {
                         pos: DVec3::from_array(crate::demo::FLORA_VIEW),
                         vel: DVec3::ZERO,
                         on_ground: true,
-                        hook: None,
+                        hooks: [None; 2],
                         ..Default::default()
                     });
                 }
@@ -3602,7 +3613,7 @@ impl App {
                         pos: DVec3::from_array(crate::demo::SHAPES_VIEW),
                         vel: DVec3::ZERO,
                         on_ground: true,
-                        hook: None,
+                        hooks: [None; 2],
                         ..Default::default()
                     });
                 }
@@ -3618,7 +3629,7 @@ impl App {
                         pos: DVec3::from_array(crate::demo::FURNISHINGS_VIEW),
                         vel: DVec3::ZERO,
                         on_ground: true,
-                        hook: None,
+                        hooks: [None; 2],
                         ..Default::default()
                     });
                 }
@@ -3636,7 +3647,7 @@ impl App {
                         pos: DVec3::from_array(crate::demo::SHAPES_VIEW),
                         vel: DVec3::ZERO,
                         on_ground: true,
-                        hook: None,
+                        hooks: [None; 2],
                         ..Default::default()
                     });
                     if in_hand {
@@ -3659,7 +3670,7 @@ impl App {
                         pos: DVec3::from_array(crate::demo::FARM_VIEW),
                         vel: DVec3::ZERO,
                         on_ground: true,
-                        hook: None,
+                        hooks: [None; 2],
                         ..Default::default()
                     });
                     s.selected = 0;
@@ -3740,14 +3751,17 @@ impl App {
                         pos,
                         vel: DVec3::ZERO,
                         on_ground: false,
-                        hook: Some(bm_core::Hook {
-                            pos: anchor,
-                            vel: DVec3::ZERO,
-                            rope: 10.0,
-                            stuck: Some(block),
-                            reel: 0.0,
-                            hand: 0,
-                        }),
+                        hooks: [
+                            Some(bm_core::Hook {
+                                pos: anchor,
+                                vel: DVec3::ZERO,
+                                rope: 10.0,
+                                stuck: Some(block),
+                                reel: 0.0,
+                                hand: 0,
+                            }),
+                            None,
+                        ],
                         ..Default::default()
                     });
                     s.selected = 7;
@@ -3767,7 +3781,7 @@ impl App {
                         pos: DVec3::new(128.5, 44.0, 130.3),
                         vel: DVec3::ZERO,
                         on_ground: true,
-                        hook: None,
+                        hooks: [None; 2],
                         ..Default::default()
                     });
                 }
@@ -4310,7 +4324,7 @@ mod tests {
                 pos: [120.0, 44.0, 120.0],
                 yaw: 0,
                 pitch: 0,
-                hook: None,
+                hooks: [None; 2],
                 light: [0; 3],
             }],
             creatures: Vec::new(),
@@ -4749,7 +4763,7 @@ mod tests {
         };
         a.yaw = 0.0;
         a.handle_msg(ServerMsg::Teleport {
-            spawn: to,
+            spawn: Box::new(to),
             tick: 500,
             yaw: Some(1.5),
         });

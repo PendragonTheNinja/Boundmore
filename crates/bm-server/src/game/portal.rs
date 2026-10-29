@@ -584,7 +584,7 @@ impl Game {
         let pinned: Vec<ChunkPos> = pinned.into_iter().collect();
         let held = PlayerState {
             vel: DVec3::ZERO,
-            hook: None,
+            hooks: [None; 2],
             ..p.state
         };
         p.state = held;
@@ -670,7 +670,7 @@ impl Game {
             pos: shape.wrap_point(DVec3::new(exit.x as f64 + 0.5, exit.y as f64, exit.z as f64 + 0.5)),
             vel: DVec3::ZERO,
             on_ground: true,
-            hook: None,
+            hooks: [None; 2],
             // Energy goes with you.
             ..self.players[&id].state
         };
@@ -690,7 +690,7 @@ impl Game {
         if from_planet == to_planet {
             p.state = spawn;
             p.out.send(&ServerMsg::Teleport {
-                spawn,
+                spawn: Box::new(spawn),
                 tick: self.tick,
                 yaw: Some(yaw),
             });

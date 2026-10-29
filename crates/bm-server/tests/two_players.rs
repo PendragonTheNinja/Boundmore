@@ -2672,7 +2672,7 @@ async fn grapples_fire_stick_wear_and_need_a_grapple_in_hand() {
     play(&mut alice, down(0, false), 20).await;
     alice.settle().await;
     let (_, _, you, _) = alice.latest_snapshot().await;
-    let hook = you.hook.expect("the hook is out");
+    let hook = you.hooks[0].expect("the hook is out");
     assert!(hook.stuck.is_some(), "stuck in the ground: {hook:?}");
     assert!(hook.pos.y <= you.pos.y + 1e-9, "below the feet: {hook:?}");
     assert_eq!(stack(&alice, 0).map(|s| s.wear), Some(1));
@@ -2682,7 +2682,7 @@ async fn grapples_fire_stick_wear_and_need_a_grapple_in_hand() {
     play(&mut alice, down(0, false), 10).await;
     alice.settle().await;
     let (_, _, you, _) = alice.latest_snapshot().await;
-    assert_eq!(you.hook, None);
+    assert_eq!(you.hooks[0], None);
     assert_eq!(stack(&alice, 0).map(|s| s.wear), Some(2));
 
     // Timber in hand holds no rope: it lets go for free and fires nothing.
@@ -2692,13 +2692,29 @@ async fn grapples_fire_stick_wear_and_need_a_grapple_in_hand() {
     play(&mut alice, down(2, false), 10).await;
     alice.settle().await;
     let (_, _, you, _) = alice.latest_snapshot().await;
-    assert_eq!(you.hook, None);
+    assert_eq!(you.hooks[0], None);
     assert_eq!(stack(&alice, 2).map(|s| (s.count, s.wear)), Some((4, 0)));
     assert_eq!(
         stack(&alice, 0).map(|s| s.wear),
         Some(3),
         "putting it away costs nothing"
     );
+
+    // Milestone 28: the right hand's grapple fires with the right button
+    // and wears itself; the left hand's still free.
+    let right = PlayerInput {
+        slot: 1,
+        off: 0,
+        fire_off: true,
+        ..down(1, false)
+    };
+    play(&mut alice, right, 1).await;
+    play(&mut alice, down(1, false), 20).await;
+    alice.settle().await;
+    let (_, _, you, _) = alice.latest_snapshot().await;
+    assert!(you.hooks[0].is_none() && you.hooks[1].is_some_and(|h| h.stuck.is_some()));
+    assert_eq!(stack(&alice, 0).map(|s| s.wear), Some(4), "the right hand's grapple");
+    assert_eq!(stack(&alice, 1).map(|s| s.wear), Some(999));
 
     // The iron grapple's last shot breaks it.
     play(&mut alice, down(1, true), 1).await;
@@ -2707,7 +2723,8 @@ async fn grapples_fire_stick_wear_and_need_a_grapple_in_hand() {
     alice.settle().await;
     assert_eq!(stack(&alice, 1), None);
     let (_, _, you, _) = alice.latest_snapshot().await;
-    assert_eq!(you.hook, None, "nothing left in hand to hold it");
+    assert_eq!(you.hooks[0], None, "nothing left in hand to hold it");
+    assert!(you.hooks[1].is_some(), "the right hand's rope still holds");
     server.stop();
 }
 
@@ -2837,7 +2854,7 @@ async fn walk_through(c: &mut TestClient, yaw: u16) -> (Option<u16>, PlayerState
             let moved = match &m {
                 ServerMsg::Teleport { spawn, yaw, .. } => {
                     assert!(yaw.is_some(), "a portal turns you to face out of it");
-                    Some((None, *spawn))
+                    Some((None, **spawn))
                 }
                 ServerMsg::Travel(t) => {
                     assert!(t.yaw.is_some(), "a portal turns you to face out of it");

@@ -410,13 +410,13 @@ fn server_led(ours: &PlayerState, server: &PlayerState, shape: PlanetShape) -> b
 /// Everything movement predicts: position, velocity, hook, energy, body,
 /// hunger and food (milestone 16).
 fn same_body(a: &PlayerState, b: &PlayerState, shape: PlanetShape) -> bool {
-    let hooks = match (a.hook, b.hook) {
+    let hooks = a.hooks.iter().zip(&b.hooks).all(|(x, y)| match (x, y) {
         (None, None) => true,
         (Some(x), Some(y)) => {
             x.stuck == y.stuck && shape.delta(x.pos, y.pos).length() < TOLERANCE && (x.rope - y.rope).abs() < TOLERANCE
         }
         _ => false,
-    };
+    });
     shape.delta(a.pos, b.pos).length() < TOLERANCE
         && (a.vel - b.vel).length() < TOLERANCE
         && a.on_ground == b.on_ground
@@ -443,8 +443,8 @@ pub struct RemoteSample {
     pub pos: DVec3,
     pub yaw: u16,
     pub pitch: i16,
-    /// Their grapple hook, from their feet.
-    pub hook: Option<DVec3>,
+    /// Their grapple hooks, one a hand, from their feet.
+    pub hooks: [Option<DVec3>; 2],
 }
 
 #[derive(Default)]
@@ -516,11 +516,11 @@ impl Remotes {
                         pos: a.pos + (to - a.pos) * f,
                         yaw: lerp_angle(a.yaw, b.yaw, f),
                         pitch: (a.pitch as f64 + (b.pitch as f64 - a.pitch as f64) * f) as i16,
-                        hook: match (a.hook, b.hook) {
+                        hooks: [0, 1].map(|i| match (a.hooks[i], b.hooks[i]) {
                             (Some(ha), Some(hb)) => Some(ha + (hb - ha) * f),
-                            _ if f < 0.5 => a.hook,
-                            _ => b.hook,
-                        },
+                            _ if f < 0.5 => a.hooks[i],
+                            _ => b.hooks[i],
+                        }),
                     }
                 }
                 None => *last,
@@ -1222,7 +1222,7 @@ mod tests {
             pos: DVec3::new(x, 0.0, 0.0),
             yaw: 0,
             pitch: 0,
-            hook: None,
+            hooks: [None; 2],
         };
         // Snapshots every 3 ticks, arriving with no delay.
         for k in 0..10u64 {
@@ -1243,7 +1243,7 @@ mod tests {
             pos: DVec3::new(x, 0.0, 0.0),
             yaw: 0,
             pitch: 0,
-            hook: None,
+            hooks: [None; 2],
         };
         r.record(0, 0.0, [(1, at(0, w - 1.0))].into_iter());
         r.record(10, 10.0, [(1, at(10, 1.0))].into_iter());

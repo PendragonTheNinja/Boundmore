@@ -1538,7 +1538,10 @@ impl Game {
             Departed {
                 planet,
                 // A player who leaves lets go of their grapple.
-                state: PlayerState { hook: None, ..p.state },
+                state: PlayerState {
+                    hooks: [None; 2],
+                    ..p.state
+                },
                 inventory: p.inventory,
                 character: p.character,
                 written: None,
@@ -1615,7 +1618,10 @@ impl Game {
                         .copied()
                         .flatten()
                 };
-                let (left, right) = (hand(input.slot), hand(input.off));
+                // One item is never in both hands: the same slot in both is
+                // the left hand's, and the right hand is empty.
+                let right = if input.off == input.slot { None } else { hand(input.off) };
+                let left = hand(input.slot);
                 // Through its traits (milestone 17): the spec as the client
                 // builds it, its energy by the holder as they stand before
                 // this input's step.
@@ -1635,7 +1641,6 @@ impl Game {
                 // Held at a portal while its far side loads.
                 let held = p.trip.as_ref().map(|t| t.held);
                 let from = p.state.pos;
-                let hand_before = p.state.hook.map(|h| h.hand);
                 let events = movement::step_hands(
                     &mut p.state,
                     &input,
@@ -1676,12 +1681,7 @@ impl Game {
                 p.bank -= 1.0;
                 let fell = p.state.down && !p.defeated;
                 // The grapple that fired, or held the hook let go, wears.
-                let used = if events.fired {
-                    p.state.hook.map(|h| h.hand)
-                } else {
-                    hand_before
-                };
-                let slot = if used == Some(1) { input.off } else { input.slot } as usize;
+                let slot = if events.hand == 1 { input.off } else { input.slot } as usize;
                 if (events.fired || events.released)
                     && mining::roll(&mut self.rng) >= p.state.wear_spared(p.effects.wear_saved())
                 {
@@ -2099,10 +2099,10 @@ impl Game {
                                 pos: [o.state.pos.x as f32, o.state.pos.y as f32, o.state.pos.z as f32],
                                 yaw: o.last_input.yaw,
                                 pitch: o.last_input.pitch,
-                                hook: o
+                                hooks: o
                                     .state
-                                    .hook
-                                    .map(|h| RemotePlayer::pack_hook(shape.delta(o.state.pos, h.pos))),
+                                    .hooks
+                                    .map(|h| h.map(|h| RemotePlayer::pack_hook(shape.delta(o.state.pos, h.pos)))),
                                 light: [o.last_input.slot, o.last_input.off].into_iter().fold(
                                     [if o.inner_light { skills::INNER_LIGHT } else { 0 }; 3],
                                     |l, slot| {
@@ -2707,7 +2707,7 @@ impl Game {
             pos: arrival.pos,
             vel: DVec3::ZERO,
             on_ground: arrival.on_ground,
-            hook: None,
+            hooks: [None; 2],
             air: self.planets[to].air,
             ..p.state
         };

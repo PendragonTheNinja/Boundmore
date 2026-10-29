@@ -518,7 +518,7 @@ impl crate::movement::PlayerState {
             self.hurt = (self.hurt + DRAINING_PER_BEAT).min(max);
             if self.hurt >= max && !self.lifesave() {
                 self.down = true;
-                self.hook = None;
+                self.let_go();
             }
         }
     }

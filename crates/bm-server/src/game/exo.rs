@@ -151,7 +151,7 @@ impl Game {
                 pos: arrival.pos,
                 vel: DVec3::ZERO,
                 on_ground: true,
-                hook: None,
+                hooks: [None; 2],
                 air: self.planets[host].air,
                 ..d.state
             };

@@ -1583,14 +1583,14 @@ pub fn hud(ctx: &egui::Context, h: &Hud) {
             let painter = ui.painter();
             for i in 0..HOTBAR_SLOTS {
                 let left = i == h.selected;
-                let right = i == h.selected_off;
+                // The same slot in both hands is the left hand's.
+                let right = i == h.selected_off && !left;
                 let selected = left || right;
                 let x = rect.left() + i as f32 * (SLOT + GAP);
                 // The selected slot rises a little, like a card lifted from a hand.
                 let y = rect.top() + if selected { 0.0 } else { 6.0 };
                 let r = Rect::from_min_size(pos2(x, y), Vec2::splat(SLOT));
-                // The left hand in gold, the right in blue (both: gold
-                // outside, blue inside).
+                // The left hand in gold, the right in blue.
                 let rim = if left {
                     Stroke::new(3.0, GOLD)
                 } else if right {
@@ -1612,23 +1612,16 @@ pub fn hud(ctx: &egui::Context, h: &Hud) {
                         MUTED.gamma_multiply(0.8)
                     },
                 );
-                if left && right {
-                    painter.rect_stroke(
-                        r.shrink(3.5),
-                        CornerRadius::same(4),
-                        Stroke::new(2.0, RIGHT_HAND),
-                        egui::StrokeKind::Inside,
-                    );
-                }
                 if let Some(stack) = h.items.slot(i) {
                     paint_stack(painter, r, &stack, h.items, h.icons, 1.0);
                 }
                 // Which hand holds it: L and R in the top corner.
-                let tag = match (left, right) {
-                    (true, true) => "LR",
-                    (true, false) => "L",
-                    (false, true) => "R",
-                    _ => "",
+                let tag = if left {
+                    "L"
+                } else if right {
+                    "R"
+                } else {
+                    ""
                 };
                 if !tag.is_empty() {
                     painter.text(
