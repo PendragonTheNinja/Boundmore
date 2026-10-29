@@ -47,7 +47,7 @@ Ours:
    - Shift-click on it with storage open sorts each sub-stack into storage: matching stacks first, then empty slots.
    - "Sort" (inventory) gathers families into as few groups as possible.
 6. **Hands.** `PlayerInput::slot` and `off` stay hotbar indices (0 to 9). The server and the prediction read the group's active item. Messages naming an inventory slot use the stored index (`u16` where it can pass 255).
-7. **Saves.** `SAVE_VERSION` bump. A saved inventory of 40 slots (older) loads as slot *i* into group *i*'s first sub-slot, so nothing moves visibly. Do the CLAUDE.md upgrade check.
+7. **Saves.** `SAVE_VERSION` 16. A saved inventory of 40 slots (older) loads as slot *i* into group *i*'s first sub-slot, so nothing moves visibly. Do the CLAUDE.md upgrade check.
 
 Acceptance:
 - 9 stacks of stone in nine colours fill one slot;
@@ -73,4 +73,5 @@ Smart stacks in storage (until research says Boundless had them), auto-sorting o
 
 - [x] Spec (2026-10-29)
 - [x] Part 1, creep (2026-10-29; protocol 63)
-- [ ] Part 2, smart stacks
+- [x] Part 2, smart stacks (2026-10-29; protocol 65, `SAVE_VERSION` 16): `bm_core::inventory` (groups of `SMART`, `same_family`, `held`/`active`, `move_group`, `drop_target`, `sort_from`, `move_across` shared by the server and the client's storage window, `from_plain` for old saves). The window shows a smart stack's total with a 3 by 3 mark; right click opens its stacks in a row to drag out; Shift-click sends every stack across to storage, each onto its match. Hands use the active stack (the first). Messages name stored slots (`u16`); `PlayerInput::slot` stays the hotbar slot.
+- [ ] Wider families (Boundless's categories) once their data is found
