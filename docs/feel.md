@@ -398,3 +398,17 @@ Boundless's live tree and tables exactly (Nathan, 2026-10-20), in Boundmore's na
 | Astral tools | aurorite 3400 damage at speed 5, pyrelith 1350 at 45, gloamite 2000 at 30 with 10% crits; durability 3000, 3800, 3200 | Boundless's rift, blink and umbris tools |
 | Astral grapples | aurorite range 40, shot 40, reels 45/45; pyrelith 20, 70, 70/40; gloamite 30, 50, 55/55; energy 250 | Boundless's lucent grapples |
 | Astral seams | gloamite commonest, aurorite, pyrelith rarest; 20+ down | Boundless's order (players' counts); richness a **guess** (Measure 6) |
+
+## Polish batch 3 decisions (Nathan, 2026-10-29)
+
+Answers to `docs/audit/README.md` batch 3, in his words where given:
+
+| Item | Decision |
+|---|---|
+| Creep | "Yes creep please, and toggleable": a key (V by default; Boundless's C is our crafting key) toggles it, with an option to hold instead. No walking off edges while it is on. |
+| Sound | "Yes sound". Made by us (procedurally, like the textures), files in `assets/sounds/` that hand-made or free replacements can overwrite. |
+| Held items | "Yes I would like handheld models for items held in first person". |
+| First-minutes guide | "a guide is probably important". |
+| Natural slopes | "Yes Boundless had natural slopes, it wasn't all blocky (I don't know how it was calculated)". New planets only (a generator bump). |
+| Smart stacks | "Yes they called them smart stacks, up to 9 stacks of the same block TYPE could stack together": one slot holds up to 9 stacks (each up to the item's stack size) of one block type in any colours; Boundless's related-item groups where known. |
+| Travel (home warp, priced shrine travel, see-through portals) | "Also important". Prices still to be set with him in the spec. |
