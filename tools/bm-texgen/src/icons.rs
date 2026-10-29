@@ -16,7 +16,7 @@ use crate::materials::{
     coal_ramp, copper_ramp, end_grain_ramp, flame_ramp, native_iron_ramp, plank_ramp, rust_ramp, steel_ramp, stone_ramp,
 };
 use crate::noise::{Rng, hash2, seed, unit};
-use crate::tex::{Tex, at_res, c, grid, scale};
+use crate::tex::{Tex, at_res, c, grid, scale, smoothstep};
 
 /// The outline round every icon, and the contact line where one part
 /// overlaps another: a deep purple-black rather than flat black.
@@ -1520,7 +1520,7 @@ fn gem_gear(name: &str) -> Option<Tex> {
     let (gem, tool) = name.split_once('_')?;
     let gem = Gem::from_name(gem)?;
     let metal = Metal::Gem(gem);
-    Some(match tool {
+    let tex = match tool {
         "hammer" => hammer(metal),
         "shovel" => shovel(metal),
         "axe" => axe(metal),
@@ -1543,7 +1543,55 @@ fn gem_gear(name: &str) -> Option<Tex> {
             chisel(metal, tip, precise)
         }
         _ => return None,
-    })
+    };
+    Some(adorn(tex, gem))
+}
+
+/// What sets the top tiers apart from a recoloured metal tool: gem gear
+/// catches a star of light at its head; astral gear also glows in its own
+/// colour all round.
+fn adorn(mut tex: Tex, gem: crate::gems::Gem) -> Tex {
+    let ramp = gem.ramp();
+    let light = ramp.lightest();
+    let astral = crate::gems::Gem::ASTRAL.contains(&gem);
+    let n = tex.n;
+    if astral {
+        let alpha: Vec<f32> = tex.px.iter().map(|p| p.a).collect();
+        let glow = blur_alpha(&alpha, n, 1.3 * scale());
+        for (p, g) in tex.px.iter_mut().zip(glow) {
+            if p.a < 1.0 {
+                let a = (g * 1.8).min(1.0) * 0.75;
+                *p = light.with_alpha(a).over(*p);
+            }
+        }
+    }
+    let star = |dx: f32, dy: f32, len: f32| {
+        let arm = |a: f32, b: f32| {
+            let k = (1.0 - a.abs() / len).max(0.0);
+            k * smoothstep(0.18 + 0.5 * k, 0.0, b.abs())
+        };
+        arm(dx, dy).max(arm(dy, dx)).max((1.0 - dx.hypot(dy) / 1.1).max(0.0))
+    };
+    let white = Rgba::hex(0xfffef4).mix(light, 0.3);
+    let stars: &[(f32, f32, f32)] = if astral {
+        &[(25.5, 6.5, 4.6), (29.0, 13.0, 2.6), (19.5, 3.5, 2.2)]
+    } else {
+        &[(25.5, 6.5, 3.8)]
+    };
+    for y in 0..n {
+        for x in 0..n {
+            let (fx, fy) = (c(x), c(y));
+            let s = stars
+                .iter()
+                .map(|&(sx, sy, len)| star(fx - sx, fy - sy, len))
+                .fold(0.0f32, f32::max);
+            if s > 0.0 {
+                let p = tex.get(x, y);
+                tex.set(x, y, p.over(white.with_alpha(s.min(1.0))));
+            }
+        }
+    }
+    tex
 }
 
 /// Paints the icon called `name`, or `None` if no painter knows it.

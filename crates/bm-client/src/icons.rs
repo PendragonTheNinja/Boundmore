@@ -158,11 +158,12 @@ impl Face {
     }
 }
 
-/// The cube: top, left and right faces, filling the square with a small
-/// margin.
+/// The cube: top, left and right faces, in the middle of the square with a
+/// margin as wide as the painted icons leave, so a cube in a slot is no
+/// bigger than a tool and leaves the slot's number clear.
 fn faces() -> [Face; 3] {
     let n = ICON_SIZE as f32;
-    let (cx, cy, size) = (n / 2.0, n / 2.0, n * 0.94);
+    let (cx, cy, size) = (n / 2.0, n / 2.0, n * 0.86);
     let w = size * 0.44;
     let top = [cx, cy - size * 0.5];
     let right = [cx + w, cy - size * 0.25];

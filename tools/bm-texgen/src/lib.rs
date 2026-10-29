@@ -272,15 +272,18 @@ mod tests {
             let solid = icon.px.iter().filter(|p| p.a > 0.99).count();
             assert!(solid > 300, "icon {name} covers only {solid} pixels");
             // Edges are anti-aliased, and a dark halo round the sprite
-            // lets it read on a pale slot.
+            // lets it read on a pale slot (astral gear glows instead).
             let soft = icon.px.iter().filter(|p| p.a > 0.05 && p.a < 0.95).count();
             assert!(soft > 40, "icon {name} has hard edges ({soft} soft pixels)");
+            let glows = ["aurorite_", "pyrelith_", "gloamite_"]
+                .iter()
+                .any(|g| name.starts_with(g));
             let halo = icon
                 .px
                 .iter()
                 .filter(|p| p.a > 0.2 && p.a < 0.95 && luma(p) < 0.2)
                 .count();
-            assert!(halo > 40, "icon {name} has no dark halo ({halo} pixels)");
+            assert!(glows || halo > 40, "icon {name} has no dark halo ({halo} pixels)");
         }
     }
 
