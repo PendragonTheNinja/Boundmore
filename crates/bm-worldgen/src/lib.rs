@@ -20,7 +20,7 @@ pub use kinds::{KindError, PlanetKind, PlanetKinds};
 
 use bm_core::{
     BlockId, BlockPos, BlockRegistry, BlockState, CHUNK_SIZE, CHUNK_VOLUME, Chunk, ChunkPos, Colour, ColourPalette,
-    LocalPos, PlanetShape, RegistryError,
+    LocalPos, PlanetShape, RegistryError, Shape, ShapeFamily,
 };
 use noise::{Fbm, hash01, hash3};
 use serde::{Deserialize, Serialize};
@@ -46,7 +46,12 @@ use std::sync::OnceLock;
 /// no biomes, which is what every version 3 planet's saved settings read as,
 /// still produce version 3's terrain block for block
 /// (`no_biomes_reproduce_version_3`).
-pub const GENERATOR_VERSION: u32 = 4;
+///
+/// Version 5 (M32) cuts natural slopes into the ground
+/// ([`PlanetGenConfig::slopes`]). Settings without slopes, which is what every
+/// version 4 planet's saved settings read as, still produce version 4's
+/// terrain block for block (`no_slopes_reproduce_version_4`).
+pub const GENERATOR_VERSION: u32 = 5;
 
 /// Whether this generator reproduces, block for block, the terrain of a
 /// planet saved by generator `version` from that planet's saved settings, so
@@ -55,11 +60,13 @@ pub const GENERATOR_VERSION: u32 = 4;
 /// Version 2's settings have no `colours` field, so they read as no colours,
 /// and version 3 with no colours is version 2's terrain: a version 2 planet
 /// opens as a version 3 planet that keeps natural colours. Version 3's have
-/// no `biomes`, and version 4 with no biomes is version 3's terrain. Version 1 saved
+/// no `biomes`, and version 4 with no biomes is version 3's terrain;
+/// version 4's have no `slopes`, and version 5 without slopes is version 4's
+/// terrain. Version 1 saved
 /// its settings in another layout ([`PlanetGenConfigV1`]) and is upgraded by
 /// the server's save conversion, not here.
 pub fn opens_generator_version(version: u32) -> bool {
-    version == GENERATOR_VERSION || version == 3 || version == 2
+    version == GENERATOR_VERSION || (2..=4).contains(&version)
 }
 
 /// The most palette colours a planet uses for one block: a main colour and
@@ -170,6 +177,16 @@ pub struct PlanetGenConfig {
     /// and pillars (Boundless's cave sets by tier).
     #[serde(skip_serializing_if = "is_zero")]
     pub cave_tier: u8,
+    /// Natural slopes (milestone 32, generator 5): the ground's top blocks
+    /// are cut into slope shapes where the land steps down. Set for every
+    /// new biome planet; false (every planet saved before generator 5) is
+    /// version 4's terrain, block for block. No effect without biomes.
+    #[serde(skip_serializing_if = "is_false")]
+    pub slopes: bool,
+}
+
+fn is_false(v: &bool) -> bool {
+    !*v
 }
 
 fn is_zero(v: &u8) -> bool {
@@ -360,6 +377,7 @@ impl Default for PlanetGenConfig {
             biomes: Vec::new(),
             biome_size: 320.0,
             cave_tier: 0,
+            slopes: false,
         }
     }
 }
@@ -373,6 +391,7 @@ impl PlanetGenConfig {
         Self {
             biomes: Vec::new(),
             cave_tier: 0,
+            slopes: false,
             ..self
         }
     }
@@ -784,6 +803,10 @@ pub struct Generator {
     biome: Option<BiomeWorld>,
     /// Cave styles by tier (milestone 19 part 3; 0: version 3's caves).
     cave_tier: u8,
+    /// Natural slopes (milestone 32): on, and which blocks take them (by
+    /// block id: the catalogue allows the slope family).
+    slopes: bool,
+    slopable: Vec<bool>,
     flat_caves: Fbm,
     halls: Fbm,
     tall_caves: Fbm,
@@ -1175,9 +1198,21 @@ impl Generator {
         } else {
             Vec::new()
         };
+        let slopes = cfg.slopes && biome.is_some();
+        let slopable = if slopes {
+            let mut v = vec![false; registry.len()];
+            for (id, def) in registry.iter() {
+                v[id.0 as usize] = def.solid && def.opaque && def.chisel.allows(ShapeFamily::Slope);
+            }
+            v
+        } else {
+            Vec::new()
+        };
         Ok(Self {
             biome,
             cave_tier: cfg.cave_tier,
+            slopes,
+            slopable,
             flat_caves: Fbm::new(k(3001), w, 90.0, 2, 0.5),
             halls: Fbm::new(k(3002), w, 150.0, 2, 0.5),
             tall_caves: Fbm::new(k(3003), w, 48.0, 2, 0.5),
@@ -1544,7 +1579,8 @@ impl Generator {
             if c.lift_hi <= c.lift_lo || wy < c.lift_lo || wy > c.lift_hi {
                 return false;
             }
-            let n = if wy <= top_y && !lift_lattice.is_empty() {
+            let inside = (0..cs).contains(&lx) && (0..cs).contains(&lz) && wy >= origin.y;
+            let n = if inside && wy <= top_y && !lift_lattice.is_empty() {
                 Cell::at(lx, wy - origin.y, lz).lerp(|i| lift_lattice[i])
             } else {
                 match &self.biome {
@@ -1599,6 +1635,12 @@ impl Generator {
         let seed = cfg.seed;
         let top = top_y;
         let mut blocks = vec![BlockState::plain(ids.air); CHUNK_VOLUME];
+        // Each column's cover block, for the slope pass.
+        let mut surfaces = if self.slopes {
+            vec![ids.air; (cs * cs) as usize]
+        } else {
+            Vec::new()
+        };
         for lz in 0..cs {
             for lx in 0..cs {
                 let h = height_at(lx, lz);
@@ -1637,6 +1679,9 @@ impl Generator {
                         (top, under, if under == rock { h } else { h - depth })
                     }
                 };
+                if self.slopes {
+                    surfaces[(lz * cs + lx) as usize] = surface;
+                }
                 let layer_bottom = if cfg.layer_depth > 0 && self.biome.is_none() {
                     soil_bottom - cfg.layer_depth - (hash01(seed ^ 0x5a2d, wx, 0, wz) * 4.0) as i64
                 } else {
@@ -1756,6 +1801,11 @@ impl Generator {
             }
         }
 
+        if self.slopes {
+            let lift_at =
+                |lx: i64, wy: i64, lz: i64| lifted(&column_at(lx, lz), lx, wy, lz, origin.x + lx, origin.z + lz);
+            self.cut_slopes(origin, &mut blocks, &surfaces, &height_at, &lift_at);
+        }
         match &self.biome {
             Some(bw) => self.place_biome_trees(bw, origin, &mut blocks, max_h),
             None => {
@@ -1764,7 +1814,54 @@ impl Generator {
             }
         }
         self.place_flora(origin, &mut blocks, &height_at);
+        if self.slopes {
+            keep_footings(&mut blocks, ids.air);
+        }
         Chunk::from_dense_states(&blocks)
+    }
+
+    /// Natural slopes (milestone 32): cuts the top block of each column of
+    /// the chunk where the land steps down beside it, from the height field
+    /// alone (so chunk borders agree). Only the top four octants are ever
+    /// cut, so a cut block keeps its lower half and a one-block rise climbs
+    /// as two half steps (ADR-0008). See [`slope_cut`] for the rule.
+    fn cut_slopes(
+        &self,
+        origin: BlockPos,
+        blocks: &mut [BlockState],
+        surfaces: &[BlockId],
+        height_at: &impl Fn(i64, i64) -> i64,
+        lift_at: &impl Fn(i64, i64, i64) -> bool,
+    ) {
+        let cs = CHUNK_SIZE as i64;
+        for lz in 0..cs {
+            for lx in 0..cs {
+                let h = height_at(lx, lz);
+                let ly = h - origin.y;
+                // Above the water line, so no water ever touches a cut.
+                if !(0..cs).contains(&ly) || h <= self.water_level {
+                    continue;
+                }
+                let i = LocalPos::new(lx as u8, ly as u8, lz as u8).index();
+                let b = blocks[i];
+                // Still the column's cover (no cave, ore or crystal took it),
+                // and a block that takes slopes.
+                if b.id != surfaces[(lz * cs + lx) as usize] || !self.slopable[b.id.0 as usize] {
+                    continue;
+                }
+                // Lifted land above or beside: left whole.
+                let lifted = lift_at(lx, h + 1, lz)
+                    || (-1..=1)
+                        .any(|dz| (-1..=1).any(|dx| lift_at(lx + dx, h, lz + dz) || lift_at(lx + dx, h + 1, lz + dz)));
+                if lifted {
+                    continue;
+                }
+                let cut = slope_cut(|dx, dz| height_at(lx + dx, lz + dz) - h);
+                if let Some(shape) = Shape::new(ShapeFamily::Slope, cut) {
+                    blocks[i].shape = shape;
+                }
+            }
+        }
     }
 
     /// The two colour-region fields on the chunk's lattice, `[z][x]`, from one
@@ -2023,6 +2120,14 @@ impl Generator {
                 let leafy = |id: BlockId| id == air || id == tree.wood[1] || id == tree.wood[2];
                 let mut put = |x: i64, y: i64, z: i64, st: BlockState, trunk: bool| {
                     let (dx, dy, dz) = (x - origin.x, y - origin.y, z - origin.z);
+                    // Whatever stands on a slope (milestone 32) makes it
+                    // whole, even from the chunk above.
+                    if (0..cs).contains(&dx) && (1..=cs).contains(&dy) && (0..cs).contains(&dz) {
+                        let i = LocalPos::new(dx as u8, (dy - 1) as u8, dz as u8).index();
+                        if !blocks[i].shape.is_full() {
+                            blocks[i].shape = Shape::FULL;
+                        }
+                    }
                     if (0..cs).contains(&dx) && (0..cs).contains(&dy) && (0..cs).contains(&dz) {
                         let i = LocalPos::new(dx as u8, dy as u8, dz as u8).index();
                         let here = blocks[i].id;
@@ -2179,7 +2284,12 @@ impl Generator {
                     if blocks[cell].id != air {
                         return;
                     }
-                    let ground = blocks[index(lx, ly - 1, lz)].id;
+                    let ground = blocks[index(lx, ly - 1, lz)];
+                    // Nothing grows on a slope (milestone 32).
+                    if !ground.shape.is_full() {
+                        return;
+                    }
+                    let ground = ground.id;
                     let wy = origin.y + ly;
                     let depth = h - wy;
                     for f in &self.flora {
@@ -2302,6 +2412,44 @@ impl Generator {
     }
 }
 
+/// The octants a natural slope cuts from a column's top block (milestone
+/// 32), given each neighbour's height relative to it (`rel(dx, dz)`). Only
+/// the four top octants: each top corner is cut when a neighbour sharing
+/// one of its edges is lower (a ramp down that side; two sides make an
+/// outer corner), or when only the neighbour across the corner is lower and
+/// neither edge neighbour is higher (an inner corner, so two ramps meet
+/// without a notch). 0: the block stays whole.
+pub fn slope_cut(rel: impl Fn(i64, i64) -> i64) -> u8 {
+    let mut cut = 0u8;
+    for cz in 0..2u8 {
+        for cx in 0..2u8 {
+            let sx = if cx == 0 { -1 } else { 1 };
+            let sz = if cz == 0 { -1 } else { 1 };
+            let (a, b, d) = (rel(sx, 0), rel(0, sz), rel(sx, sz));
+            if a < 0 || b < 0 || (d < 0 && a <= 0 && b <= 0) {
+                cut |= 1 << bm_core::octant(cx, 1, cz);
+            }
+        }
+    }
+    cut
+}
+
+/// A cut block with anything standing on it (a trunk, leaves, a boulder) is
+/// made whole again, so nothing stands on a slope.
+fn keep_footings(blocks: &mut [BlockState], air: BlockId) {
+    let cs = CHUNK_SIZE as u8;
+    for ly in 0..cs - 1 {
+        for lz in 0..cs {
+            for lx in 0..cs {
+                let i = LocalPos::new(lx, ly, lz).index();
+                if !blocks[i].shape.is_full() && blocks[LocalPos::new(lx, ly + 1, lz).index()].id != air {
+                    blocks[i].shape = Shape::FULL;
+                }
+            }
+        }
+    }
+}
+
 fn slope_at(height_at: &impl Fn(i64, i64) -> i64, lx: i64, lz: i64) -> i64 {
     (height_at(lx + 1, lz) - height_at(lx - 1, lz))
         .abs()
@@ -2327,6 +2475,7 @@ fn trilerp(c: [f64; 8], tx: f64, ty: f64, tz: f64) -> f64 {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use bm_core::FarChunk;
 
     fn generator() -> Generator {
         let cfg = PlanetGenConfig {
@@ -2939,9 +3088,9 @@ mod tests {
         }
     }
 
-    /// Pins what generator 4 makes for every built-in kind with its biomes.
-    /// If this fails the terrain changed: bump GENERATOR_VERSION and re-pin,
-    /// in the same commit.
+    /// Pins what generator 5 makes for every built-in kind with its biomes
+    /// and slopes. If this fails the terrain changed: bump GENERATOR_VERSION
+    /// and re-pin, in the same commit.
     #[test]
     fn terrain_fingerprint_is_pinned() {
         let blocks = BlockRegistry::builtin();
@@ -2953,21 +3102,291 @@ mod tests {
                 (k.name.clone(), fingerprint(&g))
             })
             .collect();
-        assert_eq!(GENERATOR_VERSION, 4);
-        let want: Vec<(String, u64)> = PINNED_V4.iter().map(|(n, h)| (n.to_string(), *h)).collect();
+        assert_eq!(GENERATOR_VERSION, 5);
+        let want: Vec<(String, u64)> = PINNED_V5.iter().map(|(n, h)| (n.to_string(), *h)).collect();
         assert_eq!(got, want, "terrain changed");
-        // Planets saved before M26 (no glow crystal colours) keep theirs.
+    }
+
+    /// A kind's settings as planets made before generator 5 saved them: no
+    /// slopes.
+    fn before_m32(mut cfg: PlanetGenConfig) -> PlanetGenConfig {
+        cfg.slopes = false;
+        cfg
+    }
+
+    /// Generator 5 without slopes (every version 4 planet's saved settings)
+    /// makes version 4's terrain block for block: the version 4 pins, kept.
+    #[test]
+    fn no_slopes_reproduce_version_4() {
+        let blocks = BlockRegistry::builtin();
+        assert!(opens_generator_version(4));
         for k in &PlanetKinds::builtin(&blocks).kinds {
-            let g = Generator::new(PlanetShape::new(64, 12), before_m26(k.generation(42)), &blocks).unwrap();
+            assert!(k.generation(42).slopes, "{}: new planets slope", k.name);
+            let g = Generator::new(PlanetShape::new(64, 12), before_m32(k.generation(42)), &blocks).unwrap();
+            let pin = PINNED_V4.iter().find(|(n, _)| *n == k.name).expect("pinned").1;
+            assert_eq!(
+                fingerprint(&g),
+                pin,
+                "{} saved by generator 4 keeps its terrain",
+                k.name
+            );
+            // Planets saved before M26 (no glow crystal colours) keep theirs.
+            let g = Generator::new(
+                PlanetShape::new(64, 12),
+                before_m26(before_m32(k.generation(42))),
+                &blocks,
+            )
+            .unwrap();
             let pin = PINNED_V4_M25.iter().find(|(n, _)| *n == k.name).expect("pinned").1;
             assert_eq!(fingerprint(&g), pin, "{} saved before M26 keeps its terrain", k.name);
         }
+        // Old settings read back without the field: no slopes.
+        let text = toml::to_string(&before_m32(PlanetKinds::builtin(&blocks).kinds[0].generation(42))).unwrap();
+        assert!(!text.contains("slopes"));
+        let back: PlanetGenConfig = toml::from_str(&text).unwrap();
+        assert!(!back.slopes);
     }
+
+    #[test]
+    fn slope_cuts_make_ramps_corners_and_inner_corners() {
+        let top = |cx: u8, cz: u8| 1u8 << bm_core::octant(cx, 1, cz);
+        let rel = |lower: &[(i64, i64)]| {
+            let lower = lower.to_vec();
+            move |dx: i64, dz: i64| if lower.contains(&(dx, dz)) { -1 } else { 0 }
+        };
+        assert_eq!(slope_cut(|_, _| 0), 0, "flat ground stays whole");
+        assert_eq!(slope_cut(|_, _| 3), 0, "a hollow stays whole");
+        // Lower to the west: both west corners cut, a ramp.
+        assert_eq!(slope_cut(rel(&[(-1, -1), (-1, 0), (-1, 1)])), top(0, 0) | top(0, 1));
+        // Lower west and north: an outer corner, only the far corner kept.
+        let outer = rel(&[(-1, -1), (-1, 0), (-1, 1), (0, -1), (1, -1)]);
+        assert_eq!(slope_cut(outer), 0xf0 & !top(1, 1));
+        // Only the north-west diagonal lower: an inner corner.
+        assert_eq!(slope_cut(rel(&[(-1, -1)])), top(0, 0));
+        // ... but not beside a higher neighbour.
+        let walled = |dx: i64, dz: i64| match (dx, dz) {
+            (-1, -1) => -1,
+            (-1, _) => 1,
+            _ => 0,
+        };
+        assert_eq!(slope_cut(walled), 0);
+        // A lone bump: every top corner, a half slab.
+        assert_eq!(slope_cut(|dx, dz| if (dx, dz) == (0, 0) { 0 } else { -1 }), 0xf0);
+        // Only top octants, whatever the neighbours.
+        for m in 0..=255u32 {
+            let h = |dx: i64, dz: i64| ((m >> ((dx + 1) * 3 + dz + 1).rem_euclid(8)) & 1) as i64 - 1;
+            assert_eq!(slope_cut(h) & 0x0f, 0);
+        }
+    }
+
+    /// A planet's blocks across chunk borders, generated as asked.
+    struct Terrain<'a> {
+        g: &'a Generator,
+        blocks: BlockRegistry,
+        chunks: std::cell::RefCell<std::collections::HashMap<ChunkPos, Chunk>>,
+    }
+
+    impl<'a> Terrain<'a> {
+        fn new(g: &'a Generator) -> Self {
+            Self {
+                g,
+                blocks: BlockRegistry::builtin(),
+                chunks: Default::default(),
+            }
+        }
+        fn state(&self, p: BlockPos) -> BlockState {
+            if !self.g.shape().contains_y(p.y) {
+                return BlockState::AIR;
+            }
+            let p = self.g.shape().wrap_block(p);
+            let c = p.chunk();
+            let mut chunks = self.chunks.borrow_mut();
+            chunks.entry(c).or_insert_with(|| self.g.generate(c)).state(p.local())
+        }
+    }
+
+    impl bm_core::movement::PhysicsWorld for Terrain<'_> {
+        fn solid(&self, p: BlockPos) -> bool {
+            self.blocks.get(self.state(p).id).solid
+        }
+        fn liquid(&self, p: BlockPos) -> bool {
+            self.blocks.get(self.state(p).id).liquid
+        }
+        fn shape(&self, p: BlockPos) -> Shape {
+            self.state(p).shape
+        }
+    }
+
+    /// Every cut block in three 48 by 48 patches of a kind's surface,
+    /// checked against the rules: (cut blocks, dry columns seen).
+    fn check_slopes(name: &str, cfg: PlanetGenConfig) -> (usize, usize) {
+        let blocks = BlockRegistry::builtin();
+        let g = Generator::new(PlanetShape::new(64, 12), cfg, &blocks).unwrap();
+        let t = Terrain::new(&g);
+        let (mut cut, mut tops) = (0, 0);
+        let patches = [(0, 0), (700, 300), (1300, 1500)];
+        for (x, z) in patches
+            .iter()
+            .flat_map(|&(px, pz)| (0..48 * 48).map(move |i| (px + i % 48, pz + i / 48)))
+        {
+            {
+                let h = g.surface_height(x, z);
+                tops += (h > g.water_level) as usize;
+                for y in h - 2..=h + 1 {
+                    let p = BlockPos::new(x, y, z);
+                    let b = t.state(p);
+                    if b.shape.is_full() {
+                        continue;
+                    }
+                    cut += 1;
+                    let def = blocks.get(b.id);
+                    assert_eq!(y, h, "{name}: only the ground's top block is cut, at {p:?}");
+                    assert_eq!(b.shape.family(), Some(ShapeFamily::Slope), "{name} {p:?}");
+                    assert_eq!(b.shape.removed() & 0x0f, 0, "{name}: the lower half is kept at {p:?}");
+                    assert!(
+                        def.chisel.allows(ShapeFamily::Slope) && def.solid && !def.liquid,
+                        "{name}: {} is never cut ({p:?})",
+                        def.name
+                    );
+                    assert!(!g.ids.ores.contains(&b.id), "{name}: ore cut at {p:?}");
+                    assert!(y > g.water_level, "{name}: cut at or under the water line, {p:?}");
+                    assert_eq!(
+                        t.state(p.offset(0, 1, 0)).id,
+                        BlockId::AIR,
+                        "{name}: something stands on {p:?}"
+                    );
+                    for (dx, dz) in [(1, 0), (-1, 0), (0, 1), (0, -1)] {
+                        for dy in 0..=1 {
+                            let n = t.state(p.offset(dx, dy, dz)).id;
+                            assert!(!blocks.get(n).liquid, "{name}: liquid beside the cut at {p:?}");
+                        }
+                    }
+                }
+            }
+        }
+        (cut, tops)
+    }
+
+    #[test]
+    fn new_planets_slope_their_ground_and_never_ores_or_water() {
+        let blocks = BlockRegistry::builtin();
+        for k in &PlanetKinds::builtin(&blocks).kinds {
+            let (cut, tops) = check_slopes(&k.name, k.generation(42));
+            assert!(cut * 10 > tops, "{}: only {cut} slopes in {tops} dry columns", k.name);
+            let (old, _) = check_slopes(&k.name, before_m32(k.generation(42)));
+            assert_eq!(old, 0, "{}: a version 4 planet has no slopes", k.name);
+        }
+    }
+
+    #[test]
+    fn a_one_block_natural_rise_is_walked_up_without_a_jump() {
+        use bm_core::movement::{MoveConfig, PlayerInput, PlayerState, step};
+        let blocks = BlockRegistry::builtin();
+        let k = PlanetKinds::builtin(&blocks).get("temperate").unwrap().generation(42);
+        let g = Generator::new(PlanetShape::new(64, 12), k, &blocks).unwrap();
+        let t = Terrain::new(&g);
+        let h = |x: i64, z: i64| g.surface_height(x, z);
+        let clear = |x: i64, y: i64, z: i64| (1..4).all(|dy| t.state(BlockPos::new(x, y + dy, z)).id == BlockId::AIR);
+        let mut walked = 0;
+        // A rise eastward: flat at `base` for two blocks, then a ramp up to
+        // `base + 1` and flat on top, in a strip three wide.
+        for z in 1..1000 {
+            for x in 0..1000 {
+                let base = h(x, z);
+                let row = |dz: i64| {
+                    h(x, z + dz) == base && h(x + 1, z + dz) == base && (2..5).all(|dx| h(x + dx, z + dz) == base + 1)
+                };
+                if base <= g.water_level + 1 || !(-1..=1).all(row) || !(0..5).all(|dx| clear(x + dx, h(x + dx, z), z)) {
+                    continue;
+                }
+                if t.state(BlockPos::new(x + 2, base + 1, z)).shape.is_full() {
+                    continue;
+                }
+                let (yaw, _) = PlayerInput::from_angles(std::f64::consts::FRAC_PI_2, 0.0);
+                let input = PlayerInput {
+                    forward: 1,
+                    yaw,
+                    ..Default::default()
+                };
+                let mut s = PlayerState {
+                    pos: glam::DVec3::new(x as f64 + 0.5, (base + 1) as f64, z as f64 + 0.5),
+                    on_ground: true,
+                    ..Default::default()
+                };
+                let cfg = MoveConfig::default();
+                for _ in 0..60 {
+                    step(&mut s, &input, &cfg, None, g.shape(), &t);
+                    assert!(s.vel.y <= 1e-9 || s.on_ground, "no jump: {:?}", s.vel);
+                }
+                assert!(
+                    s.pos.x > (x + 3) as f64 && (s.pos.y - (base + 2) as f64).abs() < 1e-6,
+                    "stopped at the slope at {x},{base},{z}: {:?}",
+                    s.pos
+                );
+                walked += 1;
+                if walked >= 3 {
+                    return;
+                }
+            }
+        }
+        panic!("found only {walked} rises to walk up");
+    }
+
+    /// Far views (M20) draw a sloped planet as they drew it without slopes:
+    /// cut blocks count as their block and hide what is under them, so the
+    /// far copies are the same cell for cell.
+    #[test]
+    fn slopes_leave_far_copies_unchanged() {
+        let blocks = BlockRegistry::builtin();
+        let flags = blocks.flags();
+        for name in ["temperate", "arid", "frozen"] {
+            let k = PlanetKinds::builtin(&blocks).get(name).unwrap().generation(42);
+            let new = Generator::new(PlanetShape::new(64, 12), k.clone(), &blocks).unwrap();
+            let old = Generator::new(PlanetShape::new(64, 12), before_m32(k), &blocks).unwrap();
+            let mut cut = 0;
+            for (cx, cz) in [(0, 0), (22, 9), (40, 47), (5, 30)] {
+                let h = new.surface_height(cx as i64 * 32 + 16, cz as i64 * 32 + 16);
+                for cy in (h >> 5) - 1..=(h >> 5) + 1 {
+                    let p = ChunkPos::new(cx, cy as i32, cz);
+                    let (a, b) = (new.generate(p), old.generate(p));
+                    cut += a.to_dense_states().iter().filter(|s| !s.shape.is_full()).count();
+                    let (fa, fb) = (FarChunk::from_chunk(&a, &flags), FarChunk::from_chunk(&b, &flags));
+                    assert!(fa == fb, "{name} {p:?}: far copy changed");
+                    assert!(
+                        fa.coarser(&flags) == fb.coarser(&flags),
+                        "{name} {p:?}: level 2 changed"
+                    );
+                }
+            }
+            assert!(cut > 0, "{name}: no slopes to check");
+        }
+    }
+
+    // Generator 5 (M32): natural slopes on new planets.
+    const PINNED_V5: [(&str, u64); 16] = [
+        ("temperate", 0x7e99_770f_93ef_cd3f),
+        ("arid", 0x1df7_1e2c_542d_6f40),
+        ("frozen", 0x2387_3aef_f1be_c084),
+        ("lush", 0xa684_50f2_cfd3_9211),
+        ("overgrown", 0x5c05_cd1d_fc02_caf1),
+        ("rustland", 0x1b90_55b4_d3c0_b80f),
+        ("cinderland", 0xa63a_069f_c1d8_d4a3),
+        ("acrid", 0x8877_8362_52da_1a10),
+        ("blighted", 0x5b07_070b_3c33_0f74),
+        ("glacial", 0x15f4_9f38_f8ae_ae12),
+        ("stormy", 0x176a_6c82_8c60_5294),
+        ("scorched", 0x6181_bad1_bad2_ebd2),
+        ("ember", 0x1079_54ec_75b4_3b9c),
+        ("auroral", 0x58c7_dc3c_7537_0b6f),
+        ("pyric", 0x9a6d_fc5d_5524_6eef),
+        ("gloaming", 0xc9db_342c_95f1_bfa8),
+    ];
     // Re-pinned for M19 part 2's trees and outcrops and part 3's lifted land
     // and caves (2026-10-25) without a bump:
     // generator 4 had not left the branch, so no planet held the old pins.
     // Re-pinned for M26's glow crystal colours (kind data only) without a
     // version bump: planets saved before keep theirs (`PINNED_V4_M25`).
+    // Generator 4's last pins: what version 4 planets (no slopes) still make.
     const PINNED_V4: [(&str, u64); 16] = [
         ("temperate", 0xebbb_b6ad_2a2d_4428),
         ("arid", 0xf87d_9467_37d9_33a9),

@@ -20,8 +20,9 @@
 use crate::{BlockFlags, BlockId, BlockState, CHUNK_SIZE, CHUNK_VOLUME, Chunk, Colour, Shape};
 
 /// Bumped whenever the encoding or the halving rule changes; saved copies
-/// of another version are remade from their chunks.
-pub const FAR_FORMAT_VERSION: u8 = 1;
+/// of another version are remade from their chunks. Version 2 (milestone
+/// 32): a cut block hides what is behind it.
+pub const FAR_FORMAT_VERSION: u8 = 2;
 
 /// Solid parts (of eight) that make a solid cell.
 pub const SOLID_PARTS: u8 = 3;
@@ -273,9 +274,11 @@ fn halve(n: usize, src: &[BlockState], flags: &BlockFlags) -> Vec<BlockState> {
     // A part faces open space when a neighbour inside the volume does not
     // hide it (the volume's edge counts as hidden: the neighbour chunk is
     // not known here, and a buried edge must not leak what it holds).
+    // A cut block hides as its block does (format 2): a natural slope's
+    // cover is what is seen, never the soil under it (milestone 32).
     let hides = |x: usize, y: usize, z: usize| {
         let b = at(x, y, z);
-        flags.opaque(b.id) && b.shape.is_full() && flags.mount(b.id).is_none()
+        flags.opaque(b.id) && !b.shape.is_form() && flags.mount(b.id).is_none()
     };
     let exposed = |x: usize, y: usize, z: usize| {
         (x > 0 && !hides(x - 1, y, z))

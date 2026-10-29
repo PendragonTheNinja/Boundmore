@@ -36,7 +36,7 @@ A pass inside `Generator::generate`, from the column height field the generator 
 - New planets only: `PlanetGenConfig::slopes`, set for every new biome planet; absent (false) in every saved planet's settings, so generator 5 makes version 4's terrain exactly. `GENERATOR_VERSION` 5; 4, 3 and 2 open unchanged.
 - Never shaped: ores, crystals, ice, water, lava, trunks, leaves, plants, built blocks, anything not slopeable; blocks at or below the water line; blocks with something standing on them.
 - Cave floors, cave roofs (Boundless's inverted slopes) and lifted land's tops stay blocky for now (see Part 2).
-- Far views (M20) draw cut blocks as their block, uncut, as they already did for chiselled builds; a far cell is 2 or 4 blocks, coarser than any cut.
+- Far views (M20) draw cut blocks as their block, uncut, as they already did for chiselled builds; a far cell is 2 or 4 blocks, coarser than any cut. The halving now also counts a cut block as hiding what is under it (far format 2, protocol 64), so a sloped hill's far copy is the same cell for cell as it was without slopes (turf seen, not the soil under a ramp).
 
 ## Acceptance
 
@@ -64,4 +64,6 @@ Inverted slopes under overhangs and cave roofs; slopes on cave floors and lifted
 
 ## Status
 
-- 2026-10-29: spec written. Building.
+- 2026-10-29: spec written, then **built**: `PlanetGenConfig::slopes` (set by `PlanetKind::generation` for biome planets; the server's no-biome test planets clear it), `Generator::cut_slopes` and `slope_cut` in `bm-worldgen`, trees restoring their footing (`place_biome_trees`'s `put`), flora skipping cut ground, `keep_footings` for anything else. `GENERATOR_VERSION` 5 (4, 3, 2 open unchanged), `FAR_FORMAT_VERSION` 2, protocol 64. Tests: `slope_cuts_make_ramps_corners_and_inner_corners`, `new_planets_slope_their_ground_and_never_ores_or_water` (every kind: 12 to 40% of dry columns cut; never an ore, never at or under the water line, nothing standing on a cut, no liquid beside one), `a_one_block_natural_rise_is_walked_up_without_a_jump` (real generated rises, `movement::step`), `no_slopes_reproduce_version_4` (the old pins kept), `slopes_leave_far_copies_unchanged`, and the re-pinned `terrain_fingerprint_is_pinned`.
+- **Known limits:** plants and boulders do not grow on cut ground (Boundless drew them offset down onto it: a client follow-up); cave floors, cave roofs and lifted land stay blocky (Part 2); outside a chunk the lifted-land test samples the noise directly rather than the chunk's lattice, so a rare slope may sit beside a lifted block; the shrine plaza writes full blocks, and terrain just outside it keeps the cuts it had against the old ground.
+- **Next:** Nathan's look and walk on a fresh universe (his two decisions above).

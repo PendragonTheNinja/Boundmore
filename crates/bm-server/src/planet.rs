@@ -263,6 +263,7 @@ pub fn new_record(
             if !biomes {
                 g.biomes.clear();
                 g.cave_tier = 0;
+                g.slopes = false;
             }
             g
         },

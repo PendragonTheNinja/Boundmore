@@ -61,11 +61,14 @@ impl PlanetKind {
         };
         // A biome planet's caves follow its tier (milestone 19 part 3).
         let cave_tier = if biomes.is_empty() { 0 } else { self.tier };
+        // And its ground slopes (milestone 32, generator 5).
+        let slopes = !biomes.is_empty();
         PlanetGenConfig {
             seed,
             colours,
             biomes,
             cave_tier,
+            slopes,
             ..self.generation.clone()
         }
     }
