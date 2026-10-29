@@ -3560,6 +3560,7 @@ fn demo_planets(blocks: &BlockRegistry) -> Vec<DemoPlanet> {
                     },
                     tints: k.look.resolve_tints(blocks).expect("tints name blocks"),
                     look: k.look.clone(),
+                    shrine: Some(BlockPos::new(SHRINE[0], SHRINE[1], SHRINE[2])),
                 },
                 summary: PlanetSummary {
                     id,

@@ -60,6 +60,11 @@ impl Sky {
         self.meteors.insert(v.id, v);
     }
 
+    /// Where every meteor known here lands, for the compass.
+    pub fn sites(&self) -> Vec<bm_core::BlockPos> {
+        self.meteors.values().map(|m| m.site).collect()
+    }
+
     pub fn gone(&mut self, id: u32) {
         self.meteors.remove(&id);
     }

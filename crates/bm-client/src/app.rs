@@ -490,6 +490,34 @@ impl Session {
         self.chisel = None;
     }
 
+    /// The compass strip's view (polish, 2026-10-29): which way we face
+    /// (`yaw`, radians) and where the shrine, our claims and the meteors
+    /// lie from `feet`.
+    fn compass(&self, yaw: f64, feet: DVec3) -> crate::compass::CompassView {
+        use crate::compass::{Mark, bearing, toward};
+        let shape = self.world.shape;
+        let centre = |b: BlockPos| DVec3::new(b.x as f64 + 0.5, b.y as f64, b.z as f64 + 0.5);
+        let mut marks = Vec::new();
+        if let Some(shrine) = self.planet.shrine {
+            let (at, d) = toward(shape, feet, centre(shrine));
+            marks.push((Mark::Shrine, at, d));
+        }
+        for c in self.claims.iter().filter(|c| c.owner == self.account) {
+            let (at, d) = toward(shape, feet, centre(c.stone));
+            marks.push((Mark::Claim, at, d));
+        }
+        for site in self.sky_view.sites() {
+            let (at, d) = toward(shape, feet, centre(site));
+            marks.push((Mark::Meteor, at, d));
+        }
+        // Too close to point anywhere: no mark.
+        marks.retain(|m| m.2 > 4.0);
+        crate::compass::CompassView {
+            facing: bearing(DVec3::new(yaw.sin(), 0.0, -yaw.cos())),
+            marks,
+        }
+    }
+
     /// The crosshair's grapple cue (polish, 2026-10-29): for each hand
     /// holding a grapple, whether a hook fired now would strike a block
     /// before its range runs out (as the movement step flies it: from the
@@ -2985,6 +3013,7 @@ impl App {
                         meteor: s.sky_view.status(feet, shape, s.server_tick(local)),
                         life: s.sky_view.life_text(),
                         air: crate::menus::air_view(&s.me.state),
+                        compass: Some(s.compass(yaw, feet)),
                     },
                 );
             }
@@ -4895,6 +4924,35 @@ mod tests {
         demo.send(msg);
         deliver(&mut s, demo.poll());
         assert_eq!(s.damage.damage(pos), predicted, "the answer agrees");
+    }
+
+    #[test]
+    fn the_compass_points_home_and_at_our_claims() {
+        use crate::compass::Mark;
+        let (s, _, _) = session_on_the_demo();
+        let shrine = s.planet.shrine.expect("the demo planet has a shrine");
+        // 30 blocks north of the shrine, facing north: it lies due south.
+        let feet = DVec3::new(shrine.x as f64 + 0.5, 44.0, shrine.z as f64 + 0.5 - 30.0);
+        let v = s.compass(0.0, feet);
+        assert_eq!(v.facing, 0.0);
+        let (_, at, d) = v.marks.iter().find(|m| m.0 == Mark::Shrine).copied().unwrap();
+        assert!((at - 180.0).abs() < 0.01 && (d - 30.0).abs() < 0.01, "{at} {d}");
+        // Facing east (yaw a quarter turn).
+        assert!((s.compass(std::f64::consts::FRAC_PI_2, feet).facing - 90.0).abs() < 0.01);
+        // Our claims are marked, nobody else's.
+        let ours = s.claims.iter().filter(|c| c.owner == s.account).count();
+        assert_eq!(
+            v.marks.iter().filter(|m| m.0 == Mark::Claim).count(),
+            s.claims
+                .iter()
+                .filter(|c| c.owner == s.account)
+                .filter(|c| {
+                    let to = DVec3::new(c.stone.x as f64 + 0.5, 0.0, c.stone.z as f64 + 0.5);
+                    crate::compass::toward(s.world.shape, feet, to).1 > 4.0
+                })
+                .count()
+        );
+        assert!(ours > 0, "the demo has a claim of ours");
     }
 
     #[test]

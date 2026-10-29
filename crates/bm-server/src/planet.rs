@@ -90,6 +90,7 @@ impl Planet {
             day: self.day,
             look: self.look.clone(),
             tints: self.tints.clone(),
+            shrine: Some(self.shrine),
         }
     }
 

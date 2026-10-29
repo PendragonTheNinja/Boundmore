@@ -29,7 +29,7 @@ use serde::{Deserialize, Serialize, de::DeserializeOwned};
 pub const MAX_CRAFT_COUNT: u16 = 100;
 
 /// Bump on any change to a message below. Client and server must match.
-pub const PROTOCOL_VERSION: u32 = 60;
+pub const PROTOCOL_VERSION: u32 = 61;
 
 /// QUIC application protocol name; also refuses non-Boundmore peers early.
 pub const ALPN: &[u8] = b"boundmore/1";
@@ -407,6 +407,10 @@ pub struct PlanetInfo {
     pub look: PlanetLook,
     /// `look.tints` resolved: one per block id, `NO_TINT` for none.
     pub tints: Vec<[u8; 3]>,
+    /// Its warp shrine, for the compass (polish, 2026-10-29); None for a
+    /// world without one.
+    #[serde(default)]
+    pub shrine: Option<BlockPos>,
 }
 
 /// A planet as listed in the travel menu and drawn in the sky.
@@ -1578,6 +1582,7 @@ mod tests {
                 day: DayCycle::default(),
                 look: PlanetLook::default(),
                 tints: vec![bm_core::NO_TINT; blocks.len()],
+                shrine: Some(BlockPos::new(1024, 120, 1024)),
             },
             universe: (0..32)
                 .map(|id| PlanetSummary {

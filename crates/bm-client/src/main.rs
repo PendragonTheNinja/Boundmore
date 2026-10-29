@@ -9,6 +9,7 @@ mod chisel;
 mod claims;
 mod colour;
 mod combat;
+mod compass;
 mod creatures;
 mod demo;
 mod effects;

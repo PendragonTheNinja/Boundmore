@@ -588,6 +588,8 @@ pub struct Hud<'a> {
     pub life: Option<String>,
     /// Air (milestone 18), while it is not full or protection falls short.
     pub air: Option<AirView>,
+    /// The compass strip at the very top.
+    pub compass: Option<crate::compass::CompassView>,
 }
 
 /// The air bar: what is left, and what the tag over it says.
@@ -1988,10 +1990,18 @@ pub fn hud(ctx: &egui::Context, h: &Hud) {
             .interactable(false)
             .order(egui::Order::Background)
     };
-    // The region at the very top; claims and meteors below it.
-    let mut y = 14.0;
+    // The compass at the very top, then the region; claims and meteors
+    // below them.
+    let shift = match h.compass.as_ref().filter(|_| h.claim_mode.is_none()) {
+        Some(c) => {
+            crate::compass::draw(ctx, c, 4.0);
+            crate::compass::HEIGHT + 20.0
+        }
+        None => 0.0,
+    };
+    let mut y = 14.0 + shift;
     if let Some(region) = h.region.as_ref().filter(|_| h.claim_mode.is_none()) {
-        top_area("region", 8.0).show(ctx, |ui| {
+        top_area("region", 8.0 + shift).show(ctx, |ui| {
             ui.label(
                 egui::RichText::new(region)
                     .color(Color32::from_rgb(236, 230, 214))
@@ -1999,7 +2009,7 @@ pub fn hud(ctx: &egui::Context, h: &Hud) {
                     .strong(),
             );
         });
-        y = 34.0;
+        y = 34.0 + shift;
     }
     if let Some((text, left)) = h.meteor.as_ref().filter(|_| h.claim_mode.is_none()) {
         let at = match (&h.owner, &h.settlement) {
