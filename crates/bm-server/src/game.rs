@@ -1769,7 +1769,12 @@ impl Game {
                     }
                 }
                 if fell {
-                    self.check_defeat(id, combat::BY_A_FALL);
+                    // A fall, lava, water, bad air or hunger: say which.
+                    let cause = self
+                        .players
+                        .get(&id)
+                        .map_or(combat::BY_A_FALL, |p| p.state.harm_cause());
+                    self.check_defeat(id, cause);
                 }
             }
         }

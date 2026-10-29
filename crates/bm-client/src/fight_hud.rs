@@ -44,9 +44,19 @@ pub struct Number {
     pub alpha: f32,
 }
 
+/// How long our hit marker shows (seconds).
+pub const HIT_MARKER_SECONDS: f64 = 0.3;
+/// How long the damage direction marker shows (seconds).
+pub const HURT_DIR_SECONDS: f64 = 1.6;
+
 pub struct FightView<'a> {
     /// The hurt flash, 0 (none) to 1 (just hit).
     pub flash: f32,
+    /// Our strike or shot just landed, 0 to 1 (the crosshair's marker).
+    pub hit_marker: f32,
+    /// Which way the last hurt came from (radians from straight ahead,
+    /// positive to the right) and how strongly to show it, 0 to 1.
+    pub hurt_dir: Option<(f32, f32)>,
     pub plates: &'a [Plate],
     pub numbers: &'a [Number],
     /// Draw's charge, 0 to 1, while charging.
@@ -80,6 +90,41 @@ pub fn show(ctx: &egui::Context, v: &FightView) -> bool {
     let screen = ctx.content_rect();
     if v.flash > 0.0 {
         flash(ctx, screen, v.flash);
+    }
+    if v.hit_marker > 0.0 || v.hurt_dir.is_some() {
+        egui::Area::new(Id::unique("fight-markers"))
+            .fixed_pos(screen.min)
+            .interactable(false)
+            .order(egui::Order::Foreground)
+            .show(ctx, |ui| {
+                let p = ui.painter();
+                let c = screen.center();
+                if v.hit_marker > 0.0 {
+                    // Four short strokes around the crosshair.
+                    let a = (v.hit_marker * 255.0) as u8;
+                    let stroke = egui::Stroke::new(2.0, Color32::from_rgba_unmultiplied(255, 240, 220, a));
+                    for (dx, dy) in [(-1.0, -1.0), (1.0, -1.0), (-1.0, 1.0), (1.0, 1.0)] {
+                        let d = egui::vec2(dx, dy);
+                        p.line_segment([c + d * 6.0, c + d * 12.0], stroke);
+                    }
+                }
+                if let Some((angle, strength)) = v.hurt_dir {
+                    // A red wedge on a ring round the crosshair, pointing
+                    // the way the hurt came from.
+                    let a = (strength * 220.0) as u8;
+                    let colour = Color32::from_rgba_unmultiplied(230, 40, 40, a);
+                    let radius = 110.0;
+                    let dir = egui::vec2(angle.sin(), -angle.cos());
+                    let side = egui::vec2(-dir.y, dir.x);
+                    let tip = c + dir * (radius + 18.0);
+                    let base = c + dir * radius;
+                    p.add(egui::Shape::convex_polygon(
+                        vec![tip, base + side * 16.0, base - side * 16.0],
+                        colour,
+                        egui::Stroke::NONE,
+                    ));
+                }
+            });
     }
     if !v.plates.is_empty() || !v.numbers.is_empty() || v.charge.is_some() || v.fuse.is_some() {
         egui::Area::new(Id::unique("fight-overlay"))

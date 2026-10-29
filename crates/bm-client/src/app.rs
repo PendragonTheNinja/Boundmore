@@ -112,6 +112,10 @@ fn worth_retrying(reason: &str) -> bool {
         .any(|w| r.contains(w))
 }
 
+/// A creature this near when we are hurt is taken as the striker (the
+/// damage direction marker).
+const HURT_FROM_RANGE: f64 = 24.0;
+
 /// Frames a second while the window is minimised or covered.
 const HIDDEN_FRAME_CAP: u32 = 10;
 
@@ -309,6 +313,10 @@ struct Session {
     losses: Losses,
     /// When we last lost health (seconds), for the red flash.
     hurt_at: f64,
+    /// Where the last hurt likely came from (the nearest creature) and when.
+    hurt_from: Option<(DVec3, f64)>,
+    /// When our last strike or shot landed (the crosshair's hit marker).
+    hit_marker_at: f64,
     last_hurt: u32,
     defeat: Defeat,
     /// A body's loot was asked for on this press of the attack button.
@@ -359,6 +367,8 @@ impl Session {
             floaters: Floaters::default(),
             losses,
             hurt_at: f64::NEG_INFINITY,
+            hurt_from: None,
+            hit_marker_at: f64::NEG_INFINITY,
             last_hurt: hurt,
             defeat: Defeat::default(),
             looted_this_press: false,
@@ -958,6 +968,7 @@ impl Session {
         match target {
             Target::Creature(id) => {
                 self.creatures.flash(id);
+                self.hit_marker_at = now;
                 if let Some(c) = self.seen.iter().find(|c| c.id == id)
                     && let Some(k) = self.creatures.kind(c.kind)
                 {
@@ -969,6 +980,17 @@ impl Session {
                 self.losses.hit(amount, now);
                 self.floaters.add(Anchor::Me, amount, crit, true, now);
                 self.hurt_at = now;
+                // Which way it came from: the nearest creature (only
+                // creatures strike players).
+                let me = self.me.state.pos;
+                let shape = self.world.shape;
+                self.hurt_from = self
+                    .seen
+                    .iter()
+                    .map(|c| c.pos)
+                    .filter(|p| shape.delta(me, *p).length() < HURT_FROM_RANGE)
+                    .min_by(|a, b| shape.delta(me, *a).length().total_cmp(&shape.delta(me, *b).length()))
+                    .map(|p| (p, now));
             }
             Target::Player(_) => {}
         }
@@ -2801,6 +2823,14 @@ impl App {
                 Some(("E", "portal"))
             } else if s.aiming_at_heart().is_some() {
                 Some(("E", "take your share"))
+            } else if s.aiming_at_helix().is_some() {
+                Some(("E", "helix"))
+            } else if s.aiming_at_guild_control().is_some() {
+                Some(("E", "guild"))
+            } else if s.aiming_at_sign().is_some() {
+                Some(("E", "read"))
+            } else if s.aiming_at_door().is_some() {
+                Some(("E", "open or shut"))
             } else {
                 None
             };
@@ -2875,10 +2905,25 @@ impl App {
                 };
                 let numbers = s.numbers(eye, forward, fov_y, screen, now);
                 let flash = (1.0 - (now - s.hurt_at) / crate::fight_hud::FLASH_SECONDS).clamp(0.0, 1.0) as f32;
+                let hit_marker =
+                    (1.0 - (now - s.hit_marker_at) / crate::fight_hud::HIT_MARKER_SECONDS).clamp(0.0, 1.0) as f32;
+                // The way to whatever hurt us, relative to where we look (0
+                // ahead, positive to the right).
+                let hurt_dir = s.hurt_from.and_then(|(from, at)| {
+                    let fade = (1.0 - (now - at) / crate::fight_hud::HURT_DIR_SECONDS).clamp(0.0, 1.0) as f32;
+                    let d = s.world.shape.delta(s.me.state.pos, from);
+                    let (f, r) = (
+                        DVec3::new(forward.x as f64, 0.0, forward.z as f64),
+                        DVec3::new(-forward.z as f64, 0.0, forward.x as f64),
+                    );
+                    (fade > 0.0 && d.length() > 0.5).then(|| ((d.dot(r)).atan2(d.dot(f)) as f32, fade))
+                });
                 return_pressed = crate::fight_hud::show(
                     &ctx,
                     &crate::fight_hud::FightView {
                         flash,
+                        hit_marker,
+                        hurt_dir,
                         plates: &plates,
                         numbers: &numbers,
                         charge: s.trigger.charge(s.me.seq),
@@ -3263,12 +3308,22 @@ impl App {
             let k = s.creatures.kind(c.kind)?;
             Some(c.pos + DVec3::new(0.0, k.height as f64 * 0.45, 0.0))
         }));
-        // The sling or the bag of bombs in hand, low and to the right.
-        if let Some(def) = s.items.slot(s.selected).and_then(|h| s.items.def(&h))
-            && !s.me.state.down
-        {
+        // A sling or a bag of bombs in either hand, low in its own side of
+        // the view (milestone 28: the left hand's on the left). The same
+        // slot in both hands is the left hand's.
+        let held_slots = [
+            Some(s.selected),
+            (s.selected_off != s.selected).then_some(s.selected_off),
+        ];
+        for (side, slot) in [-1.0f32, 1.0].into_iter().zip(held_slots) {
+            let Some(def) = slot.and_then(|i| s.items.slot(i)).and_then(|h| s.items.def(&h)) else {
+                continue;
+            };
+            if s.me.state.down {
+                break;
+            }
             let turn = glam::Quat::from_rotation_y(-yaw as f32) * glam::Quat::from_rotation_x(pitch as f32);
-            let hand = turn * Vec3::new(0.3, -0.3, -0.55);
+            let hand = turn * Vec3::new(0.3 * side, -0.3, -0.55);
             if def.sling().is_some() {
                 boxes.extend(held_sling(&def.name, turn, hand, light(eye)));
             } else if def.bomb().is_some() {

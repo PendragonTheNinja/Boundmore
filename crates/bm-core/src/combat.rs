@@ -251,6 +251,25 @@ impl PlayerState {
         }
     }
 
+    /// What most likely brought the body down when nothing struck it (the
+    /// defeat screen names it): lava, water, bad air, hunger, a Draining
+    /// quirk, or else a fall.
+    pub fn harm_cause(&self) -> &'static str {
+        if self.lava_wait + 2 > LAVA_TICKS {
+            "lava"
+        } else if self.air_used >= crate::atmosphere::AIR_TICKS && self.submerged {
+            "drowning"
+        } else if self.air_used >= crate::atmosphere::AIR_TICKS {
+            "the air (you ran out of breath)"
+        } else if self.starving() {
+            "hunger"
+        } else if self.quirks.has(crate::forge::Quirks::DRAINING) {
+            "a Draining curse"
+        } else {
+            "a fall"
+        }
+    }
+
     pub fn revive(&mut self, health: u32) {
         self.down = false;
         self.hurt = self.max_health().saturating_sub(health.max(1));
@@ -316,6 +335,20 @@ mod tests {
     }
 
     use super::*;
+
+    /// The defeat screen names what brought a body down (audit 2026-10-29:
+    /// every such defeat used to say "a fall").
+    #[test]
+    fn a_defeat_without_a_striker_names_its_cause() {
+        let mut s = PlayerState::default();
+        assert_eq!(s.harm_cause(), "a fall");
+        s.air_used = crate::atmosphere::AIR_TICKS;
+        assert_eq!(s.harm_cause(), "the air (you ran out of breath)");
+        s.submerged = true;
+        assert_eq!(s.harm_cause(), "drowning");
+        s.lava_wait = LAVA_TICKS;
+        assert_eq!(s.harm_cause(), "lava");
+    }
 
     #[test]
     fn health_follows_boundless_vitality_curve() {
