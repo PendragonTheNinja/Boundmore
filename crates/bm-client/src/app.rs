@@ -313,6 +313,8 @@ struct Session {
     losses: Losses,
     /// When we last lost health (seconds), for the red flash.
     hurt_at: f64,
+    /// What just came into the pack, shown by the hotbar.
+    pickups: crate::menus::Pickups,
     /// Where the last hurt likely came from (the nearest creature) and when.
     hurt_from: Option<(DVec3, f64)>,
     /// When our last strike or shot landed (the crosshair's hit marker).
@@ -367,6 +369,7 @@ impl Session {
             floaters: Floaters::default(),
             losses,
             hurt_at: f64::NEG_INFINITY,
+            pickups: Default::default(),
             hurt_from: None,
             hit_marker_at: f64::NEG_INFINITY,
             last_hurt: hurt,
@@ -1973,7 +1976,11 @@ impl App {
             ServerMsg::EditResult { seq, pos, block, .. } => s.edit_result(seq, pos, block),
             ServerMsg::PlayerJoined { id, name } => s.remotes.joined(id, name),
             ServerMsg::PlayerLeft { id } => s.remotes.left(id),
-            ServerMsg::Slots { changes } => s.items.apply_slots(&changes),
+            ServerMsg::Slots { changes } => {
+                let before = s.items.inventory.slots.clone();
+                s.items.apply_slots(&changes);
+                s.pickups.note(&before, &s.items.inventory.slots, now);
+            }
             ServerMsg::Station(view) => {
                 // Any block of a machine opens it; the answer names the
                 // machine's own first block (milestone 11).
@@ -2793,6 +2800,10 @@ impl App {
             .duration_since(std::time::UNIX_EPOCH)
             .map_or(0, |d| d.as_secs());
         let notices = self.notices.visible(now);
+        let pickups = match self.session.as_mut() {
+            Some(s) => s.pickups.visible(&s.items, now),
+            None => Vec::new(),
+        };
         let menu = self.menu;
         let options = self.settings.options.clone();
         let hide_hud = self.hide_hud;
@@ -2860,6 +2871,7 @@ impl App {
                         selected: s.selected,
                         selected_off: s.selected_off,
                         notices: notices.clone(),
+                        pickups: pickups.clone(),
                         owner,
                         settlement,
                         claim_mode: claim_help,

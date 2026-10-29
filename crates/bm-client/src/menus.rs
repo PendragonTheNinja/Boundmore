@@ -187,6 +187,66 @@ pub struct Notices {
     list: Vec<(String, f64)>,
 }
 
+/// What just came into the pack ("+3 Stone"), shown by the hotbar for a
+/// moment: gains of one kind within `PICKUP_MERGE` seconds add up.
+#[derive(Default)]
+pub struct Pickups {
+    list: Vec<(ItemStack, u32, f64)>,
+}
+
+const PICKUP_SECONDS: f64 = 2.5;
+const PICKUP_MERGE: f64 = 1.5;
+const PICKUPS_SHOWN: usize = 5;
+
+impl Pickups {
+    /// `count` of `kind` (its count ignored) came in at `now`.
+    pub fn add(&mut self, kind: ItemStack, count: u32, now: f64) {
+        match self
+            .list
+            .iter_mut()
+            .find(|(k, _, at)| k.stacks_with(&kind) && now - *at < PICKUP_MERGE)
+        {
+            Some((_, n, at)) => {
+                *n += count;
+                *at = now;
+            }
+            None => self.list.push((kind, count, now)),
+        }
+    }
+
+    /// The gains between two packs (what moved inside it adds to nothing).
+    pub fn note(&mut self, before: &[Option<ItemStack>], after: &[Option<ItemStack>], now: f64) {
+        let mut totals: Vec<(ItemStack, i64)> = Vec::new();
+        for (sign, row) in [(-1i64, before), (1, after)] {
+            for s in row.iter().flatten() {
+                match totals.iter_mut().find(|(k, _)| k.stacks_with(s)) {
+                    Some((_, n)) => *n += sign * s.count as i64,
+                    None => totals.push((*s, sign * s.count as i64)),
+                }
+            }
+        }
+        for (kind, n) in totals {
+            if n > 0 {
+                self.add(kind, n as u32, now);
+            }
+        }
+    }
+
+    /// Lines still showing, newest last, with their opacity.
+    pub fn visible(&mut self, items: &Items, now: f64) -> Vec<(ItemStack, String, f32)> {
+        self.list.retain(|(_, _, at)| now - at < PICKUP_SECONDS);
+        let skip = self.list.len().saturating_sub(PICKUPS_SHOWN);
+        self.list[skip..]
+            .iter()
+            .map(|(k, n, at)| {
+                let name = items.def(k).map_or_else(String::new, |d| d.display.clone());
+                let alpha = ((PICKUP_SECONDS - (now - at)) / 0.6).clamp(0.0, 1.0) as f32;
+                (*k, format!("+{n} {name}"), alpha)
+            })
+            .collect()
+    }
+}
+
 const NOTICE_SECONDS: f64 = 4.0;
 const NOTICE_FADE: f64 = 1.0;
 const NOTICES_SHOWN: usize = 4;
@@ -475,6 +535,8 @@ pub struct Hud<'a> {
     /// The right hand's slot (milestone 28), marked in its own colour.
     pub selected_off: usize,
     pub notices: Vec<(String, f32)>,
+    /// What just came in ("+3 Stone"), by the hotbar.
+    pub pickups: Vec<(ItemStack, String, f32)>,
     /// Shown small at the top: whose land this is.
     pub owner: Option<(String, bool)>,
     /// The claim's settlement and prestige (`claim_line`).
@@ -1824,6 +1886,30 @@ pub fn hud(ctx: &egui::Context, h: &Hud) {
                         DEBT_RED,
                     );
                 }
+            });
+    }
+
+    if !h.pickups.is_empty() {
+        let width = HOTBAR_SLOTS as f32 * SLOT + (HOTBAR_SLOTS - 1) as f32 * GAP;
+        egui::Area::new(Id::unique("pickups"))
+            .anchor(Align2::CENTER_BOTTOM, vec2(width / 2.0 + 90.0, -(18.0 + 4.0)))
+            .interactable(false)
+            .order(egui::Order::Background)
+            .show(ctx, |ui| {
+                ui.with_layout(Layout::bottom_up(Align::Min), |ui| {
+                    for (stack, text, alpha) in h.pickups.iter().rev() {
+                        ui.horizontal(|ui| {
+                            let (rect, _) = ui.allocate_exact_size(Vec2::splat(22.0), Sense::hover());
+                            paint_icon(ui.painter(), rect, h.icons.get(stack), *alpha);
+                            ui.label(
+                                egui::RichText::new(text)
+                                    .color(TEXT.gamma_multiply(*alpha))
+                                    .size(14.0)
+                                    .strong(),
+                            );
+                        });
+                    }
+                });
             });
     }
 
@@ -3591,6 +3677,24 @@ fn paint_planet_faded(painter: &egui::Painter, centre: egui::Pos2, radius: f32, 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Pickups count what came in, not what moved inside the pack.
+    #[test]
+    fn pickups_count_gains_only() {
+        let (a, b) = (ItemStack::new(ItemId(3), 1), ItemStack::new(ItemId(4), 1));
+        let mut p = Pickups::default();
+        let before = vec![Some(ItemStack { count: 5, ..a }), None];
+        // Moved to the other slot: nothing came in.
+        let moved = vec![None, Some(ItemStack { count: 5, ..a })];
+        p.note(&before, &moved, 0.0);
+        assert!(p.list.is_empty());
+        // Two more of `a` and one `b`; then one more `a` soon after merges.
+        let gained = vec![Some(ItemStack { count: 7, ..a }), Some(ItemStack { count: 1, ..b })];
+        p.note(&before, &gained, 1.0);
+        p.add(a, 1, 1.5);
+        let counts: Vec<u32> = p.list.iter().map(|(_, n, _)| *n).collect();
+        assert_eq!(counts, vec![3, 1]);
+    }
 
     #[test]
     fn a_wanderers_time_left_reads_plainly() {
