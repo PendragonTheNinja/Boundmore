@@ -198,13 +198,20 @@ const PICKUP_SECONDS: f64 = 2.5;
 const PICKUP_MERGE: f64 = 1.5;
 const PICKUPS_SHOWN: usize = 5;
 
+/// The same thing for the pickup lines: one item, colour and forging,
+/// whatever its wear or tag (a tool wearing as it swings, or an atlas being
+/// bound, is not something picked up).
+fn same_kind(a: &ItemStack, b: &ItemStack) -> bool {
+    a.item == b.item && a.colour == b.colour && a.forge == b.forge
+}
+
 impl Pickups {
     /// `count` of `kind` (its count ignored) came in at `now`.
     pub fn add(&mut self, kind: ItemStack, count: u32, now: f64) {
         match self
             .list
             .iter_mut()
-            .find(|(k, _, at)| k.stacks_with(&kind) && now - *at < PICKUP_MERGE)
+            .find(|(k, _, at)| same_kind(k, &kind) && now - *at < PICKUP_MERGE)
         {
             Some((_, n, at)) => {
                 *n += count;
@@ -219,7 +226,7 @@ impl Pickups {
         let mut totals: Vec<(ItemStack, i64)> = Vec::new();
         for (sign, row) in [(-1i64, before), (1, after)] {
             for s in row.iter().flatten() {
-                match totals.iter_mut().find(|(k, _)| k.stacks_with(s)) {
+                match totals.iter_mut().find(|(k, _)| same_kind(k, s)) {
                     Some((_, n)) => *n += sign * s.count as i64,
                     None => totals.push((*s, sign * s.count as i64)),
                 }
@@ -3736,6 +3743,20 @@ mod tests {
         p.add(a, 1, 1.5);
         let counts: Vec<u32> = p.list.iter().map(|(_, n, _)| *n).collect();
         assert_eq!(counts, vec![3, 1]);
+    }
+
+    /// A tool wearing as it swings is not a pickup (it used to read as "+1
+    /// Stone Hammer" at every swing: worn tools do not stack).
+    #[test]
+    fn a_tool_wearing_is_not_a_pickup() {
+        let hammer = ItemStack {
+            wear: 38,
+            ..ItemStack::new(ItemId(9), 1)
+        };
+        let mut p = Pickups::default();
+        p.note(&[Some(hammer)], &[Some(ItemStack { wear: 39, ..hammer })], 0.0);
+        p.note(&[Some(hammer)], &[Some(ItemStack { tag: 7, ..hammer })], 0.0);
+        assert!(p.list.is_empty());
     }
 
     #[test]

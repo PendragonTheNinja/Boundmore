@@ -10,6 +10,9 @@ use crossbeam_channel::{Receiver, Sender};
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
+/// Most broken blocks remembered between frames (a blast breaks many).
+const MAX_BROKEN: usize = 64;
+
 pub struct ClientWorld {
     pub shape: PlanetShape,
     pub registry: BlockRegistry,
@@ -20,6 +23,9 @@ pub struct ClientWorld {
     /// Sky and block light for the resident chunks (bm-core `light.rs`).
     light: LightMap,
     mesher: Mesher,
+    /// Blocks that just broke (became air), with what they were: the frame
+    /// takes them for break chips (`Effects::chips`).
+    pub broken: Vec<(BlockPos, BlockState)>,
 }
 
 impl ClientWorld {
@@ -33,6 +39,7 @@ impl ClientWorld {
             light: LightMap::new(shape, &registry.flags()).with_colours(colours),
             registry,
             mesher: Mesher::new(),
+            broken: Vec::new(),
         }
     }
 
@@ -99,6 +106,9 @@ impl ClientWorld {
         };
         let old = Arc::make_mut(c).set_state(p.local(), state);
         if old != state {
+            if !old.id.is_air() && state.id.is_air() && self.broken.len() < MAX_BROKEN {
+                self.broken.push((p, old));
+            }
             self.dirty_block(p);
             // A new colour needs a re-mesh; a new type, or a cut that makes
             // or unmakes a whole cube (cut blocks are not opaque), relights.

@@ -2383,6 +2383,19 @@ impl App {
             }
         }
         s.floaters.update(now_s);
+        // Blocks that broke since the last frame (ours predicted, others'
+        // from the server) throw chips.
+        let broken = std::mem::take(&mut s.world.broken);
+        let burst = broken.len();
+        for (p, was) in broken {
+            let def = s.world.registry.get(was.id);
+            if def.liquid {
+                continue;
+            }
+            let centre = DVec3::new(p.x as f64 + 0.5, p.y as f64 + 0.5, p.z as f64 + 0.5);
+            let light = BoxInstance::light_of(s.world.light_at(centre));
+            s.fx.chips(centre, def.color, light, burst, now_s);
+        }
         s.fx.update(now_s);
         if let Some(fall) = s.losses.observe(s.me.state.hurt, now_s) {
             s.floaters.add(Anchor::Me, fall, false, true, now_s);

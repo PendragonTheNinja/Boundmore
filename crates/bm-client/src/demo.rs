@@ -4106,6 +4106,12 @@ mod tests {
     fn the_demo_fights_by_the_rules() {
         let mut d = Demo::new("Tester");
         d.show_creatures();
+        // The showcase's scripted hits on the pelter come every 0.8 s of
+        // wall time: on a loaded machine one landed mid-test and showed up
+        // among the strikes' hits (2026-10-29). The rules are what is tested.
+        for c in &mut d.fight.creatures {
+            c.beaten = false;
+        }
         d.poll();
         let hammer = 0u8;
         let speed = d

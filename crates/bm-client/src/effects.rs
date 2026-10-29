@@ -37,6 +37,27 @@ pub struct Blast {
     pub seed: u32,
 }
 
+/// Chips thrown from a broken block (polish, 2026-10-29: a block used to
+/// simply vanish).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Chips {
+    /// The block's centre, canonical.
+    pub pos: DVec3,
+    /// Linear RGB.
+    pub colour: Vec3,
+    /// As `BoxInstance::light`, where the block was.
+    pub light: [f32; 4],
+    pub born: f64,
+    pub seed: u32,
+    /// How many chips (fewer when many blocks break at once).
+    pub count: u32,
+}
+
+/// Chips fly this long (seconds).
+pub const CHIP_SECONDS: f64 = 0.75;
+/// Most chip bursts drawn at once.
+const MAX_CHIPS: usize = 48;
+
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Beam {
     /// The creature it shines from.
@@ -52,6 +73,7 @@ pub struct Beam {
 pub struct Effects {
     pub blasts: Vec<Blast>,
     pub beams: Vec<Beam>,
+    pub chips: Vec<Chips>,
     count: u32,
 }
 
@@ -79,13 +101,33 @@ impl Effects {
         });
     }
 
+    /// A block broke at `pos` (canonical block centre): chips of its
+    /// `colour` (sRGB), lit by `light`. `burst` is how many broke this frame
+    /// (a blast's many blocks throw fewer chips each).
+    pub fn chips(&mut self, pos: DVec3, colour: [u8; 3], light: [f32; 4], burst: usize, now: f64) {
+        if self.chips.len() >= MAX_CHIPS {
+            self.chips.remove(0);
+        }
+        self.count = self.count.wrapping_add(1);
+        self.chips.push(Chips {
+            pos,
+            colour: Vec3::from(crate::colour::srgb_to_linear(colour)),
+            light,
+            born: now,
+            seed: self.count.wrapping_mul(2_654_435_761),
+            count: if burst > 8 { 3 } else { 9 },
+        });
+    }
+
     /// Drops the finished ones.
     pub fn update(&mut self, now: f64) {
+        self.chips.retain(|c| now - c.born < CHIP_SECONDS);
         self.blasts.retain(|b| now - b.born < BLAST_SECONDS);
         self.beams.retain(|b| now < b.until);
     }
 
     pub fn clear(&mut self) {
+        self.chips.clear();
         self.blasts.clear();
         self.beams.clear();
     }
@@ -145,6 +187,10 @@ impl Effects {
         source: impl Fn(u32) -> Option<DVec3>,
     ) -> Vec<BoxInstance> {
         let mut out = Vec::new();
+        for c in &self.chips {
+            let rel = (shape.nearest_lap(eye, c.pos) - eye).as_vec3();
+            chip_boxes(&mut out, rel, c, (now - c.born) as f32);
+        }
         for b in &self.blasts {
             let rel = (shape.nearest_lap(eye, b.pos) - eye).as_vec3();
             blast_boxes(&mut out, rel, b.radius, ((now - b.born) / BLAST_SECONDS) as f32, b.seed);
@@ -201,6 +247,39 @@ fn glowing(center: Vec3, half: Vec3, rot: Quat, colour: Vec3, glow: f32) -> BoxI
         light: [1.0, 1.0, 1.0, glow],
     }
 }
+
+/// A burst of chips at `rel` (camera-relative), `age` seconds old: small
+/// spinning cubes of the block's colour, thrown up and out, falling, and
+/// shrinking away.
+pub fn chip_boxes(out: &mut Vec<BoxInstance>, rel: Vec3, c: &Chips, age: f32) {
+    let life = CHIP_SECONDS as f32;
+    if !(0.0..life).contains(&age) {
+        return;
+    }
+    let fade = 1.0 - age / life;
+    for i in 0..c.count {
+        let h = |k: u32| hash(c.seed, i * 8 + k);
+        let dir = direction(h(0), h(1), 0.6);
+        let speed = 1.6 + 2.2 * h(2);
+        let start = Vec3::new(h(3) - 0.5, h(4) - 0.5, h(5) - 0.5) * 0.6;
+        let at = rel + start + dir * speed * age - Vec3::Y * (0.5 * CHIP_GRAVITY * age * age);
+        let size = (0.05 + 0.05 * h(6)) * fade.sqrt();
+        let spin = Quat::from_axis_angle(direction(h(7), h(1), 0.0), age * (8.0 + 10.0 * h(2)));
+        // Each chip a shade lighter or darker, like broken faces.
+        let shade = 0.75 + 0.45 * h(5);
+        out.push(BoxInstance {
+            center: at.to_array(),
+            half_size: [size; 3],
+            color: [c.colour.x * shade, c.colour.y * shade, c.colour.z * shade, 1.0],
+            rotation: spin.normalize().to_array(),
+            light: c.light,
+        });
+    }
+}
+
+/// Chips fall at this many blocks a second per second (lighter than a
+/// body's fall, so the burst reads).
+const CHIP_GRAVITY: f32 = 14.0;
 
 /// Boxes of a blast at `rel` (camera-relative) of `radius`, `t` of the way
 /// through its life (0 to 1).
@@ -581,6 +660,38 @@ pub fn held_bombs(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_broken_block_throws_chips_that_fall_and_fade() {
+        let mut fx = Effects::default();
+        fx.chips(
+            DVec3::new(10.5, 40.5, 10.5),
+            [120, 120, 120],
+            [1.0, 0.0, 1.0, 0.0],
+            1,
+            0.0,
+        );
+        let shape = PlanetShape::new(8, 4);
+        let eye = DVec3::new(10.5, 42.0, 14.0);
+        let early = fx.boxes(eye, shape, 0.05, |_| None);
+        assert_eq!(early.len(), 9);
+        let late = fx.boxes(eye, shape, 0.6, |_| None);
+        assert_eq!(late.len(), 9);
+        let low = |b: &[BoxInstance]| b.iter().map(|b| b.center[1]).sum::<f32>() / b.len() as f32;
+        assert!(low(&late) < low(&early), "they fall");
+        assert!(late[0].half_size[0] < early[0].half_size[0], "they shrink");
+        fx.update(CHIP_SECONDS + 0.01);
+        assert!(
+            fx.boxes(eye, shape, CHIP_SECONDS + 0.01, |_| None).is_empty(),
+            "and are gone"
+        );
+        // A blast's many blocks throw fewer each, and the bursts are capped.
+        for i in 0..100 {
+            fx.chips(DVec3::new(i as f64, 40.5, 0.5), [1, 2, 3], [1.0; 4], 20, 1.0);
+        }
+        assert_eq!(fx.chips.len(), MAX_CHIPS);
+        assert_eq!(fx.boxes(eye, shape, 1.1, |_| None).len(), MAX_CHIPS * 3);
+    }
 
     #[test]
     fn a_lit_bomb_in_hand_stays_hand_sized() {
