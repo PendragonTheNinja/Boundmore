@@ -38,6 +38,11 @@ pub struct Options {
     pub vsync: bool,
     /// Most frames a second; 0 for no cap.
     pub frame_cap: u32,
+    /// Shift (or Ctrl) starts a sprint that lasts until you stop moving
+    /// forward, instead of being held.
+    pub sprint_toggle: bool,
+    /// The view widens a little while sprinting, so the sprint shows.
+    pub sprint_widen: bool,
 }
 
 impl Default for Options {
@@ -49,6 +54,8 @@ impl Default for Options {
             far_views: true,
             vsync: true,
             frame_cap: 0,
+            sprint_toggle: false,
+            sprint_widen: true,
         }
     }
 }
@@ -156,6 +163,8 @@ mod tests {
                 far_views: false,
                 vsync: false,
                 frame_cap: 144,
+                sprint_toggle: true,
+                sprint_widen: false,
             },
             ignored: vec!["pest".into()],
         };

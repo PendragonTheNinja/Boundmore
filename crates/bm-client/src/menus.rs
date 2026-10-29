@@ -690,6 +690,10 @@ pub fn options(ctx: &egui::Context, current: &crate::settings::Options, actions:
         );
         ui.checkbox(&mut o.invert_y, "Invert up and down");
         ui.add_space(6.0);
+        heading(ui, "Moving");
+        ui.checkbox(&mut o.sprint_toggle, "Shift starts a sprint (no need to hold it)");
+        ui.checkbox(&mut o.sprint_widen, "Widen the view while sprinting");
+        ui.add_space(6.0);
         heading(ui, "View");
         ui.add(
             egui::Slider::new(&mut o.fov, 50.0..=110.0)

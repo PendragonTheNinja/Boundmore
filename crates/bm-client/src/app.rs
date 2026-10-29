@@ -118,6 +118,9 @@ const HURT_FROM_RANGE: f64 = 24.0;
 
 /// Frames a second while the window is minimised or covered.
 const HIDDEN_FRAME_CAP: u32 = 10;
+/// The view widens this many degrees while sprinting, over this long.
+const SPRINT_FOV: f32 = 5.0;
+const SPRINT_FOV_SECONDS: f32 = 0.25;
 /// Seconds between saves of the chat history while lines arrive.
 const CHAT_SAVE_SECONDS: f64 = 30.0;
 
@@ -1156,6 +1159,11 @@ pub struct App {
     settings: Settings,
     /// F1: the HUD hidden (screenshots).
     hide_hud: bool,
+    /// A sprint started by Shift with the toggle option on; ends when W is
+    /// let go.
+    sprint_on: bool,
+    /// How much the view is widened now for sprinting (degrees, eased).
+    sprint_fov: f32,
     /// After a lost connection: when to try again (seconds of `now`), the
     /// tries so far, and why it was lost.
     reconnect: Option<(f64, u32, String)>,
@@ -1264,6 +1272,8 @@ impl App {
             session: None,
             settings,
             hide_hud: false,
+            sprint_on: false,
+            sprint_fov: 0.0,
             reconnect: None,
             relogin: None,
             frame_at: Instant::now(),
@@ -2178,7 +2188,11 @@ impl App {
             forward: k(KeyCode::KeyW) as i8 - k(KeyCode::KeyS) as i8,
             strafe: k(KeyCode::KeyD) as i8 - k(KeyCode::KeyA) as i8,
             jump: k(KeyCode::Space),
-            sprint: k(KeyCode::ShiftLeft) || k(KeyCode::ControlLeft),
+            sprint: if self.settings.options.sprint_toggle {
+                self.sprint_on && k(KeyCode::KeyW)
+            } else {
+                k(KeyCode::ShiftLeft) || k(KeyCode::ControlLeft)
+            },
             yaw,
             pitch,
             slot: self.session.as_ref().map_or(0, |s| s.selected as u8),
@@ -2236,6 +2250,22 @@ impl App {
         let dt = (now - self.last_frame).as_secs_f64().min(0.25);
         self.last_frame = now;
         self.handle_net();
+        // A toggled sprint ends when we stop going forward.
+        if !self.keys.contains(&KeyCode::KeyW) {
+            self.sprint_on = false;
+        }
+        // The view widens a little while we sprint (eased in and out).
+        let sprinting = self.session.as_ref().is_some_and(|s| {
+            let v = s.me.state.vel;
+            self.sample_input().sprint && (v.x * v.x + v.z * v.z).sqrt() > s.movement.walk_speed + 0.5
+        });
+        let want = if sprinting && self.settings.options.sprint_widen {
+            SPRINT_FOV
+        } else {
+            0.0
+        };
+        let step = (SPRINT_FOV / SPRINT_FOV_SECONDS) * dt as f32;
+        self.sprint_fov += (want - self.sprint_fov).clamp(-step, step);
         if let Some(slot) = self.atlas_request.take() {
             self.open_menu(Menu::Atlas(slot));
         }
@@ -2883,7 +2913,7 @@ impl App {
     /// Runs this frame's menus and HUD and returns them tessellated.
     fn run_ui(&mut self) -> Option<(Vec<egui::ClippedPrimitive>, egui::TexturesDelta, f32)> {
         // The player's field of view (options).
-        let fov_y = self.settings.options.clamped().fov.to_radians();
+        let fov_y = self.fov_y();
         self.ensure_coloured_icons();
         let local = self.local_ticks();
         let window = self.window.clone()?;
@@ -3324,6 +3354,12 @@ impl App {
         Some((prims, out.textures_delta, ppp))
     }
 
+    /// The vertical field of view now (radians): the option, widened while
+    /// sprinting.
+    fn fov_y(&self) -> f32 {
+        (self.settings.options.clamped().fov + self.sprint_fov).to_radians()
+    }
+
     /// The chat history file, beside the settings.
     fn chat_path(&self) -> PathBuf {
         self.opts.settings_path.with_file_name("chat-history.toml")
@@ -3398,7 +3434,7 @@ impl App {
 
     fn render_frame(&mut self, ui: Option<&(Vec<egui::ClippedPrimitive>, egui::TexturesDelta, f32)>) {
         // The player's field of view (options).
-        let fov_y = self.settings.options.clamped().fov.to_radians();
+        let fov_y = self.fov_y();
         let ui_frame = ui.map(|(p, t, ppp)| EguiFrame {
             primitives: p,
             textures: t,
@@ -4412,6 +4448,9 @@ impl ApplicationHandler for App {
                 // key, menu key or hotbar digit acts while it is open.
                 if !in_game || self.chat.open || egui_typing || event.repeat {
                     return;
+                }
+                if matches!(code, KeyCode::ShiftLeft | KeyCode::ControlLeft) && self.settings.options.sprint_toggle {
+                    self.sprint_on = !self.sprint_on;
                 }
                 if code == KeyCode::F8 {
                     self.toggle_creative();

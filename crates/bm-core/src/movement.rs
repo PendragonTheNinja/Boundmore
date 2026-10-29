@@ -672,8 +672,11 @@ pub fn step_hands(
     } else if hooked {
         // Hanging on the rope: leaning pumps the swing, nothing brakes it.
         flat + wish * cfg.swing_accel * dt
-    } else if flat.length() > cfg.sprint_speed + s.body.sprint_bonus {
+    } else if flat.length() > sprint.max(walk) + 1e-6 {
         // Flung by a grapple: steer, but keep the speed, which fades slowly.
+        // Faster than this body runs on foot, brews and quirks included (a
+        // sprint-jump with a Swift brew or Sprinter used to count as flung,
+        // so letting go of W in the air did not slow it; audit B5).
         let speed = flat.length() * (1.0 - cfg.fling_drag * dt);
         let steered = flat + wish * cfg.air_accel * dt;
         steered * (speed / steered.length())
@@ -1294,6 +1297,25 @@ mod tests {
         let cfg = MoveConfig::default();
         let want = cfg.walk_speed * 0.75 + (cfg.sprint_speed - cfg.walk_speed) * 1.5;
         assert!((fast.vel.x - want).abs() < 1e-9 && fast.vel.x > plain.vel.x);
+    }
+
+    #[test]
+    fn a_fast_sprinter_jumping_is_not_flung() {
+        use crate::forge::Quirks;
+        let w = world();
+        let cfg = MoveConfig::default();
+        let mut fast = quirky(Quirks::SPRINTER);
+        let sprint = PlayerInput { sprint: true, ..east() };
+        run(&mut fast, sprint, 120, &w);
+        assert!(fast.vel.x > cfg.sprint_speed, "Sprinter outruns a plain sprint");
+        run(&mut fast, PlayerInput { jump: true, ..sprint }, 1, &w);
+        assert!(!fast.on_ground);
+        // Let go in the air: air control slows it as for anyone, rather than
+        // the fling's slow fade.
+        let v0 = fast.vel.x;
+        run(&mut fast, PlayerInput::default(), 10, &w);
+        let braked = v0 - 10.0 * cfg.air_accel / TICK_HZ as f64;
+        assert!(fast.vel.x <= braked.max(0.0) + 1e-9, "{} from {v0}", fast.vel.x);
     }
 
     #[test]
