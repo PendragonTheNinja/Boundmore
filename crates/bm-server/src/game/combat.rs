@@ -644,9 +644,14 @@ impl Game {
         if let Some(p) = self.players.get_mut(&pid)
             && !p.state.down
         {
-            // The client sees this as a correction (agreed for now).
+            // Set right after the last input stepped, and told the client
+            // for that input, so its prediction does the same.
             p.state.vel = dir * knock + DVec3::new(0.0, KNOCK_UP, 0.0);
             p.state.on_ground = false;
+            p.out.send(&ServerMsg::Knockback {
+                at: p.last_seq,
+                vel: p.state.vel.to_array(),
+            });
         }
         self.creature_hits_player(pi, cid, pid, damage, DamageKind::Kinetic);
     }

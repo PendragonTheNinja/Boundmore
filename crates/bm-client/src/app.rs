@@ -2021,6 +2021,9 @@ impl App {
                 place_percent,
             } => s.guild_body(at, run, grapple, lava_percent, place_percent),
             ServerMsg::Air { at, air } => s.me.set_air(at, air, &s.movement, s.world.shape, &s.world),
+            ServerMsg::Knockback { at, vel } => {
+                s.me.knock(at, DVec3::from_array(vel), &s.movement, s.world.shape, &s.world)
+            }
             ServerMsg::Forged { outcome, .. } => {
                 let text = crate::forge_screen::outcome_text(&s.items, &outcome);
                 self.notices.push(text, now);

@@ -29,7 +29,7 @@ use serde::{Deserialize, Serialize, de::DeserializeOwned};
 pub const MAX_CRAFT_COUNT: u16 = 100;
 
 /// Bump on any change to a message below. Client and server must match.
-pub const PROTOCOL_VERSION: u32 = 61;
+pub const PROTOCOL_VERSION: u32 = 62;
 
 /// QUIC application protocol name; also refuses non-Boundmore peers early.
 pub const ALPN: &[u8] = b"boundmore/1";
@@ -792,6 +792,13 @@ pub enum ServerMsg {
     Air {
         at: u32,
         air: bm_core::atmosphere::Air,
+    },
+    /// Knocked back (a charge) right after input `at`: the body's velocity
+    /// is set to `vel` and it leaves the ground, so the client predicts it
+    /// exactly instead of being corrected (polish, audit B11).
+    Knockback {
+        at: u32,
+        vel: [f64; 3],
     },
     /// A written sign anchored at `anchor` (its lower left panel as read),
     /// or None when it was unwritten: sent with the anchor's chunk and

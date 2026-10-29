@@ -33,6 +33,8 @@ enum After {
     Eat(FoodStats),
     /// The planet's air changed (milestone 21: a wandering world leaving).
     Air(bm_core::atmosphere::Air),
+    /// Knocked back: this velocity, off the ground.
+    Knock(DVec3),
 }
 
 struct Entry {
@@ -221,6 +223,25 @@ impl Predictor {
         self.state = state;
     }
 
+    /// Knocked back right after input `at` (`ServerMsg::Knockback`): the
+    /// velocity set there as the server set it, and the inputs after it
+    /// replayed.
+    pub fn knock(&mut self, at: u32, vel: DVec3, cfg: &MoveConfig, shape: PlanetShape, world: &impl PhysicsWorld) {
+        let Some(i) = self.history.iter().position(|e| e.seq == at) else {
+            // Older than anything we remember: the next snapshot settles it.
+            return;
+        };
+        let mut state = self.history[i].state;
+        state.vel = vel;
+        state.on_ground = false;
+        self.history[i].after.push(After::Knock(vel));
+        self.history[i].state = state;
+        for e in self.history.iter_mut().skip(i + 1) {
+            replay(&mut state, e, cfg, shape, world);
+        }
+        self.state = state;
+    }
+
     /// The body (what skills do to moving and energy, milestone 12) is
     /// `body` from right after input `at`, as the server sets it when a
     /// skill change follows that input: set there, and the inputs after it
@@ -382,6 +403,10 @@ fn replay(state: &mut PlayerState, e: &mut Entry, cfg: &MoveConfig, shape: Plane
                 let _ = state.eat(&food);
             }
             After::Air(air) => state.air = air,
+            After::Knock(vel) => {
+                state.vel = vel;
+                state.on_ground = false;
+            }
         }
     }
     e.state = *state;
@@ -702,6 +727,43 @@ mod tests {
         }
         assert_eq!(p.corrections, 0);
         assert_eq!(p.state, truth[239]);
+    }
+
+    #[test]
+    fn a_knockback_lands_where_the_server_sets_it() {
+        // Audit B11: a charge knocks us back after input 100; we hear of it
+        // four inputs late and replay, so no correction follows.
+        let (cfg, w) = (MoveConfig::default(), Floor(10));
+        let vel = DVec3::new(-11.0, 6.0, 4.0);
+        let inputs: Vec<PlayerInput> = (1..=240).map(walk).collect();
+        let mut s = spawn();
+        let truth: Vec<PlayerState> = inputs
+            .iter()
+            .enumerate()
+            .map(|(i, input)| {
+                movement::step(&mut s, input, &cfg, None, shape(), &w);
+                if i as u32 + 1 == 100 {
+                    s.vel = vel;
+                    s.on_ground = false;
+                }
+                s
+            })
+            .collect();
+        let knocked_off = truth[100].pos;
+        let mut p = Predictor::new(spawn());
+        for (i, input) in inputs.iter().enumerate() {
+            let seq = p.tick(*input, [None, None], Default::default(), &cfg, shape(), &w);
+            if seq == 104 {
+                p.knock(100, vel, &cfg, shape(), &w);
+            }
+            if i >= 5 && i % 3 == 0 {
+                let ack = i as u32 - 4;
+                p.reconcile(i as u64, ack, truth[ack as usize - 1], &cfg, shape(), &w);
+            }
+        }
+        assert_eq!(p.corrections, 0);
+        assert_eq!(p.state, truth[239]);
+        assert!(knocked_off.x < truth[98].pos.x, "it was knocked back");
     }
 
     /// Milestone 23: a dive (down, hold, up, float) with the breath running
