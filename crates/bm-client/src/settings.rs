@@ -45,6 +45,8 @@ pub struct Options {
     pub sprint_widen: bool,
     /// Creep is held (V held down) rather than switched on and off by V.
     pub creep_hold: bool,
+    /// Master, effects and interface volumes, percent (milestone 30).
+    pub volume: bm_audio::Volumes,
 }
 
 impl Default for Options {
@@ -59,6 +61,7 @@ impl Default for Options {
             sprint_toggle: false,
             sprint_widen: true,
             creep_hold: false,
+            volume: bm_audio::Volumes::default(),
         }
     }
 }
@@ -83,6 +86,7 @@ impl Options {
             } else {
                 self.frame_cap.clamp(20, 500)
             },
+            volume: self.volume.clamped(),
             ..self.clone()
         }
     }
@@ -150,6 +154,11 @@ mod tests {
         }
         .clamped();
         assert_eq!((odd.sensitivity, odd.fov, odd.frame_cap), (1.0, 110.0, 20));
+        // A file from before sound has the default volumes; a partial
+        // volume table keeps what it gives.
+        let s: Settings = toml::from_str("[options]\nfov = 80.0\n[options.volume]\nmaster = 30\n").unwrap();
+        assert_eq!(s.options.volume.master, 30);
+        assert_eq!(s.options.volume.effects, bm_audio::Volumes::default().effects);
     }
 
     #[test]
@@ -169,6 +178,11 @@ mod tests {
                 sprint_toggle: true,
                 sprint_widen: false,
                 creep_hold: true,
+                volume: bm_audio::Volumes {
+                    master: 55,
+                    effects: 90,
+                    interface: 0,
+                },
             },
             ignored: vec!["pest".into()],
         };

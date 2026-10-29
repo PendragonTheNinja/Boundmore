@@ -14,6 +14,7 @@ path = "src/main.rs"
 [dependencies]
 lz4_flex.workspace = true
 anyhow.workspace = true
+bm-audio.workspace = true
 bm-core.workspace = true
 bm-mesh.workspace = true
 bm-net.workspace = true

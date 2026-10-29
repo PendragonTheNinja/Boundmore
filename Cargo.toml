@@ -8,7 +8,9 @@ members = [
     "crates/bm-net",
     "crates/bm-server",
     "crates/bm-client",
+    "crates/bm-audio",
     "tools/bm-texgen",
+    "tools/bm-soundgen",
 ]
 
 [workspace.package]
@@ -24,6 +26,7 @@ bm-worldgen = { path = "crates/bm-worldgen" }
 bm-mesh = { path = "crates/bm-mesh" }
 bm-protocol = { path = "crates/bm-protocol" }
 bm-net = { path = "crates/bm-net" }
+bm-audio = { path = "crates/bm-audio" }
 
 anyhow = "1"
 bytes = "1"

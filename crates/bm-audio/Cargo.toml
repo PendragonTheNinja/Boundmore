@@ -1,0 +1,15 @@
+[package]
+name = "bm-audio"
+description = "Sound playback: the sound bank, positional volume and pan, volumes, and a silent fallback with no audio device."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+bm-core.workspace = true
+glam.workspace = true
+rodio = { version = "0.23", default-features = false, features = ["playback", "wav", "vorbis", "symphonia-adpcm"] }
+serde.workspace = true
+tracing.workspace = true

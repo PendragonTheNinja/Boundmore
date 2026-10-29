@@ -44,6 +44,8 @@ use winit::event_loop::{ActiveEventLoop, ControlFlow};
 use winit::keyboard::{KeyCode, PhysicalKey};
 use winit::window::{CursorGrabMode, Fullscreen, Window, WindowId};
 
+mod sounds;
+
 /// Said when the break button is pressed with no tool in hand (the server
 /// says the same if a swing reaches it).
 /// How often the crop under the crosshair is asked about again (its time to
@@ -1262,12 +1264,15 @@ pub struct App {
     fps: f64,
     last_title: Instant,
     missing_textures: usize,
+    /// What the player hears (milestone 30).
+    ears: sounds::Ears,
 }
 
 impl App {
     pub fn new(opts: Options) -> Self {
         let now = Instant::now();
         let settings = Settings::load(&opts.settings_path);
+        let ears = sounds::Ears::new(&opts.assets);
         let settings_ignored = settings.ignored.iter().map(|n| n.to_lowercase()).collect();
         let login = LoginForm {
             name: opts.name.clone().unwrap_or_else(|| settings.name.clone()),
@@ -1347,6 +1352,7 @@ impl App {
             fps: 0.0,
             last_title: now,
             missing_textures: 0,
+            ears,
         }
     }
 
@@ -1723,6 +1729,7 @@ impl App {
 
     fn apply_actions(&mut self, actions: Vec<UiAction>) {
         for a in actions {
+            sounds::action(self, &a);
             match a {
                 UiAction::Send(m) => self.send(m),
                 UiAction::LogIn { register } => self.start_login(register),
@@ -1939,6 +1946,7 @@ impl App {
     }
 
     fn handle_msg(&mut self, m: ServerMsg) {
+        sounds::message(self, &m);
         let m = match m {
             ServerMsg::Travel(t) => return self.travel(*t),
             ServerMsg::Storage(view) => return self.storage_update(view),
@@ -2275,6 +2283,7 @@ impl App {
         let dt = (now - self.last_frame).as_secs_f64().min(0.25);
         self.last_frame = now;
         self.handle_net();
+        sounds::frame(self, dt);
         // A toggled sprint ends when we stop going forward.
         if !self.keys.contains(&KeyCode::KeyW) {
             self.sprint_on = false;

@@ -1,0 +1,10 @@
+[package]
+name = "bm-soundgen"
+description = "Synthesises every game sound procedurally and writes the WAV files to assets/sounds/."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]

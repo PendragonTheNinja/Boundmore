@@ -769,6 +769,11 @@ pub fn options(ctx: &egui::Context, current: &crate::settings::Options, actions:
             o.frame_cap = 0;
         }
         ui.add_space(6.0);
+        heading(ui, "Sound");
+        ui.add(egui::Slider::new(&mut o.volume.master, 0..=100).text("Master volume"));
+        ui.add(egui::Slider::new(&mut o.volume.effects, 0..=100).text("Effects"));
+        ui.add(egui::Slider::new(&mut o.volume.interface, 0..=100).text("Interface"));
+        ui.add_space(6.0);
         ui.label(
             egui::RichText::new("F1 hides the HUD. Saved for next time.")
                 .color(MUTED)

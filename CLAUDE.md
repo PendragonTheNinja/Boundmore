@@ -24,6 +24,8 @@ Owner: Nathan (`PendragonTheNinja`). Solo project, multi-year, no deadline. Do i
 | `bm-server` | authoritative game loop, streaming, edits, saves | lib + `bm-server` binary |
 | `bm-client` | window, renderer, prediction, input, HUD | `boundmore` binary |
 | `tools/bm-texgen` | paints every block texture procedurally | `cargo run --release -p bm-texgen` rewrites `assets/textures/` |
+| `bm-audio` | sound bank, positional volume and pan, playback (`rodio`), silent without a device | headless until it plays; never touches game state |
+| `tools/bm-soundgen` | synthesises every sound procedurally | `cargo run --release -p bm-soundgen` rewrites `assets/sounds/` |
 
 Dependency direction: `bm-core` depends on nothing in the workspace; nothing headless depends on wgpu or winit.
 
@@ -43,6 +45,7 @@ Dependency direction: `bm-core` depends on nothing in the workspace; nothing hea
 12. **Reliable messages share one ordered stream** so a block change can never overtake its chunk. Movement uses datagrams and is never resent.
 13. **Light first, mesh once** (`bm-core/src/light.rs`). Light is computed only for complete columns; unlit or missing reads as dark (dark-then-brighten is safe, lit-then-stale is the bug). Every chunk insert, forget and block change goes through `LightMap`, and the chunks it returns are re-meshed. Sky and block light are separate vertex channels; day and night is a uniform (`sun_color.w`), never a re-mesh.
 14. **Textures are data**: the catalogue names them, files live in `assets/textures/` (`docs/art-direction.md`), and a missing file falls back to the block colour with a warning in the title bar. Face table entries pack `first_layer | variants << 16`; decode before using one as a layer.
+15. **Sounds are data and only watch** (milestone 30): files in `assets/sounds/` (`<name>_<n>.wav` or `.ogg`) named by `bm_audio::Sfx`; a missing one is a warning; no device means silence, never an error or a stall. `bm-client/src/app/sounds.rs` plays sounds by watching state and messages; never change game logic to make a sound.
 
 ## Verification (run before every commit)
 
@@ -52,7 +55,7 @@ cargo clippy --workspace --all-targets -- -D warnings
 cargo test --workspace
 ```
 
-Expected test counts (polish, 2026-10-29): bm-core 279, bm-worldgen 67 (+1 ignored: the tree-shape renderer), bm-mesh 36, bm-protocol 6, bm-server 148 unit + 79 end-to-end, bm-client 226, bm-texgen 35 (876 in all). `a_forged_hammer_comes_out_quick_and_swings_faster` failed once under a full parallel run (2026-10-28): the stone's damage healed (5 s of server time) between swings on a loaded machine; it now checks only the cadence (fixed the same day). `a_meteor_falls_fights_and_pays_each_player_once` used to fail now and then ("the fight did not end"); its message showed a guardian pacing in a pit 25 blocks under the player, never counted as stuck, and that was fixed on 2026-10-25 (stuck now means no closer to a player in 8 s). If it fails again, read the positions it prints. `chat_reaches_whoever_the_channel_says` timed out twice on CI on 2026-10-29 (never locally, 18 runs including under full CPU load) and passed on the next run; a test client's timeout now prints the chat it heard and the last messages it saw, so read those if it fails again. CI (`.github/workflows/ci.yml`) runs the same on Linux and builds on Windows.
+Expected test counts (polish, 2026-10-29): bm-core 279, bm-worldgen 67 (+1 ignored: the tree-shape renderer), bm-mesh 36, bm-protocol 6, bm-server 148 unit + 79 end-to-end, bm-client 227, bm-texgen 35, bm-audio 13, bm-soundgen 5 (895 in all). `a_forged_hammer_comes_out_quick_and_swings_faster` failed once under a full parallel run (2026-10-28): the stone's damage healed (5 s of server time) between swings on a loaded machine; it now checks only the cadence (fixed the same day). `a_meteor_falls_fights_and_pays_each_player_once` used to fail now and then ("the fight did not end"); its message showed a guardian pacing in a pit 25 blocks under the player, never counted as stuck, and that was fixed on 2026-10-25 (stuck now means no closer to a player in 8 s). If it fails again, read the positions it prints. `chat_reaches_whoever_the_channel_says` timed out twice on CI on 2026-10-29 (never locally, 18 runs including under full CPU load) and passed on the next run; a test client's timeout now prints the chat it heard and the last messages it saw, so read those if it fails again. CI (`.github/workflows/ci.yml`) runs the same on Linux and builds on Windows. Building on Linux needs the ALSA headers for sound (`apt-get install -y libasound2-dev`).
 
 **Upgrade check (any change to a saved or versioned format):** build the server from `main` in a separate worktree and target dir, let it create a universe (`bots --count 2 --planets 2` to make players), stop it, then open that data dir with the new server and read its log. Unit tests built from the new code missed exactly this once (2026-10-19: chunk format 2 refused every older universe).
 
