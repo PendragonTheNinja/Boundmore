@@ -29,7 +29,7 @@ use serde::{Deserialize, Serialize, de::DeserializeOwned};
 pub const MAX_CRAFT_COUNT: u16 = 100;
 
 /// Bump on any change to a message below. Client and server must match.
-pub const PROTOCOL_VERSION: u32 = 58;
+pub const PROTOCOL_VERSION: u32 = 59;
 
 /// QUIC application protocol name; also refuses non-Boundmore peers early.
 pub const ALPN: &[u8] = b"boundmore/1";
@@ -118,6 +118,10 @@ pub enum ClientMsg {
     WatchStation { pos: Option<BlockPos> },
     /// Move a station's finished output into the inventory (as much as fits).
     CollectStation { pos: BlockPos },
+    /// A queued job at the station at `pos`: cancel job `index` (what its
+    /// unfinished crafts took comes back), or with `up`, move a waiting job
+    /// one place up. Answered with `Station` and `Slots`.
+    StationJob { pos: BlockPos, index: u8, up: bool },
     /// Move up to `count` fuel between inventory `slot` and the furnace at
     /// `pos` (any of its blocks, in reach): `into` puts fuel in (only items
     /// with `fuel > 0`; merging with what is there), else takes it out. The

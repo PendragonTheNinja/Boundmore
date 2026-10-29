@@ -1990,7 +1990,7 @@ impl Demo {
             ClientMsg::LookCrop { pos } => self.look_crop(pos),
             ClientMsg::ForgeBegin { pos, gear, deck } => self.forge_begin(pos, gear, deck),
             ClientMsg::ForgeUse { pos, slot, round } => self.forge_use(pos, slot, round),
-            ClientMsg::ForgeGiveUp { .. } => {}
+            ClientMsg::ForgeGiveUp { .. } | ClientMsg::StationJob { .. } => {}
             ClientMsg::Return => self.come_back(),
             ClientMsg::Hello { .. } => {}
             // The old hold-to-break message, until the protocol drops it.

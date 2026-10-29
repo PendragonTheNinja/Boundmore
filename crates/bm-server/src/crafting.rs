@@ -1513,34 +1513,45 @@ impl Stations {
         out.extend(st.fuel);
         out.extend(st.forge.iter().flat_map(|f| f.items()));
         for job in &st.jobs {
-            // Full containers come back as they went in; the rest exactly
-            // as the crafts took them, in the order first taken.
-            out.extend(job.containers.iter().copied());
-            let mut totals: Vec<(ItemId, u32)> = Vec::new();
-            for &(item, n) in job.taken.iter().flatten() {
-                if is_container(items, item) {
-                    continue;
-                }
-                match totals.iter_mut().find(|(i, _)| *i == item) {
-                    Some((_, t)) => *t += n as u32,
-                    None => totals.push((item, n as u32)),
-                }
-            }
-            // The tinted input comes back in the job's colour (milestone 22).
-            let tinted = recipes.get(job.recipe).and_then(|r| r.tint.map(|t| (r, t)));
-            for (item, mut total) in totals {
-                let colour = match tinted {
-                    Some((r, t)) if r.input_of(item) == Some(t as usize) => job.colour,
-                    _ => Colour::NATURAL,
-                };
-                while total > 0 {
-                    let c = total.min(u16::MAX as u32) as u16;
-                    out.push(ItemStack::coloured(item, colour, c));
-                    total -= c as u32;
-                }
-            }
+            out.extend(job_refund(job, items, recipes));
         }
         out
+    }
+
+    /// Cancels queued job `index` at `pos` (audit 2026-10-29: a misclick
+    /// used to be for good): what its unfinished crafts took comes back,
+    /// the craft under way too (its spark and wear stay spent), and the
+    /// next job starts. None if there is no such job.
+    #[allow(clippy::too_many_arguments)]
+    pub fn cancel_job(
+        &mut self,
+        pos: BlockPos,
+        index: usize,
+        tick: u64,
+        items: &ItemRegistry,
+        recipes: &RecipeBook,
+        env: &dyn Surroundings,
+    ) -> Option<Vec<ItemStack>> {
+        let st = self.map.get_mut(&pos)?;
+        let job = st.jobs.remove(index)?;
+        self.dirty.insert(pos);
+        if index == 0 {
+            self.try_start(pos, tick, items, recipes, env);
+        }
+        self.tidy(pos);
+        Some(job_refund(&job, items, recipes))
+    }
+
+    /// Moves waiting job `index` one place up the queue (never ahead of the
+    /// craft under way). Whether it moved.
+    pub fn job_up(&mut self, pos: BlockPos, index: usize) -> bool {
+        let Some(st) = self.map.get_mut(&pos) else { return false };
+        if index < 2 || index >= st.jobs.len() {
+            return false;
+        }
+        st.jobs.swap(index, index - 1);
+        self.dirty.insert(pos);
+        true
     }
 
     /// Stations whose current craft is under way, and generators burning
@@ -1747,6 +1758,36 @@ fn find_recipe(job: &SavedJob, kind: Station, items: &ItemRegistry, recipes: &Re
         .at(kind)
         .find(|(_, r)| r.output == output && r.output_count == job.output_count && r.matches(&craft))
         .map(|(i, _)| (i, craft))
+}
+
+/// What a job's unfinished crafts took, given back: full containers as they
+/// went in, the rest exactly as taken (in the order first taken), a tinted
+/// input in the job's colour (milestone 22).
+fn job_refund(job: &Job, items: &ItemRegistry, recipes: &RecipeBook) -> Vec<ItemStack> {
+    let mut out: Vec<ItemStack> = job.containers.to_vec();
+    let mut totals: Vec<(ItemId, u32)> = Vec::new();
+    for &(item, n) in job.taken.iter().flatten() {
+        if is_container(items, item) {
+            continue;
+        }
+        match totals.iter_mut().find(|(i, _)| *i == item) {
+            Some((_, t)) => *t += n as u32,
+            None => totals.push((item, n as u32)),
+        }
+    }
+    let tinted = recipes.get(job.recipe).and_then(|r| r.tint.map(|t| (r, t)));
+    for (item, mut total) in totals {
+        let colour = match tinted {
+            Some((r, t)) if r.input_of(item) == Some(t as usize) => job.colour,
+            _ => Colour::NATURAL,
+        };
+        while total > 0 {
+            let c = total.min(u16::MAX as u32) as u16;
+            out.push(ItemStack::coloured(item, colour, c));
+            total -= c as u32;
+        }
+    }
+    out
 }
 
 fn refund(st: &mut StationData, job: &SavedJob, items: &ItemRegistry, what: &str) {
@@ -2216,6 +2257,46 @@ mod tests {
         assert!(s.collect(pos, &mut inv, &items));
         assert_eq!(s.get(pos).unwrap().heat, 50);
         assert!(s.exists(pos) && !s.has_contents(pos));
+    }
+
+    #[test]
+    fn queued_jobs_can_be_cancelled_and_moved_up() {
+        let (items, recipes) = setup();
+        let ingot = recipe_for(&items, &recipes, "copper_ingot");
+        let r = recipes.get(ingot).unwrap().clone();
+        let pos = BlockPos::new(4, 5, 6);
+        let mut s = Stations::new();
+        s.add_fuel(pos, Station::Furnace, coal(&items, 4), 0, &items, &recipes, &Nowhere);
+        for n in [2, 1, 3] {
+            s.queue(
+                pos,
+                Station::Furnace,
+                ingot,
+                plain(&recipes, ingot, n),
+                0,
+                &items,
+                &recipes,
+                &Nowhere,
+            )
+            .unwrap();
+        }
+        // The third moves above the second, never above the one under way.
+        assert!(!s.job_up(pos, 1));
+        assert!(s.job_up(pos, 2));
+        let remaining: Vec<u16> = s.get(pos).unwrap().jobs.iter().map(|j| j.remaining).collect();
+        assert_eq!(remaining, vec![2, 3, 1]);
+        // Cancelling the head gives back both its crafts' inputs, and the
+        // next job starts.
+        let back = s.cancel_job(pos, 0, 10, &items, &recipes, &Nowhere).unwrap();
+        let want: Vec<ItemStack> = r
+            .inputs
+            .iter()
+            .map(|i| ItemStack::new(i.items[0], i.count * 2))
+            .collect();
+        assert_eq!(back, want);
+        assert_eq!(s.get(pos).unwrap().jobs.front().map(|j| j.remaining), Some(3));
+        assert!(s.running().any(|p| p == pos), "the next job runs");
+        assert!(s.cancel_job(pos, 9, 10, &items, &recipes, &Nowhere).is_none());
     }
 
     #[test]

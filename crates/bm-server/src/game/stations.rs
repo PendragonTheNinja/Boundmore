@@ -248,6 +248,56 @@ impl Game {
         }
     }
 
+    /// Cancels a queued job (what it took back into the inventory; what does
+    /// not fit into the machine's output, then reclaim), or moves a waiting
+    /// one up the queue.
+    pub(super) fn station_job(&mut self, id: u32, pos: BlockPos, index: usize, up: bool) {
+        let (pi, m) = match self.machine_access(id, pos) {
+            Ok(found) => found,
+            Err(r) => return self.tell(id, r),
+        };
+        let key = self.machine_record(pi, &m);
+        if up {
+            self.planets[pi].stations.job_up(key, index);
+            return self.push_station(pi, key);
+        }
+        let planet = &mut self.planets[pi];
+        let env = PlanetEnv::new(&planet.world, self.spark_link);
+        let Some(back) = planet
+            .stations
+            .cancel_job(key, index, self.tick, &self.items, &self.recipes, &env)
+        else {
+            return;
+        };
+        let Some(p) = self.players.get_mut(&id) else { return };
+        let before = p.inventory.clone();
+        let mut over = Vec::new();
+        for s in back.into_iter().filter(|s| s.count > 0) {
+            let left = p.inventory.add_stack(&self.items, s);
+            if left > 0 {
+                over.push(ItemStack { count: left, ..s });
+            }
+        }
+        send_slots(p, &before);
+        let account = p.account.clone();
+        let mut lost = Vec::new();
+        for s in over {
+            let left = self.planets[pi].stations.add_output(key, m.kind, s, &self.items);
+            if left > 0 {
+                lost.push(ItemStack { count: left, ..s });
+            }
+        }
+        if !lost.is_empty() {
+            self.reclaims.add(&account, lost);
+            self.push_reclaim(&account);
+            self.notice(
+                id,
+                "Your inventory and the machine are full: the rest waits in reclaim at a warp shrine",
+            );
+        }
+        self.push_station(pi, key);
+    }
+
     /// Moves fuel between inventory `slot` and a furnace's or a spark
     /// generator's fuel slot.
     pub(super) fn station_fuel(&mut self, id: u32, pos: BlockPos, slot: u8, count: u16, into: bool) {

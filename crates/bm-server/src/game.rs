@@ -1280,6 +1280,7 @@ impl Game {
                 } => self.craft(id, recipe, count, station, colour),
                 ClientMsg::WatchStation { pos } => self.watch(id, pos),
                 ClientMsg::CollectStation { pos } => self.collect(id, pos),
+                ClientMsg::StationJob { pos, index, up } => self.station_job(id, pos, index as usize, up),
                 ClientMsg::ClaimPlot { claim, plot } => self.claim_plot(id, claim, plot),
                 ClientMsg::ReleasePlot { plot } => self.release_plot(id, plot),
                 ClientMsg::Warp { shrine, planet } => self.warp(id, shrine, planet),

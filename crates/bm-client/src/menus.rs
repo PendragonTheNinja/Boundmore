@@ -2436,8 +2436,36 @@ pub fn crafting(ctx: &egui::Context, v: &CraftingView, actions: &mut Vec<UiActio
                 if let Some(why) = idle {
                     idle_banner(ui, why);
                 }
-                egui::ScrollArea::vertical().max_height(430.0).show(ui, |ui| {
-                    for (index, recipe) in v.items.recipes_for(kind) {
+                // Search by name (what it makes or takes) and a "can make now"
+                // filter, kept while the game runs.
+                let (search_id, can_id) = (Id::unique("craft-search"), Id::unique("craft-can-make"));
+                let mut search: String = ui.data_mut(|d| d.get_temp(search_id).unwrap_or_default());
+                let mut can_make: bool = ui.data_mut(|d| d.get_temp(can_id).unwrap_or(false));
+                ui.horizontal(|ui| {
+                    ui.add(
+                        egui::TextEdit::singleline(&mut search)
+                            .hint_text("Search")
+                            .desired_width(220.0),
+                    );
+                    ui.checkbox(&mut can_make, "Can make now");
+                });
+                ui.data_mut(|d| {
+                    d.insert_temp(search_id, search.clone());
+                    d.insert_temp(can_id, can_make);
+                });
+                let wanted = search.trim().to_lowercase();
+                let shown: Vec<_> = v
+                    .items
+                    .recipes_for(kind)
+                    .into_iter()
+                    .filter(|(_, r)| !can_make || v.items.craft_max(r) > 0)
+                    .filter(|(_, r)| wanted.is_empty() || recipe_matches(v.items, r, &wanted))
+                    .collect();
+                egui::ScrollArea::vertical().max_height(400.0).show(ui, |ui| {
+                    if shown.is_empty() {
+                        ui.label(egui::RichText::new("Nothing matches.").color(MUTED));
+                    }
+                    for (index, recipe) in shown {
                         recipe_row(ui, v, index, recipe, idle.is_some(), actions);
                     }
                 });
@@ -2455,6 +2483,18 @@ pub fn crafting(ctx: &egui::Context, v: &CraftingView, actions: &mut Vec<UiActio
         actions.push(UiAction::CloseMenu);
     }
     paint_fuel_drag(ctx, v);
+}
+
+/// Whether a recipe's output or any of its inputs is named like `wanted`
+/// (lower case).
+fn recipe_matches(items: &Items, r: &bm_core::Recipe, wanted: &str) -> bool {
+    let named = |id| {
+        items
+            .registry
+            .get(id)
+            .is_some_and(|d| d.display.to_lowercase().contains(wanted))
+    };
+    named(r.output) || r.inputs.iter().any(|i| i.items.iter().any(|id| named(*id)))
 }
 
 /// Why the machine does not work, in a red-edged box.
@@ -2694,6 +2734,26 @@ fn station_panel(ui: &mut Ui, v: &CraftingView, kind: Station, opened: BlockPos,
                         28.0,
                         egui::RichText::new(format!("{name}, {} to go", job.remaining)),
                     );
+                    ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                        if ui
+                            .small_button("x")
+                            .on_hover_text("Cancel: what it took comes back")
+                            .clicked()
+                        {
+                            actions.push(UiAction::Send(ClientMsg::StationJob {
+                                pos,
+                                index: i as u8,
+                                up: false,
+                            }));
+                        }
+                        if i >= 2 && ui.small_button("^").on_hover_text("Move up the queue").clicked() {
+                            actions.push(UiAction::Send(ClientMsg::StationJob {
+                                pos,
+                                index: i as u8,
+                                up: true,
+                            }));
+                        }
+                    });
                 });
                 if i == 0 {
                     // Run on between updates, which come a few times a
