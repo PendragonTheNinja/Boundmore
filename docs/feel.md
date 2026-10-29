@@ -412,3 +412,4 @@ Answers to `docs/audit/README.md` batch 3, in his words where given:
 | Natural slopes | "Yes Boundless had natural slopes, it wasn't all blocky (I don't know how it was calculated)". New planets only (a generator bump). |
 | Smart stacks | "Yes they called them smart stacks, up to 9 stacks of the same block TYPE could stack together": one slot holds up to 9 stacks (each up to the item's stack size) of one block type in any colours; Boundless's related-item groups where known. |
 | Travel (home warp, priced shrine travel, see-through portals) | "Also important". Prices still to be set with him in the spec. |
+| Creep speed | 1.5 blocks a second on foot (**guess**, half an untrained walk); Measure A6 |

@@ -123,6 +123,9 @@ pub struct PlayerInput {
     /// Swim down (milestone 23; Boundless's creep key). Also flies down in
     /// creative mode.
     pub descend: bool,
+    /// Creep (M33): slow, and never walk off an edge while on the ground.
+    #[serde(default)]
+    pub creep: bool,
 }
 
 impl PlayerInput {
@@ -475,6 +478,13 @@ const SKIN: f64 = 1e-6;
 /// rather than part of [`MoveConfig`].
 pub const STEP_HEIGHT: f64 = 0.55;
 
+/// Creeping (M33): the speed on foot (**guess**: half an untrained walk;
+/// Boundless's creep was "slower", unmeasured), and how far down the body
+/// may still find ground before an edge stops it (a half-block step down is
+/// allowed, as a chiselled ledge is in Boundless).
+pub const CREEP_SPEED: f64 = 1.5;
+pub const CREEP_DROP: f64 = 0.55;
+
 fn aabb(pos: DVec3, cfg: &MoveConfig) -> (DVec3, DVec3) {
     (
         DVec3::new(pos.x - cfg.half_width, pos.y, pos.z - cfg.half_width),
@@ -650,6 +660,8 @@ pub fn step_hands(
     };
     let speed = if in_water {
         swim
+    } else if input.creep {
+        walk.min(CREEP_SPEED)
     } else if input.sprint && f > 0.0 {
         sprint
     } else {
@@ -802,6 +814,8 @@ pub fn step_hands(
     let steps = (travel.abs().max_element() / 0.45).ceil().max(1.0) as u32;
     let part = travel / steps as f64;
     let was_on_ground = s.on_ground;
+    // Creep's edge guard: on the ground, out of water, not flying or hanging.
+    let guard = input.creep && was_on_ground && !in_water && !flying && !hooked;
     let mut impact = 0.0;
     s.on_ground = false;
     for _ in 0..steps {
@@ -814,7 +828,16 @@ pub fn step_hands(
         }
         let before = *s;
         let mut blocked_x = move_axis(s, 0, part.x, cfg, world);
+        if guard && !creep_supported(s, cfg, world) {
+            s.pos.x = before.pos.x;
+            blocked_x = true;
+        }
+        let before_z = s.pos.z;
         let mut blocked_z = move_axis(s, 2, part.z, cfg, world);
+        if guard && !creep_supported(s, cfg, world) {
+            s.pos.z = before_z;
+            blocked_z = true;
+        }
         if may_step
             && (blocked_x || blocked_z)
             && let Some((stepped, bx, bz)) = step_up(&before, s, part, cfg, world)
@@ -964,6 +987,17 @@ fn step_up(
         dx * dx + dz * dz
     };
     (gain(&t) > gain(plain) + 1e-12).then_some((t, bx, bz))
+}
+
+/// Whether something lies under the body within [`CREEP_DROP`]: creeping
+/// may go on (part of the body may hang over the edge, as long as some of
+/// it stands on something).
+fn creep_supported(s: &PlayerState, cfg: &MoveConfig, world: &impl PhysicsWorld) -> bool {
+    let probe = PlayerState {
+        pos: s.pos - DVec3::new(0.0, CREEP_DROP, 0.0),
+        ..*s
+    };
+    intersects(&probe, cfg, world)
 }
 
 fn intersects(s: &PlayerState, cfg: &MoveConfig, world: &impl PhysicsWorld) -> bool {
@@ -1297,6 +1331,57 @@ mod tests {
         let cfg = MoveConfig::default();
         let want = cfg.walk_speed * 0.75 + (cfg.sprint_speed - cfg.walk_speed) * 1.5;
         assert!((fast.vel.x - want).abs() < 1e-9 && fast.vel.x > plain.vel.x);
+    }
+
+    /// A platform at y 9 (top at 10) over x 0..=5, z 0..=10, with nothing
+    /// below for 10 blocks; `ledge` adds bottom slabs (top at 9.5) for x
+    /// 6..=8 beside it.
+    fn platform(ledge: bool) -> Flat {
+        let mut w = Flat { floor: 0, ..world() };
+        for x in 0..=5 {
+            for z in 0..=10 {
+                w.solid.insert(BlockPos::new(x, 9, z));
+            }
+        }
+        if ledge {
+            for x in 6..=8 {
+                for z in 0..=10 {
+                    w.shaped.insert(BlockPos::new(x, 9, z), slab());
+                }
+            }
+        }
+        w
+    }
+
+    #[test]
+    fn creeping_never_walks_off_an_edge() {
+        let cfg = MoveConfig::default();
+        let w = platform(false);
+        let creep = PlayerInput { creep: true, ..east() };
+        let mut s = standing(4.5, 10.0);
+        run(&mut s, creep, 300, &w);
+        assert!(s.on_ground && s.pos.y == 10.0, "still on top: {:?}", s.pos);
+        assert!(
+            s.pos.x <= 6.0 + cfg.half_width + 1e-9 && s.pos.x > 6.0,
+            "at the edge, hanging over: {}",
+            s.pos.x
+        );
+        // Slower than walking.
+        let mut slow = standing(0.5, 10.0);
+        run(&mut slow, creep, 30, &w);
+        assert!((slow.vel.x - CREEP_SPEED).abs() < 1e-9, "{}", slow.vel.x);
+        // Walking, the same path falls.
+        let mut walker = standing(4.5, 10.0);
+        run(&mut walker, east(), 300, &w);
+        assert!(walker.pos.y < 9.0, "walked off: {:?}", walker.pos);
+        // A half-block step down is still taken.
+        let mut down = standing(4.5, 10.0);
+        run(&mut down, creep, 120, &platform(true));
+        assert!(down.pos.x > 6.5 && (down.pos.y - 9.5).abs() < 1e-9, "{:?}", down.pos);
+        // Creeping in the air steers as usual (no guard off the ground).
+        let mut jumper = standing(4.5, 10.0);
+        run(&mut jumper, PlayerInput { jump: true, ..creep }, 1, &w);
+        assert!(!jumper.on_ground);
     }
 
     #[test]

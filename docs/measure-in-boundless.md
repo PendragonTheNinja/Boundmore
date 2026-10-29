@@ -21,6 +21,8 @@ Boundmore now: one air bar for water and bad air, 30 s full to empty, about 8 s 
 - [ ] **A3. Drowning.** Stay under after it empties: health lost each time it hits, and seconds between hits (note your max health). Does it hit harder the longer you stay? Is there a countdown on screen, and how long?
 - [ ] **A4. Swim speeds.** Over a counted stretch of blocks (or between two pillars a known distance apart): seconds swimming across at the surface; seconds to swim straight down 10 blocks holding C; seconds to sink 10 blocks holding nothing; seconds to rise 10 blocks holding Space. Does sprint change surface swimming?
 - [ ] **A5. With That Sinking Feeling** (any item with the quirk, held): repeat A1, A2 and the sink in A4. Can you rise at all with Space?
+- [ ] **A6. Creep speed** (M33): hold the creep key (C) and walk 10 blocks on flat ground; time it. Boundmore uses 1.5 blocks a second, half an untrained walk (a guess).
+- [ ] **A7. Choosing the item in a smart stack** (M33): with a smart stack of several colours in your hand, which one do you place, and how do you pick another (the mouse wheel inside the stack, right click and click one, or only by reordering)?
 - [ ] **A6. Agility** (if you have a character with Agility ranks): repeat the surface swim in A4 and note the ranks. Players said Agility made swimming faster; our notes said it did not.
 - [ ] **A7. Lava.** Step into lava at full health and step out after a few seconds: the first hit, then how often it hits while you stay in. (We take a third of max health at once, then every second.)
 

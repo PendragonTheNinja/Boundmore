@@ -43,6 +43,8 @@ pub struct Options {
     pub sprint_toggle: bool,
     /// The view widens a little while sprinting, so the sprint shows.
     pub sprint_widen: bool,
+    /// Creep is held (V held down) rather than switched on and off by V.
+    pub creep_hold: bool,
 }
 
 impl Default for Options {
@@ -56,6 +58,7 @@ impl Default for Options {
             frame_cap: 0,
             sprint_toggle: false,
             sprint_widen: true,
+            creep_hold: false,
         }
     }
 }
@@ -165,6 +168,7 @@ mod tests {
                 frame_cap: 144,
                 sprint_toggle: true,
                 sprint_widen: false,
+                creep_hold: true,
             },
             ignored: vec!["pest".into()],
         };

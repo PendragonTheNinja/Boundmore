@@ -638,6 +638,8 @@ pub struct Hud<'a> {
     pub air: Option<AirView>,
     /// The compass strip at the very top.
     pub compass: Option<crate::compass::CompassView>,
+    /// Creep is on (M33): a tag over the health bar.
+    pub creeping: bool,
 }
 
 /// The air bar: what is left, and what the tag over it says.
@@ -741,6 +743,10 @@ pub fn options(ctx: &egui::Context, current: &crate::settings::Options, actions:
         heading(ui, "Moving");
         ui.checkbox(&mut o.sprint_toggle, "Shift starts a sprint (no need to hold it)");
         ui.checkbox(&mut o.sprint_widen, "Widen the view while sprinting");
+        ui.checkbox(
+            &mut o.creep_hold,
+            "Hold V to creep (instead of V switching it on and off)",
+        );
         ui.add_space(6.0);
         heading(ui, "View");
         ui.add(
@@ -1881,6 +1887,14 @@ pub fn hud(ctx: &egui::Context, h: &Hud) {
                 "Health".into(),
                 label,
             );
+            if h.creeping {
+                shadowed(
+                    pos2(row.left() - 8.0, health.center().y - 16.0),
+                    Align2::RIGHT_CENTER,
+                    "Creeping (V)".into(),
+                    Color32::from_rgb(150, 220, 140),
+                );
+            }
             let r = shadowed(
                 pos2(row.right() + 8.0, energy.center().y),
                 Align2::LEFT_CENTER,

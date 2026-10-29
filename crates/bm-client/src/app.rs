@@ -1173,6 +1173,8 @@ pub struct App {
     /// A sprint started by Shift with the toggle option on; ends when W is
     /// let go.
     sprint_on: bool,
+    /// Creep switched on by V (M33); with the hold option, V held instead.
+    creep_on: bool,
     /// How much the view is widened now for sprinting (degrees, eased).
     sprint_fov: f32,
     /// After a lost connection: when to try again (seconds of `now`), the
@@ -1284,6 +1286,7 @@ impl App {
             settings,
             hide_hud: false,
             sprint_on: false,
+            creep_on: false,
             sprint_fov: 0.0,
             reconnect: None,
             relogin: None,
@@ -2216,6 +2219,7 @@ impl App {
             reel: k(KeyCode::KeyR) as i8 - k(KeyCode::KeyF) as i8,
             // Swim down (Boundless's creep key was C, Boundmore's crafting).
             descend: k(KeyCode::KeyX),
+            creep: self.creeping() && self.grabbed && self.menu.is_none(),
         }
     }
 
@@ -2942,6 +2946,7 @@ impl App {
     fn run_ui(&mut self) -> Option<(Vec<egui::ClippedPrimitive>, egui::TexturesDelta, f32)> {
         // The player's field of view (options).
         let fov_y = self.fov_y();
+        let creeping = self.creeping();
         self.ensure_coloured_icons();
         let local = self.local_ticks();
         let window = self.window.clone()?;
@@ -3072,6 +3077,7 @@ impl App {
                         life: s.sky_view.life_text(),
                         air: crate::menus::air_view(&s.me.state),
                         compass: Some(s.compass(yaw, feet)),
+                        creeping,
                     },
                 );
             }
@@ -3380,6 +3386,16 @@ impl App {
             self.save_chat();
         }
         Some((prims, out.textures_delta, ppp))
+    }
+
+    /// Whether creep is on now (V switched on, or held with the hold
+    /// option). Kept through chat and menus, so building resumes as it was.
+    fn creeping(&self) -> bool {
+        if self.settings.options.creep_hold {
+            self.keys.contains(&KeyCode::KeyV)
+        } else {
+            self.creep_on
+        }
     }
 
     /// The vertical field of view now (radians): the option, widened while
@@ -4476,6 +4492,9 @@ impl ApplicationHandler for App {
                 // key, menu key or hotbar digit acts while it is open.
                 if !in_game || self.chat.open || egui_typing || event.repeat {
                     return;
+                }
+                if code == KeyCode::KeyV && !self.settings.options.creep_hold {
+                    self.creep_on = !self.creep_on;
                 }
                 if matches!(code, KeyCode::ShiftLeft | KeyCode::ControlLeft) && self.settings.options.sprint_toggle {
                     self.sprint_on = !self.sprint_on;
