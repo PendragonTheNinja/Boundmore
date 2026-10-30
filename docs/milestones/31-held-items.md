@@ -53,9 +53,9 @@ We take the behaviour (one consistent pose per hand, a motion per action, timing
 
 ## Non-goals
 
-First-person arms (they come with the character models of M29), third-person held items (part 2), hit-or-miss variants of the swing, per-tool-class animations beyond the arc, items' own sounds (the sound milestone hooks into the same events), hand-made 3D models of items.
+First-person arms (they come with the character models of M29), third-person held items (part 2), hit-or-miss variants of the swing, per-tool-class animations beyond the arc, items' own sounds (the sound milestone hooks into the same events). (Modelled items were a non-goal of part 1; Nathan asked for them on 2026-10-30, see part 2.)
 
-## Part 2 (later)
+## Later
 
 - **Others' held items:** each remote player's two held items drawn at their hands (needs both hands' items in `RemotePlayer`, a protocol change) and their swing seen by others (from the swing events already sent). Best done with M29's models, at the hand bones.
 - Arms holding the items, with M29's race models.
@@ -67,7 +67,7 @@ First-person arms (they come with the character models of M29), third-person hel
 3. **Slab thickness:** built at 4 icon pixels (as thick, for its size, as a 16 px item one pixel deep). Thinner reads like paper, thicker like a toy.
 4. **Hit and miss swings** as Boundless did (a recoil on a hit, a follow-through on a miss): later, with the sound milestone's cues, if he wants it.
 
-## Status
+## Status (part 1)
 
 - [x] Research and spec (2026-10-29)
 - [x] Models (2026-10-29): `bm-client/src/held.rs`. Icons extruded into 4-pixel slabs (front and back as greedy rectangles of opaque pixels, sides as runs of exposed edges, every face sampling the icon with nearest filtering; the iron hammer is about 300 quads for some 1,100 pixels), block items as cubes painted as their icons are (tint or colour), the left hand's model the mirror image of the right's. Built once per item, colour and tint; the renderer keeps 24 texture layers and gives the least recently drawn model's up.
@@ -77,3 +77,60 @@ First-person arms (they come with the character models of M29), third-person hel
 - [x] `--demo-ui held` (2026-10-29): an iron hammer in the left hand swinging at a stone block on its own cadence, a marble block in the right; `BOUNDMORE_HELD=left,right` names other items. `docs/media/m31-held.jpg`: at rest, mid-strike, a sling and a grapple, and an axe and a torch at midnight (the torch lighting both). Tests: `held::tests` (the extrusion, merging bounds, winding, each hand on its side, the swing on the cadence, uses only from real actions, the bob and lowering, the lit bomb's boxes).
 - Known limits: the motion is tuned from screenshots only (Nathan's eye decides); a slow sling's draw and a bomb's throw are drawn over at most 0.6 s; glass blocks are held opaque; an item with no icon picture is not drawn; the jab is the same for a place and a chisel cut.
 - [ ] Nathan's play-test and answers
+
+## Part 2: modelled items
+
+*Spec 2026-10-30.* Nathan, 2026-10-30: "I was hoping for ... actual models for the items, not just kinda making them thick." Arms come later, with the character models (M29).
+
+### Goal
+
+The items held most are real 3D models, made for Boundmore: chunky, stylised fantasy shapes with clean planes and bevels, and a hand-painted texture (colour, soft baked shading, light edges), so a hammer in the hand reads as a hammer from any angle, not a thick picture. Every other item keeps part 1's icon slab until it has a model; blocks stay cubes.
+
+### Method
+
+- **Made procedurally in Blender** (`tools/bm-modelgen/items.py`, headless `bpy`, as the races are): each model is built from bevelled primitives, unwrapped, and its painted look baked into one texture (base colour per part, grain or facets by material, ambient occlusion, a soft light from above, a lighter rim on every edge from the bevel's curvature, shadows leaning cool). Deterministic: the same command writes the same files. A turntable sheet of every model is rendered at the end (`docs/media/m31-models-sheet.jpg`).
+- **One shape per family, tinted per material.** A hammer of copper, iron, silver, gold and titanium is one `hammer_metal` model; parts whose material is named `tint...` take the item's colour, painted neutral so the colour multiplies cleanly. Wood and stone heads, gem heads (metal set with a crystal) and astral heads (a glowing crystal) are their own shapes, so the top tiers differ in shape as well as colour.
+- **Files:** `assets/models/items/<model>.glb` (glTF binary, the texture inside), and `assets/models/items/models.toml`, which names the model each item uses and its tint:
+  ```toml
+  [hammer_metal]
+  copper_hammer = "c87a4a"
+  iron_hammer = "9aa4b4"
+  ```
+  An item with a file of its own name (`<item>.glb`) uses that file untinted, ahead of the table: that is how a hand-made model replaces a generated one for one item.
+- **Families modelled:** hammers, axes and shovels (wood, stone, metal, gem and astral heads), chisels (plain, precise, gem, astral), spanners, grapples (hook, rope coil, grip), slings (wooden and metal forks), tillers, the hand stone, torches (wooden and gem, the flame a glow), bags of bombs, buckets (empty, water, milk), the atlas, and food in five shapes (meat, loaf, bowl, pie, brew flask).
+
+### The file convention (for hand-made or AI-made models)
+
+- **Static glTF 2.0** (`.glb`), triangles, with normals (flat-shaded files are fine) and texture coordinates; one or more meshes in the default scene, node transforms applied. Skins and animations are ignored.
+- **Units:** one unit is one block. A one-handed tool is about 0.7 long; food about 0.25 across.
+- **The grip:** an empty node named `grip` marks where the hand closes: its origin is the centre of the fist, its **+Y runs along the handle towards the head**, its **-Z is the way the working face looks** (a hammer's face, an axe's edge, a shovel's blade, a hook's point), and +X is the holder's right. Without a `grip` node the model's own origin and axes are the grip. Food, buckets and the atlas are held from below: +Y up, -Z away from the holder.
+- **Materials:** the base colour texture and factor are used (any size; scaled to 256 px). A material named `tint...` takes the item's tint from `models.toml`; a material with an emissive factor (or named `glow...`) shines on its own (a flame, an astral crystal). Nothing else of the PBR set is read: the game lights the model as it lights the world.
+- **Budget:** up to 4,000 triangles (the generated ones are a few hundred to 2,000).
+- **A missing or broken file is a warning, never a crash** (as textures, invariant 14): the item falls back to its icon slab.
+
+### In the client
+
+- A small loader (`bm-client/src/item_models.rs`, the `gltf` crate) reads every model once at start, flattens its node transforms, re-expresses it in the grip's frame, and keeps triangles and textures; `held.rs` turns the one an item uses into the same held mesh the slabs use (its tint and glow in the vertex colour), so the held pass draws it with the same lighting (sky and block light, held lights, the sun, face shading) and the same motion: the rest pose per kind, bob, sway, the swing on the tool's cadence, the jab, the sling's draw, eating and the grapple's kick. Models get their own rest poses (a modelled tool stands up and leans in, its face to the crosshair, so the swing's arc strikes with the face).
+- The held pass's texture layers grow to 256 px (icons are scaled up pixel for pixel, still sampled crisp; models sampled smooth).
+
+### Acceptance
+
+1. Every model in `models.toml` loads, has a `grip` node, and is within the triangle budget (a test).
+2. Each modelled item maps to its model and tint; an item with no model, or whose file is missing or broken, falls back to its icon slab with a warning; block items stay cubes (tests).
+3. The models sit in the hand by their grip and swing naturally: the hammer's face strikes at the crosshair on the tool's cadence (screenshots, `docs/media/m31-models.jpg`: several items, one mid-swing).
+4. A turntable sheet of every model (`docs/media/m31-models-sheet.jpg`).
+5. All files together a few MB.
+
+### Decisions for Nathan
+
+1. **The look:** chunky and bevelled with a soft painted texture (built), or more detailed and realistic, or blockier (closer to the icons' pixels).
+2. **Size in the hand:** built a little larger than the slabs; say if a tool should fill more or less of the corner.
+3. **Which items next:** materials (ingots, gems, shards), every food dish its own shape, brews by kind, props (doors, lanterns, signs) as models rather than slabs.
+4. **Hand-made replacements:** whether he wants to commission or AI-generate hero models (the convention above takes them as they are).
+
+### Status (part 2)
+
+- [x] Spec (2026-10-30)
+- [ ] Models
+- [ ] Client loader and drawing
+- [ ] Screenshots and sheet
