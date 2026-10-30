@@ -413,3 +413,11 @@ Answers to `docs/audit/README.md` batch 3, in his words where given:
 | Smart stacks | "Yes they called them smart stacks, up to 9 stacks of the same block TYPE could stack together": one slot holds up to 9 stacks (each up to the item's stack size) of one block type in any colours; Boundless's related-item groups where known. |
 | Travel (home warp, priced shrine travel, see-through portals) | "Also important". Prices still to be set with him in the spec. |
 | Creep speed | 1.5 blocks a second on foot (**guess**, half an untrained walk); Measure A6 |
+
+## Held items and the look (Nathan, 2026-10-30)
+
+| Item | Decision |
+|---|---|
+| Held items | "I was hoping for ... actual models for the items, not just kinda making them thick": modelled 3D items in hand (M31 part 2); the icon slab stays only as the fallback for items with no model yet. |
+| Arms in first person | "Arms can come with character models" (M29). |
+| Textures | "an overall texture redesign": a new look for every block, trialled on a few key blocks first for his eye (M34). |
