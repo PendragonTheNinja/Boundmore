@@ -51,9 +51,9 @@ J = {
 }
 LEFT = {
     "shoulder": (0.26, -0.04, 1.40),
-    "elbow": (0.37, 0.05, 1.12),
-    "wrist": (0.41, -0.03, 0.87),
-    "palm": (0.43, -0.07, 0.76),
+    "elbow": (0.37, 0.07, 1.12),
+    "wrist": (0.405, -0.07, 0.88),
+    "palm": (0.425, -0.12, 0.78),
     "hip": (0.125, 0.0, 0.92),
     "knee": (0.185, -0.19, 0.60),
     "ankle": (0.18, 0.11, 0.28),
@@ -89,21 +89,29 @@ TORSO = [
 TN = 12  # points round the torso; 0 front, 3 left, 6 back, 9 right
 
 
-def torso_ring(c, z, cy, w, df, db, p):
+PECS = {3: 0.008, 4: 0.022, 5: 0.026, 6: 0.010}
+
+
+def torso_ring(c, z, cy, w, df, db, p, k=None):
     out = []
+    pec = PECS.get(k, 0.0)
     for i in range(TN):
         a = 2 * math.pi * i / TN
         s, co = math.sin(a), math.cos(a)
         x = w * math.copysign(abs(s) ** (2 / p), s)
         d = df if co > 0 else db
         y = cy - d * math.copysign(abs(co) ** (2 / p), co)
+        if co > 0:
+            # Two pectoral masses either side of a sternum groove.
+            aa = min(a, 2 * math.pi - a)
+            y -= pec * (math.exp(-(((aa - 0.55) / 0.3) ** 2)) - 0.45 * math.exp(-((aa / 0.2) ** 2)))
         out.append(c.add((x, y, z), "torso"))
     return out
 
 
 def body():
     c = Cage()
-    rings = [torso_ring(c, *r) for r in TORSO]
+    rings = [torso_ring(c, *r, k=k) for k, r in enumerate(TORSO)]
     holes = {(4, 2), (4, 3), (5, 2), (5, 3), (4, 8), (4, 9), (5, 8), (5, 9)}
     for k in range(len(rings) - 1):
         a, b = rings[k], rings[k + 1]
@@ -186,9 +194,9 @@ def arm(c, hole, s):
         (sh + ua * 0.50 + V((0.006, -0.008, 0)), ua, 0.082, 0.092, 2.2),  # biceps
         (sh + ua * 0.82, ua, 0.068, 0.072, 2.2),
         (el, ua + fa, 0.062, 0.066, 2.3),  # elbow
-        (el + fa * 0.24 + V((0.008, 0, 0)), fa, 0.086, 0.080, 2.4),  # forearm bulk
-        (el + fa * 0.58, fa, 0.072, 0.066, 2.4),
-        (el + fa * 0.93, fa, 0.050, 0.054, 2.4),  # wrist
+        (el + fa * 0.26 + V((0.008, 0, 0)), fa, 0.092, 0.084, 2.4),  # forearm bulk
+        (el + fa * 0.60, fa, 0.076, 0.068, 2.4),
+        (el + fa * 0.93, fa, 0.054, 0.056, 2.4),  # wrist
     ]
     rings = tube(c, hole, specs, "arm", s)
     # The hand: a box palm, its knuckle end split into three fingers.
@@ -232,9 +240,9 @@ def leg(c, hole, s):
     specs = [
         (hp + th * 0.10 + V((0.014, 0, 0)), th, 0.118, 0.128, 2.2),  # upper thigh
         (hp + th * 0.42 + V((0.014, -0.016, 0)), th, 0.112, 0.124, 2.2),
-        (hp + th * 0.78, th, 0.082, 0.088, 2.2),
-        (kn, th + sh, 0.068, 0.072, 2.2),  # knee
-        (kn + sh * 0.24 + V((0, 0.016, 0)), sh, 0.074, 0.085, 2.2),  # drumstick
+        (hp + th * 0.78, th, 0.076, 0.082, 2.2),
+        (kn, th + sh, 0.066, 0.070, 2.2),  # knee
+        (kn + sh * 0.26 + V((0, 0.02, 0)), sh, 0.080, 0.092, 2.2),  # drumstick
         (kn + sh * 0.6, sh, 0.054, 0.058, 2.2),
         (an, sh + mt, 0.052, 0.058, 2.3),  # the backward heel
         (an + mt * 0.45, mt, 0.044, 0.046, 2.5),  # scaled metatarsus
@@ -322,6 +330,10 @@ def neck_and_head(c, base):
     c.crease_path([rings[j][2] for j in range(2, 6)], 0.8)
     c.crease_path([rings[j][14] for j in range(2, 6)], 0.8)
     c.crease_path([rings[j][5] for j in range(4, 8)], 0.7)
+    # The mouth line is painted dark along that crease (grad marks it).
+    for j in range(4, 8):
+        for i in (5, 11):
+            c.grad[rings[j][i]] = 1.0
     c.crease_path([rings[j][11] for j in range(4, 8)], 0.7)
     loop = [rings[j][7] for j in range(1, 6)] + [rings[5][8]] + [rings[j][9] for j in range(5, 0, -1)] + [rings[1][8]]
     # The neck: from the trapezius ring up and forward into the hole.
@@ -421,8 +433,8 @@ def crest():
         feather(base, d, V((0, 1, -0.4)), V((1, 0, 0)), length, width, bend=0.22, thick=0.4, bone="head")
         if 1 <= i <= 5:
             for s in (1, -1):
-                d2 = V((0.55 * s, math.cos(a), math.sin(a) - 0.2)).normalized()
-                feather(base + V((0.055 * s, 0.01, -0.035)), d2, V((0.4 * s, 1, -0.6)), V((1, 0, 0.6 * s)), length * 0.75, width * 0.95, bend=0.25, bone="head")
+                d2 = V((0.6 * s, math.cos(a), math.sin(a) + 0.2)).normalized()
+                feather(base + V((0.055 * s, 0.01, -0.035)), d2, V((0.6 * s, 1, -0.5)), V((1, 0, 0.8 * s)), length * 0.75, width * 0.95, bend=0.3, bone="head")
 
 
 def mane():
@@ -435,7 +447,7 @@ def mane():
             base = V((math.sin(a) * rx, ny + 0.03 + math.cos(a) * ry, rz))
             outw = V((math.sin(a), math.cos(a), 0))
             d = (outw * 0.75 + V((0, 0.5, -0.7))).normalized()
-            k = 0.8 + 0.3 * abs(math.cos(a))
+            k = 0.6 + 0.5 * max(0.0, math.cos(a))
             feather(base, d, V((0, 0.2, -1)), outw * 0.6 + V((0, 0, 0.8)), length * k, 0.04, bend=0.25, bone=bone)
     # Spines down the back.
     for i in range(5):
@@ -622,7 +634,7 @@ def gear():
     # The loincloth, front and back.
     c = Cage()
     front = V((0, -0.115, 0.975))
-    flap(c, front, V((0, -0.12, -1)).normalized(), V((0, -1, 0)), 0.085, 0.26, 0.009, "cloth")
+    flap(c, front, V((0, -0.15, -1)).normalized(), V((0, -1, 0)), 0.068, 0.31, 0.009, "cloth")
     back = V((0, 0.145, 0.975))
     flap(c, back, V((0, 0.2, -1)).normalized(), V((0, 1, 0)), 0.10, 0.30, 0.009, "cloth", sway=0.02)
     ACC.append((c, "hips"))
@@ -644,7 +656,20 @@ def build_cages(high=False):
     mane()
     tufts()
     gear()
+    # A bigger head reads better at a distance: everything on the head
+    # grows about the skull.
+    pivot = V(J["skull"])
+    for i, part in enumerate(c.part):
+        if part == "head":
+            c.v[i] = pivot + (c.v[i] - pivot) * HEAD_SCALE
+    for cg, bone in ACC:
+        if bone == "head":
+            cg.v = [pivot + (v - pivot) * HEAD_SCALE for v in cg.v]
+    EYES[:] = [(pivot + (ce - pivot) * HEAD_SCALE, g) for ce, g in EYES]
     return c
+
+
+HEAD_SCALE = 1.12
 
 
 # ---- paint -------------------------------------------------------------------------
@@ -656,10 +681,10 @@ GEAR = {"brass", "cloth", "leather"}
 
 # Preview colours (linear); a player picks their own skin, belly, marking and
 # claw colours, which the game mixes by the paint texture's weights.
-SKIN = (0.040, 0.056, 0.085)
-BELLY = (0.52, 0.50, 0.44)
-MARK = (0.70, 0.74, 0.80)
-MARK_DEEP = (0.24, 0.28, 0.36)
+SKIN = (0.045, 0.075, 0.130)
+BELLY = (0.66, 0.56, 0.40)
+MARK = (0.78, 0.84, 0.92)
+MARK_DEEP = (0.22, 0.32, 0.50)
 CLAW = (0.90, 0.56, 0.06)
 BEAK_TIP = (0.55, 0.22, 0.03)
 TALON = (0.022, 0.020, 0.024)
@@ -676,8 +701,8 @@ def lerp3(a, b, t):
 
 
 def marks(part, co, n):
-    """The marking pattern (0 to 1): a stripe back from each eye, bands on
-    the forearms and thighs, chevrons down the back."""
+    """The marking pattern (0 to 1): a stripe back from each eye and bands
+    on the forearms and thighs."""
     ss = kit.smoothstep
     s = 1 if co.x >= 0 else -1
     if part == "head" and EYES:
@@ -698,11 +723,6 @@ def marks(part, co, n):
         outer = ss(0.1, 0.6, n.x * s)
         band = ss(0.35, 0.92, math.sin((t - 0.18) * math.pi * 3.0)) if 0.15 < t < 0.85 else 0.0
         return band * outer
-    if part == "torso":
-        back = ss(0.2, 0.6, n.y)
-        v = co.z - 1.08 + 2.2 * abs(co.x) * 0.35
-        band = ss(0.3, 0.95, math.sin(v * math.pi / 0.075)) * ss(1.0, 1.06, co.z) * ss(1.34, 1.26, co.z)
-        return band * back * ss(0.17, 0.10, abs(co.x))
     return 0.0
 
 
@@ -714,7 +734,7 @@ def paint(part, co, n, g):
     if part == "talon":
         return lerp3(TALON_BASE, TALON, ss(0.0, 0.6, g)), (0, 0, 1), (0, 0, 0.85)
     if part == "feather":
-        return lerp3(MARK_DEEP, MARK, ss(0.0, 0.75, g)), (0, 1, 0), (0, 0.2, 0)
+        return lerp3(MARK_DEEP, MARK, ss(0.15, 0.85, g)), (0, 1, 0), (0, 0.2, 0.35 * (1 - ss(0.0, 0.5, g)))
     if part == "leather":
         return LEATHER, (0, 0, 0), (0, 0.6, 0)
     if part == "cloth":
@@ -746,8 +766,9 @@ def paint(part, co, n, g):
         belly = ss(0.2, 0.8, -n.y) * ss(width + 0.06, width - 0.01, abs(co.x)) * ss(0.98, 1.12, co.z)
     if part == "head":
         belly = ss(0.0, 0.5, -n.z) * ss(J["skull"][2] + 0.0, J["skull"][2] - 0.05, co.z)
-    if part == "leg":
-        belly = 0.6 * ss(0.2, 0.7, -n.x * (1 if co.x > 0 else -1)) * ss(0.55, 0.7, co.z) * ss(0.92, 0.80, co.z)
+        if g > 0.0:
+            mouth = ss(0.55, 0.85, g)
+            return lerp3(SKIN, (0.01, 0.01, 0.02), mouth), (belly * (1 - mouth), 0, 0), (0, 0, mouth * 0.8)
     m = marks(part, co, n) * 0.5 * (1 - belly)
     col = lerp3(SKIN, BELLY, belly)
     col = lerp3(col, MARK, m)
@@ -1052,16 +1073,16 @@ def compose(b, out_dir):
     top = b["geo"][..., 1:2]
     h = b["geo"][..., 2:3]
     ao = b["ao"][..., 0:1]
-    edge = np.clip((curv - 0.52) * 7.0, 0, 1)
+    edge = np.clip((curv - 0.56) * 6.0, 0, 1)
     cavity = np.clip((0.48 - curv) * 7.0, 0, 1)
-    occl = 0.28 + 0.72 * np.power(np.clip(ao, 0, 1), 1.3)
-    light = 0.76 + 0.36 * top
+    occl = 0.22 + 0.78 * np.power(np.clip(ao, 0, 1), 1.5)
+    light = 0.66 + 0.50 * top
     feet = 0.74 + 0.26 * np.clip(h / 0.55, 0, 1)
     s = occl * light * feet * (1 - 0.3 * cavity)
     cool = np.array([0.78, 0.84, 1.12], dtype=np.float32)
     tint = cool + (1 - cool) * np.clip(s, 0, 1)
     base = col * detail
-    colour = base * s * tint + edge * 0.16 * (0.25 + base) * np.array([1.0, 0.94, 0.82], dtype=np.float32)
+    colour = base * s * tint + edge * 0.12 * (0.25 + base) * np.array([1.0, 0.94, 0.82], dtype=np.float32)
     shade = np.clip(s * detail * (1 - 0.75 * dark) + 0.12 * edge, 0, 1)
 
     def save(name, rgba):
@@ -1160,7 +1181,7 @@ VIEWS = {
     "three": (35, 3.4, 1.3, (0, 0, 0.98), 50),
     "side": (90, 3.4, 1.2, (0, 0, 0.98), 50),
     "back": (180, 3.4, 1.4, (0, 0, 0.98), 50),
-    "face": (35, 1.9, 1.75, (0, -0.17, 1.66), 85),
+    "face": (35, 2.4, 1.78, (0, -0.2, 1.68), 85),
     "walk": (60, 3.4, 1.25, (0, 0, 0.98), 50),
 }
 

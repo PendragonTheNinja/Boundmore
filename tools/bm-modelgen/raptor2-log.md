@@ -26,3 +26,28 @@ game model, bakes and renders that).
    scales), pointiness, facing-up and height, ambient occlusion, tint mask,
    normals; composed into the painted texture. 18,160 triangles: over budget,
    feathers and talons now stay unsubdivided (faceted) in the game copy.
+5. **Budget and files.** Feathers and talons faceted (unsubdivided) in the
+   game copy: 11,104 triangles. Painting cached per vertex and written in bulk
+   (from tens of minutes to 2 s; the whole build now takes under two
+   minutes). Textures baked at 2048, saved at 1024; the GLB no longer embeds
+   them (8.4 MB to 0.6 MB). Markings softened: hard white tape before.
+6. **Silhouette and colour.** Side crest blades splayed so the front view has
+   a crown; brighter, bluer slate, a warm cream belly, paler feathers;
+   stronger painted top light and occlusion; arms bent a little at the elbow
+   with heavier forearms; a fuller drumstick; a narrower, longer loincloth.
+7. **A bigger head.** Everything on the head grows 1.12 about the skull; the
+   mouth line is painted dark along its crease; feathers run deep blue at the
+   root to pale at the tip.
+8. **Chest and edges.** Pectoral masses and a sternum groove in the torso
+   rings; the edge highlight only on true edges (it drew pale seams down the
+   thighs); front ruff feathers shorter (they lay like lapels); side crest
+   blades swept back instead of out like ears; the head close-up framed.
+9. **Clean-up and motion.** Inner-thigh and back markings removed (they read
+   as streaks and scratches); a walk frame checked: legs, arms, belt and flaps
+   deform without tearing. Exported GLB checked: 17 bones, idle and walk,
+   every vertex's weights summing to one.
+
+Still short of the goal (for Nathan to judge): the anatomy is simple (few
+muscle planes beyond the chest; the thighs still read a little like
+trousers); the painting is procedural, not brushwork, so it lacks the
+hand-placed highlights of a real painted texture; no face rig or blinking.
